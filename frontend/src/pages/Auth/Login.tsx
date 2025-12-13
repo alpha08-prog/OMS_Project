@@ -26,6 +26,10 @@ export default function Login() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Temporary: allow any credentials to proceed to view the dashboard/UI
+    sessionStorage.setItem('auth_session', '1')
+    navigate('/home')
+    return
     const newErrors: typeof errors = {}
 
     const idErr = validateIdentifier(identifier)
@@ -45,9 +49,11 @@ export default function Login() {
     try {
       const res = await api.login({ identifier, password })
       // token storage note: prefer httpOnly cookies server-side
-      if (res.token && remember) localStorage.setItem('auth_token', res.token)
+      if (res.token && remember) localStorage.setItem('auth_token', res.token!)
+      // mark session so ProtectedRoute can allow access when server sets httpOnly cookie
+      sessionStorage.setItem('auth_session', '1')
       push({ type: 'success', title: 'Welcome back!', message: `Hello ${res.user?.name ?? ''}` })
-      navigate('/dashboard')
+      navigate('/home')
     } catch (err: any) {
       const status = err?.status
       const message = err?.message || 'Invalid credentials'
