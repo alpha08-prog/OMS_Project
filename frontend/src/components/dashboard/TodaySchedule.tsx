@@ -27,58 +27,57 @@ const scheduleItems = [
   {
     time: "04:30 PM",
     event: "School Annual Day",
-    venue: "Government School, Sector 5",
+    venue: "Govt School, Sector 5",
     organizer: "Education Dept",
     status: "pending",
   },
 ];
 
-const statusColors = {
-  upcoming: "bg-primary/10 text-primary border-primary/20",
-  confirmed: "bg-success/10 text-success border-success/20",
-  pending: "bg-warning/10 text-warning border-warning/20",
+const statusStyles = {
+  upcoming: "bg-indigo-100 text-indigo-700",
+  confirmed: "bg-emerald-100 text-emerald-700",
+  pending: "bg-amber-100 text-amber-700",
 };
 
 export function TodaySchedule() {
   return (
-    <Card className="shadow-sm">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg font-semibold">Today's Tour Program</CardTitle>
-          <Badge variant="secondary">{scheduleItems.length} Events</Badge>
-        </div>
+    <Card className="rounded-2xl shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg font-semibold text-indigo-900">
+          Today's Tour Program
+        </CardTitle>
       </CardHeader>
+
       <CardContent className="space-y-4">
-        {scheduleItems.map((item, index) => (
+        {scheduleItems.map((item, idx) => (
           <div
-            key={index}
-            className="flex gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
+            key={idx}
+            className="flex gap-4 p-4 bg-white border rounded-2xl hover:shadow-md transition"
           >
             <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full bg-primary" />
-              {index < scheduleItems.length - 1 && (
-                <div className="w-0.5 h-full bg-border mt-1" />
+              <div className="w-3 h-3 rounded-full bg-indigo-600 ring-4 ring-indigo-100" />
+              {idx < scheduleItems.length - 1 && (
+                <div className="w-0.5 flex-1 bg-border mt-1" />
               )}
             </div>
-            <div className="flex-1 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <h4 className="font-semibold text-foreground">{item.event}</h4>
-                <Badge className={statusColors[item.status as keyof typeof statusColors]} variant="outline">
+
+            <div className="flex-1">
+              <div className="flex justify-between">
+                <h4 className="font-semibold">{item.event}</h4>
+                <Badge className={statusStyles[item.status as keyof typeof statusStyles]}>
                   {item.status}
                 </Badge>
               </div>
-              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+
+              <div className="mt-2 text-sm text-muted-foreground flex flex-wrap gap-4">
                 <span className="flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5" />
-                  {item.time}
+                  <Clock className="h-4 w-4" /> {item.time}
                 </span>
                 <span className="flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5" />
-                  {item.venue}
+                  <MapPin className="h-4 w-4" /> {item.venue}
                 </span>
                 <span className="flex items-center gap-1">
-                  <User className="h-3.5 w-3.5" />
-                  {item.organizer}
+                  <User className="h-4 w-4" /> {item.organizer}
                 </span>
               </div>
             </div>

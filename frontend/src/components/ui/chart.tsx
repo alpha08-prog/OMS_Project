@@ -330,3 +330,37 @@ function getPayloadConfigFromPayload(config: ChartConfig, payload: unknown, key:
 }
 
 export { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, ChartStyle };
+
+// Saffron/Indigo default chart palette to keep charts consistent with the app theme.
+// Usage example:
+// <ChartContainer config={saffronIndigoChartTheme}>...</ChartContainer>
+export const saffronIndigoChartTheme: ChartConfig = {
+  series1: {
+    label: "Series 1",
+    theme: {
+      light: "hsl(30 100% 60%)", // saffron
+      dark: "hsl(30 100% 65%)",
+    },
+  },
+  series2: {
+    label: "Series 2",
+    theme: {
+      light: "hsl(231 48% 48%)", // indigo
+      dark: "hsl(231 45% 62%)",
+    },
+  },
+  series3: {
+    label: "Series 3",
+    theme: {
+      light: "hsl(231 60% 65%)", // lighter indigo
+      dark: "hsl(231 35% 70%)",
+    },
+  },
+  series4: {
+    label: "Series 4",
+    theme: {
+      light: "hsl(30 90% 75%)", // light saffron
+      dark: "hsl(30 90% 72%)",
+    },
+  },
+};

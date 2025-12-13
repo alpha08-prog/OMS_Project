@@ -1,9 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 
 const data = [
-  { name: "Resolved", value: 65, color: "hsl(142, 71%, 45%)" },
-  { name: "In Progress", value: 25, color: "hsl(38, 92%, 50%)" },
-  { name: "Pending", value: 10, color: "hsl(0, 84%, 60%)" },
+  { name: "Resolved", value: 65, color: "hsl(var(--primary))" },
+  { name: "In Progress", value: 25, color: "hsl(var(--secondary))" },
+  { name: "Pending", value: 10, color: "hsl(var(--accent-foreground))" },
 ];
 
 export function GrievanceChart() {

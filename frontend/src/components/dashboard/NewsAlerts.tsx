@@ -4,93 +4,57 @@ import { Badge } from "../ui/badge";
 
 const newsItems = [
   {
-    headline: "Opposition Party Rally Announcement",
-    category: "Conspiracy",
+    headline: "Opposition Rally Announcement",
     priority: "Critical",
     source: "Social Media",
-    time: "2 hours ago",
+    time: "2h ago",
   },
   {
-    headline: "New Development Project Approved",
-    category: "Work",
+    headline: "Development Project Approved",
     priority: "Normal",
     source: "Newspaper",
-    time: "5 hours ago",
-  },
-  {
-    headline: "Youth Wing Meeting Scheduled",
-    category: "Party Development",
-    priority: "High",
-    source: "Informant",
-    time: "Yesterday",
+    time: "5h ago",
   },
 ];
 
-const priorityStyles = {
-  Critical: "bg-destructive text-destructive-foreground animate-pulse",
-  High: "bg-warning text-warning-foreground",
-  Normal: "bg-secondary text-secondary-foreground",
+const styles = {
+  Critical: "bg-amber-100 border-amber-400",
+  Normal: "bg-white border",
 };
 
-const priorityIcons = {
+const icons = {
   Critical: AlertTriangle,
-  High: TrendingUp,
   Normal: Newspaper,
 };
 
 export function NewsAlerts() {
   return (
-    <Card className="shadow-sm">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg font-semibold">News & Intelligence</CardTitle>
-          <Badge variant="destructive" className="animate-pulse">
-            1 Critical
-          </Badge>
-        </div>
+    <Card className="rounded-2xl shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg font-semibold text-indigo-900">
+          News & Intelligence
+        </CardTitle>
       </CardHeader>
+
       <CardContent className="space-y-3">
-        {newsItems.map((news, index) => {
-          const Icon = priorityIcons[news.priority as keyof typeof priorityIcons];
+        {newsItems.map((n, i) => {
+          const Icon = icons[n.priority as keyof typeof icons];
           return (
             <div
-              key={index}
-              className={`p-4 rounded-xl border transition-all hover:shadow-md cursor-pointer ${
-                news.priority === "Critical" 
-                  ? "border-destructive/50 bg-destructive/5" 
-                  : "border-border bg-card hover:bg-muted/50"
-              }`}
+              key={i}
+              className={`p-4 rounded-2xl border ${styles[n.priority as keyof typeof styles]}`}
             >
-              <div className="flex items-start gap-3">
-                <div className={`p-2 rounded-lg ${
-                  news.priority === "Critical" 
-                    ? "bg-destructive/10" 
-                    : news.priority === "High"
-                    ? "bg-warning/10"
-                    : "bg-muted"
-                }`}>
-                  <Icon className={`h-4 w-4 ${
-                    news.priority === "Critical"
-                      ? "text-destructive"
-                      : news.priority === "High"
-                      ? "text-warning"
-                      : "text-muted-foreground"
-                  }`} />
+              <div className="flex gap-3">
+                <div className="p-2 bg-amber-100 rounded-lg">
+                  <Icon className="h-4 w-4 text-amber-600" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-medium text-foreground mb-1">{news.headline}</h4>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className={priorityStyles[news.priority as keyof typeof priorityStyles]}>
-                      {news.priority}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {news.category} • {news.source}
-                    </span>
-                  </div>
+
+                <div className="flex-1">
+                  <p className="font-medium">{n.headline}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {n.source} • {n.time}
+                  </p>
                 </div>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {news.time}
-                </span>
               </div>
             </div>
           );
