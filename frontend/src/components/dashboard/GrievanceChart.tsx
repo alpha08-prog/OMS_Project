@@ -16,15 +16,15 @@ export function GrievanceChart() {
         {/* CSS pie chart using conic-gradient to avoid external deps */}
         <div className="h-[220px] flex items-center justify-center">
           {(() => {
-            const total = data.reduce((s, d) => s + d.value, 0)
-            let acc = 0
+            //const total = data.reduce((s, d) => s + d.value, 0)
             const stops = data
-              .map((d) => {
-                const start = (acc / total) * 360
-                acc += d.value
-                const end = (acc / total) * 360
-                return `${d.color} ${start}deg ${end}deg`
-              })
+              .reduce((result, d, index) => {
+                const acc = data.slice(0, index).reduce((s, item) => s + item.value, 0)
+                const start = (acc / 100) * 360
+                const end = ((acc + d.value) / 100) * 360
+                result.push(`${d.color} ${start}deg ${end}deg`)
+                return result
+              }, [] as string[])
               .join(", ")
             return (
               <div className="relative">
