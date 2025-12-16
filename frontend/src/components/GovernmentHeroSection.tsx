@@ -12,16 +12,20 @@ export default function GovernmentHeroSection({ imageUrl, name, currentRole, pas
       <img
         src={imageUrl}
         alt="Official portrait"
-        className="absolute inset-0 h-full w-full object-cover transform scale-[1.06] md:scale-[1.1]"
+        className="absolute inset-0 h-full w-full object-cover transform scale-[1.06] md:scale-[1.0]"
         loading="eager"
       />
+      {/* Rectangular border around the main photo */}
+      <div className="absolute inset-0 pointer-events-none border-2 sm:border-4 md:border-6 border-white/80 box-border" aria-hidden="true" />
       {/* Softer horizontal gradient so text avoids the face and the portrait remains clear */}
       <div className="absolute inset-0 bg-gradient-to-r from-blue-900/30 via-blue-900/15 to-transparent" aria-hidden="true" />
 
       {/* Place content bottom-left to avoid covering the portrait's face */}
-      <div className="relative z-10 h-full flex items-end justify-start p-5 sm:p-8">
+      <div className="relative z-10 h-full flex items-end justify-start p-5 sm:p-8 pl-10 sm:pl-14">
+
         <div className="max-w-xl text-left text-white drop-shadow-md">
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 ml-6 sm:ml-10">
+
             <span className="mt-1 h-12 sm:h-16 w-1.5 rounded-full bg-gradient-to-b from-amber-400 to-amber-600 shadow-[0_0_12px_rgba(255,153,51,0.35)]" aria-hidden="true" />
             <div>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">{name}</h1>

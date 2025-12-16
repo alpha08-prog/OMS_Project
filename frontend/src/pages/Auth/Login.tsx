@@ -54,9 +54,10 @@ export default function Login() {
       sessionStorage.setItem('auth_session', '1')
       push({ type: 'success', title: 'Welcome back!', message: `Hello ${res.user?.name ?? ''}` })
       navigate('/home')
-    } catch (err: any) {
-      const status = err?.status
-      const message = err?.message || 'Invalid credentials'
+    } catch (err: unknown) {
+      const error = err as { status?: number; message?: string }
+      const status = error?.status
+      const message = error?.message || 'Invalid credentials'
       setErrors({ server: message })
       push({ type: 'error', title: status === 401 ? 'Invalid credentials' : 'Login failed', message })
     } finally {
