@@ -12,25 +12,23 @@ import {
   Building2,
 } from "lucide-react";
 import { useState } from "react";
-import { cn } from "../../lib/utils";
 import { NavLink, useNavigate } from "react-router-dom";
+import { cn } from "../../lib/utils";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", route: "/home" },
 
-  // Core modules
+  // Core citizen services
   { icon: FileText, label: "Grievances", route: "/grievances/new" },
   { icon: Users, label: "Visitors", route: "/visitors/new" },
 
   // Office operations
-  { icon: Train, label: "Train EQ", route: "/train-eq" },
+  { icon: Train, label: "Train EQ", route: "/train-eq/new" },
   { icon: Calendar, label: "Tour Program", route: "/tour-program" },
   { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
 
-  // Information
+  // Information & admin
   { icon: Newspaper, label: "News & Intel", route: "/news" },
-
-  // Settings
   { icon: Settings, label: "Settings", route: "/settings" },
 ];
 

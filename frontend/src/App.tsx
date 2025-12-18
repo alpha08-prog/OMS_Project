@@ -8,6 +8,7 @@ import GrievanceCreate from "./pages/grievances/GrievanceCreate";
 import VisitorCreate from "./pages/visitors/VisitorCreate"
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import "./index.css";
+import TrainEQCreate from "./pages/Train/TrainEQCreate";
 
 export default function App() {
   return (
@@ -47,6 +48,15 @@ export default function App() {
     }
 
       />
+     <Route
+  path="/train-eq/new"
+  element={
+    <ProtectedRoute>
+      <TrainEQCreate />
+    </ProtectedRoute>
+  }
+/>
+
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/auth/login" replace />} />
