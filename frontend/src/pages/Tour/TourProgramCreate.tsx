@@ -74,9 +74,7 @@ export default function TourProgramCreate() {
                       Date & Time <span className="text-red-500">*</span>
                     </Label>
                     <Input type="datetime-local" />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Warns if the selected time slot is already booked.
-                    </p>
+                    
                   </div>
 
                   <div>

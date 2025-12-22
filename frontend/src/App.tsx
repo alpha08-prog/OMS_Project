@@ -10,6 +10,7 @@ import ProtectedRoute from "./components/auth/ProtectedRoute";
 import "./index.css";
 import TrainEQCreate from "./pages/Train/TrainEQCreate";
 import TourProgramCreate from "./pages/Tour/TourProgramCreate";
+import NewsIntelligenceCreate from "./pages/News/NewsIntelligenceCreate";
 
 export default function App() {
   return (
@@ -62,6 +63,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <TourProgramCreate />
+          </ProtectedRoute>
+        }
+      />
+       <Route
+        path="/news-intelligence/new"
+        element={
+          <ProtectedRoute>
+            <NewsIntelligenceCreate />
           </ProtectedRoute>
         }
       />

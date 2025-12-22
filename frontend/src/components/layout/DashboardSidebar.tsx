@@ -18,18 +18,20 @@ import { cn } from "../../lib/utils";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", route: "/home" },
 
-  // Core Services
+  // Core Citizen / Public Services
   { icon: FileText, label: "Grievances", route: "/grievances/new" },
   { icon: Users, label: "Visitors", route: "/visitors/new" },
 
   // Office Operations
   { icon: Train, label: "Train EQ", route: "/train-eq/new" },
   { icon: Calendar, label: "Tour Program", route: "/tour-program/new" },
-  { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
+  
 
-  // Admin / Info
-  { icon: Newspaper, label: "News & Intel", route: "/news" },
+  // Intelligence & Admin
+  { icon: Newspaper, label: "News & Intelligence", route: "/news-intelligence/new" },
+  { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
   { icon: Settings, label: "Settings", route: "/settings" },
+  
 ];
 
 export function DashboardSidebar() {
