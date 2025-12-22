@@ -9,6 +9,7 @@ import VisitorCreate from "./pages/visitors/VisitorCreate"
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import "./index.css";
 import TrainEQCreate from "./pages/Train/TrainEQCreate";
+import TourProgramCreate from "./pages/Tour/TourProgramCreate";
 
 export default function App() {
   return (
@@ -56,6 +57,14 @@ export default function App() {
     </ProtectedRoute>
   }
 />
+ <Route
+        path="/tour-program/new"
+        element={
+          <ProtectedRoute>
+            <TourProgramCreate />
+          </ProtectedRoute>
+        }
+      />
 
 
       {/* Fallback */}

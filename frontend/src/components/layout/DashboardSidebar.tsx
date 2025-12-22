@@ -18,16 +18,16 @@ import { cn } from "../../lib/utils";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", route: "/home" },
 
-  // Core citizen services
+  // Core Services
   { icon: FileText, label: "Grievances", route: "/grievances/new" },
   { icon: Users, label: "Visitors", route: "/visitors/new" },
 
-  // Office operations
+  // Office Operations
   { icon: Train, label: "Train EQ", route: "/train-eq/new" },
-  { icon: Calendar, label: "Tour Program", route: "/tour-program" },
+  { icon: Calendar, label: "Tour Program", route: "/tour-program/new" },
   { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
 
-  // Information & admin
+  // Admin / Info
   { icon: Newspaper, label: "News & Intel", route: "/news" },
   { icon: Settings, label: "Settings", route: "/settings" },
 ];
