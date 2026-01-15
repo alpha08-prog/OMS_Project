@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { ReferencedByField } from "@/components/common/ReferencedByField";
 import {
   Select,
   SelectContent,
@@ -70,6 +71,8 @@ export default function VisitorCreate() {
                   </div>
                 </div>
               </section>
+              <ReferencedByField placeholder="Eg: Local Leader, Office Staff" />
+
 
               {/* Date of Birth */}
               <section className="space-y-4">

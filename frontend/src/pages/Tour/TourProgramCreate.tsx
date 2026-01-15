@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { ReferencedByField } from "@/components/common/ReferencedByField";
 import {
   Select,
   SelectContent,
@@ -61,6 +62,8 @@ export default function TourProgramCreate() {
                   </div>
                 </div>
               </section>
+              <ReferencedByField placeholder="Eg: School Principal, NGO Head" />
+
 
               {/* Schedule */}
               <section className="space-y-4">

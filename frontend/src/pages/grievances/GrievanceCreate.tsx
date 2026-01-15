@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { ReferencedByField } from "@/components/common/ReferencedByField";
 import {
   Select,
   SelectContent,
@@ -15,7 +16,6 @@ export default function GrievanceCreate() {
   return (
     <div className="w-full min-h-screen bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
       <div className="max-w-7xl mx-auto space-y-6">
-
         {/* Page Header */}
         <div>
           <h1 className="text-2xl font-semibold text-indigo-900">
@@ -29,16 +29,12 @@ export default function GrievanceCreate() {
         {/* Main Card */}
         <Card className="rounded-2xl shadow-sm bg-white/90 backdrop-blur border border-indigo-100">
           <CardHeader>
-            <CardTitle className="text-lg">
-              Grievance Details
-            </CardTitle>
+            <CardTitle className="text-lg">Grievance Details</CardTitle>
           </CardHeader>
 
           <CardContent className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-
             {/* LEFT COLUMN */}
             <div className="xl:col-span-2 space-y-8">
-
               {/* Petitioner Info */}
               <section className="space-y-4">
                 <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
@@ -58,7 +54,6 @@ export default function GrievanceCreate() {
                       Mobile Number <span className="text-red-500">*</span>
                     </Label>
                     <Input placeholder="10-digit mobile number" />
-                    
                   </div>
                 </div>
               </section>
@@ -72,7 +67,8 @@ export default function GrievanceCreate() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>
-                      Constituency / Ward <span className="text-red-500">*</span>
+                      Constituency / Ward{" "}
+                      <span className="text-red-500">*</span>
                     </Label>
                     <Select>
                       <SelectTrigger>
@@ -146,7 +142,9 @@ export default function GrievanceCreate() {
                       <SelectContent>
                         <SelectItem value="letter">Generate Letter</SelectItem>
                         <SelectItem value="call">Call Official</SelectItem>
-                        <SelectItem value="forward">Forward to Department</SelectItem>
+                        <SelectItem value="forward">
+                          Forward to Department
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -159,7 +157,9 @@ export default function GrievanceCreate() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="dc">To DC</SelectItem>
-                        <SelectItem value="police">To Police Commissioner</SelectItem>
+                        <SelectItem value="police">
+                          To Police Commissioner
+                        </SelectItem>
                         <SelectItem value="pwd">To PWD</SelectItem>
                       </SelectContent>
                     </Select>
@@ -169,8 +169,14 @@ export default function GrievanceCreate() {
             </div>
 
             {/* RIGHT COLUMN */}
-            <div className="space-y-6 bg-indigo-50/60 rounded-xl p-5 border border-indigo-100">
+            <section className="space-y-4">
+              <h3 className="font-medium text-indigo-800">
+                Reference Information
+              </h3>
 
+              <ReferencedByField />
+            </section>
+            <div className="space-y-6 bg-indigo-50/60 rounded-xl p-5 border border-indigo-100">
               <section className="space-y-4">
                 <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
                   Ticket Status
@@ -200,7 +206,6 @@ export default function GrievanceCreate() {
                 </Button>
               </div>
             </div>
-
           </CardContent>
         </Card>
       </div>

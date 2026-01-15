@@ -1,5 +1,5 @@
 import { DashboardHeader } from "../components/layout/DashboardHeader";
-import { DashboardSidebar } from "../components/layout/DashboardSidebar";
+//import { DashboardSidebar } from "../components/layout/DashboardSidebar";
 import { StatsCard } from "../components/dashboard/StatsCard";
 //import { QuickActions } from "../components/dashboard/QuickActions";
 import { TodaySchedule } from "../components/dashboard/TodaySchedule";
@@ -12,7 +12,7 @@ import { FileText, Users, CheckCircle2, AlertTriangle } from "lucide-react";
 const Home = () => {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-amber-50">
-      <DashboardSidebar />
+      {/*<DashboardSidebar />*/}
 
       <div className="flex-1 flex flex-col">
         <DashboardHeader />

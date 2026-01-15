@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { ReferencedByField } from "@/components/common/ReferencedByField";
 import {
   Select,
   SelectContent,
@@ -137,6 +138,8 @@ export default function NewsIntelligenceCreate() {
                   <Input placeholder="Newspaper / Social Media link / Informant name" />
                 </div>
               </section>
+              <ReferencedByField placeholder="Eg: Reporter, Informant, Party Worker" />
+
 
               {/* Upload */}
               <section className="space-y-4">
