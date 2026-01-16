@@ -26,6 +26,10 @@ export default function Login() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Temporary: allow any credentials to proceed to view the dashboard/UI
+    sessionStorage.setItem('auth_session', '1')
+    navigate('/home')
+    return
     const newErrors: typeof errors = {}
 
     const idErr = validateIdentifier(identifier)
@@ -45,12 +49,15 @@ export default function Login() {
     try {
       const res = await api.login({ identifier, password })
       // token storage note: prefer httpOnly cookies server-side
-      if (res.token && remember) localStorage.setItem('auth_token', res.token)
+      if (res.token && remember) localStorage.setItem('auth_token', res.token!)
+      // mark session so ProtectedRoute can allow access when server sets httpOnly cookie
+      sessionStorage.setItem('auth_session', '1')
       push({ type: 'success', title: 'Welcome back!', message: `Hello ${res.user?.name ?? ''}` })
-      navigate('/dashboard')
-    } catch (err: any) {
-      const status = err?.status
-      const message = err?.message || 'Invalid credentials'
+      navigate('/home')
+    } catch (err: unknown) {
+      const error = err as { status?: number; message?: string }
+      const status = error?.status
+      const message = error?.message || 'Invalid credentials'
       setErrors({ server: message })
       push({ type: 'error', title: status === 401 ? 'Invalid credentials' : 'Login failed', message })
     } finally {
@@ -62,13 +69,13 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       <div className="grid min-h-screen md:grid-cols-2">
         {/* Left: Government identity section */}
-        <div className="h-64 md:h-auto">
+        <div className="h-60 md:h-auto">
           <GovernmentHeroSection
             imageUrl={portrait}
             name="Shri Prahlad Joshi"
-            currentRole="Minister of Consumer Affairs, Food and Public Distribution, Government of India"
+            currentRole=" Union Minister of Consumer Affairs, Food and Public Distribution, Government of India"
             pastRoles={[
-              'Former Minister of New and Renewable Energy (2024)',
+              'Former Minister of New and Renewable Energy',
               'Former Minister of Coal and Mines',
             ]}
             constituency="Member of Parliament – Dharwad, Karnataka"

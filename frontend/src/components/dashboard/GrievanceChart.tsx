@@ -1,0 +1,56 @@
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+
+const data = [
+  { name: "Resolved", value: 65, color: "hsl(var(--primary))" },
+  { name: "In Progress", value: 25, color: "hsl(var(--secondary))" },
+  { name: "Pending", value: 10, color: "hsl(var(--accent-foreground))" },
+];
+
+export function GrievanceChart() {
+  return (
+    <Card className="shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg font-semibold">Grievance Status</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {/* CSS pie chart using conic-gradient to avoid external deps */}
+        <div className="h-[220px] flex items-center justify-center">
+          {(() => {
+            //const total = data.reduce((s, d) => s + d.value, 0)
+            const stops = data
+              .reduce((result, d, index) => {
+                const acc = data.slice(0, index).reduce((s, item) => s + item.value, 0)
+                const start = (acc / 100) * 360
+                const end = ((acc + d.value) / 100) * 360
+                result.push(`${d.color} ${start}deg ${end}deg`)
+                return result
+              }, [] as string[])
+              .join(", ")
+            return (
+              <div className="relative">
+                <div
+                  className="h-40 w-40 rounded-full"
+                  style={{ background: `conic-gradient(${stops})` }}
+                />
+                <div className="absolute inset-4 rounded-full bg-card" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-2xl font-bold">100%</span>
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          {data.map((item) => (
+            <div key={item.name} className="p-2 rounded-lg bg-muted/50">
+              <p className="text-2xl font-bold" style={{ color: item.color }}>
+                {item.value}%
+              </p>
+              <p className="text-xs text-muted-foreground">{item.name}</p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

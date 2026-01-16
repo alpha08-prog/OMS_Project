@@ -1,17 +1,109 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Base theme tokens and minimal resets without Tailwind/PostCSS directives to avoid IDE CSS warnings */
+ :root {
+    /* Neutrals */
+    --background: 0 0% 100%;
+    --foreground: 222.2 47.4% 11.2%;
 
-html {
-  @apply h-full;
-}
-body {
-  @apply h-full antialiased bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
-}
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-a { @apply text-primary-600 hover:underline; }
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
 
-/* Focus styles for accessibility */
-:where(button, a, input, textarea, select) {
-  @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900;
-}
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 47.4% 11.2%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+
+    /* Saffron primary */
+    --primary: 30 100% 60%; /* #FF9933 */
+    --primary-foreground: 0 0% 100%;
+
+    /* Indigo secondary */
+    --secondary: 231 48% 48%; /* #3F51B5 */
+    --secondary-foreground: 0 0% 100%;
+
+    /* Accent (indigo tint) */
+    --accent: 231 100% 96%;
+    --accent-foreground: 231 48% 35%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --ring: 30 100% 60%;
+    --radius: 0.5rem;
+
+    /* Sidebar tokens */
+    --sidebar: 231 100% 98%; /* very light indigo tint */
+    --sidebar-foreground: 231 48% 25%;
+    --sidebar-accent: 30 100% 90%; /* soft saffron hover */
+    --sidebar-accent-foreground: 30 100% 25%;
+    --sidebar-border: 231 40% 90%;
+    --sidebar-ring: 30 100% 60%;
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 213 31% 91%;
+
+    --muted: 223 47% 11%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --popover: 224 71% 4%;
+    --popover-foreground: 213 31% 91%;
+
+    --card: 224 71% 4%;
+    --card-foreground: 213 31% 91%;
+
+    --border: 216 34% 17%;
+    --input: 216 34% 17%;
+
+    /* Saffron primary (slightly brighter in dark) */
+    --primary: 30 100% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Indigo secondary */
+    --secondary: 231 45% 62%;
+    --secondary-foreground: 0 0% 100%;
+
+    --accent: 231 25% 18%;
+    --accent-foreground: 213 31% 91%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --ring: 30 100% 65%;
+
+    /* Sidebar tokens (dark) */
+    --sidebar: 231 25% 14%;
+    --sidebar-foreground: 213 31% 91%;
+    --sidebar-accent: 231 25% 22%;
+    --sidebar-accent-foreground: 213 31% 91%;
+    --sidebar-border: 231 20% 20%;
+    --sidebar-ring: 30 100% 65%;
+  }
+
+  html { height: 100%; }
+  body {
+    height: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  a {
+    color: hsl(var(--primary));
+    text-decoration: none;
+  }
+  a:hover { text-decoration: underline; }
+
+  /* Focus styles for accessibility */
+  :where(button, a, input, textarea, select) {
+    outline: none;
+  }
+  :where(button, a, input, textarea, select):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
