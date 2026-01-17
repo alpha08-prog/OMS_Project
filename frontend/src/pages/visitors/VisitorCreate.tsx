@@ -98,7 +98,7 @@ export default function VisitorCreate() {
 
                 <div>
                   <Label>
-                    Purpose <span className="text-red-500">*</span>
+                    Purpose
                   </Label>
                   <Textarea
                     placeholder="Enter purpose of visit"
