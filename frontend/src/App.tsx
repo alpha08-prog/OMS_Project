@@ -13,6 +13,9 @@ import TourProgramCreate from "./pages/Tour/TourProgramCreate";
 import NewsIntelligenceCreate from "./pages/News/NewsIntelligenceCreate";
 import StaffHome from "./pages/staff/StaffHome";
 import AdminHome from "./pages/admin/AdminHome";  
+import GrievanceVerification from "./pages/admin/GrievienceVerification";
+import TrainEQQueue from "./pages/admin/TrainEQQueue";
+import PrintCenter from "./pages/admin/PrintCenter";
 
 export default function App() {
   return (
@@ -36,7 +39,12 @@ export default function App() {
       />
        <Route path="/staff/home" element={<StaffHome />} />
       <Route path="/admin/home" element={<AdminHome />} />
-
+      <Route path="/grievances/verify" element={<GrievanceVerification />} />
+      <Route path="/train-eq/queue" element={<TrainEQQueue />}/>
+      <Route
+  path="/admin/print-center"
+  element={<PrintCenter />}
+/>
 
       <Route
         path="/grievances/new"

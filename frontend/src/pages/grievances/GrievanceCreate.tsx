@@ -16,6 +16,7 @@ export default function GrievanceCreate() {
   return (
     <div className="w-full min-h-screen bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
       <div className="max-w-7xl mx-auto space-y-6">
+
         {/* Page Header */}
         <div>
           <h1 className="text-2xl font-semibold text-indigo-900">
@@ -33,8 +34,10 @@ export default function GrievanceCreate() {
           </CardHeader>
 
           <CardContent className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+
             {/* LEFT COLUMN */}
             <div className="xl:col-span-2 space-y-8">
+
               {/* Petitioner Info */}
               <section className="space-y-4">
                 <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
@@ -66,10 +69,7 @@ export default function GrievanceCreate() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>
-                      Constituency / Ward{" "}
-                      <span className="text-red-500">*</span>
-                    </Label>
+                    <Label>Constituency / Ward</Label>
                     <Select>
                       <SelectTrigger>
                         <SelectValue placeholder="Select constituency" />
@@ -84,9 +84,7 @@ export default function GrievanceCreate() {
                   </div>
 
                   <div>
-                    <Label>
-                      Grievance Type <span className="text-red-500">*</span>
-                    </Label>
+                    <Label>Grievance Type</Label>
                     <Select>
                       <SelectTrigger>
                         <SelectValue placeholder="Select grievance type" />
@@ -104,9 +102,7 @@ export default function GrievanceCreate() {
                 </div>
 
                 <div>
-                  <Label>
-                    Description <span className="text-red-500">*</span>
-                  </Label>
+                  <Label>Description</Label>
                   <Textarea
                     placeholder="Enter detailed description of the grievance"
                     className="min-h-[140px]"
@@ -114,9 +110,7 @@ export default function GrievanceCreate() {
                 </div>
 
                 <div>
-                  <Label>
-                    Monetary Value (₹) <span className="text-red-500">*</span>
-                  </Label>
+                  <Label>Monetary Value (₹)</Label>
                   <Input placeholder="Estimated cost / aid amount" />
                   <p className="text-xs text-muted-foreground mt-1">
                     Monetised value of work or aid requested
@@ -169,43 +163,47 @@ export default function GrievanceCreate() {
             </div>
 
             {/* RIGHT COLUMN */}
-            <section className="space-y-4">
-              <h3 className="font-medium text-indigo-800">
-                Reference Information
-              </h3>
+            <div className="space-y-6">
 
-              <ReferencedByField />
-            </section>
-            <div className="space-y-6 bg-indigo-50/60 rounded-xl p-5 border border-indigo-100">
+              {/* Reference */}
               <section className="space-y-4">
-                <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
-                  Ticket Status
+                <h3 className="font-medium text-indigo-800">
+                  Reference Information
                 </h3>
-
-                <Label>
-                  Status <span className="text-red-500">*</span>
-                </Label>
-                <Select defaultValue="open">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="progress">In Progress</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                  </SelectContent>
-                </Select>
+                <ReferencedByField />
               </section>
 
-              <div className="border-t pt-4 space-y-3">
-                <Button variant="outline" className="w-full">
-                  Cancel
-                </Button>
-                <Button className="w-full bg-saffron text-black hover:bg-amber-600">
-                  Register Grievance
-                </Button>
+              {/* Status + Actions */}
+              <div className="space-y-6 bg-indigo-50/60 rounded-xl p-5 border border-indigo-100">
+
+                {/* Ticket Status (READ ONLY) */}
+                <section className="space-y-2">
+                  <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
+                    Ticket Status
+                  </h3>
+
+                  <div className="inline-flex items-center px-4 py-2 rounded-lg bg-green-100 text-green-800 text-sm font-semibold border border-green-200">
+                    OPEN
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    Status is automatically set and managed by Admin
+                  </p>
+                </section>
+
+                {/* Actions */}
+                <div className="border-t pt-4 space-y-3">
+                  <Button variant="outline" className="w-full">
+                    Cancel
+                  </Button>
+                  <Button className="w-full bg-saffron text-black hover:bg-amber-600">
+                    Register Grievance
+                  </Button>
+                </div>
+
               </div>
             </div>
+
           </CardContent>
         </Card>
       </div>

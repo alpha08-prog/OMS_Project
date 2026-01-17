@@ -11,7 +11,7 @@ export function ReferencedByField({
   return (
     <div className="space-y-1">
       <Label>
-        Referenced By
+        Referenced By <span className="text-red-500">*</span>
         <span className="ml-1 text-xs text-muted-foreground">
           (Mandatory)
         </span>

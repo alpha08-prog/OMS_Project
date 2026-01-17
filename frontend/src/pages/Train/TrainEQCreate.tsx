@@ -76,7 +76,7 @@ export default function TrainEQCreate() {
 
                 <div>
                   <Label>
-                    Train No. & Name <span className="text-red-500">*</span>
+                    Train No. & Name
                   </Label>
                   <Input
                     placeholder="Auto-filled from Railway database"
@@ -90,14 +90,14 @@ export default function TrainEQCreate() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>
-                      Date of Journey <span className="text-red-500">*</span>
+                      Date of Journey
                     </Label>
                     <Input type="date" />
                   </div>
 
                   <div>
                     <Label>
-                      Class <span className="text-red-500">*</span>
+                      Class
                     </Label>
                     <Select>
                       <SelectTrigger>
@@ -115,7 +115,7 @@ export default function TrainEQCreate() {
 
                 <div>
                   <Label>
-                    Route <span className="text-red-500">*</span>
+                    Route
                   </Label>
                   <Input placeholder="From [Station] to [Station]" />
                 </div>
@@ -134,7 +134,7 @@ export default function TrainEQCreate() {
                   <Checkbox id="digital-sign" />
                   <div className="text-sm">
                     <Label htmlFor="digital-sign">
-                      Attach Digital Signature
+                      Attach Digital Signature<span className="text-red-500">*</span>
                     </Label>
                     <p className="text-xs text-muted-foreground">
                       Appends Minister’s stored digital signature to the PDF
