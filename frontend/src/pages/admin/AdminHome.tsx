@@ -23,7 +23,7 @@ export default function AdminHome() {
       try {
         const user = JSON.parse(userStr);
         setUserName(user.name || "Admin");
-      } catch (e) {
+      } catch {
         // ignore parse errors
       }
     }

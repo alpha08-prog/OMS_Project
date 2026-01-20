@@ -30,8 +30,8 @@ export default function TourProgramQueue() {
     try {
       const res = await tourProgramApi.getPending();
       setPrograms(res.data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load tour programs");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load tour programs");
     } finally {
       setLoading(false);
     }
@@ -49,8 +49,8 @@ export default function TourProgramQueue() {
       setPrograms((prev) => prev.filter((p) => p.id !== id));
       setDetailsOpen(false);
       setDecisionNote("");
-    } catch (err: any) {
-      setError(err.message || "Failed to update decision");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to update decision");
     } finally {
       setActionLoading(null);
     }

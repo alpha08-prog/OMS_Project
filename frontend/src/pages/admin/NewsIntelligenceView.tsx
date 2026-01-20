@@ -49,8 +49,9 @@ export default function NewsIntelligenceView() {
       }
       const res = await newsApi.getAll(params);
       setNews(res.data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load news");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to load news");
     } finally {
       setLoading(false);
     }
@@ -71,8 +72,9 @@ export default function NewsIntelligenceView() {
     try {
       await newsApi.delete(id);
       setNews(prev => prev.filter(n => n.id !== id));
-    } catch (err: any) {
-      setError(err.message || "Failed to delete news");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to delete news");
     }
   };
 

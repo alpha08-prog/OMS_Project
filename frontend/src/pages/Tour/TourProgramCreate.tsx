@@ -72,8 +72,8 @@ export default function TourProgramCreate() {
       setTimeout(() => {
         navigate("/staff/home");
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Failed to create tour program");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create tour program");
     } finally {
       setLoading(false);
     }

@@ -28,8 +28,9 @@ export default function TrainEQQueue() {
     try {
       const res = await trainRequestApi.getAll({ status: 'PENDING' });
       setRequests(res.data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load train requests");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to load train requests";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -45,8 +46,9 @@ export default function TrainEQQueue() {
       await trainRequestApi.approve(id);
       // Remove from list after approval
       setRequests((prev) => prev.filter((r) => r.id !== id));
-    } catch (err: any) {
-      setError(err.message || "Failed to approve request");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to approve request";
+      setError(errorMessage);
     } finally {
       setActionLoading(null);
     }
@@ -58,8 +60,9 @@ export default function TrainEQQueue() {
       await trainRequestApi.reject(id);
       // Remove from list after rejection
       setRequests((prev) => prev.filter((r) => r.id !== id));
-    } catch (err: any) {
-      setError(err.message || "Failed to reject request");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to reject request";
+      setError(errorMessage);
     } finally {
       setActionLoading(null);
     }
@@ -72,8 +75,9 @@ export default function TrainEQQueue() {
       const html = await pdfApi.previewTrainEQLetter(id);
       setPreviewContent(html as string);
       setPreviewOpen(true);
-    } catch (err: any) {
-      setError(err.message || "Failed to load preview");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to load preview";
+      setError(errorMessage);
     } finally {
       setPreviewLoading(false);
     }
@@ -82,8 +86,9 @@ export default function TrainEQQueue() {
   const handleDownloadPDF = async (id: string) => {
     try {
       await pdfApi.downloadPDF(`/pdf/train-eq/${id}`, `TrainEQ_Letter_${id}.pdf`);
-    } catch (err: any) {
-      setError(err.message || "Failed to download PDF");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to download PDF";
+      setError(errorMessage);
     }
   };
 

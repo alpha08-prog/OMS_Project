@@ -76,7 +76,7 @@ export default function TrainEQCreate() {
         return date.toISOString().split('T')[0]; // Return YYYY-MM-DD format
       }
       // Try DD-MM-YYYY format
-      const parts = dateStr.split(/[-\/]/);
+      const parts = dateStr.split(/[-/]/);
       if (parts.length === 3) {
         const [day, month, year] = parts;
         return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
@@ -127,7 +127,7 @@ export default function TrainEQCreate() {
       if (pnrData.isMock) {
         setError("Using mock data - API key not configured");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('PNR fetch error:', err);
       setError("Could not fetch PNR details. Please enter manually.");
     } finally {
@@ -185,8 +185,9 @@ export default function TrainEQCreate() {
       setTimeout(() => {
         navigate("/staff/home");
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Failed to create train request");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to create train request";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

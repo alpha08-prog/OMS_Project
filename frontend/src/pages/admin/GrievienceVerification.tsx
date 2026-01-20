@@ -28,8 +28,9 @@ export default function GrievanceVerification() {
       const res = await grievanceApi.getAll({ status: 'OPEN' });
       // Filter to show only unverified grievances
       setGrievances(res.data.filter((g: Grievance) => !g.isVerified));
-    } catch (err: any) {
-      setError(err.message || "Failed to load grievances");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to load grievances";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -45,8 +46,9 @@ export default function GrievanceVerification() {
       await grievanceApi.verify(id);
       // Remove from list after verification
       setGrievances((prev) => prev.filter((g) => g.id !== id));
-    } catch (err: any) {
-      setError(err.message || "Failed to verify grievance");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to verify grievance";
+      setError(errorMessage);
     } finally {
       setActionLoading(null);
     }
@@ -58,8 +60,9 @@ export default function GrievanceVerification() {
       await grievanceApi.updateStatus(id, 'REJECTED');
       // Remove from list after rejection
       setGrievances((prev) => prev.filter((g) => g.id !== id));
-    } catch (err: any) {
-      setError(err.message || "Failed to reject grievance");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to reject grievance";
+      setError(errorMessage);
     } finally {
       setActionLoading(null);
     }
@@ -68,8 +71,9 @@ export default function GrievanceVerification() {
   const handleDownloadPDF = async (id: string) => {
     try {
       await pdfApi.downloadPDF(`/pdf/grievance/${id}`, `Grievance_Letter_${id}.pdf`);
-    } catch (err: any) {
-      setError(err.message || "Failed to download PDF");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to download PDF";
+      setError(errorMessage);
     }
   };
 
