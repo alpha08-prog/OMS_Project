@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   FileText,
   Train,
@@ -9,9 +10,79 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { grievanceApi, visitorApi, trainRequestApi, type Grievance, type Visitor, type TrainRequest } from "@/lib/api";
+
+type RecentEntry = {
+  type: string;
+  title: string;
+  date: string;
+};
 
 export default function StaffHome() {
   const navigate = useNavigate();
+  const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState("Staff Member");
+
+  useEffect(() => {
+    // Get user name from localStorage
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        setUserName(user.name || "Staff Member");
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+
+    // Fetch recent entries
+    const fetchRecentEntries = async () => {
+      try {
+        const entries: RecentEntry[] = [];
+        
+        // Fetch recent grievances
+        const grievancesRes = await grievanceApi.getAll({ limit: '3' });
+        grievancesRes.data.forEach((g: Grievance) => {
+          entries.push({
+            type: 'Grievance',
+            title: `${g.grievanceType} - ${g.petitionerName}`,
+            date: new Date(g.createdAt).toLocaleDateString(),
+          });
+        });
+
+        // Fetch recent visitors
+        const visitorsRes = await visitorApi.getAll({ limit: '3' });
+        visitorsRes.data.forEach((v: Visitor) => {
+          entries.push({
+            type: 'Visitor',
+            title: `${v.designation} - ${v.name}`,
+            date: new Date(v.createdAt).toLocaleDateString(),
+          });
+        });
+
+        // Fetch recent train requests
+        const trainRes = await trainRequestApi.getAll({ limit: '3' });
+        trainRes.data.forEach((t: TrainRequest) => {
+          entries.push({
+            type: 'Train EQ',
+            title: `PNR ${t.pnrNumber}`,
+            date: new Date(t.createdAt).toLocaleDateString(),
+          });
+        });
+
+        // Sort by date and take top 5
+        entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setRecentEntries(entries.slice(0, 5));
+      } catch (error) {
+        console.error('Failed to fetch recent entries:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRecentEntries();
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -27,7 +98,7 @@ export default function StaffHome() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-semibold text-indigo-900">
-                  Welcome, Staff Member
+                  Welcome, {userName}
                 </h1>
                 <p className="text-sm text-muted-foreground">
                   Data Entry Portal
@@ -108,7 +179,7 @@ export default function StaffHome() {
             <Card className="rounded-2xl shadow-sm border border-indigo-100">
               <CardHeader>
                 <CardTitle className="text-lg">
-                  Today’s Work
+                  Today's Work
                 </CardTitle>
               </CardHeader>
 
@@ -128,20 +199,18 @@ export default function StaffHome() {
               </CardHeader>
 
               <CardContent className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span>Grievance – Water Supply</span>
-                  <span className="text-muted-foreground">Today</span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span>Visitor – Party Worker</span>
-                  <span className="text-muted-foreground">Today</span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span>Train EQ – PNR Entry</span>
-                  <span className="text-muted-foreground">Yesterday</span>
-                </div>
+                {loading ? (
+                  <p className="text-muted-foreground">Loading recent entries...</p>
+                ) : recentEntries.length > 0 ? (
+                  recentEntries.map((entry, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <span>{entry.type} – {entry.title}</span>
+                      <span className="text-muted-foreground">{entry.date}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-muted-foreground">No recent entries found. Start by creating a new entry above!</p>
+                )}
               </CardContent>
             </Card>
 

@@ -10,33 +10,92 @@ import {
   LogOut,
   ChevronLeft,
   Building2,
+  CheckCircle,
+  Printer,
+  ClipboardList,
+  Cake,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { cn } from "../../lib/utils";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", route: "/home" },
+type MenuItem = {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  route: string;
+  roles?: string[];  // If specified, only show for these roles
+};
 
-  // Core Citizen / Public Services
-  { icon: FileText, label: "Grievances", route: "/grievances/new" },
-  { icon: Users, label: "Visitors", route: "/visitors/new" },
+const allMenuItems: MenuItem[] = [
+  // Dashboard - route based on role
+  { icon: LayoutDashboard, label: "Dashboard", route: "/home", roles: ['SUPER_ADMIN'] },
+  { icon: LayoutDashboard, label: "Dashboard", route: "/admin/home", roles: ['ADMIN'] },
+  { icon: LayoutDashboard, label: "Dashboard", route: "/staff/home", roles: ['STAFF'] },
 
-  // Office Operations
-  { icon: Train, label: "Train EQ", route: "/train-eq/new" },
-  { icon: Calendar, label: "Tour Program", route: "/tour-program/new" },
-  
+  // Staff - Data Entry
+  { icon: FileText, label: "New Grievance", route: "/grievances/new", roles: ['STAFF'] },
+  { icon: Users, label: "Log Visitor", route: "/visitors/new", roles: ['STAFF'] },
+  { icon: Cake, label: "Add Birthday", route: "/birthday/new", roles: ['STAFF'] },
+  { icon: Train, label: "Train EQ Request", route: "/train-eq/new", roles: ['STAFF'] },
+  { icon: Calendar, label: "Add Invitation", route: "/tour-program/new", roles: ['STAFF'] },
+  { icon: Newspaper, label: "Add News", route: "/news-intelligence/new", roles: ['STAFF'] },
 
-  // Intelligence & Admin
-  { icon: Newspaper, label: "News & Intelligence", route: "/news-intelligence/new" },
+  // Admin - Verification Queues
+  { icon: CheckCircle, label: "Verify Grievances", route: "/grievances/verify", roles: ['ADMIN'] },
+  { icon: Train, label: "Train EQ Queue", route: "/train-eq/queue", roles: ['ADMIN'] },
+  { icon: ClipboardList, label: "Tour Invitations", route: "/tour-program/pending", roles: ['ADMIN'] },
+  { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['ADMIN'] },
+  { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
+
+  // Super Admin - Overview
+  { icon: FileText, label: "All Grievances", route: "/grievances/new", roles: ['SUPER_ADMIN'] },
+  { icon: Calendar, label: "Tour Program", route: "/tour-program/new", roles: ['SUPER_ADMIN'] },
+  { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['SUPER_ADMIN'] },
+
+  // Common
   { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
   { icon: Settings, label: "Settings", route: "/settings" },
-  
 ];
 
 export function DashboardSidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Get user role from localStorage (try direct key first, then from user object)
+    let role = localStorage.getItem('user_role');
+    if (!role) {
+      // Fallback: try to get from user object
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          role = user.role;
+          // Also set it directly for future use
+          if (role) localStorage.setItem('user_role', role);
+        } catch (e) {
+          console.error('Failed to parse user from localStorage');
+        }
+      }
+    }
+    setUserRole(role);
+    console.log('User role:', role); // Debug log
+  }, []);
+
+  // Filter menu items based on user role
+  const menuItems = allMenuItems.filter(item => {
+    if (!item.roles) return true;  // Show items without role restriction
+    if (!userRole) return false;
+    return item.roles.includes(userRole);
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('user_name');
+    navigate('/auth/login');
+  };
 
   return (
     <aside
@@ -89,7 +148,7 @@ export function DashboardSidebar() {
       {/* Footer */}
       <div className="p-3 border-t border-indigo-800">
         <button
-          onClick={() => navigate("/auth/login")}
+          onClick={handleLogout}
           className={cn(
             "w-full h-11 flex items-center gap-3 rounded-xl px-3",
             "text-indigo-300 hover:text-red-400",

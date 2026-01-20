@@ -1,12 +1,58 @@
+import { useEffect, useState } from "react";
 import { FileCheck, Printer, Train, ClipboardList } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { BirthdayWidget } from "@/components/dashboard/BirthdayWidget";
+import { grievanceApi, trainRequestApi, tourProgramApi, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
 
 export default function AdminHome() {
   const navigate = useNavigate();
+  const [pendingGrievances, setPendingGrievances] = useState<Grievance[]>([]);
+  const [pendingTrainRequests, setPendingTrainRequests] = useState<TrainRequest[]>([]);
+  const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState("Admin");
+
+  useEffect(() => {
+    // Get user name from localStorage
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        setUserName(user.name || "Admin");
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+
+    // Fetch pending items
+    const fetchPendingItems = async () => {
+      try {
+        // Fetch unverified grievances
+        const grievancesRes = await grievanceApi.getAll({ status: 'OPEN', limit: '5' });
+        setPendingGrievances(grievancesRes.data.filter((g: Grievance) => !g.isVerified));
+
+        // Fetch pending train requests
+        const trainRes = await trainRequestApi.getAll({ status: 'PENDING', limit: '5' });
+        setPendingTrainRequests(trainRes.data);
+
+        // Fetch pending tour programs
+        const tourRes = await tourProgramApi.getAll({ decision: 'PENDING', limit: '5' });
+        setPendingTourPrograms(tourRes.data);
+      } catch (error) {
+        console.error('Failed to fetch pending items:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPendingItems();
+  }, []);
+
+  const totalPending = pendingGrievances.length + pendingTrainRequests.length + pendingTourPrograms.length;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -21,7 +67,7 @@ export default function AdminHome() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-semibold text-indigo-900">
-                  Admin Dashboard
+                  Welcome, {userName}
                 </h1>
                 <p className="text-sm text-muted-foreground">
                   Verification & Letter Management
@@ -40,7 +86,7 @@ export default function AdminHome() {
                   <FileCheck className="h-6 w-6 text-indigo-700" />
                   <h3 className="font-semibold">Verify Grievances</h3>
                   <p className="text-sm text-muted-foreground">
-                    Review and approve grievances
+                    {pendingGrievances.length} pending verification
                   </p>
                   <Button
                     size="sm"
@@ -74,7 +120,7 @@ export default function AdminHome() {
                   <Train className="h-6 w-6 text-indigo-700" />
                   <h3 className="font-semibold">Train EQ Letters</h3>
                   <p className="text-sm text-muted-foreground">
-                    Review & issue emergency quota letters
+                    {pendingTrainRequests.length} pending approval
                   </p>
                   <Button
                     size="sm"
@@ -89,78 +135,91 @@ export default function AdminHome() {
               <Card className="rounded-2xl border border-indigo-100">
                 <CardContent className="p-5 space-y-3">
                   <ClipboardList className="h-6 w-6 text-indigo-700" />
-                  <h3 className="font-semibold">Assign Tasks</h3>
+                  <h3 className="font-semibold">Tour Decisions</h3>
                   <p className="text-sm text-muted-foreground">
-                    Forward work to departments
+                    {pendingTourPrograms.length} pending decisions
                   </p>
                   <Button
                     size="sm"
-                    onClick={() => navigate("/tasks")}
+                    onClick={() => navigate("/tour-program/pending")}
                     className="w-full"
                   >
-                    Task Board
+                    Review
                   </Button>
                 </CardContent>
               </Card>
             </div>
 
-            {/* PENDING APPROVALS */}
-            <Card className="rounded-2xl shadow-sm border border-indigo-100">
-              <CardHeader className="flex-row items-center justify-between">
-                <CardTitle className="text-lg">Pending Approvals</CardTitle>
-                <Badge variant="destructive">5 Pending</Badge>
-              </CardHeader>
+            {/* PENDING APPROVALS + BIRTHDAY WIDGET */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <Card className="rounded-2xl shadow-sm border border-indigo-100 h-full">
+                  <CardHeader className="flex-row items-center justify-between">
+                    <CardTitle className="text-lg">Pending Approvals</CardTitle>
+                    <Badge variant={totalPending > 0 ? "destructive" : "secondary"}>
+                      {totalPending} Pending
+                    </Badge>
+                  </CardHeader>
 
-              <CardContent className="space-y-4 text-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Grievance – Road Repair</p>
-                    <p className="text-muted-foreground">
-                      Submitted by Staff • Today
-                    </p>
-                  </div>
-                  <Button size="sm" variant="outline">
-                    Review
-                  </Button>
-                </div>
+                  <CardContent className="space-y-4 text-sm">
+                    {loading ? (
+                      <p className="text-muted-foreground">Loading pending items...</p>
+                    ) : totalPending === 0 ? (
+                      <p className="text-muted-foreground">All caught up! No pending approvals.</p>
+                    ) : (
+                      <>
+                        {pendingGrievances.slice(0, 3).map((g) => (
+                          <div key={g.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">Grievance – {g.grievanceType}</p>
+                              <p className="text-muted-foreground">
+                                {g.petitionerName} • {new Date(g.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <Button size="sm" variant="outline" onClick={() => navigate(`/grievances/verify`)}>
+                              Review
+                            </Button>
+                          </div>
+                        ))}
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">
-                      Tour Invitation – School Event
-                    </p>
-                    <p className="text-muted-foreground">Decision Pending</p>
-                  </div>
-                  <Button size="sm" variant="outline">
-                    Decide
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                        {pendingTrainRequests.slice(0, 2).map((t) => (
+                          <div key={t.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">Train EQ – {t.passengerName}</p>
+                              <p className="text-muted-foreground">
+                                PNR: {t.pnrNumber} • {new Date(t.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <Button size="sm" variant="outline" onClick={() => navigate(`/train-eq/queue`)}>
+                              Review
+                            </Button>
+                          </div>
+                        ))}
 
-            {/* RECENT ACTIVITY */}
-            <Card className="rounded-2xl shadow-sm border border-indigo-100">
-              <CardHeader>
-                <CardTitle className="text-lg">Recently Processed</CardTitle>
-              </CardHeader>
+                        {pendingTourPrograms.slice(0, 2).map((tour) => (
+                          <div key={tour.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">Tour – {tour.eventName}</p>
+                              <p className="text-muted-foreground">
+                                {tour.organizer} • Decision Pending
+                              </p>
+                            </div>
+                            <Button size="sm" variant="outline" onClick={() => navigate(`/tour-program/pending`)}>
+                              Decide
+                            </Button>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
 
-              <CardContent className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span>Train EQ Letter Generated</span>
-                  <span className="text-muted-foreground">Today</span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span>Grievance Approved – Water Supply</span>
-                  <span className="text-muted-foreground">Yesterday</span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span>Letter Printed – PWD</span>
-                  <span className="text-muted-foreground">Yesterday</span>
-                </div>
-              </CardContent>
-            </Card>
+              {/* Birthday Widget for Admin */}
+              <div>
+                <BirthdayWidget />
+              </div>
+            </div>
           </div>
         </div>
       </main>

@@ -1,16 +1,78 @@
-import { Bell, Search, Sun, Cloud } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Bell, Search, Sun, Cloud, LogOut } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
+
+type User = {
+  name: string;
+  email: string;
+  role: string;
+};
 
 export function DashboardHeader() {
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        setUser(JSON.parse(userStr));
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, []);
+
   const currentDate = new Date().toLocaleDateString("en-IN", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
   });
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case 'SUPER_ADMIN': return 'Super Administrator';
+      case 'ADMIN': return 'Administrator';
+      case 'STAFF': return 'Staff Member';
+      default: return role;
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user');
+    sessionStorage.removeItem('auth_session');
+    navigate('/auth/login');
+  };
 
   return (
     <header className="
@@ -24,7 +86,7 @@ export function DashboardHeader() {
         {/* Left */}
         <div className="flex flex-col">
           <h1 className="text-xl font-semibold text-indigo-900 tracking-tight">
-            Good Morning, Admin
+            {getGreeting()}, {user?.name?.split(' ')[0] || 'User'}
           </h1>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <span>{currentDate}</span>
@@ -72,23 +134,39 @@ export function DashboardHeader() {
             </Badge>
           </Button>
 
-          {/* User */}
-          <div className="flex items-center gap-3 pl-4 border-l border-border">
-            <Avatar className="h-9 w-9 bg-gradient-to-br from-primary-600 to-primary-500">
-              <AvatarFallback className="text-white font-semibold text-sm">
-                AD
-              </AvatarFallback>
-            </Avatar>
+          {/* User Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div className="flex items-center gap-3 pl-4 border-l border-border cursor-pointer hover:opacity-80">
+                <Avatar className="h-9 w-9 bg-gradient-to-br from-indigo-600 to-indigo-500">
+                  <AvatarFallback className="text-white font-semibold text-sm">
+                    {user ? getInitials(user.name) : 'U'}
+                  </AvatarFallback>
+                </Avatar>
 
-            <div className="hidden lg:block leading-tight">
-              <p className="text-sm font-medium text-indigo-900">
-                Admin User
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Office Manager
-              </p>
-            </div>
-          </div>
+                <div className="hidden lg:block leading-tight">
+                  <p className="text-sm font-medium text-indigo-900">
+                    {user?.name || 'User'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {user ? getRoleLabel(user.role) : ''}
+                  </p>
+                </div>
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled>
+                <span className="text-xs text-muted-foreground">{user?.email}</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Log out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
         </div>
       </div>

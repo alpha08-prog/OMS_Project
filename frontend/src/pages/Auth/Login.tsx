@@ -5,9 +5,7 @@ import { PasswordInput } from '../../components/AuthForm/PasswordInput'
 import { Checkbox } from '../../components/AuthForm/Checkbox'
 import { Spinner } from '../../components/AuthForm/Spinner'
 import { useToast } from '../../components/AuthForm/Toast'
-import { api } from '../../lib/api'
-
-import { validateIdentifier, validatePassword } from '../../lib/validation'
+import { authApi } from '../../lib/api'
 import GovernmentHeroSection from '../../components/GovernmentHeroSection'
 import portrait from '../../assets/prahlad_joshi1.jpg'
 export default function Login() {
@@ -26,17 +24,16 @@ export default function Login() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Temporary: allow any credentials to proceed to view the dashboard/UI
-    sessionStorage.setItem('auth_session', '1')
-    navigate('/home')
-    return
     const newErrors: typeof errors = {}
 
-    const idErr = validateIdentifier(identifier)
-    if (idErr) newErrors.identifier = idErr
+    // Simple validation for login - just check fields are not empty
+    if (!identifier.trim()) {
+      newErrors.identifier = 'Email or Employee ID is required'
+    }
 
-    const pwdErr = validatePassword(password)
-    if (pwdErr) newErrors.password = pwdErr
+    if (!password) {
+      newErrors.password = 'Password is required'
+    }
 
     if (Object.keys(newErrors).length) {
       setErrors(newErrors)
@@ -47,13 +44,28 @@ export default function Login() {
     setErrors({})
 
     try {
-      const res = await api.login({ identifier, password })
-      // token storage note: prefer httpOnly cookies server-side
-      if (res.token && remember) localStorage.setItem('auth_token', res.token!)
-      // mark session so ProtectedRoute can allow access when server sets httpOnly cookie
+      const res = await authApi.login({ identifier, password })
+      // Store token for API calls
+      if (res.token) {
+        localStorage.setItem('auth_token', res.token)
+        if (remember) localStorage.setItem('remember_token', 'true')
+      }
+      // mark session so ProtectedRoute can allow access
       sessionStorage.setItem('auth_session', '1')
+      // Store user info
+      localStorage.setItem('user', JSON.stringify(res.user))
+      localStorage.setItem('user_role', res.user.role)  // Store role separately for sidebar
+      localStorage.setItem('user_name', res.user.name)  // Store name separately for header
       push({ type: 'success', title: 'Welcome back!', message: `Hello ${res.user?.name ?? ''}` })
-      navigate('/home')
+      
+      // Navigate based on role
+      if (res.user.role === 'STAFF') {
+        navigate('/staff/home')
+      } else if (res.user.role === 'ADMIN') {
+        navigate('/admin/home')
+      } else {
+        navigate('/home')
+      }
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string }
       const status = error?.status

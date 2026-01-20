@@ -6,7 +6,7 @@ import { Checkbox } from '../../components/AuthForm/Checkbox'
 import { PasswordStrengthMeter } from '../../components/AuthForm/PasswordStrengthMeter'
 import { Spinner } from '../../components/AuthForm/Spinner'
 import { useToast } from '../../components/AuthForm/Toast'
-import { api } from '../../lib/api'
+import { authApi } from '../../lib/api'
 import {
   validateEmail,
   validateFullName,
@@ -54,7 +54,7 @@ export default function Signup() {
     setErrors({})
 
     try {
-      const res = await api.signup({ name, email, phone, password })
+      const res = await authApi.register({ name, email, phone, password })
       push({ type: 'success', title: 'Account created', message: `Welcome, ${res.user.name}` })
       navigate('/auth/login')
     } catch (err: any) {
