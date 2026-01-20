@@ -1,0 +1,40 @@
+name: anki_clone
+description: A comprehensive Anki-like flashcard application
+
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP & API
+  http: ^1.1.0
+
+  # Secure Storage
+  flutter_secure_storage: ^9.0.0
+
+  # Image Picker
+  image_picker: ^1.0.4
+  google_fonts: ^6.2.1
+
+  # UI Icons
+  cupertino_icons: ^1.0.2
+  http_parser: ^4.0.2
+  mime: ^1.0.4
+  url_launcher: ^6.2.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
