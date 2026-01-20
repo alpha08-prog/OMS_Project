@@ -70,8 +70,9 @@ export default function BirthdayCreate() {
       setTimeout(() => {
         navigate("/staff/home");
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Failed to save birthday entry");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to save birthday entry";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

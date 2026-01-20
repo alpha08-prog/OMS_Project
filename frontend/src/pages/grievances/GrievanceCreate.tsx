@@ -88,8 +88,9 @@ export default function GrievanceCreate() {
       setTimeout(() => {
         navigate("/staff/home");
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Failed to create grievance");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error("Failed to create grievance");
+      setError(error.message || "Failed to create grievance");
     } finally {
       setLoading(false);
     }

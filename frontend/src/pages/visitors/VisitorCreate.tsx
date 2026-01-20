@@ -71,8 +71,9 @@ export default function VisitorCreate() {
       setTimeout(() => {
         navigate("/staff/home");
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Failed to log visitor");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err.message : "Failed to log visitor";
+      setError(error);
     } finally {
       setLoading(false);
     }

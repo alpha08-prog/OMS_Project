@@ -159,10 +159,7 @@ export default function Login() {
               </div>
             </form>
 
-            <p className="mt-4 text-sm text-gray-700">
-              Don&apos;t have an account?{' '}
-              <Link to="/auth/signup" className="text-amber-700 hover:underline">Create one</Link>
-            </p>
+            
           </div>
         </div>
       </div>

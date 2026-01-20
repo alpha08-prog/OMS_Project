@@ -82,8 +82,9 @@ export default function NewsIntelligenceCreate() {
       setTimeout(() => {
         navigate("/staff/home");
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Failed to save intelligence");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to save intelligence";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

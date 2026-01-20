@@ -31,7 +31,7 @@ export default function StaffHome() {
       try {
         const user = JSON.parse(userStr);
         setUserName(user.name || "Staff Member");
-      } catch (e) {
+      } catch {
         // ignore parse errors
       }
     }
