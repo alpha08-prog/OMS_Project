@@ -19,6 +19,7 @@ import TrainEQQueue from "./pages/admin/TrainEQQueue";
 import PrintCenter from "./pages/admin/PrintCenter";
 import TourProgramQueue from "./pages/admin/TourProgramQueue";
 import NewsIntelligenceView from "./pages/admin/NewsIntelligenceView";
+import AdminHistory from "./pages/admin/History";
 
 export default function App() {
   return (
@@ -151,6 +152,16 @@ export default function App() {
         element={
           <ProtectedRoute>
             <NewsIntelligenceView />
+          </ProtectedRoute>
+        }
+      />
+      
+      {/* History (Admin/Super Admin) */}
+      <Route
+        path="/admin/history"
+        element={
+          <ProtectedRoute>
+            <AdminHistory />
           </ProtectedRoute>
         }
       />

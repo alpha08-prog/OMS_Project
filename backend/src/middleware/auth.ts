@@ -8,6 +8,9 @@ import type { AuthenticatedRequest } from '../types';
 /**
  * Middleware to authenticate JWT token
  * Attaches user info to request object
+ * Supports token from:
+ * 1. Authorization header (Bearer token)
+ * 2. Query parameter (?token=xxx) - useful for PDF downloads
  */
 export async function authenticate(
   req: AuthenticatedRequest,
@@ -15,7 +18,13 @@ export async function authenticate(
   next: NextFunction
 ): Promise<void> {
   try {
-    const token = extractToken(req.headers.authorization);
+    // Try to get token from header first, then from query params
+    let token = extractToken(req.headers.authorization);
+    
+    // If no token in header, check query params (for PDF downloads in new tabs)
+    if (!token && req.query.token) {
+      token = String(req.query.token);
+    }
 
     if (!token) {
       sendUnauthorized(res, 'No token provided');

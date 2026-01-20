@@ -14,6 +14,7 @@ import {
   Printer,
   ClipboardList,
   Cake,
+  History,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -46,11 +47,13 @@ const allMenuItems: MenuItem[] = [
   { icon: ClipboardList, label: "Tour Invitations", route: "/tour-program/pending", roles: ['ADMIN'] },
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['ADMIN'] },
   { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
+  { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },
 
   // Super Admin - Overview
   { icon: FileText, label: "All Grievances", route: "/grievances/new", roles: ['SUPER_ADMIN'] },
   { icon: Calendar, label: "Tour Program", route: "/tour-program/new", roles: ['SUPER_ADMIN'] },
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['SUPER_ADMIN'] },
+  { icon: History, label: "Action History", route: "/admin/history", roles: ['SUPER_ADMIN'] },
 
   // Common
   { icon: Camera, label: "Photo Booth", route: "/photo-booth" },

@@ -193,6 +193,28 @@ export type CreateBirthdayRequest = {
   notes?: string
 }
 
+// History Types
+export type HistoryItemType = 'GRIEVANCE' | 'TRAIN_REQUEST' | 'TOUR_PROGRAM'
+
+export type HistoryItem = {
+  id: string
+  type: HistoryItemType
+  action: string
+  title: string
+  description: string
+  actionBy: { id: string; name: string; email: string } | null
+  actionAt: string
+  status: string
+  details: Record<string, any>
+}
+
+export type HistoryStats = {
+  grievances: { resolved: number; rejected: number; total: number }
+  trainRequests: { approved: number; rejected: number; total: number }
+  tourPrograms: { accepted: number; regret: number; total: number }
+  totalActions: number
+}
+
 // Stats Types
 export type DashboardStats = {
   grievances: {
@@ -618,13 +640,33 @@ export const birthdayApi = {
   },
 }
 
+// History API (Admin actions history)
+export const historyApi = {
+  getHistory: async (params?: { 
+    type?: HistoryItemType
+    action?: string
+    startDate?: string
+    endDate?: string
+    page?: number
+    limit?: number 
+  }) => {
+    const res = await http.get<ApiResponse<HistoryItem[]>>('/history', { params })
+    return res.data
+  },
+  
+  getStats: async () => {
+    const res = await http.get<ApiResponse<HistoryStats>>('/history/stats')
+    return res.data.data
+  },
+}
+
 // PDF Generation API
 export const pdfApi = {
-  // Download Train EQ Letter PDF
+  // Download Train EQ Letter PDF (opens in new tab)
   downloadTrainEQLetter: (id: string) => {
     const token = localStorage.getItem('auth_token')
-    const url = `${API_BASE_URL}/pdf/train-eq/${id}`
-    window.open(`${url}?token=${token}`, '_blank')
+    const url = `${API_BASE_URL}/pdf/train-eq/${id}?token=${token}`
+    window.open(url, '_blank')
   },
   
   // Preview Train EQ Letter (HTML)
@@ -633,11 +675,11 @@ export const pdfApi = {
     return res.data
   },
   
-  // Download Grievance Letter PDF
+  // Download Grievance Letter PDF (opens in new tab)
   downloadGrievanceLetter: (id: string) => {
     const token = localStorage.getItem('auth_token')
-    const url = `${API_BASE_URL}/pdf/grievance/${id}`
-    window.open(`${url}?token=${token}`, '_blank')
+    const url = `${API_BASE_URL}/pdf/grievance/${id}?token=${token}`
+    window.open(url, '_blank')
   },
   
   // Preview Grievance Letter (HTML)
@@ -646,7 +688,7 @@ export const pdfApi = {
     return res.data
   },
   
-  // Download Tour Program PDF
+  // Download Tour Program PDF (opens in new tab)
   downloadTourProgram: (startDate?: string, endDate?: string) => {
     const token = localStorage.getItem('auth_token')
     let url = `${API_BASE_URL}/pdf/tour-program?token=${token}`
@@ -655,7 +697,7 @@ export const pdfApi = {
     window.open(url, '_blank')
   },
   
-  // Generic PDF download helper
+  // Generic PDF download helper (uses axios with blob)
   downloadPDF: async (endpoint: string, filename: string) => {
     try {
       const res = await http.get(endpoint, { responseType: 'blob' })

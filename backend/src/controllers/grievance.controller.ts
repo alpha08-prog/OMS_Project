@@ -193,6 +193,7 @@ export async function updateGrievance(
 /**
  * Verify grievance (Admin only)
  * PATCH /api/grievances/:id/verify
+ * This also marks the grievance as RESOLVED
  */
 export async function verifyGrievance(
   req: AuthenticatedRequest,
@@ -210,9 +211,10 @@ export async function verifyGrievance(
       where: { id },
       data: {
         isVerified: true,
-        status: GrievanceStatus.VERIFIED,
+        status: GrievanceStatus.RESOLVED, // Mark as RESOLVED when verified
         verifiedById: req.user.id,
         verifiedAt: new Date(),
+        resolvedAt: new Date(), // Also set resolved timestamp
       },
       include: {
         createdBy: {
@@ -224,7 +226,7 @@ export async function verifyGrievance(
       },
     });
 
-    sendSuccess(res, grievance, 'Grievance verified successfully');
+    sendSuccess(res, grievance, 'Grievance verified and resolved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to verify grievance', error);
   }

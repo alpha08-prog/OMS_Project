@@ -195,14 +195,14 @@ export async function generateTourProgramPDFController(
     };
 
     if (startDate || endDate) {
-      where.eventDate = {};
-      if (startDate) where.eventDate.gte = new Date(startDate as string);
-      if (endDate) where.eventDate.lte = new Date(endDate as string);
+      where.dateTime = {};
+      if (startDate) where.dateTime.gte = new Date(startDate as string);
+      if (endDate) where.dateTime.lte = new Date(endDate as string);
     } else {
       // Default to next 7 days
       const today = new Date();
       const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-      where.eventDate = {
+      where.dateTime = {
         gte: today,
         lte: nextWeek,
       };
@@ -210,7 +210,7 @@ export async function generateTourProgramPDFController(
 
     const events = await prisma.tourProgram.findMany({
       where,
-      orderBy: { eventDate: 'asc' },
+      orderBy: { dateTime: 'asc' },
     });
 
     if (events.length === 0) {
@@ -230,7 +230,7 @@ export async function generateTourProgramPDFController(
       events.map((e) => ({
         eventName: e.eventName,
         organizer: e.organizer,
-        eventDate: e.eventDate.toISOString(),
+        eventDate: e.dateTime.toISOString(),
         venue: e.venue,
         decision: e.decision,
       })),

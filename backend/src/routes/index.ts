@@ -8,6 +8,7 @@ import tourProgramRoutes from './tourProgram.routes';
 import statsRoutes from './stats.routes';
 import pdfRoutes from './pdf.routes';
 import birthdayRoutes from './birthday.routes';
+import historyRoutes from './history.routes';
 
 const router = Router();
 
@@ -31,5 +32,6 @@ router.use('/tour-programs', tourProgramRoutes);
 router.use('/stats', statsRoutes);
 router.use('/pdf', pdfRoutes);
 router.use('/birthdays', birthdayRoutes);
+router.use('/history', historyRoutes);
 
 export default router;

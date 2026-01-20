@@ -49,8 +49,8 @@ export default function PrintCenter() {
     try {
       const items: PrintableItem[] = [];
 
-      // Fetch verified grievances
-      const grievanceRes = await grievanceApi.getAll({ status: 'VERIFIED' });
+      // Fetch resolved grievances (ready for printing)
+      const grievanceRes = await grievanceApi.getAll({ status: 'RESOLVED' });
       grievanceRes.data.forEach((g: Grievance) => {
         items.push({
           id: g.id,
