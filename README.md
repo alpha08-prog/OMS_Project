@@ -5,227 +5,170 @@
 
 ## 📌 Project Overview
 
-The **Office Management System (OMS)** is a role-based web application designed to digitize and streamline the daily operational workflows of a Minister/MLA office.
+The **Office Management System (OMS)** is a comprehensive, full-stack role-based web application designed to digitize and streamline the daily operational workflows of a Minister/MLA office. By integrating a modern frontend with a robust backend, the system ensures efficient data handling, secure access, and streamlined administrative processes.
 
-The system focuses on:
-- Efficient data entry by staff
-- Verification, printing, and task assignment by office managers
-- Monitoring, alerts, and oversight by senior authorities
-
-The project is currently implemented as a **frontend-first system**, with a strong emphasis on **UI/UX consistency, role-based access, and real-world administrative workflows**. Backend integration is planned as future work.
+**Key Objectives:**
+- **Efficient Data Entry:** Streamlined interfaces for staff to input grievances, visitor logs, and more.
+- **Verification & Oversight:** Tools for office managers to verify entries, generate letters, and assign tasks.
+- **Monitoring:** High-level dashboards for senior authorities to track performance and critical alerts.
+- **Workflow Automation:** Automated PDF generation, task assignment, and tracking.
 
 ---
 
 ## 🧱 Technology Stack
 
-### Frontend
-- **React (TypeScript)**
-- **React Router v6** – client-side routing
-- **Tailwind CSS** – utility-first styling
-- **shadcn/ui** – accessible UI components
-- **Lucide Icons** – icon set
+### 🎨 Frontend (User Interface)
+The frontend is built for performance, accessibility, and a premium user experience.
+- **Framework:** React 19 (TypeScript)
+- **Build Tool:** Vite
+- **Styling:** Tailwind CSS (Utility-first), Shadcn/UI (Components)
+- **Routing:** React Router v6
+- **State Management:** Zustand
+- **Icons:** Lucide React
+- **HTTP Client:** Axios
 
-### Styling & Design
-- Indigo–Saffron color palette (government-themed)
-- Gradient-based backgrounds
-- Card-based layout system
-- Responsive design (desktop-first, tablet-friendly)
-
----
-
-## 🧑‍💼 User Roles & Dashboards
-
-The application supports **three distinct user roles**, each with a dedicated dashboard and responsibilities.
-
-### 1️⃣ Staff (Data Entry Role)
-**Purpose:** Fast and accurate data entry
-
-**Dashboard Features:**
-- Quick Entry actions for:
-  - Grievances
-  - Visitor logging
-  - Train EQ requests
-  - Tour program entries
-  - News & intelligence entry
-- Today’s work checklist
-- Recently entered items (read-only)
-
-**Restrictions:**
-- No verification
-- No printing
-- No analytics access
+### ⚙️ Backend (API & Logic)
+The backend provides a secure and scalable API to handle business logic and data persistence.
+- **Runtime:** Node.js (TypeScript)
+- **Framework:** Express.js
+- **Database:** PostgreSQL
+- **ORM:** Prisma
+- **Authentication:** JWT (JSON Web Tokens)
+- **PDF Generation:** PDFKit
+- **External APIs:** RapidAPI (IRCTC PNR Status)
 
 ---
 
-### 2️⃣ Admin (Manager Role)
-**Purpose:** Verification, printing, and task coordination
+## 📂 Project Structure
 
-**Dashboard Features:**
-- Verification queues for grievances and requests
-- Letter generation and print center
-- Train EQ approval workflow
-- Task assignment to departments
-- View pending approvals
-- View recently processed entries
-
-**Restrictions:**
-- No raw data entry
-- No high-level political analytics
+```bash
+OMS_Project/
+├── frontend/             # React Client Application
+│   ├── src/
+│   │   ├── components/   # UI & Layout components
+│   │   ├── pages/        # Route pages (Admin, Staff, etc.)
+│   │   ├── lib/          # Utilities & helpers
+│   │   └── ...
+│   └── ...
+├── backend/              # Node.js Express API
+│   ├── src/
+│   │   ├── controllers/  # Request handlers
+│   │   ├── routes/       # API endpoints
+│   │   ├── middleware/   # Auth & Validation
+│   │   ├── prisma/       # DB Schema & Seeders
+│   │   └── ...
+│   └── ...
+└── README.md             # Project Documentation
+```
 
 ---
 
-### 3️⃣ Super Admin
-**Purpose:** Monitoring, intelligence, and oversight
+## 🛠️ Setup & Installation
 
-**Dashboard Features:**
-- High-level overview dashboard
-- Alerts and critical intelligence tracking
-- Performance and workload visibility
-- Strategic monitoring (future scope)
+### Prerequisites
+- Node.js (v18 or higher)
+- PostgreSQL (Local or Cloud like Supabase/Neon)
+
+### 1️⃣ Clone the Repository
+```bash
+git clone <repository-url>
+cd OMS_Project
+```
+
+### 2️⃣ Backend Setup
+Navigate to the backend folder and install dependencies:
+```bash
+cd backend
+npm install
+```
+
+**Configuration:**
+1. Create a `.env` file based on the template:
+   ```bash
+   cp env.template .env
+   ```
+2. Update the `.env` file with your credentials:
+   - `DATABASE_URL`: Your PostgreSQL connection string.
+   - `JWT_SECRET`: A secure key for authentication.
+   - `RAPIDAPI_KEY`: Key for IRCTC PNR status (optional).
+
+**Database Initialization:**
+```bash
+# Push schema to database
+npx prisma db push
+
+# (Optional) Seed initial data
+npm run seed
+```
+
+**Run Backend:**
+```bash
+npm run dev
+```
+*Server runs on `http://localhost:5000` by default.*
+
+### 3️⃣ Frontend Setup
+Open a new terminal, navigate to the frontend folder, and install dependencies:
+```bash
+cd frontend
+npm install
+```
+
+**Configuration:**
+Ensure the frontend is pointing to the correct backend URL (usually configured in `.env` or constants).
+
+**Run Frontend:**
+```bash
+npm run dev
+```
+*Client runs on `http://localhost:5173` by default.*
+
+---
+
+## �‍💼 User Roles & Dashboards
+
+The application features three distinct roles with specific permissions:
+
+### 1️⃣ Staff (Data Entry)
+- **Focus:** Fast, accurate data entry.
+- **Features:**
+  - Quick entry for Grievances, Visitors, EQ Requests, etc.
+  - View "Today’s Work" checklist.
+  - Read-only view of recent submissions.
+- **Restrictions:** Cannot verify or analytics data.
+
+### 2️⃣ Admin (Manager)
+- **Focus:** Verification, processing, and assignment.
+- **Features:**
+  - Verification queues for different modules.
+  - Letter generation & print center.
+  - Task assignment to specific departments.
+  - Approval workflows.
+- **Restrictions:** No high-level political analytics.
+
+### 3️⃣ Super Admin (Authority)
+- **Focus:** Oversight and intelligence.
+- **Features:**
+  - comprehensive dashboards.
+  - Critical alerts and intelligence tracking.
+  - System-wide performance monitoring.
 
 ---
 
 ## 🧩 Implemented Modules
 
-### 📄 Grievance Management
-- Petitioner information
-- Grievance type, ward/constituency
-- Description and monetary value
-- Action required and letter template
-- Status tracking
-- **Referenced By** field (optional)
-- Mandatory field indicators
-
----
-
-### 🚶 Visitor Management
-- Visitor details and designation
-- Date of birth (for birthday alerts)
-- Purpose of visit
-- **Referenced By** field
-- Clean, compact data-entry UI
-
----
-
-### 🚆 Train Emergency Quota (EQ)
-- Passenger details and PNR
-- Auto-fill placeholders for train info
-- Journey date, class, route
-- Digital signature option
-- PDF generation button
-- **Referenced By** field
-
----
-
-### 🗓️ Tour Program & Invitations
-- Event and organizer details
-- Date, time, and venue
-- Accept / Regret / Pending decision
-- Export Tour Program as PDF
-- **Referenced By** field
-
----
-
-### 📰 Constituency News & Intelligence
-- Headline and category
-- Region/ward selection
-- Priority levels (Normal / High / Critical)
-- Source information
-- Screenshot/evidence upload
-- **Referenced By** field
-- Push-alert ready structure
-
----
-
-## 🧩 Common Design System
-
-### Layout Pattern
-- Sidebar (left) + main content (right)
-- Consistent max-width container
-- Sectioned forms with headers
-- Right-side action panels for workflows
-
-### UI Features
-- Mandatory fields marked with red `*`
-- Subtle background gradients
-- Consistent card spacing and typography
-- Reusable components (e.g., `ReferencedByField`)
-
----
-
-## 🔐 Routing & Role Handling
-
-- Role-based routing implemented using `ProtectedRoute`
-- Temporary UI-only routing enabled for design preview
-- Planned integration with backend authentication (JWT / sessions)
-
-**Current routes include:**
-- `/staff/home`
-- `/home` (Admin)
-- `/super-admin/home`
-- `/grievances/new`
-- `/visitors/new`
-- `/train-eq/new`
-- `/tour-program/new`
-- `/news-intelligence/new`
-
----
-
-## 🧪 Current Project Status
-
-✅ UI/UX for all core modules completed  
-✅ Role-based dashboard separation implemented  
-✅ Consistent design system established  
-✅ Frontend routing completed  
-⚠ Backend integration pending  
-⚠ Data persistence pending  
-
----
-
-## 🚀 Future Enhancements
-
-- Backend API integration (Node.js / FastAPI)
-- Database (PostgreSQL / MongoDB)
-- Authentication using JWT
-- PDF generation & digital signatures
-- Role-based permissions at API level
-- Analytics & reporting dashboards
-- Push notifications for critical alerts
-- Mobile-first optimization
-
----
-
-## 📂 Project Structure (Simplified)
-src/
-├── components/
-│   ├── layout/
-│   ├── ui/
-│   └── common/
-├── pages/
-│   ├── staff/
-│   ├── admin/
-│   ├── super-admin/
-│   ├── grievances/
-│   ├── visitors/
-│   ├── Train/
-│   ├── TourProgram/
-│   └── news/
-├── lib/
-├── App.tsx
-└── index.css
-
-
+| Module | Features |
+| :--- | :--- |
+| **Grievance Management** | Petitioner details, categorization, status tracking, letter generation. |
+| **Visitor Management** | Visitor logging, efficient data entry, recurring visitor tracking. |
+| **Train EQ** | PNR status check, request generation, digital signature workflow. |
+| **Tour Program** | Event scheduling, invitation management, calendar view. |
+| **News & Intelligence** | Regional news tracking, priority alerts, screenshot/evidence upload. |
 
 ---
 
 ## 📝 License
 
-This project is currently under development and intended for **academic, internship, and government office digitization purposes**.
+This project is intended for **academic, internship, and government office digitization purposes**.
 
----
-
-
----
-
-> *This project models real-world government office workflows with a strong focus on clarity, responsibility separation, and scalability.*
-
+> *Built with modern web standards to ensure scalability, security, and a premium user experience.*
