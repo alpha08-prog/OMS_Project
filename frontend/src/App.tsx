@@ -20,6 +20,7 @@ import PrintCenter from "./pages/admin/PrintCenter";
 import TourProgramQueue from "./pages/admin/TourProgramQueue";
 import NewsIntelligenceView from "./pages/admin/NewsIntelligenceView";
 import AdminHistory from "./pages/admin/History";
+import Birthdays from "./pages/admin/Birthdays";
 
 export default function App() {
   return (
@@ -84,7 +85,12 @@ export default function App() {
             <PrintCenter />
           </ProtectedRoute>
         }
+        
       />
+      <Route
+  path="/admin/birthdays"
+  element={<Birthdays />}
+/>
 
       {/* Data Entry Routes (Staff) */}
       <Route
