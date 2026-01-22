@@ -21,6 +21,7 @@ import TourProgramQueue from "./pages/admin/TourProgramQueue";
 import NewsIntelligenceView from "./pages/admin/NewsIntelligenceView";
 import AdminHistory from "./pages/admin/History";
 import Birthdays from "./pages/admin/Birthdays";
+import PhotoBooth from "./pages/photo_booth/PhotoBooth";
 
 export default function App() {
   return (
@@ -141,6 +142,15 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+  path="/photo-booth"
+  element={
+    <ProtectedRoute>
+      <PhotoBooth />
+    </ProtectedRoute>
+  }
+/>
+
 
       {/* Tour Program Queue (Admin) */}
       <Route

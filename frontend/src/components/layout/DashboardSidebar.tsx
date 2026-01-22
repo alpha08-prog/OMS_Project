@@ -6,7 +6,6 @@ import {
   Camera,
   Newspaper,
   Users,
-  Settings,
   LogOut,
   ChevronLeft,
   Building2,
@@ -61,7 +60,6 @@ const allMenuItems: MenuItem[] = [
 
   // Common
   { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
-  { icon: Settings, label: "Settings", route: "/settings" },
 ];
 
 export function DashboardSidebar() {
