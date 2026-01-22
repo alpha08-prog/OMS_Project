@@ -17,38 +17,6 @@ The **Office Management System (OMS)** is a comprehensive, full-stack role-based
 
 ## 🧱 Technology Stack
 
-<<<<<<< HEAD
-### Frontend Core
-- **React 19.2.0** with **TypeScript 5.9.3** – Modern React with full type safety
-- **Vite 7.2.4** – Fast build tool and development server
-- **React Router DOM 7.10.1** – Client-side routing with protected routes
-- **Zustand 5.0.9** – Lightweight state management for authentication
-- **Axios 1.13.2** – HTTP client with interceptors for API calls
-- **React Hook Form 7.68.0** – Performant form handling and validation
-
-### UI & Styling
-- **Tailwind CSS 3.4.19** – Utility-first CSS framework
-- **shadcn/ui** – Accessible component library built on Radix UI
-- **Lucide React 0.561.0** – Modern icon library
-- **Recharts 3.5.1** – Charting library for data visualization
-- **Sonner 2.0.7** – Toast notification system
-- **React Day Picker 9.12.0** – Date picker component
-- **Class Variance Authority** – Component variant management
-
-### Development Tools
-- **ESLint 9.39.1** with TypeScript ESLint – Code linting
-- **PostCSS & Autoprefixer** – CSS processing
-- **Babel React Compiler** – React optimization
-- **TypeScript ESLint** – TypeScript-specific linting rules
-
-### Styling & Design System
-- **Indigo–Saffron color palette** (government-themed)
-- **Gradient-based backgrounds** for visual depth
-- **Card-based layout system** with consistent spacing
-- **Responsive design** (desktop-first, tablet-friendly)
-- **Rounded corners** (rounded-2xl) for modern aesthetics
-- **Consistent typography** hierarchy
-=======
 ### 🎨 Frontend (User Interface)
 The frontend is built for performance, accessibility, and a premium user experience.
 - **Framework:** React 19 (TypeScript)
@@ -68,7 +36,6 @@ The backend provides a secure and scalable API to handle business logic and data
 - **Authentication:** JWT (JSON Web Tokens)
 - **PDF Generation:** PDFKit
 - **External APIs:** RapidAPI (IRCTC PNR Status)
->>>>>>> 0fb731e0077cd79de73eb42249e21a04d1b0478d
 
 ---
 
@@ -190,14 +157,14 @@ The application features three distinct roles with specific permissions:
 
 ## 🧩 Implemented Modules
 
-<<<<<<< HEAD
+
 ### 📄 Grievance Management
 - Petitioner information
 - Grievance type, ward/constituency
 - Description and monetary value
 - Action required and letter template
 - Status tracking
-- **Referenced By** field (optional)
+- **Referenced By** field
 - Mandatory field indicators
 
 ---
@@ -243,63 +210,6 @@ The application features three distinct roles with specific permissions:
 
 ## 🎨 UI Component Library & Design System
 
-### shadcn/ui Components (50+ Components)
-The project uses a comprehensive set of accessible UI components from shadcn/ui:
-
-**Layout & Navigation:**
-- `Sidebar` – Collapsible sidebar navigation
-- `Sheet` – Slide-over panels
-- `Tabs` – Tab navigation
-- `Breadcrumb` – Breadcrumb navigation
-- `Navigation Menu` – Complex navigation structures
-
-**Form Components:**
-- `Input` – Text input fields
-- `Textarea` – Multi-line text input
-- `Select` – Dropdown select
-- `Checkbox` – Checkbox input
-- `Radio Group` – Radio button groups
-- `Switch` – Toggle switch
-- `Slider` – Range slider
-- `Calendar` – Date picker
-- `Input OTP` – OTP input fields
-- `Form` – Form wrapper with validation
-
-**Data Display:**
-- `Card` – Container cards
-- `Table` – Data tables
-- `Badge` – Status badges
-- `Avatar` – User avatars
-- `Separator` – Visual dividers
-- `Skeleton` – Loading placeholders
-- `Progress` – Progress bars
-- `Chart` – Chart components
-
-**Feedback:**
-- `Alert` – Alert messages
-- `Toast` / `Sonner` – Toast notifications
-- `Dialog` – Modal dialogs
-- `Alert Dialog` – Confirmation dialogs
-- `Popover` – Popover tooltips
-- `Tooltip` – Hover tooltips
-- `Hover Card` – Hover information cards
-
-**Interactive:**
-- `Button` – Buttons with variants
-- `Dropdown Menu` – Context menus
-- `Context Menu` – Right-click menus
-- `Command` – Command palette
-- `Menubar` – Application menu bar
-- `Toggle` / `Toggle Group` – Toggle buttons
-- `Accordion` – Collapsible sections
-- `Collapsible` – Expandable content
-
-**Advanced:**
-- `Carousel` – Image/content carousel
-- `Resizable` – Resizable panels
-- `Scroll Area` – Custom scrollbars
-- `Aspect Ratio` – Maintain aspect ratios
-
 ### Custom Components
 
 **Layout Components:**
@@ -320,47 +230,6 @@ The project uses a comprehensive set of accessible UI components from shadcn/ui:
 - `NewsAlerts` – News and intelligence alerts widget
 - `BirthdayWidget` – Today's birthdays display
 - `TodaySchedule` – Schedule/calendar widget
-
-**Form Components:**
-- `ReferencedByField` – Reusable "Referenced By" input field
-- Custom form inputs with validation states
-- Password strength meter
-- File upload components
-
-### Design System Principles
-
-**Layout Pattern:**
-- Sidebar (left) + main content (right) layout
-- Consistent max-width container (max-w-7xl)
-- Sectioned forms with clear headers
-- Right-side action panels for workflows
-- Responsive grid layouts
-
-**Color Palette:**
-- **Primary:** Indigo (indigo-600, indigo-700, indigo-900)
-- **Accent:** Amber/Saffron (amber-400, amber-500)
-- **Success:** Emerald/Green (emerald-100, emerald-700)
-- **Warning:** Amber/Yellow (amber-100, amber-700)
-- **Error:** Red (red-600, red-700)
-- **Neutral:** Slate/Gray (slate-700, muted-foreground)
-
-**Typography:**
-- Consistent font sizes and weights
-- Clear hierarchy (h1, h2, h3, body, caption)
-- Proper text color contrast
-
-**Spacing:**
-- Consistent padding and margins
-- Card spacing (p-4, p-5, p-6)
-- Gap spacing in grids (gap-4, gap-6)
-
-**UI Features:**
-- Mandatory fields marked with red `*`
-- Subtle background gradients (from-indigo-50/60 to-white)
-- Consistent card styling (rounded-2xl, shadow-sm, border)
-- Hover effects and transitions
-- Loading states and spinners
-- Error states and validation messages
 
 ---
 
@@ -565,17 +434,6 @@ The project uses a comprehensive set of accessible UI components from shadcn/ui:
 - ✅ Component reusability
 - ✅ Type-safe API client
 - ✅ Error boundary ready structure
-
-### ⚠️ Pending Integration
-
-- ⚠️ Backend API integration (endpoints ready in `lib/api.ts`)
-- ⚠️ Database persistence
-- ⚠️ Real JWT authentication (currently session-based)
-- ⚠️ PDF generation functionality
-- ⚠️ File upload handling
-- ⚠️ Real-time data fetching
-- ⚠️ Role-based API permissions
-- ⚠️ Super Admin dashboard implementation  
 
 ---
 
