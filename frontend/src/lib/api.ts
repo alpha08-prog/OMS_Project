@@ -292,12 +292,26 @@ http.interceptors.response.use(
       err.status = resp.status
       if (resp.data && typeof resp.data === 'object') Object.assign(err, resp.data)
       
-      // Handle 401 - redirect to login
+      // Handle 401 - only redirect if we have a token (meaning it's expired/invalid)
+      // Don't redirect if we're already on login page or if this is a login attempt
       if (resp.status === 401) {
-        localStorage.removeItem('auth_token')
-        sessionStorage.removeItem('auth_session')
-        // Optionally redirect to login
-        // window.location.href = '/auth/login'
+        const currentPath = window.location.pathname
+        const hasToken = localStorage.getItem('auth_token')
+        
+        // Only clear and redirect if:
+        // 1. We had a token (not a login attempt)
+        // 2. We're not already on auth pages
+        if (hasToken && !currentPath.startsWith('/auth')) {
+          localStorage.removeItem('auth_token')
+          localStorage.removeItem('remember_token')
+          localStorage.removeItem('user')
+          localStorage.removeItem('user_role')
+          localStorage.removeItem('user_name')
+          sessionStorage.removeItem('auth_session')
+          
+          // Redirect to login
+          window.location.href = '/auth/login'
+        }
       }
       
       return Promise.reject(err)
@@ -714,6 +728,103 @@ export const pdfApi = {
       console.error('PDF download error:', error)
       throw error
     }
+  },
+}
+
+// Task API
+export type TaskStatus = 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD'
+export type TaskType = 'GRIEVANCE' | 'TRAIN_REQUEST' | 'TOUR_PROGRAM' | 'GENERAL'
+
+export type TaskAssignment = {
+  id: string
+  title: string
+  description?: string
+  taskType: TaskType
+  status: TaskStatus
+  priority: string
+  referenceId?: string
+  referenceType?: string
+  progressNotes?: string
+  progressPercent: number
+  assignedAt: string
+  dueDate?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+  assignedTo: { id: string; name: string; email: string }
+  assignedBy: { id: string; name: string; email: string }
+}
+
+export type CreateTaskRequest = {
+  title: string
+  description?: string
+  taskType: TaskType
+  priority?: string
+  referenceId?: string
+  referenceType?: string
+  assignedToId: string
+  dueDate?: string
+}
+
+export type TaskTrackingData = {
+  summary: {
+    total: number
+    assigned: number
+    inProgress: number
+    completed: number
+    onHold: number
+  }
+  staffTaskCounts: Array<{
+    staff: { id: string; name: string; email: string }
+    pendingTasks: number
+  }>
+  recentActivity: TaskAssignment[]
+}
+
+export const taskApi = {
+  create: async (data: CreateTaskRequest) => {
+    const res = await http.post<ApiResponse<TaskAssignment>>('/tasks', data)
+    return res.data.data
+  },
+  
+  getAll: async (params?: Record<string, string>) => {
+    const res = await http.get<ApiResponse<TaskAssignment[]>>('/tasks', { params })
+    return res.data
+  },
+  
+  getMyTasks: async (params?: Record<string, string>) => {
+    const res = await http.get<ApiResponse<TaskAssignment[]>>('/tasks/my-tasks', { params })
+    return res.data
+  },
+  
+  getById: async (id: string) => {
+    const res = await http.get<ApiResponse<TaskAssignment>>(`/tasks/${id}`)
+    return res.data.data
+  },
+  
+  updateProgress: async (id: string, data: { status?: TaskStatus; progressNotes?: string; progressPercent?: number }) => {
+    const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/progress`, data)
+    return res.data.data
+  },
+  
+  updateStatus: async (id: string, status: TaskStatus) => {
+    const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/status`, { status })
+    return res.data.data
+  },
+  
+  getTracking: async () => {
+    const res = await http.get<ApiResponse<TaskTrackingData>>('/tasks/tracking')
+    return res.data.data
+  },
+  
+  getStaffMembers: async () => {
+    const res = await http.get<ApiResponse<Array<{ id: string; name: string; email: string }>>>('/tasks/staff')
+    return res.data.data
+  },
+  
+  delete: async (id: string) => {
+    const res = await http.delete<ApiResponse<null>>(`/tasks/${id}`)
+    return res.data
   },
 }
 

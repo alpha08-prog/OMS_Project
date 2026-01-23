@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { TextInput } from '../../components/AuthForm/Input'
 import { PasswordInput } from '../../components/AuthForm/PasswordInput'
@@ -8,6 +8,17 @@ import { useToast } from '../../components/AuthForm/Toast'
 import { authApi } from '../../lib/api'
 import GovernmentHeroSection from '../../components/GovernmentHeroSection'
 import portrait from '../../assets/prahlad_joshi1.jpg'
+
+// Clear all auth data on logout/session clear
+function clearAuthData() {
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('remember_token')
+  localStorage.removeItem('user')
+  localStorage.removeItem('user_role')
+  localStorage.removeItem('user_name')
+  sessionStorage.removeItem('auth_session')
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const { push } = useToast()
@@ -18,6 +29,31 @@ export default function Login() {
   const [errors, setErrors] = useState<{identifier?: string; password?: string; server?: string}>({})
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
+
+  // Clear any existing auth data when login page loads
+  // This ensures no stale data from previous sessions
+  useEffect(() => {
+    // Only clear if there's no valid token
+    const token = localStorage.getItem('auth_token')
+    const session = sessionStorage.getItem('auth_session')
+    
+    // If user navigated to login page directly, clear old auth data
+    if (!token && !session) {
+      clearAuthData()
+    }
+    
+    // If user is already logged in with valid session, redirect them
+    if (token && session) {
+      const role = localStorage.getItem('user_role')
+      if (role === 'STAFF') {
+        navigate('/staff/home', { replace: true })
+      } else if (role === 'ADMIN') {
+        navigate('/admin/home', { replace: true })
+      } else if (role === 'SUPER_ADMIN') {
+        navigate('/home', { replace: true })
+      }
+    }
+  }, [navigate])
 
   // simple mount animation trigger
   if (!mounted) setTimeout(() => setMounted(true), 0)
@@ -44,6 +80,9 @@ export default function Login() {
     setErrors({})
 
     try {
+      // Clear any old auth data before new login
+      clearAuthData()
+      
       const res = await authApi.login({ identifier, password })
       // Store token for API calls
       if (res.token) {
@@ -58,13 +97,14 @@ export default function Login() {
       localStorage.setItem('user_name', res.user.name)  // Store name separately for header
       push({ type: 'success', title: 'Welcome back!', message: `Hello ${res.user?.name ?? ''}` })
       
-      // Navigate based on role
+      // Navigate based on role with replace to clear history
+      // This prevents back button from going to previous user's pages
       if (res.user.role === 'STAFF') {
-        navigate('/staff/home')
+        navigate('/staff/home', { replace: true })
       } else if (res.user.role === 'ADMIN') {
-        navigate('/admin/home')
+        navigate('/admin/home', { replace: true })
       } else {
-        navigate('/home')
+        navigate('/home', { replace: true })
       }
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string }

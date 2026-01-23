@@ -41,8 +41,17 @@ export async function getAdminHistory(
     if (endDate) dateFilter.lte = new Date(endDate as string);
     const hasDateFilter = Object.keys(dateFilter).length > 0;
 
+    // Define which actions belong to which entity type
+    const grievanceActions = ['RESOLVED', 'REJECTED'];
+    const trainActions = ['APPROVED', 'REJECTED'];
+    const tourActions = ['ACCEPTED', 'REGRET'];
+
     // Fetch resolved/rejected grievances
-    if (!type || type === 'GRIEVANCE') {
+    // Only fetch if no action filter OR action filter matches grievance actions
+    const shouldFetchGrievances = (!type || type === 'GRIEVANCE') && 
+      (!action || grievanceActions.includes(action as string));
+    
+    if (shouldFetchGrievances) {
       const grievanceWhere: any = {
         status: { in: [GrievanceStatus.RESOLVED, GrievanceStatus.REJECTED] },
       };
@@ -83,7 +92,11 @@ export async function getAdminHistory(
     }
 
     // Fetch approved/rejected train requests
-    if (!type || type === 'TRAIN_REQUEST') {
+    // Only fetch if no action filter OR action filter matches train actions
+    const shouldFetchTrainRequests = (!type || type === 'TRAIN_REQUEST') && 
+      (!action || trainActions.includes(action as string));
+    
+    if (shouldFetchTrainRequests) {
       const trainWhere: any = {
         status: { in: [TrainRequestStatus.APPROVED, TrainRequestStatus.REJECTED] },
       };
@@ -128,7 +141,11 @@ export async function getAdminHistory(
     }
 
     // Fetch tour program decisions (accepted/regret)
-    if (!type || type === 'TOUR_PROGRAM') {
+    // Only fetch if no action filter OR action filter matches tour actions
+    const shouldFetchTourPrograms = (!type || type === 'TOUR_PROGRAM') && 
+      (!action || tourActions.includes(action as string));
+    
+    if (shouldFetchTourPrograms) {
       const tourWhere: any = {
         decision: { in: [TourDecision.ACCEPTED, TourDecision.REGRET] },
       };

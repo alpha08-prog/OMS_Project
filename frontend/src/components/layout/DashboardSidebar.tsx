@@ -15,6 +15,8 @@ import {
   ClipboardList,
   Cake,
   History,
+  Zap,
+  TrendingUp,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -34,6 +36,7 @@ const allMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", route: "/staff/home", roles: ['STAFF'] },
 
   // Staff - Data Entry
+  { icon: ClipboardList, label: "My Tasks", route: "/staff/tasks", roles: ['STAFF'] },
   { icon: FileText, label: "New Grievance", route: "/grievances/new", roles: ['STAFF'] },
   { icon: Users, label: "Log Visitor", route: "/visitors/new", roles: ['STAFF'] },
   { icon: Cake, label: "Add Birthday", route: "/birthday/new", roles: ['STAFF'] },
@@ -41,16 +44,20 @@ const allMenuItems: MenuItem[] = [
   { icon: Calendar, label: "Add Invitation", route: "/tour-program/new", roles: ['STAFF'] },
   { icon: Newspaper, label: "Add News", route: "/news-intelligence/new", roles: ['STAFF'] },
 
-  // Admin - Verification Queues
+  // Admin - Main Actions
+  { icon: Zap, label: "Action Center", route: "/admin/action-center", roles: ['ADMIN'] },
+  { icon: TrendingUp, label: "Task Tracker", route: "/admin/task-tracker", roles: ['ADMIN'] },
   { icon: CheckCircle, label: "Verify Grievances", route: "/grievances/verify", roles: ['ADMIN'] },
   { icon: Train, label: "Train EQ Queue", route: "/train-eq/queue", roles: ['ADMIN'] },
   { icon: ClipboardList, label: "Tour Invitations", route: "/tour-program/pending", roles: ['ADMIN'] },
+  { icon: Users, label: "Visitor Log", route: "/visitors/view", roles: ['ADMIN'] },
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['ADMIN'] },
   { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
   { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },
 
   // Super Admin - Overview
   { icon: FileText, label: "All Grievances", route: "/grievances/new", roles: ['SUPER_ADMIN'] },
+  { icon: Users, label: "Visitor Log", route: "/visitors/view", roles: ['SUPER_ADMIN'] },
   { icon: Calendar, label: "Tour Program", route: "/tour-program/new", roles: ['SUPER_ADMIN'] },
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['SUPER_ADMIN'] },
   { icon: History, label: "Action History", route: "/admin/history", roles: ['SUPER_ADMIN'] },
@@ -94,10 +101,17 @@ export function DashboardSidebar() {
   });
 
   const handleLogout = () => {
+    // Clear all auth data
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('remember_token');
+    localStorage.removeItem('user');
     localStorage.removeItem('user_role');
     localStorage.removeItem('user_name');
-    navigate('/auth/login');
+    sessionStorage.removeItem('auth_session');
+    
+    // Navigate to login with replace to clear history
+    // This prevents back button from accessing protected pages
+    navigate('/auth/login', { replace: true });
   };
 
   return (

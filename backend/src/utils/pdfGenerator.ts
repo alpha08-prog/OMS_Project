@@ -36,6 +36,10 @@ interface TrainEQLetter {
   toStation: string;
   senderName: string;
   senderDesignation: string;
+  // Additional passenger names for multiple passengers
+  additionalPassengers?: string[];
+  // Unique document ID for watermark
+  documentId?: string;
 }
 
 interface GrievanceLetter {
@@ -96,6 +100,54 @@ function createLetterhead(doc: PDFKit.PDFDocument): void {
   doc.moveDown(2);
 }
 
+// Helper to create unique watermark
+function createWatermark(doc: PDFKit.PDFDocument, documentId: string, refNumber: string): void {
+  const pageWidth = doc.page.width;
+  const pageHeight = doc.page.height;
+  
+  // Save current state
+  doc.save();
+  
+  // Create diagonal watermark text
+  const watermarkText = `OMS-${documentId.toUpperCase()}`;
+  
+  // Multiple watermark positions for security
+  doc.opacity(0.08)
+     .fontSize(60)
+     .font('Helvetica-Bold')
+     .fillColor('#000080');
+  
+  // Rotate and place watermark diagonally across the page
+  doc.rotate(-45, { origin: [pageWidth / 2, pageHeight / 2] });
+  
+  // Center watermark
+  doc.text(watermarkText, 0, pageHeight / 2 - 30, {
+    width: pageWidth * 1.5,
+    align: 'center',
+  });
+  
+  // Restore state
+  doc.restore();
+  
+  // Add small document ID in corner (visible)
+  doc.save();
+  doc.opacity(0.5)
+     .fontSize(7)
+     .font('Helvetica')
+     .fillColor('#666666')
+     .text(`Doc ID: ${documentId.slice(0, 12).toUpperCase()}`, pageWidth - 130, pageHeight - 25);
+  doc.restore();
+  
+  // Add QR-code style unique identifier (text representation)
+  doc.save();
+  doc.opacity(0.3)
+     .fontSize(6)
+     .font('Helvetica')
+     .fillColor('#333333')
+     .text(`Ref: ${refNumber} | ID: ${documentId.slice(0, 8)}`, 50, pageHeight - 25);
+  doc.restore();
+}
+
 // Helper to create footer
 function createFooter(doc: PDFKit.PDFDocument): void {
   const pageWidth = doc.page.width;
@@ -122,16 +174,22 @@ function createFooter(doc: PDFKit.PDFDocument): void {
      );
 }
 
-// Generate Train EQ Letter
+// Generate Train EQ Letter with watermark and multiple passengers support
 export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void {
   const doc = new PDFDocument({ margin: 50 });
+  
+  // Generate unique document ID if not provided
+  const documentId = data.documentId || `EQ${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
   // Set response headers
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=TrainEQ_${data.pnrNumber}.pdf`);
+  res.setHeader('Content-Disposition', `attachment; filename=TrainEQ_${data.pnrNumber}_${documentId.slice(0, 8)}.pdf`);
 
   // Pipe to response
   doc.pipe(res);
+
+  // Add unique watermark FIRST (so it appears behind content)
+  createWatermark(doc, documentId, data.refNumber);
 
   // Create letterhead
   createLetterhead(doc);
@@ -176,10 +234,30 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
 
   y += 20;
 
-  const bodyText = `I am writing to request your kind consideration for emergency quota accommodation for the following passenger traveling under my recommendation.
+  // Build passenger list
+  let passengerList = `• Name: ${data.passengerName}`;
+  
+  // Add additional passengers if provided
+  if (data.additionalPassengers && data.additionalPassengers.length > 0) {
+    data.additionalPassengers.forEach((passenger, index) => {
+      passengerList += `\n• Passenger ${index + 2}: ${passenger}`;
+    });
+  }
+  
+  // Parse comma-separated names as well
+  const passengerNames = data.passengerName.split(',').map(n => n.trim()).filter(n => n);
+  if (passengerNames.length > 1) {
+    passengerList = passengerNames.map((name, index) => 
+      `• Passenger ${index + 1}: ${name}`
+    ).join('\n');
+  }
+
+  const bodyText = `I am writing to request your kind consideration for emergency quota accommodation for the following passenger(s) traveling under my recommendation.
 
 Passenger Details:
-• Name: ${data.passengerName}
+${passengerList}
+
+Booking Information:
 • PNR Number: ${data.pnrNumber}
 • Train: ${data.trainNumber} - ${data.trainName}
 • Date of Journey: ${data.journeyDate}
@@ -211,6 +289,17 @@ Kindly extend your cooperation in this regard.`;
 
   // Footer
   createFooter(doc);
+  
+  // Add verification notice at bottom
+  doc.fontSize(7)
+     .font('Helvetica')
+     .fillColor('#888888')
+     .text(
+       `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
+       margin,
+       doc.page.height - 40,
+       { width: doc.page.width - margin * 2, align: 'center' }
+     );
 
   // Finalize
   doc.end();

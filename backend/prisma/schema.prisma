@@ -74,6 +74,20 @@ enum TourDecision {
   PENDING
 }
 
+enum TaskStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+}
+
+enum TaskType {
+  GRIEVANCE
+  TRAIN_REQUEST
+  TOUR_PROGRAM
+  GENERAL
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -96,6 +110,10 @@ model User {
   createdVisitors    Visitor[]
   createdTourPrograms TourProgram[]
   createdBirthdays   Birthday[]
+  
+  // Task Assignment Relations
+  assignedTasks      TaskAssignment[]   @relation("AssignedTasks")
+  createdTasks       TaskAssignment[]   @relation("CreatedTasks")
 
   @@map("users")
 }
@@ -263,6 +281,45 @@ model Birthday {
 
   @@index([dob])
   @@map("birthdays")
+}
+
+// ==================== TASK ASSIGNMENT ====================
+
+model TaskAssignment {
+  id              String     @id @default(uuid())
+  title           String
+  description     String?
+  taskType        TaskType
+  status          TaskStatus @default(ASSIGNED)
+  priority        String     @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  
+  // Reference to the source entity (grievance, train request, etc.)
+  referenceId     String?
+  referenceType   String?    // GRIEVANCE, TRAIN_REQUEST, TOUR_PROGRAM
+  
+  // Progress tracking
+  progressNotes   String?
+  progressPercent Int        @default(0)
+  
+  // Timestamps
+  assignedAt      DateTime   @default(now())
+  dueDate         DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  
+  // Relations
+  assignedToId    String
+  assignedTo      User       @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  assignedById    String
+  assignedBy      User       @relation("CreatedTasks", fields: [assignedById], references: [id])
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([taskType])
+  @@index([referenceId])
+  @@map("task_assignments")
 }
 
 // ==================== UTILITY MODELS ====================
