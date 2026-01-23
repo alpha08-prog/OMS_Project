@@ -57,6 +57,8 @@ export async function authenticate(
       name: user.name,
     };
 
+    console.log(`Authentication successful - User: ${user.email}, Role: ${user.role}, Path: ${req.path}`);
+
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
@@ -75,11 +77,15 @@ export function authorize(...allowedRoles: UserRole[]) {
     next: NextFunction
   ): void => {
     if (!req.user) {
+      console.error('Authorization failed: User not authenticated');
       sendUnauthorized(res, 'User not authenticated');
       return;
     }
 
+    console.log(`Authorization check - User role: ${req.user.role}, Allowed roles: ${allowedRoles.join(', ')}, Match: ${allowedRoles.includes(req.user.role)}`);
+
     if (!allowedRoles.includes(req.user.role)) {
+      console.error(`Access denied for user ${req.user.email} (role: ${req.user.role}). Required: ${allowedRoles.join(' or ')}`);
       sendForbidden(
         res,
         `Access denied. Required role: ${allowedRoles.join(' or ')}`

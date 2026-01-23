@@ -30,17 +30,66 @@ export async function createTask(
       dueDate,
     } = req.body;
 
+    // Validate required fields
+    if (!title || !title.trim()) {
+      sendError(res, 'Task title is required', 400);
+      return;
+    }
+
+    if (!assignedToId) {
+      sendError(res, 'Staff member must be selected', 400);
+      return;
+    }
+
+    // Verify assignedToId user exists and is a STAFF member
+    const assignedUser = await prisma.user.findUnique({
+      where: { id: assignedToId },
+      select: { id: true, role: true, isActive: true },
+    });
+
+    if (!assignedUser) {
+      sendError(res, 'Selected staff member not found', 404);
+      return;
+    }
+
+    if (assignedUser.role !== 'STAFF') {
+      sendError(res, 'Can only assign tasks to staff members', 400);
+      return;
+    }
+
+    if (!assignedUser.isActive) {
+      sendError(res, 'Selected staff member is inactive', 400);
+      return;
+    }
+
+    // Validate taskType
+    const validTaskTypes: TaskType[] = ['GRIEVANCE', 'TRAIN_REQUEST', 'TOUR_PROGRAM', 'GENERAL'];
+    if (!taskType || !validTaskTypes.includes(taskType as TaskType)) {
+      sendError(res, `Invalid task type. Must be one of: ${validTaskTypes.join(', ')}`, 400);
+      return;
+    }
+
+    // Parse dueDate if provided
+    let parsedDueDate: Date | null = null;
+    if (dueDate) {
+      parsedDueDate = new Date(dueDate);
+      if (isNaN(parsedDueDate.getTime())) {
+        sendError(res, 'Invalid due date format', 400);
+        return;
+      }
+    }
+
     const task = await prisma.taskAssignment.create({
       data: {
-        title,
-        description,
+        title: title.trim(),
+        description: description?.trim() || null,
         taskType: taskType as TaskType,
         priority: priority || 'NORMAL',
-        referenceId,
-        referenceType,
+        referenceId: referenceId || null,
+        referenceType: referenceType || null,
         assignedToId,
         assignedById: req.user.id,
-        dueDate: dueDate ? new Date(dueDate) : null,
+        dueDate: parsedDueDate,
       },
       include: {
         assignedTo: {
@@ -53,8 +102,23 @@ export async function createTask(
     });
 
     sendSuccess(res, task, 'Task assigned successfully', 201);
-  } catch (error) {
-    sendServerError(res, 'Failed to create task', error);
+  } catch (error: any) {
+    console.error('Task creation error:', error);
+    
+    // Handle Prisma errors
+    if (error.code === 'P2002') {
+      sendError(res, 'A task with this reference already exists', 409);
+      return;
+    }
+    
+    if (error.code === 'P2003') {
+      sendError(res, 'Invalid reference: The referenced item does not exist', 400);
+      return;
+    }
+
+    // Extract more specific error message
+    const errorMessage = error?.message || 'Failed to create task';
+    sendError(res, errorMessage, 500);
   }
 }
 
@@ -77,6 +141,9 @@ export async function getTasks(
     if (assignedToId) where.assignedToId = assignedToId;
     if (priority) where.priority = priority;
 
+    console.log(`TaskController - getTasks - Query params:`, { page, limit, skip, status, taskType, assignedToId, priority });
+    console.log(`TaskController - getTasks - Where clause:`, where);
+
     const [total, tasks] = await Promise.all([
       prisma.taskAssignment.count({ where }),
       prisma.taskAssignment.findMany({
@@ -98,9 +165,12 @@ export async function getTasks(
       }),
     ]);
 
+    console.log(`TaskController - getTasks - Found ${total} total tasks, returning ${tasks.length} tasks`);
+
     const meta = calculatePaginationMeta(total, page, limit);
     sendSuccess(res, tasks, 'Tasks retrieved successfully', 200, meta);
   } catch (error) {
+    console.error('TaskController - getTasks - Error:', error);
     sendServerError(res, 'Failed to get tasks', error);
   }
 }
@@ -303,6 +373,8 @@ export async function getTaskTracking(
   res: Response
 ): Promise<void> {
   try {
+    console.log('TaskController - getTaskTracking - Fetching task tracking data');
+    
     // Get counts by status
     const [assigned, inProgress, completed, onHold, total] = await Promise.all([
       prisma.taskAssignment.count({ where: { status: 'ASSIGNED' } }),
@@ -311,6 +383,8 @@ export async function getTaskTracking(
       prisma.taskAssignment.count({ where: { status: 'ON_HOLD' } }),
       prisma.taskAssignment.count(),
     ]);
+
+    console.log(`TaskController - getTaskTracking - Counts: total=${total}, assigned=${assigned}, inProgress=${inProgress}, completed=${completed}, onHold=${onHold}`);
 
     // Get tasks grouped by staff
     const tasksByStaff = await prisma.taskAssignment.groupBy({
@@ -321,17 +395,29 @@ export async function getTaskTracking(
       },
     });
 
-    // Get staff details
-    const staffIds = tasksByStaff.map(t => t.assignedToId);
-    const staffMembers = await prisma.user.findMany({
-      where: { id: { in: staffIds } },
-      select: { id: true, name: true, email: true },
-    });
+    console.log(`TaskController - getTaskTracking - Tasks by staff:`, tasksByStaff.length);
 
-    const staffTaskCounts = tasksByStaff.map(t => ({
-      staff: staffMembers.find(s => s.id === t.assignedToId),
-      pendingTasks: t._count.id,
-    }));
+    // Get staff details
+    const staffIds = tasksByStaff.map(t => t.assignedToId).filter(Boolean);
+    let staffMembers: Array<{ id: string; name: string; email: string }> = [];
+    
+    if (staffIds.length > 0) {
+      staffMembers = await prisma.user.findMany({
+        where: { id: { in: staffIds } },
+        select: { id: true, name: true, email: true },
+      });
+    }
+
+    console.log(`TaskController - getTaskTracking - Staff members found:`, staffMembers.length);
+
+    const staffTaskCounts = tasksByStaff
+      .map(t => ({
+        staff: staffMembers.find(s => s.id === t.assignedToId),
+        pendingTasks: t._count.id,
+      }))
+      .filter(item => item.staff); // Only include items where staff was found
+
+    console.log(`TaskController - getTaskTracking - Staff task counts:`, staffTaskCounts.length);
 
     // Get recent activity
     const recentTasks = await prisma.taskAssignment.findMany({
@@ -344,7 +430,9 @@ export async function getTaskTracking(
       },
     });
 
-    sendSuccess(res, {
+    console.log(`TaskController - getTaskTracking - Recent tasks:`, recentTasks.length);
+
+    const trackingData = {
       summary: {
         total,
         assigned,
@@ -354,7 +442,11 @@ export async function getTaskTracking(
       },
       staffTaskCounts,
       recentActivity: recentTasks,
-    }, 'Task tracking data retrieved');
+    };
+
+    console.log(`TaskController - getTaskTracking - Returning tracking data:`, JSON.stringify(trackingData, null, 2));
+
+    sendSuccess(res, trackingData, 'Task tracking data retrieved');
   } catch (error) {
     sendServerError(res, 'Failed to get task tracking', error);
   }

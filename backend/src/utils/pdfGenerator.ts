@@ -63,32 +63,27 @@ function createLetterhead(doc: PDFKit.PDFDocument): void {
   const pageWidth = doc.page.width;
   const margin = 50;
 
-  // Ashoka Chakra / Emblem placeholder (text representation)
-  doc.fontSize(24)
-     .fillColor(COLORS.navy)
-     .text('॥ सत्यमेव जयते ॥', margin, 30, { align: 'center', width: pageWidth - margin * 2 });
-
   // Government header
   doc.fontSize(14)
      .fillColor(COLORS.navy)
-     .text('GOVERNMENT OF INDIA', margin, 60, { align: 'center', width: pageWidth - margin * 2 });
+     .text('GOVERNMENT OF INDIA', margin, 50, { align: 'center', width: pageWidth - margin * 2 });
 
   doc.fontSize(12)
-     .text('MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION', margin, 78, { align: 'center', width: pageWidth - margin * 2 });
+     .text('MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION', margin, 68, { align: 'center', width: pageWidth - margin * 2 });
 
   // Minister's name
   doc.fontSize(16)
      .font('Helvetica-Bold')
      .fillColor(COLORS.black)
-     .text('SHRI PRAHLAD JOSHI', margin, 100, { align: 'center', width: pageWidth - margin * 2 });
+     .text('SHRI PRAHLAD JOSHI', margin, 90, { align: 'center', width: pageWidth - margin * 2 });
 
   doc.fontSize(11)
      .font('Helvetica')
      .fillColor(COLORS.gray)
-     .text('Hon\'ble Union Minister', margin, 120, { align: 'center', width: pageWidth - margin * 2 });
+     .text('Hon\'ble Union Minister', margin, 110, { align: 'center', width: pageWidth - margin * 2 });
 
   // Tricolor line
-  const lineY = 145;
+  const lineY = 135;
   const lineWidth = pageWidth - margin * 2;
   const segmentWidth = lineWidth / 3;
 
@@ -100,52 +95,83 @@ function createLetterhead(doc: PDFKit.PDFDocument): void {
   doc.moveDown(2);
 }
 
-// Helper to create unique watermark
+// Flag to prevent recursive watermark calls
+let isCreatingWatermark = false;
+
+// Helper to create unique watermark - SAFE version that won't cause infinite recursion
 function createWatermark(doc: PDFKit.PDFDocument, documentId: string, refNumber: string): void {
-  const pageWidth = doc.page.width;
-  const pageHeight = doc.page.height;
+  // Prevent re-entry which causes infinite recursion
+  if (isCreatingWatermark) {
+    return;
+  }
   
-  // Save current state
-  doc.save();
+  isCreatingWatermark = true;
   
-  // Create diagonal watermark text
-  const watermarkText = `OMS-${documentId.toUpperCase()}`;
-  
-  // Multiple watermark positions for security
-  doc.opacity(0.08)
-     .fontSize(60)
-     .font('Helvetica-Bold')
-     .fillColor('#000080');
-  
-  // Rotate and place watermark diagonally across the page
-  doc.rotate(-45, { origin: [pageWidth / 2, pageHeight / 2] });
-  
-  // Center watermark
-  doc.text(watermarkText, 0, pageHeight / 2 - 30, {
-    width: pageWidth * 1.5,
-    align: 'center',
-  });
-  
-  // Restore state
-  doc.restore();
-  
-  // Add small document ID in corner (visible)
-  doc.save();
-  doc.opacity(0.5)
-     .fontSize(7)
-     .font('Helvetica')
-     .fillColor('#666666')
-     .text(`Doc ID: ${documentId.slice(0, 12).toUpperCase()}`, pageWidth - 130, pageHeight - 25);
-  doc.restore();
-  
-  // Add QR-code style unique identifier (text representation)
-  doc.save();
-  doc.opacity(0.3)
-     .fontSize(6)
-     .font('Helvetica')
-     .fillColor('#333333')
-     .text(`Ref: ${refNumber} | ID: ${documentId.slice(0, 8)}`, 50, pageHeight - 25);
-  doc.restore();
+  try {
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    
+    // Save current state including position
+    const savedY = doc.y;
+    const savedX = doc.x;
+    
+    // Create diagonal watermark text
+    const watermarkText = `OMS-${documentId.slice(0, 12).toUpperCase()}`;
+    
+    // Save graphics state
+    doc.save();
+    
+    // Set watermark properties
+    doc.opacity(0.08)
+       .fontSize(60)
+       .font('Helvetica-Bold')
+       .fillColor('#000080');
+    
+    // Calculate center point
+    const centerX = pageWidth / 2;
+    const centerY = pageHeight / 2;
+    
+    // Apply transformations for rotation
+    doc.translate(centerX, centerY)
+       .rotate(-45)
+       .translate(-centerX, -centerY);
+    
+    // Draw watermark using lineBreak: false to prevent page overflow
+    doc.text(watermarkText, centerX - 150, centerY - 30, {
+      lineBreak: false,
+    });
+    
+    // Restore graphics state
+    doc.restore();
+    
+    // Add small document ID in corner (visible)
+    doc.save();
+    doc.opacity(0.5)
+       .fontSize(7)
+       .font('Helvetica')
+       .fillColor('#666666')
+       .text(`Doc ID: ${documentId.slice(0, 12).toUpperCase()}`, pageWidth - 130, pageHeight - 25, {
+         lineBreak: false,
+       });
+    doc.restore();
+    
+    // Add reference at bottom left
+    doc.save();
+    doc.opacity(0.3)
+       .fontSize(6)
+       .font('Helvetica')
+       .fillColor('#333333')
+       .text(`Ref: ${refNumber} | ID: ${documentId.slice(0, 8)}`, 50, pageHeight - 25, {
+         lineBreak: false,
+       });
+    doc.restore();
+    
+    // Restore original position
+    doc.x = savedX;
+    doc.y = savedY;
+  } finally {
+    isCreatingWatermark = false;
+  }
 }
 
 // Helper to create footer
@@ -176,19 +202,32 @@ function createFooter(doc: PDFKit.PDFDocument): void {
 
 // Generate Train EQ Letter with watermark and multiple passengers support
 export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void {
-  const doc = new PDFDocument({ margin: 50 });
-  
-  // Generate unique document ID if not provided
-  const documentId = data.documentId || `EQ${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  try {
+    const doc = new PDFDocument({ margin: 50 });
+    
+    // Generate unique document ID if not provided
+    const documentId = data.documentId || `EQ${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-  // Set response headers
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=TrainEQ_${data.pnrNumber}_${documentId.slice(0, 8)}.pdf`);
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=TrainEQ_${data.pnrNumber}_${documentId.slice(0, 8)}.pdf`);
 
-  // Pipe to response
-  doc.pipe(res);
+    // Handle errors - must be set BEFORE piping
+    doc.on('error', (error) => {
+      console.error('PDF generation error (TrainEQ):', error);
+      // Once piped, we can't send JSON, so just log the error
+      // The response will be incomplete/corrupted, which the client will detect
+    });
 
-  // Add unique watermark FIRST (so it appears behind content)
+    // Pipe to response - this starts the stream and sends headers
+    doc.pipe(res);
+
+  // Add watermark to every page using page event
+  doc.on('pageAdded', () => {
+    createWatermark(doc, documentId, data.refNumber);
+  });
+
+  // Add watermark to first page
   createWatermark(doc, documentId, data.refNumber);
 
   // Create letterhead
@@ -301,23 +340,48 @@ Kindly extend your cooperation in this regard.`;
        { width: doc.page.width - margin * 2, align: 'center' }
      );
 
-  // Finalize
-  doc.end();
+    // Finalize
+    doc.end();
+  } catch (error) {
+    console.error('Error generating TrainEQ PDF:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Failed to generate PDF', error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  }
 }
 
 // Generate Grievance Letter
 export function generateGrievanceLetter(data: GrievanceLetter, res: Response): void {
-  const doc = new PDFDocument({ margin: 50 });
+  try {
+    const doc = new PDFDocument({ margin: 50 });
 
-  // Set response headers
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=Grievance_${data.refNumber}.pdf`);
+    // Generate unique document ID for watermark
+    const documentId = `GRV${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-  // Pipe to response
-  doc.pipe(res);
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Grievance_${data.refNumber}.pdf`);
+
+    // Handle errors - must be set BEFORE piping
+    doc.on('error', (error) => {
+      console.error('PDF generation error (Grievance):', error);
+      // Once piped, we can't send JSON, so just log the error
+      // The response will be incomplete/corrupted, which the client will detect
+    });
+
+    // Pipe to response - this starts the stream and sends headers
+    doc.pipe(res);
+
+  // Add watermark to every page using page event
+  doc.on('pageAdded', () => {
+    createWatermark(doc, documentId, data.refNumber);
+  });
+
+  // Add watermark to first page
+  createWatermark(doc, documentId, data.refNumber);
 
   // Create letterhead
-  createLetterhead(doc);
+  createLetterhead(doc);  
 
   const margin = 50;
   let y = 170;
@@ -396,8 +460,25 @@ I request you to look into this matter personally and take necessary action at t
   // Footer
   createFooter(doc);
 
-  // Finalize
-  doc.end();
+  // Add verification notice at bottom
+  doc.fontSize(7)
+     .font('Helvetica')
+     .fillColor('#888888')
+     .text(
+       `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
+       margin,
+       doc.page.height - 40,
+       { width: doc.page.width - margin * 2, align: 'center' }
+     );
+
+    // Finalize
+    doc.end();
+  } catch (error) {
+    console.error('Error generating Grievance PDF:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Failed to generate PDF', error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  }
 }
 
 // Generate Tour Program PDF
@@ -412,14 +493,34 @@ export function generateTourProgramPDF(
   dateRange: string,
   res: Response
 ): void {
-  const doc = new PDFDocument({ margin: 50 });
+  try {
+    const doc = new PDFDocument({ margin: 50 });
 
-  // Set response headers
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=TourProgram_${Date.now()}.pdf`);
+    // Generate unique document ID for watermark
+    const documentId = `TOUR${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const refNumber = `TOUR-${Date.now().toString(36).toUpperCase()}`;
 
-  // Pipe to response
-  doc.pipe(res);
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=TourProgram_${Date.now()}.pdf`);
+
+    // Handle errors - must be set BEFORE piping
+    doc.on('error', (error) => {
+      console.error('PDF generation error (TourProgram):', error);
+      // Once piped, we can't send JSON, so just log the error
+      // The response will be incomplete/corrupted, which the client will detect
+    });
+
+    // Pipe to response
+    doc.pipe(res);
+
+  // Add watermark to every page using page event
+  doc.on('pageAdded', () => {
+    createWatermark(doc, documentId, refNumber);
+  });
+
+  // Add watermark to first page
+  createWatermark(doc, documentId, refNumber);
 
   // Create letterhead
   createLetterhead(doc);
@@ -512,20 +613,56 @@ export function generateTourProgramPDF(
   // Footer
   createFooter(doc);
 
-  // Finalize
-  doc.end();
+  // Add verification notice at bottom
+  doc.fontSize(7)
+     .font('Helvetica')
+     .fillColor('#888888')
+     .text(
+       `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
+       margin,
+       doc.page.height - 40,
+       { width: doc.page.width - margin * 2, align: 'center' }
+     );
+
+    // Finalize
+    doc.end();
+  } catch (error) {
+    console.error('Error generating TourProgram PDF:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Failed to generate PDF', error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  }
 }
 
 // Generate generic letter
 export function generateGenericLetter(config: LetterConfig, res: Response): void {
-  const doc = new PDFDocument({ margin: 50 });
+  try {
+    const doc = new PDFDocument({ margin: 50 });
 
-  // Set response headers
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=Letter_${config.refNumber}.pdf`);
+    // Generate unique document ID for watermark
+    const documentId = `LTR${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-  // Pipe to response
-  doc.pipe(res);
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Letter_${config.refNumber}.pdf`);
+
+    // Handle errors - must be set BEFORE piping
+    doc.on('error', (error) => {
+      console.error('PDF generation error (GenericLetter):', error);
+      // Once piped, we can't send JSON, so just log the error
+      // The response will be incomplete/corrupted, which the client will detect
+    });
+
+    // Pipe to response
+    doc.pipe(res);
+
+  // Add watermark to every page using page event
+  doc.on('pageAdded', () => {
+    createWatermark(doc, documentId, config.refNumber);
+  });
+
+  // Add watermark to first page
+  createWatermark(doc, documentId, config.refNumber);
 
   // Create letterhead
   createLetterhead(doc);
@@ -601,6 +738,23 @@ export function generateGenericLetter(config: LetterConfig, res: Response): void
   // Footer
   createFooter(doc);
 
-  // Finalize
-  doc.end();
+  // Add verification notice at bottom
+  doc.fontSize(7)
+     .font('Helvetica')
+     .fillColor('#888888')
+     .text(
+       `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
+       margin,
+       doc.page.height - 40,
+       { width: doc.page.width - margin * 2, align: 'center' }
+     );
+
+    // Finalize
+    doc.end();
+  } catch (error) {
+    console.error('Error generating GenericLetter PDF:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Failed to generate PDF', error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  }
 }
