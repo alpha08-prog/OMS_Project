@@ -75,7 +75,7 @@ export function TodaySchedule() {
 
                 <div className="mt-2 text-sm text-muted-foreground flex flex-wrap gap-4">
                   <span className="flex items-center gap-1">
-                    <Clock className="h-4 w-4" /> {formatTime(item.eventDate)}
+                    <Clock className="h-4 w-4" /> {formatTime(item.dateTime || item.eventDate || '')}
                   </span>
                   <span className="flex items-center gap-1">
                     <MapPin className="h-4 w-4" /> {item.venue}

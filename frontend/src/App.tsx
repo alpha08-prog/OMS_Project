@@ -14,19 +14,13 @@ import NewsIntelligenceCreate from "./pages/News/NewsIntelligenceCreate";
 import BirthdayCreate from "./pages/Birthday/BirthdayCreate";
 import StaffHome from "./pages/staff/StaffHome";
 import StaffTasks from "./pages/staff/StaffTasks";
-import AdminHome from "./pages/admin/AdminHome";
-import AdminActionCenter from "./pages/admin/ActionCenter";
-import AdminTaskTracker from "./pages/admin/TaskTracker";
-import GrievanceVerification from "./pages/admin/GrievienceVerification";
-import TrainEQQueue from "./pages/admin/TrainEQQueue";
 import PrintCenter from "./pages/admin/PrintCenter";
 import TourProgramQueue from "./pages/admin/TourProgramQueue";
 import NewsIntelligenceView from "./pages/admin/NewsIntelligenceView";
 import AdminHistory from "./pages/admin/History";
+import Birthdays from "./pages/admin/Birthdays";
 import VisitorView from "./pages/admin/VisitorView";
-import PhotoBooth from "./pages/PhotoBooth/PhotoBooth";
-import PhotoBoothPublic from "./pages/PhotoBooth/PhotoBoothPublic";
-import PhotoBoothEmployee from "./pages/PhotoBooth/PhotoBoothEmployee";
+import PhotoBooth from "./pages/photo_booth/PhotoBooth";
 
 export default function App() {
   return (
@@ -66,6 +60,21 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/print-center"
+        element={
+          <ProtectedRoute>
+            <PrintCenter />
+          </ProtectedRoute>
+        }
+        
+      />
+      <Route
+  path="/admin/birthdays"
+  element={<Birthdays />}
+/>
+
+      {/* Data Entry Routes (Staff) */}
       <Route
         path="/grievances/new"
         element={
@@ -114,56 +123,17 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+  path="/photo-booth"
+  element={
+    <ProtectedRoute>
+      <PhotoBooth />
+    </ProtectedRoute>
+  }
+/>
 
-      {/* ==================== ADMIN ROUTES ==================== */}
-      <Route
-        path="/admin/home"
-        element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminHome />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/action-center"
-        element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminActionCenter />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/task-tracker"
-        element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminTaskTracker />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/grievances/verify"
-        element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
-            <GrievanceVerification />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/train-eq/queue"
-        element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
-            <TrainEQQueue />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/print-center"
-        element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
-            <PrintCenter />
-          </ProtectedRoute>
-        }
-      />
+
+      {/* Tour Program Queue (Admin) */}
       <Route
         path="/tour-program/pending"
         element={
@@ -205,22 +175,6 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
             <PhotoBooth />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/photo-booth/public"
-        element={
-          <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
-            <PhotoBoothPublic />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/photo-booth/employee"
-        element={
-          <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
-            <PhotoBoothEmployee />
           </ProtectedRoute>
         }
       />

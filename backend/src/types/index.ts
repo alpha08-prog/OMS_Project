@@ -1,8 +1,19 @@
-import { Request } from 'express';
+import { Request, ParamsDictionary } from 'express-serve-static-core';
+import { ParsedQs } from 'qs';
 import { UserRole } from '@prisma/client';
 
-// Extend Express Request to include user
-export interface AuthenticatedRequest extends Request {
+// Custom params type that always returns string
+interface StringParams extends ParamsDictionary {
+  [key: string]: string;
+}
+
+// Custom query type that returns string | undefined
+interface StringQuery extends ParsedQs {
+  [key: string]: string | undefined;
+}
+
+// Extend Express Request to include user with properly typed params/query
+export interface AuthenticatedRequest extends Request<StringParams, any, any, StringQuery> {
   user?: {
     id: string;
     email: string;

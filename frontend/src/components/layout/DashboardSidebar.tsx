@@ -6,7 +6,6 @@ import {
   Camera,
   Newspaper,
   Users,
-  Settings,
   LogOut,
   ChevronLeft,
   Building2,
@@ -15,12 +14,14 @@ import {
   ClipboardList,
   Cake,
   History,
+  Gift,
   Zap,
   TrendingUp,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { cn } from "../../lib/utils";
+
 
 type MenuItem = {
   icon: React.ComponentType<{ className?: string }>;
@@ -50,10 +51,11 @@ const allMenuItems: MenuItem[] = [
   { icon: CheckCircle, label: "Verify Grievances", route: "/grievances/verify", roles: ['ADMIN'] },
   { icon: Train, label: "Train EQ Queue", route: "/train-eq/queue", roles: ['ADMIN'] },
   { icon: ClipboardList, label: "Tour Invitations", route: "/tour-program/pending", roles: ['ADMIN'] },
-  { icon: Users, label: "Visitor Log", route: "/visitors/view", roles: ['ADMIN'] },
+  
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['ADMIN'] },
   { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
   { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },
+  { icon: Gift, label: "View Birthdays", route: "/admin/birthdays" },
 
   // Super Admin - Overview
   { icon: FileText, label: "All Grievances", route: "/grievances/new", roles: ['SUPER_ADMIN'] },
@@ -64,7 +66,6 @@ const allMenuItems: MenuItem[] = [
 
   // Common
   { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
-  { icon: Settings, label: "Settings", route: "/settings" },
 ];
 
 export function DashboardSidebar() {
@@ -84,13 +85,14 @@ export function DashboardSidebar() {
           role = user.role;
           // Also set it directly for future use
           if (role) localStorage.setItem('user_role', role);
-        } catch (e) {
+        } catch {
           console.error('Failed to parse user from localStorage');
         }
       }
     }
-    setUserRole(role);
     console.log('User role:', role); // Debug log
+    // Set initial state before component mounts
+    setUserRole(role);
   }, []);
 
   // Filter menu items based on user role
@@ -198,6 +200,7 @@ export function DashboardSidebar() {
           )}
         />
       </button>
+      
     </aside>
   );
 }

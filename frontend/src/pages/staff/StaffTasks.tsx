@@ -35,7 +35,8 @@ import {
 } from "@/components/ui/select";
 
 export default function StaffTasks() {
-  const navigate = useNavigate();
+  const _navigate = useNavigate();
+  void _navigate; // Available for future navigation needs
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

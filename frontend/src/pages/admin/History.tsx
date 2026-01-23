@@ -48,7 +48,6 @@ import {
   ChevronRight,
   Eye,
   TrendingUp,
-  FileText,
 } from "lucide-react";
 
 export default function AdminHistory() {
