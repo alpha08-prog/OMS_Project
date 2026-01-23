@@ -31,19 +31,31 @@ export default function AdminHome() {
     // Fetch pending items
     const fetchPendingItems = async () => {
       try {
+        setLoading(true);
         // Fetch unverified grievances
         const grievancesRes = await grievanceApi.getAll({ status: 'OPEN', limit: '5' });
-        setPendingGrievances(grievancesRes.data.filter((g: Grievance) => !g.isVerified));
+        console.log('AdminHome - Grievances response:', grievancesRes);
+        const grievances = Array.isArray(grievancesRes?.data) ? grievancesRes.data : [];
+        setPendingGrievances(grievances.filter((g: Grievance) => !g.isVerified));
 
         // Fetch pending train requests
         const trainRes = await trainRequestApi.getAll({ status: 'PENDING', limit: '5' });
-        setPendingTrainRequests(trainRes.data);
+        console.log('AdminHome - Train requests response:', trainRes);
+        const trainRequests = Array.isArray(trainRes?.data) ? trainRes.data : [];
+        setPendingTrainRequests(trainRequests);
 
         // Fetch pending tour programs
         const tourRes = await tourProgramApi.getAll({ decision: 'PENDING', limit: '5' });
-        setPendingTourPrograms(tourRes.data);
-      } catch (error) {
+        console.log('AdminHome - Tour programs response:', tourRes);
+        const tourPrograms = Array.isArray(tourRes?.data) ? tourRes.data : [];
+        setPendingTourPrograms(tourPrograms);
+      } catch (error: any) {
         console.error('Failed to fetch pending items:', error);
+        console.error('Error details:', error?.response?.data || error?.message);
+        // Set empty arrays on error to prevent undefined errors
+        setPendingGrievances([]);
+        setPendingTrainRequests([]);
+        setPendingTourPrograms([]);
       } finally {
         setLoading(false);
       }

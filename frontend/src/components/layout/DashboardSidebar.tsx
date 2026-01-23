@@ -17,9 +17,12 @@ import {
   Gift,
   Zap,
   TrendingUp,
+  ChevronRight,
+  Plus,
+  Search,
 } from "lucide-react";
-import { useState, useEffect } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "../../lib/utils";
 
 
@@ -28,6 +31,7 @@ type MenuItem = {
   label: string;
   route: string;
   roles?: string[];  // If specified, only show for these roles
+  submenu?: { label: string; route: string; icon?: React.ComponentType<{ className?: string }> }[];
 };
 
 const allMenuItems: MenuItem[] = [
@@ -38,7 +42,17 @@ const allMenuItems: MenuItem[] = [
 
   // Staff - Data Entry
   { icon: ClipboardList, label: "My Tasks", route: "/staff/tasks", roles: ['STAFF'] },
-  { icon: FileText, label: "New Grievance", route: "/grievances/new", roles: ['STAFF'] },
+  { icon: History, label: "My History", route: "/staff/history", roles: ['STAFF'] },
+  { 
+    icon: FileText, 
+    label: "Grievances", 
+    route: "/grievances/new", 
+    roles: ['STAFF'],
+    submenu: [
+      { label: "New Grievance", route: "/grievances/new", icon: Plus },
+      { label: "Old Grievances", route: "/grievances/view", icon: Search },
+    ]
+  },
   { icon: Users, label: "Log Visitor", route: "/visitors/new", roles: ['STAFF'] },
   { icon: Cake, label: "Add Birthday", route: "/birthday/new", roles: ['STAFF'] },
   { icon: Train, label: "Train EQ Request", route: "/train-eq/new", roles: ['STAFF'] },
@@ -71,29 +85,36 @@ const allMenuItems: MenuItem[] = [
 export function DashboardSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
-    // Get user role from localStorage (try direct key first, then from user object)
-    let role = localStorage.getItem('user_role');
+    // Get user role from sessionStorage first (tab-specific), then localStorage
+    let role = sessionStorage.getItem('user_role');
     if (!role) {
-      // Fallback: try to get from user object
-      const userStr = localStorage.getItem('user');
+      role = localStorage.getItem('user_role');
+    }
+    if (!role) {
+      // Try parsing from user object
+      const userStr = sessionStorage.getItem('user') || localStorage.getItem('user');
       if (userStr) {
         try {
           const user = JSON.parse(userStr);
           role = user.role;
-          // Also set it directly for future use
-          if (role) localStorage.setItem('user_role', role);
         } catch {
-          console.error('Failed to parse user from localStorage');
+          console.error('Failed to parse user');
         }
       }
     }
-    console.log('User role:', role); // Debug log
-    // Set initial state before component mounts
     setUserRole(role);
   }, []);
+
+  // Close submenu when route changes
+  useEffect(() => {
+    setHoveredItem(null);
+  }, [location.pathname]);
 
   // Filter menu items based on user role
   const menuItems = allMenuItems.filter(item => {
@@ -103,24 +124,32 @@ export function DashboardSidebar() {
   });
 
   const handleLogout = () => {
-    // Clear all auth data
+    // Clear sessionStorage (tab-specific)
+    sessionStorage.removeItem('auth_token');
+    sessionStorage.removeItem('auth_session');
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('user_role');
+    sessionStorage.removeItem('user_name');
+    sessionStorage.removeItem('user_id');
+    
+    // Clear localStorage
     localStorage.removeItem('auth_token');
     localStorage.removeItem('remember_token');
     localStorage.removeItem('user');
     localStorage.removeItem('user_role');
     localStorage.removeItem('user_name');
-    sessionStorage.removeItem('auth_session');
+    localStorage.removeItem('user_id');
     
-    // Navigate to login with replace to clear history
-    // This prevents back button from accessing protected pages
+    // Navigate to login
     navigate('/auth/login', { replace: true });
   };
 
   return (
     <aside
       className={cn(
-        "sticky top-0 h-screen flex flex-col transition-all duration-300",
+        "sticky top-0 h-screen flex flex-col transition-all duration-300 z-50",
         "bg-indigo-900 text-white border-r border-indigo-800",
+        "overflow-visible",
         collapsed ? "w-[72px]" : "w-[260px]"
       )}
     >
@@ -143,25 +172,120 @@ export function DashboardSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-1">
-        {menuItems.map((item) => (
-          <NavLink
-            key={item.label}
-            to={item.route}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 h-11 rounded-xl px-3 transition-colors",
-                "text-indigo-100 hover:text-white hover:bg-indigo-800",
-                isActive &&
-                  "bg-amber-400 text-black font-semibold hover:bg-amber-400",
-                collapsed && "justify-center px-0"
-              )
-            }
-          >
-            <item.icon className="h-5 w-5 flex-shrink-0" />
-            {!collapsed && <span>{item.label}</span>}
-          </NavLink>
-        ))}
+      <nav className="flex-1 p-3 space-y-1 relative overflow-visible">
+        {menuItems.map((item) => {
+          const hasSubmenu = item.submenu && item.submenu.length > 0 && !collapsed;
+          const isHovered = hoveredItem === item.label;
+          
+          return (
+            <div
+              key={item.label}
+              className="relative"
+              onMouseEnter={() => hasSubmenu && setHoveredItem(item.label)}
+              onMouseLeave={() => {
+                // Small delay to allow mouse to move to bridge/submenu
+                setTimeout(() => {
+                  const submenu = submenuRef.current;
+                  if (!submenu || !submenu.matches(':hover')) {
+                    setHoveredItem(null);
+                  }
+                }, 200);
+              }}
+            >
+              <NavLink
+                to={item.route}
+                onClick={(e) => {
+                  // Prevent navigation if user doesn't have access to this route
+                  if (item.roles && userRole && !item.roles.includes(userRole)) {
+                    e.preventDefault();
+                    console.warn(`Access denied: User role ${userRole} cannot access ${item.route}`);
+                    // Optionally show a message or redirect to their dashboard
+                    const correctDashboard = userRole === 'STAFF' ? '/staff/home' : 
+                                           userRole === 'ADMIN' ? '/admin/home' : '/home';
+                    navigate(correctDashboard, { replace: true });
+                    return;
+                  }
+                }}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 h-11 rounded-xl px-3 transition-colors",
+                    "text-indigo-100 hover:text-white hover:bg-indigo-800",
+                    isActive &&
+                      "bg-amber-400 text-black font-semibold hover:bg-amber-400",
+                    collapsed && "justify-center px-0"
+                  )
+                }
+              >
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                {!collapsed && (
+                  <>
+                    <span className="flex-1">{item.label}</span>
+                    {hasSubmenu && (
+                      <ChevronRight className={cn(
+                        "h-4 w-4 transition-transform",
+                        isHovered && "rotate-90"
+                      )} />
+                    )}
+                  </>
+                )}
+              </NavLink>
+              
+              {/* Submenu */}
+              {hasSubmenu && isHovered && (
+                <div className="absolute left-full top-0" style={{ zIndex: 9998 }}>
+                  {/* Invisible bridge to prevent gap - connects parent to submenu */}
+                  <div
+                    className="absolute left-0 top-0 w-3 h-11 pointer-events-auto"
+                    style={{ 
+                      marginLeft: '-3px', // Overlap with parent to eliminate gap
+                    }}
+                    onMouseEnter={() => setHoveredItem(item.label)}
+                  />
+                  
+                  {/* Submenu */}
+                  <div
+                    ref={submenuRef}
+                    data-submenu
+                    className="absolute left-0 top-0 w-48 bg-indigo-800 rounded-xl shadow-2xl border border-indigo-700 py-1 pointer-events-auto"
+                    style={{ 
+                      marginLeft: '8px',
+                    }}
+                    onMouseEnter={() => setHoveredItem(item.label)}
+                    onMouseLeave={() => setHoveredItem(null)}
+                  >
+                    {item.submenu!.map((subItem) => (
+                      <NavLink
+                        key={subItem.route}
+                        to={subItem.route}
+                        onClick={(e) => {
+                          // Prevent navigation if user doesn't have access to this route
+                          if (item.roles && userRole && !item.roles.includes(userRole)) {
+                            e.preventDefault();
+                            console.warn(`Access denied: User role ${userRole} cannot access ${subItem.route}`);
+                            const correctDashboard = userRole === 'STAFF' ? '/staff/home' : 
+                                                   userRole === 'ADMIN' ? '/admin/home' : '/home';
+                            navigate(correctDashboard, { replace: true });
+                            return;
+                          }
+                        }}
+                        className={({ isActive }) =>
+                          cn(
+                            "flex items-center gap-3 h-10 px-4 mx-1 rounded-lg transition-colors",
+                            "text-indigo-100 hover:text-white hover:bg-indigo-700",
+                            isActive && "bg-amber-400 text-black font-semibold"
+                          )
+                        }
+                      >
+                        {subItem.icon && <subItem.icon className="h-4 w-4" />}
+                        <span>{subItem.label}</span>
+                      </NavLink>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
 
       {/* Footer */}

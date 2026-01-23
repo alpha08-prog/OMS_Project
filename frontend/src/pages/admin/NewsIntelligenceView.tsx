@@ -48,10 +48,16 @@ export default function NewsIntelligenceView() {
         params.priority = filterPriority;
       }
       const res = await newsApi.getAll(params);
-      setNews(res.data);
-    } catch (err: unknown) {
+      console.log('NewsIntelligenceView - News response:', res);
+      const newsArray = Array.isArray(res?.data) ? res.data : [];
+      console.log('NewsIntelligenceView - News array:', newsArray);
+      setNews(newsArray);
+    } catch (err: any) {
+      console.error('Failed to fetch news:', err);
+      console.error('Error details:', err?.response?.data || err?.message);
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error.message || "Failed to load news");
+      setNews([]); // Set empty array on error
     } finally {
       setLoading(false);
     }

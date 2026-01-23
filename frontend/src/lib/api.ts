@@ -209,7 +209,7 @@ export type HistoryItem = {
 }
 
 export type HistoryStats = {
-  grievances: { resolved: number; rejected: number; total: number }
+  grievances: { resolved: number; rejected: number; verified?: number; inProgress?: number; total: number }
   trainRequests: { approved: number; rejected: number; total: number }
   tourPrograms: { accepted: number; regret: number; total: number }
   totalActions: number
@@ -274,7 +274,12 @@ export const http = axios.create({
 
 // Add auth token to requests
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token')
+  // Get token from sessionStorage first (tab-specific), then localStorage (remember me)
+  let token = sessionStorage.getItem('auth_token')
+  if (!token) {
+    token = localStorage.getItem('auth_token')
+  }
+  
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -296,18 +301,27 @@ http.interceptors.response.use(
       // Don't redirect if we're already on login page or if this is a login attempt
       if (resp.status === 401) {
         const currentPath = window.location.pathname
-        const hasToken = localStorage.getItem('auth_token')
+        const hasToken = sessionStorage.getItem('auth_token') || localStorage.getItem('auth_token')
         
         // Only clear and redirect if:
         // 1. We had a token (not a login attempt)
         // 2. We're not already on auth pages
         if (hasToken && !currentPath.startsWith('/auth')) {
+          // Clear sessionStorage (tab-specific)
+          sessionStorage.removeItem('auth_token')
+          sessionStorage.removeItem('auth_session')
+          sessionStorage.removeItem('user')
+          sessionStorage.removeItem('user_role')
+          sessionStorage.removeItem('user_name')
+          sessionStorage.removeItem('user_id')
+          
+          // Clear localStorage
           localStorage.removeItem('auth_token')
           localStorage.removeItem('remember_token')
           localStorage.removeItem('user')
           localStorage.removeItem('user_role')
           localStorage.removeItem('user_name')
-          sessionStorage.removeItem('auth_session')
+          localStorage.removeItem('user_id')
           
           // Redirect to login
           window.location.href = '/auth/login'
@@ -677,10 +691,44 @@ export const historyApi = {
 // PDF Generation API
 export const pdfApi = {
   // Download Train EQ Letter PDF (opens in new tab)
-  downloadTrainEQLetter: (id: string) => {
-    const token = localStorage.getItem('auth_token')
-    const url = `${API_BASE_URL}/pdf/train-eq/${id}?token=${token}`
-    window.open(url, '_blank')
+  downloadTrainEQLetter: async (id: string) => {
+    try {
+      console.log('Downloading TrainEQ PDF for id:', id)
+      const res = await http.get(`/pdf/train-eq/${id}`, { 
+        responseType: 'blob',
+        validateStatus: (status) => status < 500,
+      })
+      console.log('TrainEQ PDF - Response status:', res.status, 'Content-Type:', res.headers['content-type'])
+      
+      if (res.status >= 400) {
+        try {
+          const text = await res.data.text()
+          const errorData = JSON.parse(text)
+          throw new Error(errorData.message || `Server error: ${res.status}`)
+        } catch (parseError) {
+          throw new Error(`Failed to generate PDF: ${res.status}`)
+        }
+      }
+      
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      if (blob.size === 0) {
+        throw new Error('PDF file is empty')
+      }
+      
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `TrainEQ_Letter_${id}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      console.log('TrainEQ PDF download - Success')
+    } catch (error: any) {
+      console.error('PDF download error:', error)
+      console.error('Error details:', error?.response?.data || error?.message)
+      throw error
+    }
   },
   
   // Preview Train EQ Letter (HTML)
@@ -690,10 +738,44 @@ export const pdfApi = {
   },
   
   // Download Grievance Letter PDF (opens in new tab)
-  downloadGrievanceLetter: (id: string) => {
-    const token = localStorage.getItem('auth_token')
-    const url = `${API_BASE_URL}/pdf/grievance/${id}?token=${token}`
-    window.open(url, '_blank')
+  downloadGrievanceLetter: async (id: string) => {
+    try {
+      console.log('Downloading Grievance PDF for id:', id)
+      const res = await http.get(`/pdf/grievance/${id}`, { 
+        responseType: 'blob',
+        validateStatus: (status) => status < 500,
+      })
+      console.log('Grievance PDF - Response status:', res.status, 'Content-Type:', res.headers['content-type'])
+      
+      if (res.status >= 400) {
+        try {
+          const text = await res.data.text()
+          const errorData = JSON.parse(text)
+          throw new Error(errorData.message || `Server error: ${res.status}`)
+        } catch (parseError) {
+          throw new Error(`Failed to generate PDF: ${res.status}`)
+        }
+      }
+      
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      if (blob.size === 0) {
+        throw new Error('PDF file is empty')
+      }
+      
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `Grievance_Letter_${id}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      console.log('Grievance PDF download - Success')
+    } catch (error: any) {
+      console.error('PDF download error:', error)
+      console.error('Error details:', error?.response?.data || error?.message)
+      throw error
+    }
   },
   
   // Preview Grievance Letter (HTML)
@@ -703,19 +785,70 @@ export const pdfApi = {
   },
   
   // Download Tour Program PDF (opens in new tab)
-  downloadTourProgram: (startDate?: string, endDate?: string) => {
-    const token = localStorage.getItem('auth_token')
-    let url = `${API_BASE_URL}/pdf/tour-program?token=${token}`
-    if (startDate) url += `&startDate=${startDate}`
-    if (endDate) url += `&endDate=${endDate}`
-    window.open(url, '_blank')
+  downloadTourProgram: async (startDate?: string, endDate?: string) => {
+    try {
+      const params: Record<string, string> = {}
+      if (startDate) params.startDate = startDate
+      if (endDate) params.endDate = endDate
+      const res = await http.get('/pdf/tour-program', { params, responseType: 'blob' })
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `TourProgram_${Date.now()}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('PDF download error:', error)
+      throw error
+    }
   },
   
   // Generic PDF download helper (uses axios with blob)
   downloadPDF: async (endpoint: string, filename: string) => {
     try {
-      const res = await http.get(endpoint, { responseType: 'blob' })
+      console.log('PDF download - Fetching from:', endpoint)
+      const res = await http.get(endpoint, { 
+        responseType: 'blob',
+        validateStatus: (status) => status < 500, // Don't throw on 4xx errors, we'll handle them
+      })
+      console.log('PDF download - Response received:', res.status, res.headers)
+      
+      // Check if response status indicates an error
+      if (res.status >= 400) {
+        // Try to parse error message from blob
+        try {
+          const text = await res.data.text()
+          const errorData = JSON.parse(text)
+          console.error('PDF download - Server error:', errorData)
+          throw new Error(errorData.message || `Server error: ${res.status}`)
+        } catch (parseError) {
+          throw new Error(`Failed to generate PDF: ${res.status} ${res.statusText}`)
+        }
+      }
+      
+      // Check content type
+      const contentType = res.headers['content-type'] || ''
+      if (!contentType.includes('application/pdf') && !contentType.includes('application/octet-stream')) {
+        // Might be an error JSON
+        try {
+          const text = await res.data.text()
+          const errorData = JSON.parse(text)
+          throw new Error(errorData.message || 'Failed to generate PDF')
+        } catch (parseError) {
+          throw new Error('Invalid response type from server')
+        }
+      }
+      
       const blob = new Blob([res.data], { type: 'application/pdf' })
+      console.log('PDF download - Blob created, size:', blob.size)
+      
+      if (blob.size === 0) {
+        throw new Error('PDF file is empty')
+      }
+      
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -724,8 +857,11 @@ export const pdfApi = {
       link.click()
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
-    } catch (error) {
+      console.log('PDF download - Success')
+    } catch (error: any) {
       console.error('PDF download error:', error)
+      console.error('Error details:', error?.response?.data || error?.message)
+      console.error('Error status:', error?.response?.status)
       throw error
     }
   },
@@ -788,7 +924,12 @@ export const taskApi = {
   },
   
   getAll: async (params?: Record<string, string>) => {
+    console.log('TaskApi.getAll - Calling with params:', params)
     const res = await http.get<ApiResponse<TaskAssignment[]>>('/tasks', { params })
+    console.log('TaskApi.getAll - Response:', res)
+    console.log('TaskApi.getAll - Response data:', res.data)
+    console.log('TaskApi.getAll - Response data.data:', res.data?.data)
+    console.log('TaskApi.getAll - Response data.meta:', res.data?.meta)
     return res.data
   },
   

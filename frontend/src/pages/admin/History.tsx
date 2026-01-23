@@ -76,13 +76,27 @@ export default function AdminHistory() {
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
 
+      console.log('History - Fetching with params:', params);
       const res = await historyApi.getHistory(params);
-      setHistory(res.data);
-      if (res.meta) {
+      console.log('History - Response:', res);
+      console.log('History - Response type:', typeof res);
+      console.log('History - Response keys:', res ? Object.keys(res) : 'null');
+      // res is ApiResponse<HistoryItem[]>, so it has { success, message, data: HistoryItem[], meta }
+      const historyArray = Array.isArray(res?.data) 
+        ? res.data 
+        : Array.isArray(res) 
+          ? res 
+          : [];
+      console.log('History - History array:', historyArray);
+      console.log('History - History array length:', historyArray.length);
+      setHistory(historyArray);
+      if (res?.meta) {
         setTotalPages(res.meta.totalPages);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching history:", error);
+      console.error('Error details:', error?.response?.data || error?.message);
+      setHistory([]);
     } finally {
       setLoading(false);
     }
@@ -90,10 +104,13 @@ export default function AdminHistory() {
 
   const fetchStats = async () => {
     try {
+      console.log('History - Fetching stats');
       const data = await historyApi.getStats();
+      console.log('History - Stats response:', data);
       setStats(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching stats:", error);
+      console.error('Error details:', error?.response?.data || error?.message);
     }
   };
 
@@ -101,6 +118,15 @@ export default function AdminHistory() {
     fetchHistory();
     fetchStats();
   }, [page]);
+
+  // Refetch when filters change
+  useEffect(() => {
+    if (page === 1) {
+      fetchHistory();
+    } else {
+      setPage(1);
+    }
+  }, [typeFilter, actionFilter, startDate, endDate]);
 
   const handleFilter = () => {
     setPage(1);

@@ -5,6 +5,7 @@ import ForgotPassword from "./pages/Auth/ForgotPassword";
 import OTP from "./pages/Auth/OTP";         
 import Home from "./pages/Home";
 import GrievanceCreate from "./pages/grievances/GrievanceCreate";
+import GrievanceView from "./pages/grievances/GrievanceView";
 import VisitorCreate from "./pages/visitors/VisitorCreate";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import "./index.css";
@@ -14,12 +15,18 @@ import NewsIntelligenceCreate from "./pages/News/NewsIntelligenceCreate";
 import BirthdayCreate from "./pages/Birthday/BirthdayCreate";
 import StaffHome from "./pages/staff/StaffHome";
 import StaffTasks from "./pages/staff/StaffTasks";
+import StaffHistory from "./pages/staff/StaffHistory";
 import PrintCenter from "./pages/admin/PrintCenter";
 import TourProgramQueue from "./pages/admin/TourProgramQueue";
 import NewsIntelligenceView from "./pages/admin/NewsIntelligenceView";
 import AdminHistory from "./pages/admin/History";
 import Birthdays from "./pages/admin/Birthdays";
 import VisitorView from "./pages/admin/VisitorView";
+import ActionCenter from "./pages/admin/ActionCenter";
+import TaskTracker from "./pages/admin/TaskTracker";
+import GrievanceVerification from "./pages/admin/GrievienceVerification";
+import TrainEQQueue from "./pages/admin/TrainEQQueue";
+import AdminHome from "./pages/admin/AdminHome";
 import PhotoBooth from "./pages/photo_booth/PhotoBooth";
 
 export default function App() {
@@ -61,18 +68,70 @@ export default function App() {
         }
       />
       <Route
+        path="/staff/history"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF']}>
+            <StaffHistory />
+          </ProtectedRoute>
+        }
+      />
+      {/* ==================== ADMIN ROUTES ==================== */}
+      <Route
+        path="/admin/home"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <AdminHome />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/action-center"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <ActionCenter />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/task-tracker"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <TaskTracker />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/grievances/verify"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <GrievanceVerification />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/train-eq/queue"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <TrainEQQueue />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/print-center"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['ADMIN']}>
             <PrintCenter />
           </ProtectedRoute>
         }
-        
       />
       <Route
-  path="/admin/birthdays"
-  element={<Birthdays />}
-/>
+        path="/admin/birthdays"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+            <Birthdays />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Data Entry Routes (Staff) */}
       <Route
@@ -80,6 +139,14 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={['STAFF']}>
             <GrievanceCreate />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/grievances/view"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF']}>
+            <GrievanceView />
           </ProtectedRoute>
         }
       />
@@ -123,16 +190,6 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route
-  path="/photo-booth"
-  element={
-    <ProtectedRoute>
-      <PhotoBooth />
-    </ProtectedRoute>
-  }
-/>
-
-
       {/* Tour Program Queue (Admin) */}
       <Route
         path="/tour-program/pending"

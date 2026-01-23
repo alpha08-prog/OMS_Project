@@ -25,12 +25,13 @@ export function DashboardHeader() {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const userStr = localStorage.getItem('user');
+    // Get user from sessionStorage first (tab-specific), then localStorage
+    const userStr = sessionStorage.getItem('user') || localStorage.getItem('user');
     if (userStr) {
       try {
         setUser(JSON.parse(userStr));
-      } catch (e) {
-        // ignore
+      } catch {
+        // ignore parse errors
       }
     }
   }, []);
@@ -68,9 +69,22 @@ export function DashboardHeader() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('user');
+    // Clear sessionStorage (tab-specific)
+    sessionStorage.removeItem('auth_token');
     sessionStorage.removeItem('auth_session');
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('user_role');
+    sessionStorage.removeItem('user_name');
+    sessionStorage.removeItem('user_id');
+    
+    // Clear localStorage
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('remember_token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('user_name');
+    localStorage.removeItem('user_id');
+    
     navigate('/auth/login');
   };
 

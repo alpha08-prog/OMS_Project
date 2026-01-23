@@ -20,9 +20,11 @@ import {
   trainRequestApi, 
   tourProgramApi,
   taskApi,
+  historyApi,
   type Grievance, 
   type TrainRequest, 
-  type TourProgram 
+  type TourProgram,
+  type HistoryItem
 } from "@/lib/api";
 import {
   Dialog,
@@ -57,6 +59,8 @@ export default function AdminActionCenter() {
   const [pendingTrainRequests, setPendingTrainRequests] = useState<TrainRequest[]>([]);
   const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   
   // Dialog states
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -72,22 +76,99 @@ export default function AdminActionCenter() {
   const [priority, setPriority] = useState("NORMAL");
   const [assigning, setAssigning] = useState(false);
 
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const historyRes = await historyApi.getHistory({ page: 1, limit: 10 });
+      console.log('ActionCenter - History response:', historyRes);
+      // historyRes is ApiResponse<HistoryItem[]>, so it has { success, message, data: HistoryItem[], meta }
+      const historyArray = Array.isArray(historyRes?.data) 
+        ? historyRes.data 
+        : Array.isArray(historyRes) 
+          ? historyRes 
+          : [];
+      setRecentHistory(historyArray);
+      console.log('ActionCenter - Recent history:', historyArray.length);
+    } catch (error: any) {
+      console.error('Failed to fetch history:', error);
+      console.error('Error details:', error?.response?.data || error?.message);
+      setRecentHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
+      // Fetch all items, not just pending ones - we'll filter client-side
       const [grievancesRes, trainRes, tourRes, staffRes] = await Promise.all([
-        grievanceApi.getAll({ status: 'OPEN', limit: '50' }),
-        trainRequestApi.getAll({ status: 'PENDING', limit: '50' }),
-        tourProgramApi.getAll({ decision: 'PENDING', limit: '50' }),
+        grievanceApi.getAll({ limit: '200' }), // Get more grievances
+        trainRequestApi.getAll({ limit: '200' }), // Get all train requests
+        tourProgramApi.getAll({ limit: '200' }), // Get all tour programs
         taskApi.getStaffMembers(),
       ]);
       
-      setPendingGrievances(grievancesRes.data.filter((g: Grievance) => !g.isVerified));
-      setPendingTrainRequests(trainRes.data);
-      setPendingTourPrograms(tourRes.data);
-      setStaffMembers(staffRes);
-    } catch (error) {
+      console.log('ActionCenter - Grievances response:', grievancesRes);
+      console.log('ActionCenter - Train Requests response:', trainRes);
+      console.log('ActionCenter - Tour Programs response:', tourRes);
+      console.log('ActionCenter - Staff Members response:', staffRes);
+      
+      // Ensure data exists and is an array
+      // All API responses are ApiResponse<T>, so they have { success, message, data: T[], meta }
+      const grievances = Array.isArray(grievancesRes?.data) 
+        ? grievancesRes.data 
+        : Array.isArray(grievancesRes) 
+          ? grievancesRes 
+          : [];
+      const trainRequests = Array.isArray(trainRes?.data) 
+        ? trainRes.data 
+        : Array.isArray(trainRes) 
+          ? trainRes 
+          : [];
+      const tourPrograms = Array.isArray(tourRes?.data) 
+        ? tourRes.data 
+        : Array.isArray(tourRes) 
+          ? tourRes 
+          : [];
+      // getStaffMembers() returns res.data.data, so it's already the array
+      const staff = Array.isArray(staffRes) 
+        ? staffRes 
+        : Array.isArray(staffRes?.data) 
+          ? staffRes.data 
+          : [];
+      
+      console.log('ActionCenter - Processed grievances:', grievances.length);
+      console.log('ActionCenter - Processed train requests:', trainRequests.length);
+      console.log('ActionCenter - Processed tour programs:', tourPrograms.length);
+      
+      // Filter for pending items: OPEN grievances that are not verified, PENDING train requests, PENDING tour programs
+      const pendingGrievances = grievances.filter((g: Grievance) => 
+        g.status === 'OPEN' && !g.isVerified
+      );
+      const pendingTrainRequests = trainRequests.filter((t: TrainRequest) => 
+        t.status === 'PENDING'
+      );
+      const pendingTourPrograms = tourPrograms.filter((tp: TourProgram) => 
+        !tp.decision || tp.decision === 'PENDING'
+      );
+      
+      console.log('ActionCenter - Pending grievances:', pendingGrievances.length);
+      console.log('ActionCenter - Pending train requests:', pendingTrainRequests.length);
+      console.log('ActionCenter - Pending tour programs:', pendingTourPrograms.length);
+      
+      setPendingGrievances(pendingGrievances);
+      setPendingTrainRequests(pendingTrainRequests);
+      setPendingTourPrograms(pendingTourPrograms);
+      setStaffMembers(staff);
+    } catch (error: any) {
       console.error('Failed to fetch data:', error);
+      console.error('Error details:', error?.response?.data || error?.message);
+      // Set empty arrays on error to prevent undefined errors
+      setPendingGrievances([]);
+      setPendingTrainRequests([]);
+      setPendingTourPrograms([]);
+      setStaffMembers([]);
     } finally {
       setLoading(false);
     }
@@ -95,6 +176,7 @@ export default function AdminActionCenter() {
 
   useEffect(() => {
     fetchData();
+    fetchHistory();
   }, []);
 
   const handleViewDetails = (item: any, type: ActionType) => {
@@ -107,13 +189,35 @@ export default function AdminActionCenter() {
     setSelectedItem(item);
     setSelectedType(type);
     
-    // Pre-fill task title based on type
+    // Pre-fill task title and description based on type
     if (type === 'grievance') {
-      setTaskTitle(`Grievance: ${item.grievanceType} - ${item.petitionerName}`);
+      setTaskTitle(`Follow up on ${item.grievanceType} - ${item.petitionerName}`);
+      setTaskDescription(
+        `Grievance Type: ${item.grievanceType}\n` +
+        `Petitioner: ${item.petitionerName}\n` +
+        `Mobile: ${item.mobileNumber}\n` +
+        `Constituency: ${item.constituency}\n` +
+        `Description: ${item.description || 'N/A'}`
+      );
     } else if (type === 'train') {
       setTaskTitle(`Train EQ: ${item.passengerName} - PNR ${item.pnrNumber}`);
-    } else {
-      setTaskTitle(`Tour: ${item.eventName}`);
+      setTaskDescription(
+        `Passenger: ${item.passengerName}\n` +
+        `PNR: ${item.pnrNumber}\n` +
+        `Train: ${item.trainName} (${item.trainNumber})\n` +
+        `Journey Date: ${formatDate(item.dateOfJourney)}\n` +
+        `Route: ${item.fromStation} → ${item.toStation}\n` +
+        `Class: ${item.journeyClass}`
+      );
+    } else if (type === 'tour') {
+      setTaskTitle(`Tour Program: ${item.eventName}`);
+      setTaskDescription(
+        `Event: ${item.eventName}\n` +
+        `Organizer: ${item.organizer}\n` +
+        `Date & Time: ${formatDate(item.dateTime || item.eventDate)}\n` +
+        `Venue: ${item.venue}\n` +
+        `${item.description ? `Description: ${item.description}` : ''}`
+      );
     }
     
     setAssignDialogOpen(true);
@@ -178,25 +282,112 @@ export default function AdminActionCenter() {
         referenceType = 'TOUR_PROGRAM';
       }
       
-      await taskApi.create({
-        title: taskTitle,
-        description: taskDescription || undefined,
+      // Format dueDate - convert YYYY-MM-DD to ISO8601 format
+      let finalDueDate: string | undefined = undefined;
+      if (dueDate && dueDate.trim()) {
+        try {
+          // Date input gives YYYY-MM-DD, convert to ISO8601
+          const dateObj = new Date(dueDate + 'T00:00:00');
+          if (!isNaN(dateObj.getTime())) {
+            finalDueDate = dateObj.toISOString();
+          } else {
+            // Fallback: use as-is if it's already in ISO format
+            finalDueDate = dueDate.trim();
+          }
+        } catch (e) {
+          console.error('Date parsing error:', e);
+          finalDueDate = dueDate.trim();
+        }
+      }
+      
+      // Validate assignedToId is a UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(assignToId)) {
+        alert('Invalid staff member selected. Please select a valid staff member.');
+        setAssigning(false);
+        return;
+      }
+      
+      // Ensure selectedItem exists
+      if (!selectedItem || !selectedItem.id) {
+        alert('No item selected for task assignment. Please try again.');
+        setAssigning(false);
+        return;
+      }
+      
+      // Debug log
+      console.log('Creating task with:', {
+        title: taskTitle.trim(),
         taskType,
+        assignedToId: assignToId,
+        dueDate: finalDueDate,
+        referenceId: selectedItem.id,
+        referenceType,
         priority,
+      });
+      
+      const createdTask = await taskApi.create({
+        title: taskTitle.trim(),
+        description: taskDescription?.trim() || undefined,
+        taskType,
+        priority: priority || 'NORMAL',
         referenceId: selectedItem.id,
         referenceType,
         assignedToId: assignToId,
-        dueDate: dueDate || undefined,
+        dueDate: finalDueDate,
       });
       
-      // Note: Removed auto-verification - grievances should be verified explicitly via the Verify button
+      console.log('Task created successfully:', createdTask);
       
+      // Show success message with details
+      const staffName = createdTask.assignedTo?.name || 'Staff member';
+      alert(`✅ Task assigned successfully!\n\nAssigned to: ${staffName}\nTask: ${createdTask.title}`);
+      
+      // Close dialog and reset form
       setAssignDialogOpen(false);
       resetAssignForm();
-      fetchData();
-    } catch (error) {
-      console.error('Failed to assign task:', error);
-      alert('Failed to assign task');
+      
+      // Refresh data to show updated counts
+      await fetchData();
+    } catch (error: any) {
+      console.error('Failed to assign task - Full error:', error);
+      console.error('Error response:', error?.response?.data);
+      console.error('Error status:', error?.status);
+      
+      // Extract error message from response
+      let errorMessage = 'Failed to assign task. Please check all fields and try again.';
+      
+      // The interceptor assigns response.data to the error object
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error?.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      
+      // Also check for validation errors
+      if (error?.errors && Array.isArray(error.errors)) {
+        const validationErrors = error.errors.map((e: any) => {
+          const field = e.field || e.path || 'field';
+          const msg = e.message || e.msg || 'Invalid value';
+          return `${field}: ${msg}`;
+        }).join('\n');
+        if (validationErrors) {
+          errorMessage = `Validation Errors:\n${validationErrors}`;
+        }
+      } else if (error?.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+        const validationErrors = error.response.data.errors.map((e: any) => {
+          const field = e.field || 'field';
+          const msg = e.message || 'Invalid value';
+          return `${field}: ${msg}`;
+        }).join('\n');
+        if (validationErrors) {
+          errorMessage = `Validation Errors:\n${validationErrors}`;
+        }
+      }
+      
+      alert(`Task Assignment Failed:\n\n${errorMessage}\n\nPlease check the console for more details.`);
     } finally {
       setAssigning(false);
     }
@@ -210,12 +401,17 @@ export default function AdminActionCenter() {
     setPriority("NORMAL");
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
+  const formatDate = (dateStr: string | undefined) => {
+    if (!dateStr) return 'N/A';
+    try {
+      return new Date(dateStr).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      });
+    } catch {
+      return dateStr;
+    }
   };
 
   const totalPending = pendingGrievances.length + pendingTrainRequests.length + pendingTourPrograms.length;
@@ -239,9 +435,13 @@ export default function AdminActionCenter() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={fetchData} disabled={loading}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                <Button variant="outline" onClick={() => { fetchData(); fetchHistory(); }} disabled={loading || historyLoading}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loading || historyLoading ? 'animate-spin' : ''}`} />
                   Refresh
+                </Button>
+                <Button variant="outline" onClick={() => navigate('/admin/history')}>
+                  View Full History
+                  <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
                 <Button onClick={() => navigate('/admin/task-tracker')}>
                   View Task Tracker
@@ -275,6 +475,38 @@ export default function AdminActionCenter() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Recent History Card */}
+            {recentHistory.length > 0 && (
+              <Card className="rounded-2xl">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-indigo-600" />
+                    Recent Actions
+                  </CardTitle>
+                  <Button variant="ghost" size="sm" onClick={() => navigate('/admin/history')}>
+                    View All
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {recentHistory.map((item) => (
+                    <div key={`${item.type}-${item.id}`} className="p-3 rounded-lg bg-gray-50 hover:bg-indigo-50 transition">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">{item.title}</p>
+                          <p className="text-xs text-muted-foreground">{item.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {item.action} • {new Date(item.actionAt).toLocaleDateString('en-IN')}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="text-xs">{item.action}</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Action Tiles Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -560,7 +792,13 @@ export default function AdminActionCenter() {
         </Dialog>
 
         {/* Assign Task Dialog */}
-        <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+        <Dialog open={assignDialogOpen} onOpenChange={(open) => {
+          setAssignDialogOpen(open);
+          if (!open) {
+            // Reset form when dialog closes
+            resetAssignForm();
+          }
+        }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Assign Task to Staff</DialogTitle>
