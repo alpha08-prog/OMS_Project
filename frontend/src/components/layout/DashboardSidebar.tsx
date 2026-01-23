@@ -69,7 +69,7 @@ const allMenuItems: MenuItem[] = [
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['ADMIN'] },
   { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
   { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },
-  { icon: Gift, label: "View Birthdays", route: "/admin/birthdays" },
+  { icon: Gift, label: "View Birthdays", route: "/admin/birthdays", roles: ['ADMIN', 'SUPER_ADMIN'] },
 
   // Super Admin - Overview
   { icon: FileText, label: "All Grievances", route: "/grievances/new", roles: ['SUPER_ADMIN'] },
@@ -180,26 +180,28 @@ export function DashboardSidebar() {
           return (
             <div
               key={item.label}
-              className="relative"
+              className="relative group"
               onMouseEnter={() => hasSubmenu && setHoveredItem(item.label)}
               onMouseLeave={() => {
-                // Small delay to allow mouse to move to bridge/submenu
+                // Longer delay to allow mouse to move to submenu
                 setTimeout(() => {
-                  const submenu = submenuRef.current;
-                  if (!submenu || !submenu.matches(':hover')) {
-                    setHoveredItem(null);
-                  }
-                }, 200);
+                  setHoveredItem((current) => current === item.label ? null : current);
+                }, 300);
               }}
             >
               <NavLink
                 to={item.route}
                 onClick={(e) => {
+                  // If has submenu, prevent navigation on parent click
+                  if (hasSubmenu) {
+                    e.preventDefault();
+                    setHoveredItem(isHovered ? null : item.label);
+                    return;
+                  }
                   // Prevent navigation if user doesn't have access to this route
                   if (item.roles && userRole && !item.roles.includes(userRole)) {
                     e.preventDefault();
                     console.warn(`Access denied: User role ${userRole} cannot access ${item.route}`);
-                    // Optionally show a message or redirect to their dashboard
                     const correctDashboard = userRole === 'STAFF' ? '/staff/home' : 
                                            userRole === 'ADMIN' ? '/admin/home' : '/home';
                     navigate(correctDashboard, { replace: true });
@@ -210,7 +212,7 @@ export function DashboardSidebar() {
                   cn(
                     "flex items-center gap-3 h-11 rounded-xl px-3 transition-colors",
                     "text-indigo-100 hover:text-white hover:bg-indigo-800",
-                    isActive &&
+                    (isActive || (hasSubmenu && item.submenu?.some(sub => location.pathname === sub.route))) &&
                       "bg-amber-400 text-black font-semibold hover:bg-amber-400",
                     collapsed && "justify-center px-0"
                   )
@@ -230,34 +232,30 @@ export function DashboardSidebar() {
                 )}
               </NavLink>
               
-              {/* Submenu */}
+              {/* Submenu - positioned right next to parent with no gap */}
               {hasSubmenu && isHovered && (
-                <div className="absolute left-full top-0" style={{ zIndex: 9998 }}>
-                  {/* Invisible bridge to prevent gap - connects parent to submenu */}
-                  <div
-                    className="absolute left-0 top-0 w-3 h-11 pointer-events-auto"
-                    style={{ 
-                      marginLeft: '-3px', // Overlap with parent to eliminate gap
-                    }}
-                    onMouseEnter={() => setHoveredItem(item.label)}
-                  />
-                  
-                  {/* Submenu */}
+                <div 
+                  className="absolute left-full top-0 pl-1" 
+                  style={{ zIndex: 9999 }}
+                  onMouseEnter={() => setHoveredItem(item.label)}
+                  onMouseLeave={() => {
+                    setTimeout(() => {
+                      setHoveredItem(null);
+                    }, 100);
+                  }}
+                >
+                  {/* Submenu panel */}
                   <div
                     ref={submenuRef}
-                    data-submenu
-                    className="absolute left-0 top-0 w-48 bg-indigo-800 rounded-xl shadow-2xl border border-indigo-700 py-1 pointer-events-auto"
-                    style={{ 
-                      marginLeft: '8px',
-                    }}
-                    onMouseEnter={() => setHoveredItem(item.label)}
-                    onMouseLeave={() => setHoveredItem(null)}
+                    className="w-52 bg-indigo-800 rounded-xl shadow-2xl border border-indigo-700 py-2"
                   >
                     {item.submenu!.map((subItem) => (
                       <NavLink
                         key={subItem.route}
                         to={subItem.route}
                         onClick={(e) => {
+                          // Close submenu after click
+                          setHoveredItem(null);
                           // Prevent navigation if user doesn't have access to this route
                           if (item.roles && userRole && !item.roles.includes(userRole)) {
                             e.preventDefault();
@@ -270,9 +268,9 @@ export function DashboardSidebar() {
                         }}
                         className={({ isActive }) =>
                           cn(
-                            "flex items-center gap-3 h-10 px-4 mx-1 rounded-lg transition-colors",
+                            "flex items-center gap-3 h-11 px-4 mx-2 rounded-lg transition-colors",
                             "text-indigo-100 hover:text-white hover:bg-indigo-700",
-                            isActive && "bg-amber-400 text-black font-semibold"
+                            isActive && "bg-amber-400 text-black font-semibold hover:bg-amber-400"
                           )
                         }
                       >
