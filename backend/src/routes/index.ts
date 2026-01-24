@@ -9,6 +9,7 @@ import statsRoutes from './stats.routes';
 import pdfRoutes from './pdf.routes';
 import birthdayRoutes from './birthday.routes';
 import historyRoutes from './history.routes';
+import taskRoutes from './task.routes';
 
 const router = Router();
 
@@ -33,5 +34,6 @@ router.use('/stats', statsRoutes);
 router.use('/pdf', pdfRoutes);
 router.use('/birthdays', birthdayRoutes);
 router.use('/history', historyRoutes);
+router.use('/tasks', taskRoutes);
 
 export default router;

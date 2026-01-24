@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { grievanceApi, trainRequestApi, pdfApi, type Grievance, type TrainRequest } from "@/lib/api";
+import { grievanceApi, trainRequestApi, pdfApi, http, type Grievance, type TrainRequest } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -49,37 +49,49 @@ export default function PrintCenter() {
     try {
       const items: PrintableItem[] = [];
 
-      // Fetch resolved grievances (ready for printing)
-      const grievanceRes = await grievanceApi.getAll({ status: 'RESOLVED' });
-      grievanceRes.data.forEach((g: Grievance) => {
-        items.push({
-          id: g.id,
-          type: 'grievance',
-          title: `Grievance Letter - ${g.grievanceType.replace('_', ' ')}`,
-          subtitle: `${g.petitionerName} • ${g.constituency}`,
-          date: g.createdAt,
-          status: 'Ready',
-          data: g,
-        });
+      // Fetch verified/resolved grievances (ready for printing)
+      // Get all grievances and filter for verified ones - increase limit to get all
+      const grievanceRes = await grievanceApi.getAll({ limit: '1000' });
+      console.log('PrintCenter - Grievances response:', grievanceRes);
+      const grievances = Array.isArray(grievanceRes?.data) ? grievanceRes.data : [];
+      grievances.forEach((g: Grievance) => {
+        // Include verified grievances (can be VERIFIED, IN_PROGRESS, or RESOLVED status)
+        if (g.isVerified || g.status === 'RESOLVED' || g.status === 'IN_PROGRESS') {
+          items.push({
+            id: g.id,
+            type: 'grievance',
+            title: `Grievance Letter - ${g.grievanceType.replace(/_/g, ' ')}`,
+            subtitle: `${g.petitionerName} • ${g.constituency}`,
+            date: g.verifiedAt || g.createdAt,
+            status: g.status === 'RESOLVED' ? 'Resolved' : g.status === 'IN_PROGRESS' ? 'In Progress' : 'Verified',
+            data: g,
+          });
+        }
       });
 
       // Fetch approved train requests
       const trainRes = await trainRequestApi.getAll({ status: 'APPROVED' });
-      trainRes.data.forEach((t: TrainRequest) => {
+      console.log('PrintCenter - Train requests response:', trainRes);
+      const trainRequests = Array.isArray(trainRes?.data) ? trainRes.data : [];
+      trainRequests.forEach((t: TrainRequest) => {
         items.push({
           id: t.id,
           type: 'train',
           title: `Train EQ Letter - ${t.trainName || 'N/A'}`,
           subtitle: `${t.passengerName} • PNR: ${t.pnrNumber}`,
-          date: t.createdAt,
-          status: 'Ready',
+          date: t.approvedAt || t.createdAt,
+          status: 'Approved',
           data: t,
         });
       });
 
+      console.log('PrintCenter - Printable items:', items);
       setPrintableItems(items);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch printable items:', error);
+      console.error('Error details:', error?.response?.data || error?.message);
+      // Set empty array on error
+      setPrintableItems([]);
     } finally {
       setLoading(false);
     }
@@ -106,42 +118,70 @@ export default function PrintCenter() {
 
   const handleDownloadPDF = async (item: PrintableItem) => {
     try {
+      console.log('Downloading PDF for item:', item);
       if (item.type === 'grievance') {
         await pdfApi.downloadPDF(`/pdf/grievance/${item.id}`, `Grievance_Letter_${item.id}.pdf`);
       } else if (item.type === 'train') {
         await pdfApi.downloadPDF(`/pdf/train-eq/${item.id}`, `TrainEQ_Letter_${item.id}.pdf`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to download PDF:', error);
+      console.error('Error details:', error?.response?.data || error?.message);
+      alert(`Failed to download PDF: ${error?.message || 'Unknown error'}`);
     }
   };
 
   const handlePreview = async (item: PrintableItem) => {
     setPreviewLoading(true);
     try {
+      console.log('Loading preview for item:', item);
       let html: string;
       if (item.type === 'train') {
         html = await pdfApi.previewTrainEQLetter(item.id) as string;
       } else if (item.type === 'grievance') {
         html = await pdfApi.previewGrievanceLetter(item.id) as string;
       } else {
+        setPreviewLoading(false);
         return;
       }
+      console.log('Preview HTML loaded, length:', html?.length);
       setPreviewContent(html);
       setPreviewOpen(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load preview:', error);
+      console.error('Error details:', error?.response?.data || error?.message);
+      alert(`Failed to load preview: ${error?.message || 'Unknown error'}`);
     } finally {
       setPreviewLoading(false);
     }
   };
 
-  const handlePrint = (item: PrintableItem) => {
-    // Open PDF in new tab for printing
-    if (item.type === 'grievance') {
-      pdfApi.downloadGrievanceLetter(item.id);
-    } else if (item.type === 'train') {
-      pdfApi.downloadTrainEQLetter(item.id);
+  const handlePrint = async (item: PrintableItem) => {
+    try {
+      console.log('Printing item:', item);
+      // Fetch PDF and open in new tab for printing
+      let endpoint = '';
+      if (item.type === 'grievance') {
+        endpoint = `/pdf/grievance/${item.id}`;
+      } else if (item.type === 'train') {
+        endpoint = `/pdf/train-eq/${item.id}`;
+      } else {
+        return;
+      }
+      
+      const res = await http.get(endpoint, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const printWindow = window.open(url, '_blank');
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      }
+    } catch (error: any) {
+      console.error('Failed to print:', error);
+      console.error('Error details:', error?.response?.data || error?.message);
+      alert(`Failed to open PDF for printing: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -257,15 +297,15 @@ export default function PrintCenter() {
                   filteredItems.map((item) => (
                     <div
                       key={`${item.type}-${item.id}`}
-                      className="flex items-center justify-between rounded-xl border p-4 hover:bg-indigo-50/40 transition"
+                      className="flex items-center justify-between rounded-xl border p-4 hover:bg-indigo-50/40 transition relative z-10"
                     >
                       {/* Left */}
-                      <div className="flex items-start gap-4">
-                        <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                      <div className="flex items-start gap-4 flex-1 min-w-0">
+                        <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
                           {getItemIcon(item.type)}
                         </div>
 
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <p className="font-medium text-indigo-900">
                             {item.title}
                           </p>
@@ -279,7 +319,7 @@ export default function PrintCenter() {
                       </div>
 
                       {/* Right */}
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-shrink-0 relative z-20">
                         <Badge className={getItemBadgeColor(item.type)}>
                           {item.type === 'grievance' ? 'Grievance' : item.type === 'train' ? 'Train EQ' : 'Tour'}
                         </Badge>
@@ -289,10 +329,14 @@ export default function PrintCenter() {
                             size="icon" 
                             variant="ghost" 
                             title="Preview"
-                            onClick={() => handlePreview(item)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePreview(item);
+                            }}
                             disabled={previewLoading}
+                            className="relative z-20"
                           >
-                            <Eye className="h-4 w-4" />
+                            <Eye className="h-4 w-4 flex-shrink-0" />
                           </Button>
                         )}
 
@@ -300,18 +344,25 @@ export default function PrintCenter() {
                           size="icon" 
                           variant="ghost" 
                           title="Download PDF"
-                          onClick={() => handleDownloadPDF(item)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadPDF(item);
+                          }}
+                          className="relative z-20"
                         >
-                          <Download className="h-4 w-4" />
+                          <Download className="h-4 w-4 flex-shrink-0" />
                         </Button>
 
                         <Button
                           size="icon"
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white relative z-20"
                           title="Print"
-                          onClick={() => handlePrint(item)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePrint(item);
+                          }}
                         >
-                          <Printer className="h-4 w-4" />
+                          <Printer className="h-4 w-4 flex-shrink-0" />
                         </Button>
                       </div>
                     </div>

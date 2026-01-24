@@ -390,7 +390,7 @@ export async function checkPNRStatus(
       throw new Error(`API responded with status ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as Record<string, any>;
     
     // Log the raw response for debugging
     console.log('IRCTC API Raw Response:', JSON.stringify(data, null, 2));

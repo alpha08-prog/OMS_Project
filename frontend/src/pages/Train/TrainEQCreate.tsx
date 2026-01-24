@@ -14,6 +14,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { trainRequestApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { Plus, X, AlertTriangle, Users } from "lucide-react";
+
+// Passenger limit constants
+const MAX_PASSENGERS_GENERAL = 6;
+const MAX_PASSENGERS_TATKAL = 4;
+
+type BookingType = 'GENERAL' | 'TATKAL';
 
 export default function TrainEQCreate() {
   const navigate = useNavigate();
@@ -21,9 +28,14 @@ export default function TrainEQCreate() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [pnrLoading, setPnrLoading] = useState(false);
+  
+  // Booking type for passenger limit
+  const [bookingType, setBookingType] = useState<BookingType>('GENERAL');
+  
+  // Multiple passengers support
+  const [passengers, setPassengers] = useState<string[]>(['']);
 
   const [formData, setFormData] = useState({
-    passengerName: "",
     pnrNumber: "",
     trainName: "",
     trainNumber: "",
@@ -35,6 +47,50 @@ export default function TrainEQCreate() {
     referencedBy: "",
     attachSignature: false,
   });
+  
+  // Get max passengers based on booking type
+  const getMaxPassengers = () => {
+    return bookingType === 'TATKAL' ? MAX_PASSENGERS_TATKAL : MAX_PASSENGERS_GENERAL;
+  };
+  
+  // Add new passenger
+  const addPassenger = () => {
+    const maxPassengers = getMaxPassengers();
+    if (passengers.length < maxPassengers) {
+      setPassengers([...passengers, '']);
+      setError(null);
+    } else {
+      setError(`Maximum ${maxPassengers} passengers allowed for ${bookingType === 'TATKAL' ? 'Tatkal' : 'General'} bookings`);
+    }
+  };
+  
+  // Remove passenger
+  const removePassenger = (index: number) => {
+    if (passengers.length > 1) {
+      setPassengers(passengers.filter((_, i) => i !== index));
+      setError(null);
+    }
+  };
+  
+  // Update passenger name
+  const updatePassenger = (index: number, name: string) => {
+    const newPassengers = [...passengers];
+    newPassengers[index] = name;
+    setPassengers(newPassengers);
+    setError(null);
+  };
+  
+  // Handle booking type change
+  const handleBookingTypeChange = (type: BookingType) => {
+    const maxPassengers = type === 'TATKAL' ? MAX_PASSENGERS_TATKAL : MAX_PASSENGERS_GENERAL;
+    setBookingType(type);
+    
+    // Trim passengers if exceeding new limit
+    if (passengers.length > maxPassengers) {
+      setPassengers(passengers.slice(0, maxPassengers));
+      setError(`Passenger list reduced to ${maxPassengers} for ${type === 'TATKAL' ? 'Tatkal' : 'General'} bookings`);
+    }
+  };
 
   const handleChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -140,12 +196,24 @@ export default function TrainEQCreate() {
     setError(null);
     setLoading(true);
 
+    // Filter out empty passenger names
+    const validPassengers = passengers.filter(p => p.trim());
+    
     // Validation
-    if (!formData.passengerName.trim()) {
-      setError("Passenger name is required");
+    if (validPassengers.length === 0) {
+      setError("At least one passenger name is required");
       setLoading(false);
       return;
     }
+    
+    // Check passenger limit
+    const maxPassengers = getMaxPassengers();
+    if (validPassengers.length > maxPassengers) {
+      setError(`Maximum ${maxPassengers} passengers allowed for ${bookingType === 'TATKAL' ? 'Tatkal' : 'General'} bookings`);
+      setLoading(false);
+      return;
+    }
+    
     if (!formData.pnrNumber.trim()) {
       setError("PNR number is required");
       setLoading(false);
@@ -168,8 +236,11 @@ export default function TrainEQCreate() {
     }
 
     try {
+      // Join passenger names with comma for backend storage
+      const passengerNameStr = validPassengers.join(', ');
+      
       await trainRequestApi.create({
-        passengerName: formData.passengerName,
+        passengerName: passengerNameStr,
         pnrNumber: formData.pnrNumber,
         trainName: formData.trainName || undefined,
         trainNumber: formData.trainNumber || undefined,
@@ -237,48 +308,150 @@ export default function TrainEQCreate() {
                   {/* LEFT COLUMN — FORM */}
                   <div className="xl:col-span-2 space-y-8">
 
-                    {/* Passenger Information */}
+                    {/* Booking Type Selection */}
                     <section className="space-y-4">
                       <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
-                        Passenger Information
+                        Booking Type
                       </h3>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label>
-                            Passenger Name <span className="text-red-500">*</span>
-                          </Label>
-                          <Input 
-                            placeholder="Enter passenger full name" 
-                            value={formData.passengerName}
-                            onChange={(e) => handleChange("passengerName", e.target.value)}
-                          />
-                        </div>
-
-                        <div>
-                          <Label>
-                            PNR Number <span className="text-red-500">*</span>
-                          </Label>
-                          <div className="flex gap-2">
-                            <Input 
-                              placeholder="10-digit PNR" 
-                              value={formData.pnrNumber}
-                              onChange={(e) => handleChange("pnrNumber", e.target.value)}
-                              maxLength={10}
-                            />
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              onClick={checkPNR}
-                              disabled={pnrLoading}
-                            >
-                              {pnrLoading ? "..." : "Fetch"}
-                            </Button>
+                      
+                      <div className="flex gap-4">
+                        <div 
+                          className={`flex-1 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                            bookingType === 'GENERAL' 
+                              ? 'border-indigo-500 bg-indigo-50' 
+                              : 'border-gray-200 hover:border-indigo-200'
+                          }`}
+                          onClick={() => handleBookingTypeChange('GENERAL')}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-4 h-4 rounded-full border-2 ${
+                              bookingType === 'GENERAL' ? 'border-indigo-500 bg-indigo-500' : 'border-gray-400'
+                            }`}>
+                              {bookingType === 'GENERAL' && (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium">General Booking</p>
+                              <p className="text-xs text-muted-foreground">Up to {MAX_PASSENGERS_GENERAL} passengers per PNR</p>
+                            </div>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Click Fetch to auto-fill train details
-                          </p>
                         </div>
+                        
+                        <div 
+                          className={`flex-1 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                            bookingType === 'TATKAL' 
+                              ? 'border-amber-500 bg-amber-50' 
+                              : 'border-gray-200 hover:border-amber-200'
+                          }`}
+                          onClick={() => handleBookingTypeChange('TATKAL')}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-4 h-4 rounded-full border-2 ${
+                              bookingType === 'TATKAL' ? 'border-amber-500 bg-amber-500' : 'border-gray-400'
+                            }`}>
+                              {bookingType === 'TATKAL' && (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium">Tatkal Booking</p>
+                              <p className="text-xs text-muted-foreground">Up to {MAX_PASSENGERS_TATKAL} passengers per PNR</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* Passenger Information */}
+                    <section className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          Passenger Information ({passengers.length}/{getMaxPassengers()})
+                        </h3>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addPassenger}
+                          disabled={passengers.length >= getMaxPassengers()}
+                          className="gap-1"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add Passenger
+                        </Button>
+                      </div>
+                      
+                      {/* Passenger limit info */}
+                      <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${
+                        bookingType === 'TATKAL' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'
+                      }`}>
+                        <AlertTriangle className="h-4 w-4" />
+                        <span>
+                          {bookingType === 'TATKAL' 
+                            ? `Tatkal bookings allow maximum ${MAX_PASSENGERS_TATKAL} passengers per PNR`
+                            : `General bookings (AC/Non-AC) allow maximum ${MAX_PASSENGERS_GENERAL} passengers per PNR`
+                          }
+                        </span>
+                      </div>
+                      
+                      {/* Passenger List */}
+                      <div className="space-y-3">
+                        {passengers.map((passenger, index) => (
+                          <div key={index} className="flex gap-2 items-center">
+                            <div className="flex-1">
+                              <Label className="text-xs text-muted-foreground">
+                                Passenger {index + 1} {index === 0 && <span className="text-red-500">*</span>}
+                              </Label>
+                              <Input 
+                                placeholder={`Enter passenger ${index + 1} full name`}
+                                value={passenger}
+                                onChange={(e) => updatePassenger(index, e.target.value)}
+                              />
+                            </div>
+                            {passengers.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="mt-5 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => removePassenger(index)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="pt-2">
+                        <Label>
+                          PNR Number <span className="text-red-500">*</span>
+                        </Label>
+                        <div className="flex gap-2">
+                          <Input 
+                            placeholder="10-digit PNR" 
+                            value={formData.pnrNumber}
+                            onChange={(e) => handleChange("pnrNumber", e.target.value)}
+                            maxLength={10}
+                          />
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            onClick={checkPNR}
+                            disabled={pnrLoading}
+                          >
+                            {pnrLoading ? "..." : "Fetch"}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Click Fetch to auto-fill train details
+                        </p>
                       </div>
                     </section>
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { TextInput } from '../../components/AuthForm/Input'
 import { PasswordInput } from '../../components/AuthForm/PasswordInput'
@@ -8,6 +8,26 @@ import { useToast } from '../../components/AuthForm/Toast'
 import { authApi } from '../../lib/api'
 import GovernmentHeroSection from '../../components/GovernmentHeroSection'
 import portrait from '../../assets/prahlad_joshi1.jpg'
+
+// Clear all auth data on logout/session clear
+function clearAuthData() {
+  // Clear sessionStorage (tab-specific)
+  sessionStorage.removeItem('auth_token')
+  sessionStorage.removeItem('auth_session')
+  sessionStorage.removeItem('user')
+  sessionStorage.removeItem('user_role')
+  sessionStorage.removeItem('user_name')
+  sessionStorage.removeItem('user_id')
+  
+  // Clear localStorage
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('remember_token')
+  localStorage.removeItem('user')
+  localStorage.removeItem('user_role')
+  localStorage.removeItem('user_name')
+  localStorage.removeItem('user_id')
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const { push } = useToast()
@@ -19,8 +39,31 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
 
+  // Clear any existing auth data when login page loads
+  // This ensures no stale data from previous sessions
+  useEffect(() => {
+    // Check sessionStorage first (tab-specific), then localStorage
+    const sessionToken = sessionStorage.getItem('auth_token')
+    const localToken = localStorage.getItem('auth_token')
+    const session = sessionStorage.getItem('auth_session')
+    
+    // If user is already logged in with valid session in THIS tab, redirect them
+    if (sessionToken && session) {
+      const role = sessionStorage.getItem('user_role') || localStorage.getItem('user_role')
+      if (role === 'STAFF') {
+        navigate('/staff/home', { replace: true })
+      } else if (role === 'ADMIN') {
+        navigate('/admin/home', { replace: true })
+      } else if (role === 'SUPER_ADMIN') {
+        navigate('/home', { replace: true })
+      }
+    }
+  }, [navigate])
+
   // simple mount animation trigger
-  if (!mounted) setTimeout(() => setMounted(true), 0)
+  useEffect(() => {
+    setTimeout(() => setMounted(true), 0)
+  }, [])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,34 +87,54 @@ export default function Login() {
     setErrors({})
 
     try {
+      // Clear any old auth data before new login
+      clearAuthData()
+      
       const res = await authApi.login({ identifier, password })
-      // Store token for API calls
+      // Store token in sessionStorage (tab-specific) - this allows different users in different tabs
       if (res.token) {
-        localStorage.setItem('auth_token', res.token)
-        if (remember) localStorage.setItem('remember_token', 'true')
+        sessionStorage.setItem('auth_token', res.token)
+        // Also store in localStorage if remember me is checked (for persistence across browser restarts)
+        if (remember) {
+          localStorage.setItem('auth_token', res.token)
+          localStorage.setItem('remember_token', 'true')
+        }
       }
-      // mark session so ProtectedRoute can allow access
+      // Mark session so ProtectedRoute can allow access
       sessionStorage.setItem('auth_session', '1')
-      // Store user info
-      localStorage.setItem('user', JSON.stringify(res.user))
-      localStorage.setItem('user_role', res.user.role)  // Store role separately for sidebar
-      localStorage.setItem('user_name', res.user.name)  // Store name separately for header
+      // Store user info in sessionStorage (tab-specific)
+      sessionStorage.setItem('user', JSON.stringify(res.user))
+      sessionStorage.setItem('user_role', res.user.role)
+      sessionStorage.setItem('user_name', res.user.name)
+      sessionStorage.setItem('user_id', res.user.id)
       push({ type: 'success', title: 'Welcome back!', message: `Hello ${res.user?.name ?? ''}` })
       
-      // Navigate based on role
+      // Navigate based on role with replace to clear history
+      // This prevents back button from going to previous user's pages
       if (res.user.role === 'STAFF') {
-        navigate('/staff/home')
+        navigate('/staff/home', { replace: true })
       } else if (res.user.role === 'ADMIN') {
-        navigate('/admin/home')
+        navigate('/admin/home', { replace: true })
       } else {
-        navigate('/home')
+        navigate('/home', { replace: true })
       }
     } catch (err: unknown) {
-      const error = err as { status?: number; message?: string }
+      const error = err as { status?: number; message?: string; code?: string }
       const status = error?.status
-      const message = error?.message || 'Invalid credentials'
-      setErrors({ server: message })
-      push({ type: 'error', title: status === 401 ? 'Invalid credentials' : 'Login failed', message })
+      
+      // Check for connection errors
+      if (error?.code === 'ERR_NETWORK' || error?.message?.includes('ERR_CONNECTION_REFUSED') || error?.message?.includes('Failed to fetch')) {
+        setErrors({ server: 'Cannot connect to server. Please make sure the backend server is running on port 5000.' })
+        push({ 
+          type: 'error', 
+          title: 'Connection Error', 
+          message: 'Cannot connect to server. Please check if the backend server is running.' 
+        })
+      } else {
+        const message = error?.message || 'Invalid credentials'
+        setErrors({ server: message })
+        push({ type: 'error', title: status === 401 ? 'Invalid credentials' : 'Login failed', message })
+      }
     } finally {
       setLoading(false)
     }

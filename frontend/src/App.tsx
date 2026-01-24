@@ -2,9 +2,10 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Auth/Login";
 import Signup from "./pages/Auth/Signup";
 import ForgotPassword from "./pages/Auth/ForgotPassword";
-import OTP from "./pages/Auth/OTP";
+import OTP from "./pages/Auth/OTP";         
 import Home from "./pages/Home";
 import GrievanceCreate from "./pages/grievances/GrievanceCreate";
+import GrievanceView from "./pages/grievances/GrievanceView";
 import VisitorCreate from "./pages/visitors/VisitorCreate";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import "./index.css";
@@ -13,14 +14,19 @@ import TourProgramCreate from "./pages/Tour/TourProgramCreate";
 import NewsIntelligenceCreate from "./pages/News/NewsIntelligenceCreate";
 import BirthdayCreate from "./pages/Birthday/BirthdayCreate";
 import StaffHome from "./pages/staff/StaffHome";
-import AdminHome from "./pages/admin/AdminHome";
-import GrievanceVerification from "./pages/admin/GrievienceVerification";
-import TrainEQQueue from "./pages/admin/TrainEQQueue";
+import StaffTasks from "./pages/staff/StaffTasks";
+import StaffHistory from "./pages/staff/StaffHistory";
 import PrintCenter from "./pages/admin/PrintCenter";
 import TourProgramQueue from "./pages/admin/TourProgramQueue";
 import NewsIntelligenceView from "./pages/admin/NewsIntelligenceView";
 import AdminHistory from "./pages/admin/History";
 import Birthdays from "./pages/admin/Birthdays";
+import VisitorView from "./pages/admin/VisitorView";
+import ActionCenter from "./pages/admin/ActionCenter";
+import TaskTracker from "./pages/admin/TaskTracker";
+import GrievanceVerification from "./pages/admin/GrievienceVerification";
+import TrainEQQueue from "./pages/admin/TrainEQQueue";
+import AdminHome from "./pages/admin/AdminHome";
 import PhotoBooth from "./pages/photo_booth/PhotoBooth";
 
 export default function App() {
@@ -34,39 +40,70 @@ export default function App() {
       <Route path="/auth/forgot-password" element={<ForgotPassword />} />
       <Route path="/auth/otp" element={<OTP />} />
 
-      {/* Super Admin Home */}
+      {/* ==================== SUPER ADMIN ROUTES ==================== */}
       <Route
         path="/home"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
             <Home />
           </ProtectedRoute>
         }
       />
 
-      {/* Staff Routes */}
+      {/* ==================== STAFF ROUTES ==================== */}
       <Route
         path="/staff/home"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['STAFF']}>
             <StaffHome />
           </ProtectedRoute>
         }
       />
-
-      {/* Admin Routes */}
+      <Route
+        path="/staff/tasks"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF']}>
+            <StaffTasks />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/staff/history"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF']}>
+            <StaffHistory />
+          </ProtectedRoute>
+        }
+      />
+      {/* ==================== ADMIN ROUTES ==================== */}
       <Route
         path="/admin/home"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['ADMIN']}>
             <AdminHome />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/action-center"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <ActionCenter />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/task-tracker"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <TaskTracker />
           </ProtectedRoute>
         }
       />
       <Route
         path="/grievances/verify"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['ADMIN']}>
             <GrievanceVerification />
           </ProtectedRoute>
         }
@@ -74,7 +111,7 @@ export default function App() {
       <Route
         path="/train-eq/queue"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['ADMIN']}>
             <TrainEQQueue />
           </ProtectedRoute>
         }
@@ -82,30 +119,41 @@ export default function App() {
       <Route
         path="/admin/print-center"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['ADMIN']}>
             <PrintCenter />
           </ProtectedRoute>
         }
-        
       />
       <Route
-  path="/admin/birthdays"
-  element={<Birthdays />}
-/>
+        path="/admin/birthdays"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+            <Birthdays />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Data Entry Routes (Staff) */}
       <Route
         path="/grievances/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['STAFF']}>
             <GrievanceCreate />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/grievances/view"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF']}>
+            <GrievanceView />
           </ProtectedRoute>
         }
       />
       <Route
         path="/visitors/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['STAFF']}>
             <VisitorCreate />
           </ProtectedRoute>
         }
@@ -113,7 +161,7 @@ export default function App() {
       <Route
         path="/train-eq/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['STAFF']}>
             <TrainEQCreate />
           </ProtectedRoute>
         }
@@ -121,7 +169,7 @@ export default function App() {
       <Route
         path="/tour-program/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['STAFF']}>
             <TourProgramCreate />
           </ProtectedRoute>
         }
@@ -129,7 +177,7 @@ export default function App() {
       <Route
         path="/news-intelligence/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['STAFF']}>
             <NewsIntelligenceCreate />
           </ProtectedRoute>
         }
@@ -137,56 +185,53 @@ export default function App() {
       <Route
         path="/birthday/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['STAFF']}>
             <BirthdayCreate />
           </ProtectedRoute>
         }
       />
-      <Route
-  path="/photo-booth"
-  element={
-    <ProtectedRoute>
-      <PhotoBooth />
-    </ProtectedRoute>
-  }
-/>
-
-
       {/* Tour Program Queue (Admin) */}
       <Route
         path="/tour-program/pending"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['ADMIN']}>
             <TourProgramQueue />
           </ProtectedRoute>
         }
       />
       
-      {/* News Intelligence View (Admin/Super Admin) */}
+      {/* ==================== ADMIN + SUPER_ADMIN ROUTES ==================== */}
       <Route
         path="/news/view"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
             <NewsIntelligenceView />
           </ProtectedRoute>
         }
       />
-      
-      {/* History (Admin/Super Admin) */}
       <Route
         path="/admin/history"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
             <AdminHistory />
           </ProtectedRoute>
         }
       />
-      
       <Route
-        path="/tasks"
+        path="/visitors/view"
         element={
-          <ProtectedRoute>
-            <AdminHome />
+          <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+            <VisitorView />
+          </ProtectedRoute>
+        }
+      />
+      
+      {/* ==================== COMMON ROUTES (All Roles) ==================== */}
+      <Route
+        path="/photo-booth"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
+            <PhotoBooth />
           </ProtectedRoute>
         }
       />

@@ -41,34 +41,112 @@ export async function getAdminHistory(
     if (endDate) dateFilter.lte = new Date(endDate as string);
     const hasDateFilter = Object.keys(dateFilter).length > 0;
 
-    // Fetch resolved/rejected grievances
-    if (!type || type === 'GRIEVANCE') {
-      const grievanceWhere: any = {
-        status: { in: [GrievanceStatus.RESOLVED, GrievanceStatus.REJECTED] },
-      };
-      if (action === 'RESOLVED') grievanceWhere.status = GrievanceStatus.RESOLVED;
-      if (action === 'REJECTED') grievanceWhere.status = GrievanceStatus.REJECTED;
-      if (hasDateFilter) grievanceWhere.verifiedAt = dateFilter;
+    // Define which actions belong to which entity type
+    const grievanceActions = ['VERIFIED', 'RESOLVED', 'REJECTED', 'IN_PROGRESS'];
+    const trainActions = ['APPROVED', 'REJECTED'];
+    const tourActions = ['ACCEPTED', 'REGRET'];
 
+    // Fetch verified/resolved/rejected/in_progress grievances
+    // Only fetch if no action filter OR action filter matches grievance actions
+    const shouldFetchGrievances = (!type || type === 'GRIEVANCE') && 
+      (!action || grievanceActions.includes(action as string));
+    
+    if (shouldFetchGrievances) {
+      const grievanceWhere: any = {};
+      
+      // Build status filter based on action
+      if (action === 'RESOLVED') {
+        grievanceWhere.status = GrievanceStatus.RESOLVED;
+      } else if (action === 'REJECTED') {
+        grievanceWhere.status = GrievanceStatus.REJECTED;
+      } else if (action === 'VERIFIED') {
+        grievanceWhere.isVerified = true;
+      } else if (action === 'IN_PROGRESS') {
+        grievanceWhere.status = GrievanceStatus.IN_PROGRESS;
+      } else {
+        // No action filter - show ALL grievances that have been acted upon
+        // Include: resolved, rejected, in_progress, OR verified, OR any that have been verified
+        // This ensures we get ALL previous actions, not just recent ones
+        grievanceWhere.OR = [
+          { status: { in: [GrievanceStatus.RESOLVED, GrievanceStatus.REJECTED, GrievanceStatus.IN_PROGRESS] } },
+          { isVerified: true }, // Include verified grievances regardless of status
+          { verifiedAt: { not: null } }, // Include any grievance that has been verified (has verifiedAt)
+          { status: { not: GrievanceStatus.OPEN } }, // Include any grievance that's not in OPEN status (has been acted upon)
+        ];
+      }
+      
+      // Add date filter - use updatedAt if verifiedAt is not available
+      if (hasDateFilter) {
+        // Filter by either verifiedAt or updatedAt to include all relevant grievances
+        const dateFilterOR: any[] = [];
+        
+        // Add verifiedAt filter if it exists in the date range
+        if (dateFilter.gte || dateFilter.lte) {
+          dateFilterOR.push({ verifiedAt: dateFilter });
+        }
+        
+        // Add updatedAt filter
+        if (dateFilter.gte || dateFilter.lte) {
+          dateFilterOR.push({ updatedAt: dateFilter });
+        }
+        
+        // If we have date filters, combine with existing conditions
+        if (dateFilterOR.length > 0) {
+          const existingOR = grievanceWhere.OR;
+          if (existingOR) {
+            // We have an existing OR condition, combine with date filter using AND
+            grievanceWhere.AND = [
+              { OR: existingOR },
+              { OR: dateFilterOR },
+            ];
+            delete grievanceWhere.OR;
+          } else {
+            // No existing OR, just add date filter
+            grievanceWhere.OR = dateFilterOR;
+          }
+        }
+      }
+
+      // Remove the take limit to get ALL history items, then we'll paginate in memory
       const grievances = await prisma.grievance.findMany({
         where: grievanceWhere,
         include: {
           verifiedBy: { select: { id: true, name: true, email: true } },
           createdBy: { select: { id: true, name: true, email: true } },
         },
-        orderBy: { verifiedAt: 'desc' },
-        take: 100, // Limit for performance
+        orderBy: [
+          { verifiedAt: 'desc' },
+          { updatedAt: 'desc' },
+          { createdAt: 'desc' }, // Fallback to creation date
+        ],
+        // Remove take limit to get all matching records
       });
 
+      console.log(`History - Found ${grievances.length} grievances matching criteria`);
+
       grievances.forEach((g) => {
+        let actionLabel = 'Verified';
+        if (g.status === GrievanceStatus.RESOLVED) {
+          actionLabel = 'Verified & Resolved';
+        } else if (g.status === GrievanceStatus.REJECTED) {
+          actionLabel = 'Rejected';
+        } else if (g.status === GrievanceStatus.IN_PROGRESS) {
+          actionLabel = 'In Progress';
+        } else if (g.isVerified) {
+          actionLabel = 'Verified';
+        }
+
+        // Determine the action date - prefer verifiedAt, then updatedAt, then createdAt
+        const actionDate = g.verifiedAt || g.updatedAt || g.createdAt;
+
         history.push({
           id: g.id,
           type: 'GRIEVANCE',
-          action: g.status === GrievanceStatus.RESOLVED ? 'Verified & Resolved' : 'Rejected',
+          action: actionLabel,
           title: `Grievance - ${g.grievanceType.replace(/_/g, ' ')}`,
           description: `${g.petitionerName} • ${g.constituency}`,
           actionBy: g.verifiedBy,
-          actionAt: g.verifiedAt || g.updatedAt,
+          actionAt: actionDate,
           status: g.status,
           details: {
             petitionerName: g.petitionerName,
@@ -77,13 +155,19 @@ export async function getAdminHistory(
             grievanceType: g.grievanceType,
             monetaryValue: g.monetaryValue,
             createdBy: g.createdBy,
+            verifiedAt: g.verifiedAt,
+            updatedAt: g.updatedAt,
           },
         });
       });
     }
 
     // Fetch approved/rejected train requests
-    if (!type || type === 'TRAIN_REQUEST') {
+    // Only fetch if no action filter OR action filter matches train actions
+    const shouldFetchTrainRequests = (!type || type === 'TRAIN_REQUEST') && 
+      (!action || trainActions.includes(action as string));
+    
+    if (shouldFetchTrainRequests) {
       const trainWhere: any = {
         status: { in: [TrainRequestStatus.APPROVED, TrainRequestStatus.REJECTED] },
       };
@@ -91,15 +175,22 @@ export async function getAdminHistory(
       if (action === 'REJECTED') trainWhere.status = TrainRequestStatus.REJECTED;
       if (hasDateFilter) trainWhere.approvedAt = dateFilter;
 
+      // Remove the take limit to get ALL history items
       const trainRequests = await prisma.trainRequest.findMany({
         where: trainWhere,
         include: {
           approvedBy: { select: { id: true, name: true, email: true } },
           createdBy: { select: { id: true, name: true, email: true } },
         },
-        orderBy: { approvedAt: 'desc' },
-        take: 100,
+        orderBy: [
+          { approvedAt: 'desc' },
+          { updatedAt: 'desc' },
+          { createdAt: 'desc' }, // Fallback to creation date
+        ],
+        // Remove take limit to get all matching records
       });
+
+      console.log(`History - Found ${trainRequests.length} train requests matching criteria`);
 
       trainRequests.forEach((t) => {
         history.push({
@@ -128,7 +219,11 @@ export async function getAdminHistory(
     }
 
     // Fetch tour program decisions (accepted/regret)
-    if (!type || type === 'TOUR_PROGRAM') {
+    // Only fetch if no action filter OR action filter matches tour actions
+    const shouldFetchTourPrograms = (!type || type === 'TOUR_PROGRAM') && 
+      (!action || tourActions.includes(action as string));
+    
+    if (shouldFetchTourPrograms) {
       const tourWhere: any = {
         decision: { in: [TourDecision.ACCEPTED, TourDecision.REGRET] },
       };
@@ -136,14 +231,20 @@ export async function getAdminHistory(
       if (action === 'REGRET') tourWhere.decision = TourDecision.REGRET;
       if (hasDateFilter) tourWhere.updatedAt = dateFilter;
 
+      // Remove the take limit to get ALL history items
       const tourPrograms = await prisma.tourProgram.findMany({
         where: tourWhere,
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
         },
-        orderBy: { updatedAt: 'desc' },
-        take: 100,
+        orderBy: [
+          { updatedAt: 'desc' },
+          { createdAt: 'desc' }, // Fallback to creation date
+        ],
+        // Remove take limit to get all matching records
       });
+
+      console.log(`History - Found ${tourPrograms.length} tour programs matching criteria`);
 
       tourPrograms.forEach((tp) => {
         history.push({
@@ -171,9 +272,13 @@ export async function getAdminHistory(
     // Sort by actionAt descending
     history.sort((a, b) => new Date(b.actionAt).getTime() - new Date(a.actionAt).getTime());
 
+    console.log(`History - Total history items found: ${history.length}`);
+
     // Apply pagination
     const total = history.length;
     const paginatedHistory = history.slice(skip, skip + limit);
+
+    console.log(`History - Returning page ${page} with ${paginatedHistory.length} items (total: ${total})`);
 
     const meta = calculatePaginationMeta(total, page, limit);
     sendSuccess(res, paginatedHistory, 'History retrieved successfully', 200, meta);
@@ -207,11 +312,17 @@ export async function getHistoryStats(
       prisma.tourProgram.count({ where: { decision: TourDecision.REGRET } }),
     ]);
 
+    // Also count verified and in-progress grievances
+    const verifiedGrievances = await prisma.grievance.count({ where: { isVerified: true } });
+    const inProgressGrievances = await prisma.grievance.count({ where: { status: GrievanceStatus.IN_PROGRESS } });
+
     const stats = {
       grievances: {
         resolved: resolvedGrievances,
         rejected: rejectedGrievances,
-        total: resolvedGrievances + rejectedGrievances,
+        verified: verifiedGrievances,
+        inProgress: inProgressGrievances,
+        total: resolvedGrievances + rejectedGrievances + verifiedGrievances + inProgressGrievances,
       },
       trainRequests: {
         approved: approvedTrainRequests,

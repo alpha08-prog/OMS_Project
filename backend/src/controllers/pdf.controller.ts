@@ -33,6 +33,9 @@ export async function generateTrainEQPDF(
 
     // Generate reference number
     const refNumber = `EQ/${new Date().getFullYear()}/${trainRequest.id.slice(0, 8).toUpperCase()}`;
+    
+    // Generate unique document ID for watermark/verification
+    const documentId = `EQ${trainRequest.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`;
 
     generateTrainEQLetter(
       {
@@ -52,6 +55,7 @@ export async function generateTrainEQPDF(
         toStation: trainRequest.toStation,
         senderName: 'Shri Prahlad Joshi',
         senderDesignation: 'Hon\'ble Union Minister',
+        documentId,
       },
       res
     );

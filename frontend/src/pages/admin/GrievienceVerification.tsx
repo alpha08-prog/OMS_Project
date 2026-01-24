@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { FileText, CheckCircle, XCircle, Download, RefreshCw, Eye } from "lucide-react";
+import { FileText, CheckCircle, XCircle, Download, RefreshCw, Eye, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { grievanceApi, pdfApi, type Grievance } from "@/lib/api";
+import { grievanceApi, pdfApi, taskApi, type Grievance } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -12,22 +15,91 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function GrievanceVerification() {
   const [grievances, setGrievances] = useState<Grievance[]>([]);
+  const [verifiedGrievances, setVerifiedGrievances] = useState<Grievance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
+  
+  // Task assignment state
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [verifiedGrievance, setVerifiedGrievance] = useState<Grievance | null>(null);
+  const [staffMembers, setStaffMembers] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [assignToId, setAssignToId] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState("NORMAL");
+  const [assigning, setAssigning] = useState(false);
 
   const fetchGrievances = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await grievanceApi.getAll({ status: 'OPEN' });
+      const [grievancesRes, tasksRes] = await Promise.all([
+        grievanceApi.getAll(), // Get all grievances, not just OPEN
+        taskApi.getAll({ limit: '1000' }) // Get all tasks
+      ]);
+      
+      console.log('GrievanceVerification - Grievances response:', grievancesRes);
+      console.log('GrievanceVerification - Tasks response:', tasksRes);
+      
+      // Handle different response structures
+      let tasksArray: any[] = [];
+      if (tasksRes) {
+        // tasksRes is ApiResponse<TaskAssignment[]>, so it has a data property
+        const resData = (tasksRes as any).data;
+        if (Array.isArray(resData)) {
+          tasksArray = resData;
+        } else if (resData && typeof resData === 'object' && Array.isArray((resData as any).data)) {
+          tasksArray = (resData as any).data;
+        } else if (Array.isArray(tasksRes)) {
+          // Fallback: if tasksRes itself is an array
+          tasksArray = tasksRes;
+        }
+      }
+      
+      // Get all task reference IDs (filter out undefined/null)
+      const taskReferenceIds = new Set(
+        tasksArray
+          .map((t: any) => t.referenceId)
+          .filter((id: any): id is string => Boolean(id))
+      );
+      
+      console.log('GrievanceVerification - Task reference IDs:', Array.from(taskReferenceIds));
+      
+      // Handle grievances response structure
+      let grievancesArray: Grievance[] = [];
+      if (grievancesRes) {
+        if (Array.isArray(grievancesRes)) {
+          grievancesArray = grievancesRes;
+        } else if (grievancesRes.data && Array.isArray(grievancesRes.data)) {
+          grievancesArray = grievancesRes.data;
+        }
+      }
+      
       // Filter to show only unverified grievances
-      setGrievances(res.data.filter((g: Grievance) => !g.isVerified));
+      setGrievances(grievancesArray.filter((g: Grievance) => !g.isVerified));
+      
+      // Show verified grievances that don't have tasks assigned yet
+      const verified = grievancesArray.filter((g: Grievance) => 
+        g.isVerified && !taskReferenceIds.has(g.id)
+      );
+      setVerifiedGrievances(verified);
+      
+      console.log('GrievanceVerification - Unverified grievances:', grievancesArray.filter((g: Grievance) => !g.isVerified).length);
+      console.log('GrievanceVerification - Verified grievances without tasks:', verified.length);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load grievances";
       setError(errorMessage);
@@ -38,20 +110,95 @@ export default function GrievanceVerification() {
 
   useEffect(() => {
     fetchGrievances();
+    fetchStaffMembers();
   }, []);
+
+  const fetchStaffMembers = async () => {
+    try {
+      const staff = await taskApi.getStaffMembers();
+      setStaffMembers(staff);
+    } catch (err) {
+      console.error('Failed to fetch staff members:', err);
+    }
+  };
+
+  const handleOpenAssignDialog = (grievance: Grievance) => {
+    setVerifiedGrievance(grievance);
+    setTaskTitle(`Follow up on ${grievance.grievanceType} - ${grievance.petitionerName}`);
+    setTaskDescription(`Grievance Type: ${grievance.grievanceType}\nPetitioner: ${grievance.petitionerName}\nConstituency: ${grievance.constituency}\nDescription: ${grievance.description}`);
+    setAssignDialogOpen(true);
+  };
 
   const handleVerify = async (id: string) => {
     setActionLoading(id);
     try {
       await grievanceApi.verify(id);
-      // Remove from list after verification
-      setGrievances((prev) => prev.filter((g) => g.id !== id));
+      // Find the verified grievance
+      const verified = grievances.find((g) => g.id === id);
+      if (verified) {
+        // Mark as verified locally
+        const verifiedCopy = { ...verified, isVerified: true };
+        // Add to verified grievances list (will show in "Assign Tasks" section)
+        setVerifiedGrievances((prev) => {
+          // Check if already exists
+          if (prev.find(g => g.id === verifiedCopy.id)) return prev;
+          return [...prev, verifiedCopy];
+        });
+        // Remove from pending verification queue
+        setGrievances((prev) => prev.filter((g) => g.id !== id));
+        // Open assign dialog after verification
+        handleOpenAssignDialog(verifiedCopy);
+      }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to verify grievance";
       setError(errorMessage);
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleAssignTask = async () => {
+    if (!assignToId || !taskTitle || !verifiedGrievance) {
+      setError("Please select a staff member and enter task title");
+      return;
+    }
+    
+    setAssigning(true);
+    try {
+      await taskApi.create({
+        title: taskTitle,
+        description: taskDescription || undefined,
+        taskType: 'GRIEVANCE',
+        priority: priority as 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT',
+        referenceId: verifiedGrievance.id,
+        referenceType: 'GRIEVANCE',
+        assignedToId: assignToId,
+        dueDate: dueDate || undefined,
+      });
+      
+      // Remove from verified grievances list after successful assignment
+      setVerifiedGrievances((prev) => prev.filter((g) => g.id !== verifiedGrievance.id));
+      
+      setAssignDialogOpen(false);
+      resetAssignForm();
+      setError(null);
+      // Refresh to get updated data
+      fetchGrievances();
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to assign task";
+      setError(errorMessage);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const resetAssignForm = () => {
+    setAssignToId("");
+    setTaskTitle("");
+    setTaskDescription("");
+    setDueDate("");
+    setPriority("NORMAL");
+    setVerifiedGrievance(null);
   };
 
   const handleReject = async (id: string) => {
@@ -119,6 +266,7 @@ export default function GrievanceVerification() {
             </div>
           )}
 
+          {/* Pending Verification Queue */}
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
               <CardTitle>Pending Verification Queue ({grievances.length})</CardTitle>
@@ -144,12 +292,12 @@ export default function GrievanceVerification() {
                       </div>
 
                       <div>
-                        <p className="font-medium">
-                          {g.petitionerName}
+                        <div className="font-medium flex items-center gap-2">
+                          <span>{g.petitionerName}</span>
                           <Badge className="ml-2" variant="outline">
                             {g.status}
                           </Badge>
-                        </p>
+                        </div>
                         <p className="text-sm text-muted-foreground">
                           {g.grievanceType} • {g.constituency} • {formatCurrency(g.monetaryValue)}
                         </p>
@@ -180,6 +328,16 @@ export default function GrievanceVerification() {
                         <CheckCircle className="h-4 w-4 mr-1" />
                         {actionLoading === g.id ? "..." : "Verify"}
                       </Button>
+                      {g.isVerified && (
+                        <Button 
+                          size="sm" 
+                          className="bg-purple-600 hover:bg-purple-700"
+                          onClick={() => handleOpenAssignDialog(g)}
+                        >
+                          <UserPlus className="h-4 w-4 mr-1" />
+                          Assign Task
+                        </Button>
+                      )}
                       <Button 
                         size="sm" 
                         className="bg-indigo-600 hover:bg-indigo-700"
@@ -203,6 +361,76 @@ export default function GrievanceVerification() {
               )}
             </CardContent>
           </Card>
+
+          {/* Verified Grievances Needing Task Assignment */}
+          {verifiedGrievances.length > 0 && (
+            <Card className="rounded-2xl shadow-sm border-purple-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserPlus className="h-5 w-5 text-purple-600" />
+                  Verified - Assign Tasks ({verifiedGrievances.length})
+                </CardTitle>
+              </CardHeader>
+
+              <CardContent className="space-y-4">
+                {verifiedGrievances.map((g) => (
+                  <div
+                    key={g.id}
+                    className="flex items-center justify-between p-4 rounded-xl border bg-purple-50 border-purple-200"
+                  >
+                    <div className="flex gap-4">
+                      <div className="p-2 bg-purple-100 rounded-lg">
+                        <CheckCircle className="h-5 w-5 text-purple-700" />
+                      </div>
+
+                      <div>
+                        <div className="font-medium flex items-center gap-2">
+                          <span>{g.petitionerName}</span>
+                          <Badge className="ml-2 bg-green-100 text-green-800">Verified</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {g.grievanceType} • {g.constituency} • {formatCurrency(g.monetaryValue)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          📞 {g.mobileNumber}
+                        </p>
+                        {g.description && (
+                          <p className="text-sm mt-2 line-clamp-2">{g.description}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 flex-shrink-0">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleViewDetails(g)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="bg-purple-600 hover:bg-purple-700"
+                        onClick={() => handleOpenAssignDialog(g)}
+                      >
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        Assign Task
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="bg-indigo-600 hover:bg-indigo-700"
+                        onClick={() => handleDownloadPDF(g.id)}
+                      >
+                        <Download className="h-4 w-4 mr-1" />
+                        PDF
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
         </div>
 
@@ -269,23 +497,171 @@ export default function GrievanceVerification() {
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Close
                   </Button>
+                  {!selectedGrievance.isVerified ? (
+                    <>
+                      <Button 
+                        className="bg-green-600 hover:bg-green-700"
+                        onClick={() => {
+                          handleVerify(selectedGrievance.id);
+                          setDetailsOpen(false);
+                        }}
+                        disabled={actionLoading === selectedGrievance.id}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Verify
+                      </Button>
+                      <Button 
+                        className="bg-indigo-600 hover:bg-indigo-700"
+                        onClick={() => handleDownloadPDF(selectedGrievance.id)}
+                      >
+                        <Download className="h-4 w-4 mr-1" />
+                        Download PDF
+                      </Button>
+                    </>
+                  ) : (
+                    <Button 
+                      className="bg-indigo-600 hover:bg-indigo-700"
+                      onClick={() => {
+                        handleOpenAssignDialog(selectedGrievance);
+                        setDetailsOpen(false);
+                      }}
+                    >
+                      <UserPlus className="h-4 w-4 mr-1" />
+                      Assign Task
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Task Assignment Dialog */}
+        <Dialog open={assignDialogOpen} onOpenChange={(open) => {
+          if (!open && !assigning) {
+            // Dialog was closed without assigning - keep verified grievance visible
+            // Just clear the form fields, but verified grievance stays in verifiedGrievances list
+            setAssignToId("");
+            setTaskTitle("");
+            setTaskDescription("");
+            setDueDate("");
+            setPriority("NORMAL");
+            setVerifiedGrievance(null);
+          }
+          setAssignDialogOpen(open);
+        }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5" />
+                Assign Task to Staff
+              </DialogTitle>
+              <DialogDescription>
+                Assign this verified grievance to a staff member for follow-up
+              </DialogDescription>
+            </DialogHeader>
+            
+            {verifiedGrievance && (
+              <div className="space-y-4">
+                <div className="p-3 bg-indigo-50 rounded-lg">
+                  <p className="text-sm font-medium text-indigo-900">Verified Grievance</p>
+                  <p className="text-sm text-indigo-700">
+                    {verifiedGrievance.petitionerName} • {verifiedGrievance.grievanceType} • {verifiedGrievance.constituency}
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="assignTo">Assign To Staff *</Label>
+                    <Select value={assignToId} onValueChange={setAssignToId}>
+                      <SelectTrigger id="assignTo">
+                        <SelectValue placeholder="Select staff member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {staffMembers.map((staff) => (
+                          <SelectItem key={staff.id} value={staff.id}>
+                            {staff.name} ({staff.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="taskTitle">Task Title *</Label>
+                    <Input
+                      id="taskTitle"
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      placeholder="Enter task title"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="taskDescription">Task Description</Label>
+                    <Textarea
+                      id="taskDescription"
+                      value={taskDescription}
+                      onChange={(e) => setTaskDescription(e.target.value)}
+                      placeholder="Enter task description"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="priority">Priority</Label>
+                      <Select value={priority} onValueChange={setPriority}>
+                        <SelectTrigger id="priority">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="LOW">Low</SelectItem>
+                          <SelectItem value="NORMAL">Normal</SelectItem>
+                          <SelectItem value="HIGH">High</SelectItem>
+                          <SelectItem value="URGENT">Urgent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="dueDate">Due Date</Label>
+                      <Input
+                        id="dueDate"
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t">
                   <Button 
-                    className="bg-green-600 hover:bg-green-700"
+                    variant="outline" 
                     onClick={() => {
-                      handleVerify(selectedGrievance.id);
-                      setDetailsOpen(false);
+                      setAssignDialogOpen(false);
+                      resetAssignForm();
                     }}
-                    disabled={actionLoading === selectedGrievance.id}
                   >
-                    <CheckCircle className="h-4 w-4 mr-1" />
-                    Verify & Generate Letter
+                    Cancel
                   </Button>
                   <Button 
                     className="bg-indigo-600 hover:bg-indigo-700"
-                    onClick={() => handleDownloadPDF(selectedGrievance.id)}
+                    onClick={handleAssignTask}
+                    disabled={assigning || !assignToId || !taskTitle}
                   >
-                    <Download className="h-4 w-4 mr-1" />
-                    Download PDF
+                    {assigning ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Assigning...
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="h-4 w-4 mr-2" />
+                        Assign Task
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>

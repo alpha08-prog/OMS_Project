@@ -97,10 +97,10 @@ export default function GrievanceCreate() {
   };
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background relative">
       <DashboardSidebar />
       
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto relative z-0">
         <div className="w-full min-h-screen bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
           <div className="max-w-7xl mx-auto space-y-6">
 
