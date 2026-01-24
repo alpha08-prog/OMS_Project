@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Package manager files at root
+package-lock.json
+package.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
