@@ -1,0 +1,355 @@
+// Prisma Schema for Office Management System (OMS)
+// This schema defines all database models for the government minister office management
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  STAFF
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum GrievanceType {
+  WATER
+  ROAD
+  POLICE
+  HEALTH
+  TRANSFER
+  FINANCIAL_AID
+  ELECTRICITY
+  EDUCATION
+  HOUSING
+  OTHER
+}
+
+enum GrievanceStatus {
+  OPEN
+  IN_PROGRESS
+  VERIFIED
+  RESOLVED
+  REJECTED
+}
+
+enum ActionRequired {
+  GENERATE_LETTER
+  CALL_OFFICIAL
+  FORWARD_TO_DEPT
+  SCHEDULE_MEETING
+  NO_ACTION
+}
+
+enum NewsPriority {
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum NewsCategory {
+  DEVELOPMENT_WORK
+  CONSPIRACY_FAKE_NEWS
+  LEADER_ACTIVITY
+  PARTY_ACTIVITY
+  OPPOSITION
+  OTHER
+}
+
+enum TrainRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TourDecision {
+  ACCEPTED
+  REGRET
+  PENDING
+}
+
+enum TaskStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+}
+
+enum TaskType {
+  GRIEVANCE
+  TRAIN_REQUEST
+  TOUR_PROGRAM
+  GENERAL
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  phone     String?  @unique
+  password  String
+  role      UserRole @default(STAFF)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  createdGrievances  Grievance[]        @relation("CreatedGrievances")
+  verifiedGrievances Grievance[]        @relation("VerifiedGrievances")
+  createdNews        NewsIntelligence[]
+  createdTrainReqs   TrainRequest[]     @relation("CreatedTrainRequests")
+  approvedTrainReqs  TrainRequest[]     @relation("ApprovedTrainRequests")
+  createdVisitors    Visitor[]
+  createdTourPrograms TourProgram[]
+  createdBirthdays   Birthday[]
+  
+  // Task Assignment Relations
+  assignedTasks      TaskAssignment[]   @relation("AssignedTasks")
+  createdTasks       TaskAssignment[]   @relation("CreatedTasks")
+
+  @@map("users")
+}
+
+model Grievance {
+  id              String           @id @default(uuid())
+  petitionerName  String
+  mobileNumber    String
+  constituency    String
+  grievanceType   GrievanceType
+  description     String
+  monetaryValue   Float?
+  actionRequired  ActionRequired   @default(NO_ACTION)
+  letterTemplate  String?
+  referencedBy    String?
+  
+  // Status tracking
+  status          GrievanceStatus  @default(OPEN)
+  isVerified      Boolean          @default(false)
+  verifiedAt      DateTime?
+  resolvedAt      DateTime?
+  
+  // Timestamps
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  // Relations
+  createdById     String
+  createdBy       User             @relation("CreatedGrievances", fields: [createdById], references: [id])
+  verifiedById    String?
+  verifiedBy      User?            @relation("VerifiedGrievances", fields: [verifiedById], references: [id])
+
+  @@index([mobileNumber])
+  @@index([status])
+  @@index([grievanceType])
+  @@map("grievances")
+}
+
+model Visitor {
+  id           String   @id @default(uuid())
+  name         String
+  designation  String
+  phone        String?
+  dob          DateTime?
+  purpose      String
+  referencedBy String?
+  
+  // Timestamps
+  visitDate    DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relations
+  createdById  String
+  createdBy    User     @relation(fields: [createdById], references: [id])
+
+  @@index([dob])
+  @@index([visitDate])
+  @@map("visitors")
+}
+
+model NewsIntelligence {
+  id          String       @id @default(uuid())
+  headline    String
+  category    NewsCategory
+  priority    NewsPriority @default(NORMAL)
+  mediaSource String
+  region      String
+  description String?
+  imageUrl    String?
+  
+  // Timestamps
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // Relations
+  createdById String
+  createdBy   User         @relation(fields: [createdById], references: [id])
+
+  @@index([priority])
+  @@index([category])
+  @@map("news_intelligence")
+}
+
+model TrainRequest {
+  id             String             @id @default(uuid())
+  passengerName  String
+  pnrNumber      String
+  trainName      String?
+  trainNumber    String?
+  journeyClass   String
+  dateOfJourney  DateTime
+  fromStation    String
+  toStation      String
+  route          String?
+  referencedBy   String?
+  
+  // Status
+  status         TrainRequestStatus @default(PENDING)
+  approvedAt     DateTime?
+  rejectionReason String?
+  
+  // Digital signature (for future use)
+  signatureData  String?
+  
+  // Timestamps
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  
+  // Relations
+  createdById    String
+  createdBy      User               @relation("CreatedTrainRequests", fields: [createdById], references: [id])
+  approvedById   String?
+  approvedBy     User?              @relation("ApprovedTrainRequests", fields: [approvedById], references: [id])
+
+  @@index([pnrNumber])
+  @@index([status])
+  @@map("train_requests")
+}
+
+model TourProgram {
+  id           String       @id @default(uuid())
+  eventName    String
+  organizer    String
+  dateTime     DateTime
+  venue        String
+  venueLink    String?      // Google Maps link
+  description  String?
+  referencedBy String?
+  
+  // Decision
+  decision     TourDecision @default(PENDING)
+  decisionNote String?
+  
+  // Timestamps
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  // Relations
+  createdById  String
+  createdBy    User         @relation(fields: [createdById], references: [id])
+
+  @@index([dateTime])
+  @@index([decision])
+  @@map("tour_programs")
+}
+
+// ==================== BIRTHDAY TRACKING ====================
+
+model Birthday {
+  id           String   @id @default(uuid())
+  name         String
+  phone        String?
+  dob          DateTime // Date of birth
+  relation     String   // e.g., Party Worker, Family, Official, VIP, etc.
+  notes        String?
+  
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relations
+  createdById  String
+  createdBy    User     @relation(fields: [createdById], references: [id])
+
+  @@index([dob])
+  @@map("birthdays")
+}
+
+// ==================== TASK ASSIGNMENT ====================
+
+model TaskAssignment {
+  id              String     @id @default(uuid())
+  title           String
+  description     String?
+  taskType        TaskType
+  status          TaskStatus @default(ASSIGNED)
+  priority        String     @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  
+  // Reference to the source entity (grievance, train request, etc.)
+  referenceId     String?
+  referenceType   String?    // GRIEVANCE, TRAIN_REQUEST, TOUR_PROGRAM
+  
+  // Progress tracking
+  progressNotes   String?
+  progressPercent Int        @default(0)
+  
+  // Timestamps
+  assignedAt      DateTime   @default(now())
+  dueDate         DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  
+  // Relations
+  assignedToId    String
+  assignedTo      User       @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  assignedById    String
+  assignedBy      User       @relation("CreatedTasks", fields: [assignedById], references: [id])
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([taskType])
+  @@index([referenceId])
+  @@map("task_assignments")
+}
+
+// ==================== UTILITY MODELS ====================
+
+model LetterTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  subject     String
+  body        String
+  department  String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("letter_templates")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  action      String
+  entityType  String
+  entityId    String
+  oldData     Json?
+  newData     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
