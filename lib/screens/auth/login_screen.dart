@@ -45,9 +45,11 @@ class _LoginScreenState extends State<LoginScreen> {
         "password": _passwordController.text.trim(),
       });
 
-      final data = jsonDecode(res.body);
+      final responseData = jsonDecode(res.body);
 
-      if (res.statusCode == 200) {
+      if (res.statusCode == 200 && responseData["success"] == true) {
+        // Backend returns: { success: true, data: { token, user } }
+        final data = responseData["data"];
         final token = data["token"];
         final user = data["user"];
 
@@ -72,12 +74,12 @@ class _LoginScreenState extends State<LoginScreen> {
           MaterialPageRoute(
             builder: (_) => HomeScreen(
               userName: userName,
-              role: role, // ✅ FIXED: pass role also
+              role: role,
             ),
           ),
         );
       } else {
-        final msg = data["message"] ?? "Invalid credentials";
+        final msg = responseData["error"] ?? responseData["message"] ?? "Invalid credentials";
         _showSnack(msg);
       }
     } catch (e) {
