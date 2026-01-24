@@ -37,6 +37,7 @@ export default function TrainEQCreate() {
 
   const [formData, setFormData] = useState({
     pnrNumber: "",
+    phoneNumber: "",
     trainName: "",
     trainNumber: "",
     journeyClass: "",
@@ -234,6 +235,18 @@ export default function TrainEQCreate() {
       setLoading(false);
       return;
     }
+    
+    // Phone number validation
+    if (!formData.phoneNumber.trim()) {
+      setError("Phone number is required");
+      setLoading(false);
+      return;
+    }
+    if (!/^\d{10}$/.test(formData.phoneNumber)) {
+      setError("Please enter a valid 10-digit phone number");
+      setLoading(false);
+      return;
+    }
 
     try {
       // Join passenger names with comma for backend storage
@@ -242,6 +255,7 @@ export default function TrainEQCreate() {
       await trainRequestApi.create({
         passengerName: passengerNameStr,
         pnrNumber: formData.pnrNumber,
+        contactNumber: formData.phoneNumber,
         trainName: formData.trainName || undefined,
         trainNumber: formData.trainNumber || undefined,
         journeyClass: formData.journeyClass,
@@ -427,6 +441,29 @@ export default function TrainEQCreate() {
                             )}
                           </div>
                         ))}
+                      </div>
+
+                      {/* Phone Number Field */}
+                      <div className="pt-2">
+                        <Label>
+                          Phone Number (Primary Passenger) <span className="text-red-500">*</span>
+                        </Label>
+                        <Input 
+                          placeholder="10-digit mobile number" 
+                          value={formData.phoneNumber}
+                          onChange={(e) => {
+                            // Only allow digits
+                            const value = e.target.value.replace(/\D/g, '');
+                            if (value.length <= 10) {
+                              handleChange("phoneNumber", value);
+                            }
+                          }}
+                          maxLength={10}
+                          type="tel"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Contact number for the primary passenger
+                        </p>
                       </div>
 
                       <div className="pt-2">

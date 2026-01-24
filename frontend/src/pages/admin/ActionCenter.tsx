@@ -20,11 +20,9 @@ import {
   trainRequestApi, 
   tourProgramApi,
   taskApi,
-  historyApi,
   type Grievance, 
   type TrainRequest, 
   type TourProgram,
-  type HistoryItem
 } from "@/lib/api";
 import {
   Dialog,
@@ -59,8 +57,6 @@ export default function AdminActionCenter() {
   const [pendingTrainRequests, setPendingTrainRequests] = useState<TrainRequest[]>([]);
   const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
   
   // Dialog states
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -75,28 +71,6 @@ export default function AdminActionCenter() {
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("NORMAL");
   const [assigning, setAssigning] = useState(false);
-
-  const fetchHistory = async () => {
-    setHistoryLoading(true);
-    try {
-      const historyRes = await historyApi.getHistory({ page: 1, limit: 10 });
-      console.log('ActionCenter - History response:', historyRes);
-      // historyRes is ApiResponse<HistoryItem[]>, so it has { success, message, data: HistoryItem[], meta }
-      const historyArray = Array.isArray(historyRes?.data) 
-        ? historyRes.data 
-        : Array.isArray(historyRes) 
-          ? historyRes 
-          : [];
-      setRecentHistory(historyArray);
-      console.log('ActionCenter - Recent history:', historyArray.length);
-    } catch (error: any) {
-      console.error('Failed to fetch history:', error);
-      console.error('Error details:', error?.response?.data || error?.message);
-      setRecentHistory([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -176,7 +150,6 @@ export default function AdminActionCenter() {
 
   useEffect(() => {
     fetchData();
-    fetchHistory();
   }, []);
 
   const handleViewDetails = (item: any, type: ActionType) => {
@@ -286,17 +259,13 @@ export default function AdminActionCenter() {
       let finalDueDate: string | undefined = undefined;
       if (dueDate && dueDate.trim()) {
         try {
-          // Date input gives YYYY-MM-DD, convert to ISO8601
+          // HTML date input gives YYYY-MM-DD format
           const dateObj = new Date(dueDate + 'T00:00:00');
           if (!isNaN(dateObj.getTime())) {
             finalDueDate = dateObj.toISOString();
-          } else {
-            // Fallback: use as-is if it's already in ISO format
-            finalDueDate = dueDate.trim();
           }
         } catch (e) {
           console.error('Date parsing error:', e);
-          finalDueDate = dueDate.trim();
         }
       }
       
@@ -435,8 +404,8 @@ export default function AdminActionCenter() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => { fetchData(); fetchHistory(); }} disabled={loading || historyLoading}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loading || historyLoading ? 'animate-spin' : ''}`} />
+                <Button variant="outline" onClick={() => fetchData()} disabled={loading}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                   Refresh
                 </Button>
                 <Button variant="outline" onClick={() => navigate('/admin/history')}>
@@ -475,38 +444,6 @@ export default function AdminActionCenter() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Recent History Card */}
-            {recentHistory.length > 0 && (
-              <Card className="rounded-2xl">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-indigo-600" />
-                    Recent Actions
-                  </CardTitle>
-                  <Button variant="ghost" size="sm" onClick={() => navigate('/admin/history')}>
-                    View All
-                    <ArrowRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {recentHistory.map((item) => (
-                    <div key={`${item.type}-${item.id}`} className="p-3 rounded-lg bg-gray-50 hover:bg-indigo-50 transition">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className="font-medium text-sm">{item.title}</p>
-                          <p className="text-xs text-muted-foreground">{item.description}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {item.action} • {new Date(item.actionAt).toLocaleDateString('en-IN')}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="text-xs">{item.action}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
 
             {/* Action Tiles Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -667,79 +604,232 @@ export default function AdminActionCenter() {
           </div>
         </div>
 
-        {/* Details Dialog */}
+        {/* Details Dialog - Large and Comprehensive */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>
-                {selectedType === 'grievance' ? 'Grievance Details' :
-                 selectedType === 'train' ? 'Train Request Details' : 'Tour Program Details'}
-              </DialogTitle>
+          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="pb-4 border-b">
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-2xl font-bold text-indigo-900">
+                    {selectedType === 'grievance' ? 'Grievance Details' :
+                     selectedType === 'train' ? 'Train Enquiry Request Details' : 'Tour Program Details'}
+                  </DialogTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Complete information and available actions
+                  </p>
+                </div>
+                {selectedItem && (
+                  <Badge variant={selectedItem.status === 'OPEN' || selectedItem.status === 'PENDING' ? 'destructive' : 'secondary'} className="text-sm px-3 py-1">
+                    {selectedItem.status || 'PENDING'}
+                  </Badge>
+                )}
+              </div>
             </DialogHeader>
             
             {selectedItem && (
-              <div className="space-y-4">
+              <div className="space-y-6 pt-4">
                 {selectedType === 'grievance' && (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Petitioner Name</p>
-                        <p className="font-medium">{selectedItem.petitionerName}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Mobile</p>
-                        <p className="font-medium">{selectedItem.mobileNumber}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Type</p>
-                        <p className="font-medium">{selectedItem.grievanceType}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Constituency</p>
-                        <p className="font-medium">{selectedItem.constituency}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Action Required</p>
-                        <p className="font-medium">{selectedItem.actionRequired}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Referenced By</p>
-                        <p className="font-medium">{selectedItem.referencedBy || 'N/A'}</p>
+                    {/* Grievance Header Info */}
+                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="text-xl font-semibold text-indigo-900">{selectedItem.petitionerName}</h3>
+                          <p className="text-indigo-700 font-medium">{selectedItem.grievanceType}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">Submitted on</p>
+                          <p className="font-medium">{formatDate(selectedItem.createdAt)}</p>
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Description</p>
-                      <p className="p-3 bg-gray-50 rounded-lg mt-1">{selectedItem.description}</p>
+
+                    {/* Grievance Details Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Contact Number</p>
+                        <p className="font-semibold text-lg">{selectedItem.mobileNumber}</p>
+                      </div>
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Constituency</p>
+                        <p className="font-semibold text-lg">{selectedItem.constituency}</p>
+                      </div>
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Verification Status</p>
+                        <Badge variant={selectedItem.isVerified ? 'default' : 'outline'} className="mt-1">
+                          {selectedItem.isVerified ? 'Verified' : 'Not Verified'}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Action Required</p>
+                        <p className="font-medium">{selectedItem.actionRequired || 'Not specified'}</p>
+                      </div>
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Referenced By</p>
+                        <p className="font-medium">{selectedItem.referencedBy || 'Direct submission'}</p>
+                      </div>
+                    </div>
+
+                    {/* Description Section */}
+                    <div className="bg-gray-50 rounded-xl p-5">
+                      <p className="text-sm font-medium text-muted-foreground mb-2">Grievance Description</p>
+                      <p className="text-gray-800 leading-relaxed">{selectedItem.description || 'No description provided'}</p>
+                    </div>
+
+                    {/* Attachments if any */}
+                    {selectedItem.attachmentPath && (
+                      <div className="bg-blue-50 rounded-xl p-4">
+                        <p className="text-sm font-medium text-blue-800 mb-2">Attachments</p>
+                        <a href={selectedItem.attachmentPath} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
+                          <FileText className="h-4 w-4" />
+                          View Attachment
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Quick Actions for Grievance */}
+                    <div className="bg-white border-2 border-indigo-100 rounded-xl p-5">
+                      <h4 className="font-semibold text-indigo-900 mb-4">Quick Actions</h4>
+                      <div className="flex flex-wrap gap-3">
+                        {!selectedItem.isVerified && (
+                          <Button 
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => {
+                              handleVerifyGrievance(selectedItem.id);
+                              setDetailsOpen(false);
+                            }}
+                          >
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Verify Grievance
+                          </Button>
+                        )}
+                        <Button 
+                          className="bg-indigo-600 hover:bg-indigo-700"
+                          onClick={() => {
+                            setDetailsOpen(false);
+                            handleOpenAssign(selectedItem, selectedType);
+                          }}
+                        >
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          Assign to Staff
+                        </Button>
+                        <Button variant="outline" onClick={() => navigate(`/grievances/${selectedItem.id}`)}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          View Full Details
+                        </Button>
+                      </div>
                     </div>
                   </>
                 )}
                 
                 {selectedType === 'train' && (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Passenger Name</p>
-                        <p className="font-medium">{selectedItem.passengerName}</p>
+                    {/* Train Request Header */}
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="text-xl font-semibold text-amber-900">{selectedItem.passengerName}</h3>
+                          <p className="text-amber-700 font-medium">PNR: {selectedItem.pnrNumber}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">Journey Date</p>
+                          <p className="font-medium">{formatDate(selectedItem.dateOfJourney)}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">PNR Number</p>
-                        <p className="font-medium">{selectedItem.pnrNumber}</p>
+                    </div>
+
+                    {/* Journey Details */}
+                    <div className="bg-white border-2 border-amber-100 rounded-xl p-5">
+                      <h4 className="font-semibold text-amber-900 mb-4 flex items-center gap-2">
+                        <Train className="h-5 w-5" />
+                        Journey Information
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="bg-amber-50/50 rounded-lg p-3">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Train Details</p>
+                          <p className="font-semibold">{selectedItem.trainName}</p>
+                          <p className="text-sm text-muted-foreground">{selectedItem.trainNumber}</p>
+                        </div>
+                        <div className="bg-amber-50/50 rounded-lg p-3">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">From Station</p>
+                          <p className="font-semibold text-lg">{selectedItem.fromStation}</p>
+                        </div>
+                        <div className="bg-amber-50/50 rounded-lg p-3">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">To Station</p>
+                          <p className="font-semibold text-lg">{selectedItem.toStation}</p>
+                        </div>
+                        <div className="bg-amber-50/50 rounded-lg p-3">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Class</p>
+                          <p className="font-semibold">{selectedItem.journeyClass}</p>
+                        </div>
+                        <div className="bg-amber-50/50 rounded-lg p-3">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Quota</p>
+                          <p className="font-semibold">{selectedItem.quota || 'General'}</p>
+                        </div>
+                        <div className="bg-amber-50/50 rounded-lg p-3">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Passengers</p>
+                          <p className="font-semibold">{selectedItem.numberOfPassengers || 1}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Train</p>
-                        <p className="font-medium">{selectedItem.trainName} ({selectedItem.trainNumber})</p>
+                    </div>
+
+                    {/* Contact Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Contact Number</p>
+                        <p className="font-semibold text-lg">{selectedItem.contactNumber || selectedItem.mobileNumber || 'N/A'}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Class</p>
-                        <p className="font-medium">{selectedItem.journeyClass}</p>
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Submitted On</p>
+                        <p className="font-semibold">{formatDate(selectedItem.createdAt)}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Journey Date</p>
-                        <p className="font-medium">{formatDate(selectedItem.dateOfJourney)}</p>
+                    </div>
+
+                    {/* Remarks if any */}
+                    {selectedItem.remarks && (
+                      <div className="bg-gray-50 rounded-xl p-5">
+                        <p className="text-sm font-medium text-muted-foreground mb-2">Remarks / Notes</p>
+                        <p className="text-gray-800 leading-relaxed">{selectedItem.remarks}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Route</p>
-                        <p className="font-medium">{selectedItem.fromStation} → {selectedItem.toStation}</p>
+                    )}
+
+                    {/* Quick Actions for Train */}
+                    <div className="bg-white border-2 border-amber-100 rounded-xl p-5">
+                      <h4 className="font-semibold text-amber-900 mb-4">Quick Actions</h4>
+                      <div className="flex flex-wrap gap-3">
+                        <Button 
+                          className="bg-green-600 hover:bg-green-700"
+                          onClick={() => {
+                            handleApproveTrainRequest(selectedItem.id);
+                            setDetailsOpen(false);
+                          }}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Approve Request
+                        </Button>
+                        <Button 
+                          variant="destructive"
+                          onClick={() => {
+                            handleRejectTrainRequest(selectedItem.id);
+                            setDetailsOpen(false);
+                          }}
+                        >
+                          <XCircle className="h-4 w-4 mr-2" />
+                          Reject Request
+                        </Button>
+                        <Button 
+                          className="bg-indigo-600 hover:bg-indigo-700"
+                          onClick={() => {
+                            setDetailsOpen(false);
+                            handleOpenAssign(selectedItem, selectedType);
+                          }}
+                        >
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          Assign to Staff
+                        </Button>
                       </div>
                     </div>
                   </>
@@ -747,43 +837,107 @@ export default function AdminActionCenter() {
                 
                 {selectedType === 'tour' && (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Event Name</p>
-                        <p className="font-medium">{selectedItem.eventName}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Organizer</p>
-                        <p className="font-medium">{selectedItem.organizer}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Date & Time</p>
-                        <p className="font-medium">{formatDate(selectedItem.dateTime)}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Venue</p>
-                        <p className="font-medium">{selectedItem.venue}</p>
+                    {/* Tour Event Header */}
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="text-xl font-semibold text-green-900">{selectedItem.eventName}</h3>
+                          <p className="text-green-700 font-medium">by {selectedItem.organizer}</p>
+                        </div>
+                        <div className="text-right">
+                          <Badge variant={selectedItem.decision === 'ACCEPTED' ? 'default' : selectedItem.decision === 'REGRET' ? 'destructive' : 'secondary'}>
+                            {selectedItem.decision || 'PENDING'}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
+
+                    {/* Event Details */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                          <Calendar className="h-4 w-4 inline mr-1" />
+                          Date & Time
+                        </p>
+                        <p className="font-semibold text-lg">{formatDate(selectedItem.dateTime || selectedItem.eventDate)}</p>
+                      </div>
+                      <div className="bg-white border rounded-xl p-4 shadow-sm col-span-2">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Venue</p>
+                        <p className="font-semibold text-lg">{selectedItem.venue}</p>
+                      </div>
+                    </div>
+
+                    {/* Organizer Contact */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Contact Person</p>
+                        <p className="font-semibold">{selectedItem.contactPerson || selectedItem.organizer}</p>
+                      </div>
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Contact Number</p>
+                        <p className="font-semibold">{selectedItem.contactNumber || 'N/A'}</p>
+                      </div>
+                    </div>
+
+                    {/* Description if any */}
                     {selectedItem.description && (
-                      <div>
-                        <p className="text-sm text-muted-foreground">Description</p>
-                        <p className="p-3 bg-gray-50 rounded-lg mt-1">{selectedItem.description}</p>
+                      <div className="bg-gray-50 rounded-xl p-5">
+                        <p className="text-sm font-medium text-muted-foreground mb-2">Event Description</p>
+                        <p className="text-gray-800 leading-relaxed">{selectedItem.description}</p>
                       </div>
                     )}
+
+                    {/* Notes if any */}
+                    {selectedItem.notes && (
+                      <div className="bg-blue-50 rounded-xl p-5">
+                        <p className="text-sm font-medium text-blue-800 mb-2">Additional Notes</p>
+                        <p className="text-blue-900 leading-relaxed">{selectedItem.notes}</p>
+                      </div>
+                    )}
+
+                    {/* Quick Actions for Tour */}
+                    <div className="bg-white border-2 border-green-100 rounded-xl p-5">
+                      <h4 className="font-semibold text-green-900 mb-4">Quick Actions</h4>
+                      <div className="flex flex-wrap gap-3">
+                        <Button 
+                          className="bg-green-600 hover:bg-green-700"
+                          onClick={() => {
+                            handleTourDecision(selectedItem.id, 'ACCEPTED');
+                            setDetailsOpen(false);
+                          }}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Accept Invitation
+                        </Button>
+                        <Button 
+                          variant="destructive"
+                          onClick={() => {
+                            handleTourDecision(selectedItem.id, 'REGRET');
+                            setDetailsOpen(false);
+                          }}
+                        >
+                          <XCircle className="h-4 w-4 mr-2" />
+                          Send Regret
+                        </Button>
+                        <Button 
+                          className="bg-indigo-600 hover:bg-indigo-700"
+                          onClick={() => {
+                            setDetailsOpen(false);
+                            handleOpenAssign(selectedItem, selectedType);
+                          }}
+                        >
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          Assign to Staff
+                        </Button>
+                      </div>
+                    </div>
                   </>
                 )}
                 
-                <div className="flex justify-end gap-2 pt-4 border-t">
-                  <Button variant="outline" onClick={() => setDetailsOpen(false)}>
+                {/* Close Button at Bottom */}
+                <div className="flex justify-end pt-4 border-t">
+                  <Button variant="outline" onClick={() => setDetailsOpen(false)} size="lg">
                     Close
-                  </Button>
-                  <Button onClick={() => {
-                    setDetailsOpen(false);
-                    handleOpenAssign(selectedItem, selectedType);
-                  }}>
-                    <UserPlus className="h-4 w-4 mr-2" />
-                    Assign to Staff
                   </Button>
                 </div>
               </div>
@@ -791,7 +945,7 @@ export default function AdminActionCenter() {
           </DialogContent>
         </Dialog>
 
-        {/* Assign Task Dialog */}
+        {/* Assign Task Dialog - Larger with Reference Info */}
         <Dialog open={assignDialogOpen} onOpenChange={(open) => {
           setAssignDialogOpen(open);
           if (!open) {
@@ -799,91 +953,230 @@ export default function AdminActionCenter() {
             resetAssignForm();
           }
         }}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Assign Task to Staff</DialogTitle>
-              <DialogDescription>
-                Create a task and assign it to a staff member
+          <DialogContent className="w-[95vw] max-w-[1400px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="pb-4 border-b">
+              <DialogTitle className="text-2xl font-bold text-indigo-900">Assign Task to Staff</DialogTitle>
+              <DialogDescription className="text-base">
+                Create a task from this {selectedType === 'grievance' ? 'grievance' : selectedType === 'train' ? 'train request' : 'tour program'} and assign it to a staff member
               </DialogDescription>
             </DialogHeader>
             
-            <div className="space-y-4">
-              <div>
-                <Label>Assign To <span className="text-red-500">*</span></Label>
-                <Select value={assignToId} onValueChange={setAssignToId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Select staff member" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {staffMembers.map((staff) => (
-                      <SelectItem key={staff.id} value={staff.id}>
-                        {staff.name} ({staff.email})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div>
-                <Label>Task Title <span className="text-red-500">*</span></Label>
-                <Input
-                  value={taskTitle}
-                  onChange={(e) => setTaskTitle(e.target.value)}
-                  className="mt-1"
-                  placeholder="Enter task title"
-                />
-              </div>
-              
-              <div>
-                <Label>Description</Label>
-                <Textarea
-                  value={taskDescription}
-                  onChange={(e) => setTaskDescription(e.target.value)}
-                  className="mt-1"
-                  placeholder="Enter task description and instructions"
-                  rows={3}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Priority</Label>
-                  <Select value={priority} onValueChange={setPriority}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="LOW">Low</SelectItem>
-                      <SelectItem value="NORMAL">Normal</SelectItem>
-                      <SelectItem value="HIGH">High</SelectItem>
-                      <SelectItem value="URGENT">Urgent</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-6">
+              {/* Left Column - Reference Information */}
+              <div className="space-y-5">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2 text-lg">
+                  <FileText className="h-5 w-5" />
+                  Reference Information
+                </h4>
                 
-                <div>
-                  <Label>Due Date</Label>
-                  <Input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="mt-1"
-                  />
+                {selectedItem && selectedType === 'grievance' && (
+                  <div className="bg-indigo-50 rounded-xl p-5 space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-semibold text-indigo-900 text-lg">{selectedItem.petitionerName}</p>
+                        <p className="text-indigo-700">{selectedItem.grievanceType}</p>
+                      </div>
+                      <Badge variant="outline" className="text-sm">{selectedItem.status}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-white/60 rounded-lg p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Mobile</p>
+                        <p className="font-medium">{selectedItem.mobileNumber}</p>
+                      </div>
+                      <div className="bg-white/60 rounded-lg p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Constituency</p>
+                        <p className="font-medium">{selectedItem.constituency}</p>
+                      </div>
+                    </div>
+                    {selectedItem.description && (
+                      <div className="bg-white/60 rounded-lg p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Description</p>
+                        <p className="font-medium text-sm leading-relaxed">{selectedItem.description}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selectedItem && selectedType === 'train' && (
+                  <div className="bg-amber-50 rounded-xl p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-semibold text-amber-900">{selectedItem.passengerName}</p>
+                        <p className="text-sm text-amber-700">PNR: {selectedItem.pnrNumber}</p>
+                      </div>
+                      <Badge variant="outline">{selectedItem.status}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Train</p>
+                        <p className="font-medium">{selectedItem.trainName}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Journey Date</p>
+                        <p className="font-medium">{formatDate(selectedItem.dateOfJourney)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Route</p>
+                        <p className="font-medium">{selectedItem.fromStation} → {selectedItem.toStation}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Class</p>
+                        <p className="font-medium">{selectedItem.journeyClass}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selectedItem && selectedType === 'tour' && (
+                  <div className="bg-green-50 rounded-xl p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-semibold text-green-900">{selectedItem.eventName}</p>
+                        <p className="text-sm text-green-700">by {selectedItem.organizer}</p>
+                      </div>
+                      <Badge variant="outline">{selectedItem.decision || 'PENDING'}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Date & Time</p>
+                        <p className="font-medium">{formatDate(selectedItem.dateTime || selectedItem.eventDate)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Venue</p>
+                        <p className="font-medium">{selectedItem.venue}</p>
+                      </div>
+                    </div>
+                    {selectedItem.description && (
+                      <div className="text-sm">
+                        <p className="text-muted-foreground">Description</p>
+                        <p className="font-medium line-clamp-3">{selectedItem.description}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column - Task Assignment Form */}
+              <div className="space-y-5">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2 text-lg">
+                  <UserPlus className="h-5 w-5" />
+                  Task Assignment
+                </h4>
+
+                <div className="space-y-5 bg-gray-50 rounded-xl p-5 border">
+                  <div>
+                    <Label className="text-sm font-medium">Assign To <span className="text-red-500">*</span></Label>
+                    <Select value={assignToId} onValueChange={setAssignToId}>
+                      <SelectTrigger className="mt-2 h-11">
+                        <SelectValue placeholder="Select staff member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {staffMembers.map((staff) => (
+                          <SelectItem key={staff.id} value={staff.id} className="py-2">
+                            <div>
+                              <p className="font-medium">{staff.name}</p>
+                              <p className="text-xs text-muted-foreground">{staff.email}</p>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <Label className="text-sm font-medium">Task Title <span className="text-red-500">*</span></Label>
+                    <Input
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      className="mt-2 h-11"
+                      placeholder="Enter task title"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label className="text-sm font-medium">Description</Label>
+                    <Textarea
+                      value={taskDescription}
+                      onChange={(e) => setTaskDescription(e.target.value)}
+                      className="mt-2 min-h-[180px] resize-none"
+                      placeholder="Enter task description and instructions for the staff member..."
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Priority</Label>
+                      <Select value={priority} onValueChange={setPriority}>
+                        <SelectTrigger className="mt-2 h-11">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="LOW">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+                              Low
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="NORMAL">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                              Normal
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="HIGH">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                              High
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="URGENT">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                              Urgent
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label className="text-sm font-medium">Due Date</Label>
+                      <Input
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        className="mt-2 h-11"
+                        min={new Date().toISOString().split('T')[0]}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-              
-              <div className="flex gap-2 pt-4 border-t">
-                <Button variant="outline" onClick={() => setAssignDialogOpen(false)} className="flex-1">
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleAssignTask}
-                  disabled={assigning || !assignToId || !taskTitle}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700"
-                >
-                  {assigning ? "Assigning..." : "Assign Task"}
-                </Button>
-              </div>
+            </div>
+            
+            {/* Footer Actions */}
+            <div className="flex gap-3 pt-6 mt-6 border-t">
+              <Button variant="outline" onClick={() => setAssignDialogOpen(false)} size="lg" className="flex-1">
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleAssignTask}
+                disabled={assigning || !assignToId || !taskTitle}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                size="lg"
+              >
+                {assigning ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Assign Task
+                  </>
+                )}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

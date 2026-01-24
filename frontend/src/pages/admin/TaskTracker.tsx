@@ -15,14 +15,13 @@ import {
   Trash2,
   TrendingUp,
   User,
-  History
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { taskApi, historyApi, type TaskAssignment, type TaskStatus, type TaskTrackingData, type HistoryItem } from "@/lib/api";
+import { taskApi, type TaskAssignment, type TaskStatus, type TaskTrackingData } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -44,34 +43,10 @@ export default function AdminTaskTracker() {
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [selectedTask, setSelectedTask] = useState<TaskAssignment | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
   
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterStaff, setFilterStaff] = useState<string>("all");
-
-  const fetchHistory = async () => {
-    setHistoryLoading(true);
-    try {
-      const historyRes = await historyApi.getHistory({ page: 1, limit: 10 });
-      console.log('TaskTracker - History response:', historyRes);
-      // historyRes is ApiResponse<HistoryItem[]>, so it has { success, message, data: HistoryItem[], meta }
-      const historyArray = Array.isArray(historyRes?.data) 
-        ? historyRes.data 
-        : Array.isArray(historyRes) 
-          ? historyRes 
-          : [];
-      setRecentHistory(historyArray);
-      console.log('TaskTracker - Recent history:', historyArray.length);
-    } catch (error: any) {
-      console.error('Failed to fetch history:', error);
-      console.error('Error details:', error?.response?.data || error?.message);
-      setRecentHistory([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -131,7 +106,6 @@ export default function AdminTaskTracker() {
 
   useEffect(() => {
     fetchData();
-    fetchHistory();
   }, []);
 
   const filteredTasks = tasks.filter(task => {
@@ -234,8 +208,8 @@ export default function AdminTaskTracker() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => { fetchData(); fetchHistory(); }} disabled={loading || historyLoading}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loading || historyLoading ? 'animate-spin' : ''}`} />
+                <Button variant="outline" onClick={() => fetchData()} disabled={loading}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                   Refresh
                 </Button>
                 <Button variant="outline" onClick={() => navigate('/admin/history')}>
@@ -312,38 +286,6 @@ export default function AdminTaskTracker() {
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Recent History Card */}
-            {recentHistory.length > 0 && (
-              <Card className="rounded-2xl">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <History className="h-5 w-5 text-indigo-600" />
-                    Recent Actions
-                  </CardTitle>
-                  <Button variant="ghost" size="sm" onClick={() => navigate('/admin/history')}>
-                    View All
-                    <ArrowRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {recentHistory.map((item) => (
-                    <div key={`${item.type}-${item.id}`} className="p-3 rounded-lg bg-gray-50 hover:bg-indigo-50 transition">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className="font-medium text-sm">{item.title}</p>
-                          <p className="text-xs text-muted-foreground">{item.description}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {item.action} • {new Date(item.actionAt).toLocaleDateString('en-IN')}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="text-xs">{item.action}</Badge>
-                      </div>
-                    </div>
-                  ))}
                 </CardContent>
               </Card>
             )}
