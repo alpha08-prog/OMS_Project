@@ -5,6 +5,7 @@ import {
   getTasks,
   getMyTasks,
   getTaskById,
+  getTaskHistory,
   updateTaskProgress,
   updateTaskStatus,
   getTaskTracking,
@@ -43,6 +44,7 @@ router.use(authenticate);
 
 // Staff routes
 router.get('/my-tasks', staffOnly, getMyTasks);
+router.get('/:id/history', staffOnly, validate(idParamValidation), getTaskHistory);
 router.patch('/:id/progress', staffOnly, validate([...idParamValidation, ...updateProgressValidation]), updateTaskProgress);
 
 // Admin routes

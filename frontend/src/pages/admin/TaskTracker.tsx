@@ -179,6 +179,16 @@ export default function AdminTaskTracker() {
     });
   };
 
+  const formatDateTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   // Get unique staff members from tasks
   const uniqueStaff = Array.from(
     new Map(tasks.map(t => [t.assignedTo.id, t.assignedTo])).values()
@@ -395,69 +405,41 @@ export default function AdminTaskTracker() {
                         </div>
                       </div>
 
-                      {/* Progress Tracker (like delivery tracker) */}
-                      <div className="relative">
-                        <div className="flex items-center justify-between mb-2">
-                          {/* Step 1: Assigned */}
-                          <div className="flex flex-col items-center">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                              task.status ? 'bg-blue-500 text-white' : 'bg-gray-200'
-                            }`}>
-                              <Clock className="h-5 w-5" />
-                            </div>
-                            <p className="text-xs mt-1">Assigned</p>
+                      {/* Recent Activity Timeline */}
+                          <div className="mt-4 pt-3 border-t">
+                            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                              <Clock className="h-3 w-3" />
+                              Recent Activity
+                            </p>
+                            
+                            {task.progressHistory && task.progressHistory.length > 0 ? (
+                              <div className="space-y-3 pl-1">
+                                {task.progressHistory.map((history) => (
+                                  <div key={history.id} className="relative pl-4 border-l border-indigo-100">
+                                    <div className="absolute -left-[2.5px] top-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="text-sm text-gray-700">{history.note}</span>
+                                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                        <span>{formatDateTime(history.createdAt)}</span>
+                                        <span>•</span>
+                                        <span>{history.createdBy.name}</span>
+                                        {history.status && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="font-medium text-indigo-600">
+                                              {history.status.replace('_', ' ')}
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground italic pl-1">No activity yet</p>
+                            )}
                           </div>
-                          
-                          {/* Connector */}
-                          <div className={`flex-1 h-1 mx-2 ${
-                            task.status === 'IN_PROGRESS' || task.status === 'COMPLETED' 
-                              ? 'bg-amber-500' : 'bg-gray-200'
-                          }`} />
-                          
-                          {/* Step 2: In Progress */}
-                          <div className="flex flex-col items-center">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                              task.status === 'IN_PROGRESS' || task.status === 'COMPLETED' 
-                                ? 'bg-amber-500 text-white' : 'bg-gray-200'
-                            }`}>
-                              <PlayCircle className="h-5 w-5" />
-                            </div>
-                            <p className="text-xs mt-1">In Progress</p>
-                          </div>
-                          
-                          {/* Connector */}
-                          <div className={`flex-1 h-1 mx-2 ${
-                            task.status === 'COMPLETED' ? 'bg-green-500' : 'bg-gray-200'
-                          }`} />
-                          
-                          {/* Step 3: Completed */}
-                          <div className="flex flex-col items-center">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                              task.status === 'COMPLETED' ? 'bg-green-500 text-white' : 'bg-gray-200'
-                            }`}>
-                              <CheckCircle2 className="h-5 w-5" />
-                            </div>
-                            <p className="text-xs mt-1">Completed</p>
-                          </div>
-                        </div>
-                        
-                        {/* Progress Bar */}
-                        <div className="mt-3">
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-muted-foreground">Progress</span>
-                            <span className="font-medium">{task.progressPercent}%</span>
-                          </div>
-                          <Progress value={task.progressPercent} className="h-2" />
-                        </div>
-                        
-                        {/* Progress Notes */}
-                        {task.progressNotes && (
-                          <div className="mt-3 p-2 bg-gray-50 rounded text-sm">
-                            <p className="text-muted-foreground">Latest Update:</p>
-                            <p>{task.progressNotes}</p>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   ))
                 )}

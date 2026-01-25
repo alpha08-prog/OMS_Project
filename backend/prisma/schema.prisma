@@ -114,6 +114,7 @@ model User {
   // Task Assignment Relations
   assignedTasks      TaskAssignment[]   @relation("AssignedTasks")
   createdTasks       TaskAssignment[]   @relation("CreatedTasks")
+  progressUpdates    TaskProgressHistory[] @relation("ProgressUpdates")
 
   @@map("users")
 }
@@ -315,11 +316,32 @@ model TaskAssignment {
   assignedById    String
   assignedBy      User       @relation("CreatedTasks", fields: [assignedById], references: [id])
 
+  // Progress history relation
+  progressHistory TaskProgressHistory[]
+
   @@index([assignedToId])
   @@index([status])
   @@index([taskType])
   @@index([referenceId])
   @@map("task_assignments")
+}
+
+// ==================== TASK PROGRESS HISTORY ====================
+
+model TaskProgressHistory {
+  id            String         @id @default(uuid())
+  taskId        String
+  task          TaskAssignment @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  
+  note          String         // The progress update comment
+  status        TaskStatus?    // Optional status change (e.g., ASSIGNED -> IN_PROGRESS)
+  
+  createdAt     DateTime       @default(now())
+  createdById   String
+  createdBy     User           @relation("ProgressUpdates", fields: [createdById], references: [id])
+
+  @@index([taskId])
+  @@map("task_progress_history")
 }
 
 // ==================== UTILITY MODELS ====================

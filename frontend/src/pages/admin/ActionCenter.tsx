@@ -953,7 +953,7 @@ export default function AdminActionCenter() {
             resetAssignForm();
           }
         }}>
-          <DialogContent className="w-[95vw] max-w-[1400px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] max-w-[1500px] max-h-[90vh] overflow-y-auto">
             <DialogHeader className="pb-4 border-b">
               <DialogTitle className="text-2xl font-bold text-indigo-900">Assign Task to Staff</DialogTitle>
               <DialogDescription className="text-base">

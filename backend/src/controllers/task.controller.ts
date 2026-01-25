@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { TaskStatus, TaskType } from '@prisma/client';
+import { TaskStatus, TaskType, Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { sendSuccess, sendError, sendNotFound, sendServerError } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
@@ -104,13 +104,13 @@ export async function createTask(
     sendSuccess(res, task, 'Task assigned successfully', 201);
   } catch (error: any) {
     console.error('Task creation error:', error);
-    
+
     // Handle Prisma errors
     if (error.code === 'P2002') {
       sendError(res, 'A task with this reference already exists', 409);
       return;
     }
-    
+
     if (error.code === 'P2003') {
       sendError(res, 'Invalid reference: The referenced item does not exist', 400);
       return;
@@ -160,6 +160,15 @@ export async function getTasks(
           },
           assignedBy: {
             select: { id: true, name: true, email: true },
+          },
+          progressHistory: {
+            orderBy: { createdAt: 'desc' },
+            take: 3,
+            include: {
+              createdBy: {
+                select: { id: true, name: true, email: true },
+              },
+            },
           },
         },
       }),
@@ -211,6 +220,15 @@ export async function getMyTasks(
         include: {
           assignedBy: {
             select: { id: true, name: true, email: true },
+          },
+          progressHistory: {
+            orderBy: { createdAt: 'desc' },
+            take: 3, // Show last 3 updates in list
+            include: {
+              createdBy: {
+                select: { id: true, name: true, email: true },
+              },
+            },
           },
         },
       }),
@@ -272,7 +290,7 @@ export async function updateTaskProgress(
     }
 
     const { id } = req.params;
-    const { status, progressNotes, progressPercent } = req.body;
+    const { status, progressNotes } = req.body;
 
     // Verify task belongs to user
     const existingTask = await prisma.taskAssignment.findUnique({
@@ -289,8 +307,8 @@ export async function updateTaskProgress(
       return;
     }
 
-    const updateData: any = {};
-    
+    const updateData: Prisma.TaskAssignmentUpdateInput = {};
+
     if (status) {
       updateData.status = status as TaskStatus;
       if (status === 'IN_PROGRESS' && !existingTask.startedAt) {
@@ -301,9 +319,23 @@ export async function updateTaskProgress(
         updateData.progressPercent = 100;
       }
     }
-    
-    if (progressNotes !== undefined) updateData.progressNotes = progressNotes;
-    if (progressPercent !== undefined) updateData.progressPercent = progressPercent;
+
+    // Keep latest progressNotes on task for backward compatibility
+    if (progressNotes !== undefined && progressNotes.trim()) {
+      updateData.progressNotes = progressNotes;
+    }
+
+    // Create progress history entry if there's a note or status change
+    if ((progressNotes && progressNotes.trim()) || status) {
+      await prisma.taskProgressHistory.create({
+        data: {
+          taskId: id,
+          note: progressNotes?.trim() || `Status changed to ${status}`,
+          status: status as TaskStatus || null,
+          createdById: req.user.id,
+        },
+      });
+    }
 
     const task = await prisma.taskAssignment.update({
       where: { id },
@@ -315,12 +347,70 @@ export async function updateTaskProgress(
         assignedBy: {
           select: { id: true, name: true, email: true },
         },
+        progressHistory: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          include: {
+            createdBy: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+        },
       },
     });
 
     sendSuccess(res, task, 'Task progress updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update task progress', error);
+  }
+}
+
+/**
+ * Get task progress history
+ * GET /api/tasks/:id/history
+ */
+export async function getTaskHistory(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      sendError(res, 'Not authenticated', 401);
+      return;
+    }
+
+    const { id } = req.params;
+
+    // Verify task exists and user has access
+    const task = await prisma.taskAssignment.findUnique({
+      where: { id },
+      select: { id: true, assignedToId: true },
+    });
+
+    if (!task) {
+      sendNotFound(res, 'Task not found');
+      return;
+    }
+
+    // Staff can only see their own tasks
+    if (req.user.role === 'STAFF' && task.assignedToId !== req.user.id) {
+      sendError(res, 'Not authorized to view this task history', 403);
+      return;
+    }
+
+    const history = await prisma.taskProgressHistory.findMany({
+      where: { taskId: id },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        createdBy: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    sendSuccess(res, history, 'Task history retrieved successfully');
+  } catch (error) {
+    sendServerError(res, 'Failed to get task history', error);
   }
 }
 
@@ -374,7 +464,7 @@ export async function getTaskTracking(
 ): Promise<void> {
   try {
     console.log('TaskController - getTaskTracking - Fetching task tracking data');
-    
+
     // Get counts by status
     const [assigned, inProgress, completed, onHold, total] = await Promise.all([
       prisma.taskAssignment.count({ where: { status: 'ASSIGNED' } }),
@@ -400,7 +490,7 @@ export async function getTaskTracking(
     // Get staff details
     const staffIds = tasksByStaff.map(t => t.assignedToId).filter(Boolean);
     let staffMembers: Array<{ id: string; name: string; email: string }> = [];
-    
+
     if (staffIds.length > 0) {
       staffMembers = await prisma.user.findMany({
         where: { id: { in: staffIds } },
