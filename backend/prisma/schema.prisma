@@ -203,6 +203,7 @@ model TrainRequest {
   id             String             @id @default(uuid())
   passengerName  String
   pnrNumber      String
+  contactNumber  String?
   trainName      String?
   trainNumber    String?
   journeyClass   String

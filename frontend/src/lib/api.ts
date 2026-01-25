@@ -115,6 +115,7 @@ export type TrainRequest = {
   id: string
   passengerName: string
   pnrNumber: string
+  contactNumber?: string
   trainName?: string
   trainNumber?: string
   journeyClass: string

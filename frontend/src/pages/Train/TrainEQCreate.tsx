@@ -37,7 +37,7 @@ export default function TrainEQCreate() {
 
   const [formData, setFormData] = useState({
     pnrNumber: "",
-    phoneNumber: "",
+    ContactNumber: "",
     trainName: "",
     trainNumber: "",
     journeyClass: "",
@@ -237,12 +237,12 @@ export default function TrainEQCreate() {
     }
     
     // Phone number validation
-    if (!formData.phoneNumber.trim()) {
+    if (!formData.ContactNumber.trim()) {
       setError("Phone number is required");
       setLoading(false);
       return;
     }
-    if (!/^\d{10}$/.test(formData.phoneNumber)) {
+    if (!/^\d{10}$/.test(formData.ContactNumber)) {
       setError("Please enter a valid 10-digit phone number");
       setLoading(false);
       return;
@@ -255,7 +255,7 @@ export default function TrainEQCreate() {
       await trainRequestApi.create({
         passengerName: passengerNameStr,
         pnrNumber: formData.pnrNumber,
-        contactNumber: formData.phoneNumber,
+        contactNumber: formData.ContactNumber,
         trainName: formData.trainName || undefined,
         trainNumber: formData.trainNumber || undefined,
         journeyClass: formData.journeyClass,
@@ -450,7 +450,7 @@ export default function TrainEQCreate() {
                         </Label>
                         <Input 
                           placeholder="10-digit mobile number" 
-                          value={formData.phoneNumber}
+                          value={formData.ContactNumber}
                           onChange={(e) => {
                             // Only allow digits
                             const value = e.target.value.replace(/\D/g, '');
