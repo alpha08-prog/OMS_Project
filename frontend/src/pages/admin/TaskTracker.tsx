@@ -505,11 +505,7 @@ export default function AdminTaskTracker() {
                   )}
                 </div>
                 
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Progress</p>
-                  <Progress value={selectedTask.progressPercent} className="h-3" />
-                  <p className="text-sm font-medium mt-1">{selectedTask.progressPercent}% complete</p>
-                </div>
+
                 
                 {selectedTask.progressNotes && (
                   <div>
