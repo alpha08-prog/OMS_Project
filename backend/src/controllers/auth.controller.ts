@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { UserRole } from '@prisma/client';
-import prisma from '../lib/prisma';
+import prisma, { withRetry } from '../lib/prisma';
 import { hashPassword, comparePassword, validatePasswordStrength } from '../utils/password';
 import { generateToken } from '../utils/jwt';
 import { sendSuccess, sendError, sendServerError } from '../utils/response';
@@ -85,14 +85,16 @@ export async function login(req: Request, res: Response): Promise<void> {
   try {
     const { identifier, password } = req.body as LoginRequest;
 
-    // Find user by email or phone
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: identifier.toLowerCase() },
-          { phone: identifier },
-        ],
-      },
+    // Find user by email or phone with retry logic for connection errors
+    const user = await withRetry(async () => {
+      return await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: identifier.toLowerCase() },
+            { phone: identifier },
+          ],
+        },
+      });
     });
 
     if (!user) {
