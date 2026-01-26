@@ -9,16 +9,14 @@ import {
   PauseCircle,
   RefreshCw,
   Calendar,
-  ArrowRight,
-  MessageSquare
+  ArrowRight
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { taskApi, type TaskAssignment, type TaskStatus } from "@/lib/api";
+import { taskApi, type TaskAssignment, type TaskStatus, type TaskProgressHistory } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -46,7 +44,8 @@ export default function StaffTasks() {
   
   // Update form state
   const [progressNotes, setProgressNotes] = useState("");
-  const [progressPercent, setProgressPercent] = useState(0);
+  const [taskHistory, setTaskHistory] = useState<TaskProgressHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
 
   const fetchTasks = async () => {
@@ -70,11 +69,22 @@ export default function StaffTasks() {
     fetchTasks();
   }, [filterStatus]);
 
-  const handleOpenUpdate = (task: TaskAssignment) => {
+  const handleOpenUpdate = async (task: TaskAssignment) => {
     setSelectedTask(task);
-    setProgressNotes(task.progressNotes || "");
-    setProgressPercent(task.progressPercent);
+    setProgressNotes("");
     setUpdateDialogOpen(true);
+    
+    // Fetch progress history
+    setHistoryLoading(true);
+    try {
+      const history = await taskApi.getTaskHistory(task.id);
+      setTaskHistory(history);
+    } catch (err) {
+      console.error("Failed to fetch task history:", err);
+      setTaskHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
   const handleUpdateProgress = async (newStatus?: TaskStatus) => {
@@ -82,22 +92,33 @@ export default function StaffTasks() {
     
     setUpdating(true);
     try {
-      const data: any = {
-        progressNotes,
-        progressPercent,
-      };
+      const data: { status?: TaskStatus; progressNotes?: string } = {};
+      if (progressNotes.trim()) {
+        data.progressNotes = progressNotes;
+      }
       if (newStatus) {
         data.status = newStatus;
       }
       
       await taskApi.updateProgress(selectedTask.id, data);
       setUpdateDialogOpen(false);
+      setProgressNotes("");
       fetchTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update task");
     } finally {
       setUpdating(false);
     }
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   const getStatusBadge = (status: TaskStatus) => {
@@ -287,21 +308,41 @@ export default function StaffTasks() {
                             )}
                           </div>
                           
-                          {/* Progress Bar */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Progress</span>
-                              <span className="font-medium">{task.progressPercent}%</span>
-                            </div>
-                            <Progress value={task.progressPercent} className="h-2" />
+                          {/* Recent Activity Timeline */}
+                          <div className="mt-4 pt-3 border-t">
+                            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                              <Clock className="h-3 w-3" />
+                              Recent Activity
+                            </p>
+                            
+                            {task.progressHistory && task.progressHistory.length > 0 ? (
+                              <div className="space-y-3 pl-1">
+                                {task.progressHistory.map((history) => (
+                                  <div key={history.id} className="relative pl-4 border-l border-indigo-100">
+                                    <div className="absolute -left-[2.5px] top-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="text-sm text-gray-700">{history.note}</span>
+                                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                        <span>{formatDateTime(history.createdAt)}</span>
+                                        <span>•</span>
+                                        <span>{history.createdBy.name}</span>
+                                        {history.status && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="font-medium text-indigo-600">
+                                              {history.status.replace('_', ' ')}
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground italic pl-1">No activity yet</p>
+                            )}
                           </div>
-                          
-                          {task.progressNotes && (
-                            <div className="flex items-start gap-2 text-sm bg-gray-50 p-2 rounded">
-                              <MessageSquare className="h-4 w-4 text-muted-foreground mt-0.5" />
-                              <p>{task.progressNotes}</p>
-                            </div>
-                          )}
                         </div>
 
                         <div className="flex flex-col gap-2">
@@ -348,27 +389,51 @@ export default function StaffTasks() {
             </DialogHeader>
             
             <div className="space-y-4">
+              {/* Progress Timeline */}
               <div>
-                <label className="text-sm font-medium">Progress ({progressPercent}%)</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={progressPercent}
-                  onChange={(e) => setProgressPercent(parseInt(e.target.value))}
-                  className="w-full mt-2"
-                />
-                <Progress value={progressPercent} className="h-2 mt-2" />
+                <label className="text-sm font-medium flex items-center gap-2 mb-3">
+                  <Clock className="h-4 w-4 text-indigo-600" />
+                  Progress Timeline
+                </label>
+                <div className="max-h-64 overflow-y-auto border rounded-lg p-3 bg-gray-50">
+                  {historyLoading ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">Loading history...</p>
+                  ) : taskHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No updates yet. Add your first update below.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {taskHistory.map((entry) => (
+                        <div key={entry.id} className="relative pl-4 pb-3 border-l-2 border-indigo-200 last:border-l-0 last:pb-0">
+                          <div className="absolute -left-1.5 top-0 w-3 h-3 bg-indigo-500 rounded-full"></div>
+                          <div className="bg-white border rounded-lg p-3 shadow-sm">
+                            <p className="text-sm text-gray-800">{entry.note}</p>
+                            {entry.status && (
+                              <Badge className="mt-2" variant="outline">
+                                Status: {entry.status.replace('_', ' ')}
+                              </Badge>
+                            )}
+                            <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                              <span>{entry.createdBy.name}</span>
+                              <span>•</span>
+                              <span>{formatDateTime(entry.createdAt)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               
+              {/* Add New Update */}
               <div>
-                <label className="text-sm font-medium">Progress Notes</label>
+                <label className="text-sm font-medium">Add Progress Update</label>
                 <Textarea
-                  placeholder="Describe what you've done, any blockers, etc."
+                  placeholder="What progress have you made? Any blockers or updates?"
                   value={progressNotes}
                   onChange={(e) => setProgressNotes(e.target.value)}
                   className="mt-2"
-                  rows={4}
+                  rows={3}
                 />
               </div>
               
@@ -387,10 +452,10 @@ export default function StaffTasks() {
                 </Button>
                 <Button 
                   onClick={() => handleUpdateProgress()}
-                  disabled={updating}
+                  disabled={updating || !progressNotes.trim()}
                   className="flex-1 bg-indigo-600 hover:bg-indigo-700"
                 >
-                  {updating ? "Saving..." : "Save Progress"}
+                  {updating ? "Saving..." : "Add Update"}
                 </Button>
               </div>
             </div>

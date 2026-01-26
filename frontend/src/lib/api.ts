@@ -115,6 +115,7 @@ export type TrainRequest = {
   id: string
   passengerName: string
   pnrNumber: string
+  contactNumber?: string
   trainName?: string
   trainNumber?: string
   journeyClass: string
@@ -890,6 +891,16 @@ export type TaskAssignment = {
   createdAt: string
   assignedTo: { id: string; name: string; email: string }
   assignedBy: { id: string; name: string; email: string }
+  progressHistory?: TaskProgressHistory[]
+}
+
+export type TaskProgressHistory = {
+  id: string
+  taskId: string
+  note: string
+  status?: TaskStatus
+  createdAt: string
+  createdBy: { id: string; name: string; email: string }
 }
 
 export type CreateTaskRequest = {
@@ -944,8 +955,13 @@ export const taskApi = {
     return res.data.data
   },
 
-  updateProgress: async (id: string, data: { status?: TaskStatus; progressNotes?: string; progressPercent?: number }) => {
+  updateProgress: async (id: string, data: { status?: TaskStatus; progressNotes?: string }) => {
     const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/progress`, data)
+    return res.data.data
+  },
+
+  getTaskHistory: async (id: string) => {
+    const res = await http.get<ApiResponse<TaskProgressHistory[]>>(`/tasks/${id}/history`)
     return res.data.data
   },
 

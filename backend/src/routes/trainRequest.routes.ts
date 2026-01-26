@@ -24,6 +24,7 @@ const createTrainRequestValidation = [
   body('dateOfJourney').isISO8601().withMessage('Valid date of journey is required'),
   body('fromStation').trim().notEmpty().withMessage('From station is required'),
   body('toStation').trim().notEmpty().withMessage('To station is required'),
+  body('contactNumber').optional().trim().isMobilePhone('en-IN').withMessage('Invalid contact number'),
 ];
 
 const idParamValidation = [

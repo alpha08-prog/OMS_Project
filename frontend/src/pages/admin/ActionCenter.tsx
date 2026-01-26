@@ -606,7 +606,7 @@ export default function AdminActionCenter() {
 
         {/* Details Dialog - Large and Comprehensive */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] max-w-7xl max-h-[90vh] overflow-y-auto">
             <DialogHeader className="pb-4 border-b">
               <div className="flex items-center justify-between">
                 <div>
@@ -716,10 +716,7 @@ export default function AdminActionCenter() {
                           <UserPlus className="h-4 w-4 mr-2" />
                           Assign to Staff
                         </Button>
-                        <Button variant="outline" onClick={() => navigate(`/grievances/${selectedItem.id}`)}>
-                          <Eye className="h-4 w-4 mr-2" />
-                          View Full Details
-                        </Button>
+
                       </div>
                     </div>
                   </>
@@ -953,7 +950,7 @@ export default function AdminActionCenter() {
             resetAssignForm();
           }
         }}>
-          <DialogContent className="w-[95vw] max-w-[1400px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[90vw] max-w-none max-h-[95vh] overflow-y-auto">
             <DialogHeader className="pb-4 border-b">
               <DialogTitle className="text-2xl font-bold text-indigo-900">Assign Task to Staff</DialogTitle>
               <DialogDescription className="text-base">
@@ -1098,7 +1095,7 @@ export default function AdminActionCenter() {
                     <Textarea
                       value={taskDescription}
                       onChange={(e) => setTaskDescription(e.target.value)}
-                      className="mt-2 min-h-[180px] resize-none"
+                      className="mt-2 min-h-[350px] resize-none"
                       placeholder="Enter task description and instructions for the staff member..."
                     />
                   </div>

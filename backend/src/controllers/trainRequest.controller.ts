@@ -20,6 +20,8 @@ export async function createTrainRequest(
       return;
     }
 
+    console.log('CREATE TRAIN REQUEST BODY:', req.body);
+
     const {
       passengerName,
       pnrNumber,
@@ -31,6 +33,7 @@ export async function createTrainRequest(
       toStation,
       route,
       referencedBy,
+      contactNumber,
     } = req.body;
 
     const trainRequest = await prisma.trainRequest.create({
@@ -45,6 +48,7 @@ export async function createTrainRequest(
         toStation,
         route,
         referencedBy,
+        contactNumber,
         createdById: req.user.id,
       },
       include: {
@@ -391,13 +395,13 @@ export async function checkPNRStatus(
     }
 
     const data = await response.json() as Record<string, any>;
-    
+
     // Log the raw response for debugging
     console.log('IRCTC API Raw Response:', JSON.stringify(data, null, 2));
 
     // Extract data from various possible response structures
     const apiData = data.data || data;
-    
+
     // Transform the response to a consistent format
     const pnrStatus = {
       pnrNumber: pnr,
