@@ -106,11 +106,11 @@ export default function AdminActionCenter() {
           ? tourRes 
           : [];
       // getStaffMembers() returns res.data.data, so it's already the array
-      const staff = Array.isArray(staffRes) 
-        ? staffRes 
-        : Array.isArray(staffRes?.data) 
-          ? staffRes.data 
-          : [];
+      // const staff = Array.isArray(staffRes) 
+      //   ? staffRes 
+      //   : Array.isArray(staffRes?.data) 
+      //     ? staffRes.data 
+      //     : [];
       
       console.log('ActionCenter - Processed grievances:', grievances.length);
       console.log('ActionCenter - Processed train requests:', trainRequests.length);
@@ -134,10 +134,10 @@ export default function AdminActionCenter() {
       setPendingGrievances(pendingGrievances);
       setPendingTrainRequests(pendingTrainRequests);
       setPendingTourPrograms(pendingTourPrograms);
-      setStaffMembers(staff);
+      //setStaffMembers(staff);
     } catch (error: any) {
       console.error('Failed to fetch data:', error);
-      console.error('Error details:', error?.response?.data || error?.message);
+      console.error('Error details:', (error as any)?.response?.data || (error as any)?.message);
       // Set empty arrays on error to prevent undefined errors
       setPendingGrievances([]);
       setPendingTrainRequests([]);
@@ -320,24 +320,25 @@ export default function AdminActionCenter() {
       await fetchData();
     } catch (error: any) {
       console.error('Failed to assign task - Full error:', error);
-      console.error('Error response:', error?.response?.data);
-      console.error('Error status:', error?.status);
+      console.error('Error response:', (error as any)?.response?.data);
+      console.log('Error status:', (error as any)?.status);
       
       // Extract error message from response
       let errorMessage = 'Failed to assign task. Please check all fields and try again.';
       
       // The interceptor assigns response.data to the error object
-      if (error?.message) {
-        errorMessage = error.message;
-      } else if (error?.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error?.response?.data?.error) {
-        errorMessage = error.response.data.error;
+      // The interceptor assigns response.data to the error object
+      if ((error as any)?.message) {
+        errorMessage = (error as any).message;
+      } else if ((error as any)?.response?.data?.message) {
+        errorMessage = (error as any).response.data.message;
+      } else if ((error as any)?.response?.data?.error) {
+        errorMessage = (error as any).response.data.error;
       }
       
       // Also check for validation errors
-      if (error?.errors && Array.isArray(error.errors)) {
-        const validationErrors = error.errors.map((e: any) => {
+      if ((error as any)?.errors && Array.isArray((error as any).errors)) {
+        const validationErrors = (error as any).errors.map((e: any) => {
           const field = e.field || e.path || 'field';
           const msg = e.message || e.msg || 'Invalid value';
           return `${field}: ${msg}`;
@@ -345,8 +346,8 @@ export default function AdminActionCenter() {
         if (validationErrors) {
           errorMessage = `Validation Errors:\n${validationErrors}`;
         }
-      } else if (error?.response?.data?.errors && Array.isArray(error.response.data.errors)) {
-        const validationErrors = error.response.data.errors.map((e: any) => {
+      } else if ((error as any)?.response?.data?.errors && Array.isArray((error as any).response.data.errors)) {
+        const validationErrors = (error as any).response.data.errors.map((e: any) => {
           const field = e.field || 'field';
           const msg = e.message || 'Invalid value';
           return `${field}: ${msg}`;
@@ -602,6 +603,99 @@ export default function AdminActionCenter() {
             </div>
 
           </div>
+
+          {/* Assignment Dialog */}
+          <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Assign Task to Staff</DialogTitle>
+                <DialogDescription>
+                  Create a task for a staff member based on this item.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label htmlFor="staff">Assign To</Label>
+                  <Select value={assignToId} onValueChange={setAssignToId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select staff member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staffMembers.map((staff) => (
+                        <SelectItem key={staff.id} value={staff.id}>
+                          {staff.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="title">Task Title</Label>
+                  <Input 
+                    id="title" 
+                    value={taskTitle} 
+                    onChange={(e) => setTaskTitle(e.target.value)} 
+                    placeholder="Enter task title"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description (Optional)</Label>
+                  <Textarea 
+                    id="description" 
+                    value={taskDescription} 
+                    onChange={(e) => setTaskDescription(e.target.value)} 
+                    placeholder="Enter task details..."
+                    className="h-24"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="dueDate">Due Date (Optional)</Label>
+                    <Input 
+                      id="dueDate" 
+                      type="date"
+                      value={dueDate} 
+                      onChange={(e) => setDueDate(e.target.value)} 
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="priority">Priority</Label>
+                    <Select value={priority} onValueChange={setPriority}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="LOW">Low</SelectItem>
+                        <SelectItem value="NORMAL">Normal</SelectItem>
+                        <SelectItem value="URGENT">Urgent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAssignTask} disabled={assigning}>
+                  {assigning ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Assigning...
+                    </>
+                  ) : (
+                    'Assign Task'
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Details Dialog - Large and Comprehensive */}
