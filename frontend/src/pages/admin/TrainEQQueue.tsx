@@ -78,20 +78,6 @@ export default function TrainEQQueue() {
     }
   };
 
-  const handleApprove = async (id: string) => {
-    setActionLoading(id);
-    try {
-      await trainRequestApi.approve(id);
-      // Remove from list after approval
-      setRequests((prev) => prev.filter((r) => r.id !== id));
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to approve request";
-      setError(errorMessage);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   const handleReject = async (id: string) => {
     setActionLoading(id);
     try {
@@ -221,15 +207,19 @@ export default function TrainEQQueue() {
       
       console.log('Task created successfully:', createdTask);
       
+      // Approve the train request after assigning to staff
+      await trainRequestApi.approve(selectedRequest.id);
+      
       // Show success message
       const staffName = createdTask.assignedTo?.name || 'Staff member';
-      alert(`✅ Task assigned successfully!\n\nAssigned to: ${staffName}\nTask: ${createdTask.title}`);
+      alert(`✅ Verified and assigned to staff!\n\nAssigned to: ${staffName}\nTask: ${createdTask.title}\nTrain request approved.`);
       
       // Close dialog and reset form
       setAssignDialogOpen(false);
       resetAssignForm();
       
-      // Refresh requests
+      // Remove from list and refresh
+      setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
       await fetchRequests();
     } catch (error: any) {
       console.error('Failed to assign task - Full error:', error);
@@ -362,21 +352,11 @@ export default function TrainEQQueue() {
                       </Button>
                       <Button 
                         size="sm" 
-                        variant="outline"
-                        className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                        className="bg-green-600 hover:bg-green-700"
                         onClick={() => handleOpenAssign(r)}
                       >
-                        <UserPlus className="h-4 w-4 mr-1" />
-                        Assign Task
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        className="bg-green-600 hover:bg-green-700"
-                        onClick={() => handleApprove(r.id)}
-                        disabled={actionLoading === r.id}
-                      >
                         <CheckCircle className="h-4 w-4 mr-1" />
-                        {actionLoading === r.id ? "..." : "Approve"}
+                        Verify and Assign to Staff
                       </Button>
                       <Button 
                         size="sm" 
@@ -435,9 +415,9 @@ export default function TrainEQQueue() {
         }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Assign Task to Staff</DialogTitle>
+              <DialogTitle>Verify and Assign to Staff</DialogTitle>
               <DialogDescription>
-                Create a task for this Train EQ request and assign it to a staff member
+                Assign this Train EQ request to a staff member. The request will be approved and a task created.
               </DialogDescription>
             </DialogHeader>
             
@@ -513,9 +493,9 @@ export default function TrainEQQueue() {
                 <Button 
                   onClick={handleAssignTask}
                   disabled={assigning || !assignToId || !taskTitle}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                  className="flex-1 bg-green-600 hover:bg-green-700"
                 >
-                  {assigning ? "Assigning..." : "Assign Task"}
+                  {assigning ? "..." : "Verify and Assign to Staff"}
                 </Button>
               </div>
             </div>

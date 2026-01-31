@@ -141,7 +141,7 @@ export default function App() {
       <Route
         path="/grievances/view"
         element={
-          <ProtectedRoute allowedRoles={['STAFF']}>
+          <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
             <GrievanceView />
           </ProtectedRoute>
         }

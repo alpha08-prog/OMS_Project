@@ -37,6 +37,7 @@ type PrintableItem = {
 export default function PrintCenter() {
   const [printableItems, setPrintableItems] = useState<PrintableItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
   const [tourDateRange, setTourDateRange] = useState({ start: '', end: '' });
   const [tourDialogOpen, setTourDialogOpen] = useState(false);
@@ -46,6 +47,7 @@ export default function PrintCenter() {
 
   const fetchPrintableItems = async () => {
     setLoading(true);
+    setError(null);
     try {
       const items: PrintableItem[] = [];
 
@@ -87,10 +89,10 @@ export default function PrintCenter() {
 
       console.log('PrintCenter - Printable items:', items);
       setPrintableItems(items);
-    } catch (error: any) {
-      console.error('Failed to fetch printable items:', error);
-      console.error('Error details:', error?.response?.data || error?.message);
-      // Set empty array on error
+    } catch (err: any) {
+      console.error('Failed to fetch printable items:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Failed to load printable letters. Check your connection and that the server is running.';
+      setError(msg);
       setPrintableItems([]);
     } finally {
       setLoading(false);
@@ -285,6 +287,17 @@ export default function PrintCenter() {
               <CardContent className="space-y-4">
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading...</p>
+                ) : error ? (
+                  <div className="text-center py-8">
+                    <p className="text-destructive font-medium mb-2">{error}</p>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      If the database is unreachable, ensure it is running and DATABASE_URL in the backend is correct.
+                    </p>
+                    <Button variant="outline" onClick={fetchPrintableItems}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry
+                    </Button>
+                  </div>
                 ) : filteredItems.length === 0 ? (
                   <div className="text-center py-8">
                     <Printer className="h-12 w-12 text-gray-300 mx-auto mb-3" />

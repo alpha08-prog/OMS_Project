@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Calendar, CheckCircle, XCircle, RefreshCw, MapPin, User, Clock, Eye } from "lucide-react";
+import { Calendar, CheckCircle, XCircle, RefreshCw, MapPin, User, Clock, Eye, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { tourProgramApi, type TourProgram } from "@/lib/api";
+import { tourProgramApi, taskApi, type TourProgram } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -12,8 +12,22 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+
+interface StaffMember {
+  id: string;
+  name: string;
+  email: string;
+}
 
 export default function TourProgramQueue() {
   const [programs, setPrograms] = useState<TourProgram[]>([]);
@@ -23,6 +37,15 @@ export default function TourProgramQueue() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedProgram, setSelectedProgram] = useState<TourProgram | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
+
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [assignToId, setAssignToId] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState("NORMAL");
+  const [assigning, setAssigning] = useState(false);
 
   const fetchPrograms = async () => {
     setLoading(true);
@@ -37,8 +60,18 @@ export default function TourProgramQueue() {
     }
   };
 
+  const fetchStaff = async () => {
+    try {
+      const staff = await taskApi.getStaffMembers();
+      setStaffMembers(Array.isArray(staff) ? staff : []);
+    } catch {
+      setStaffMembers([]);
+    }
+  };
+
   useEffect(() => {
     fetchPrograms();
+    fetchStaff();
   }, []);
 
   const handleDecision = async (id: string, decision: 'ACCEPTED' | 'REGRET') => {
@@ -62,18 +95,77 @@ export default function TourProgramQueue() {
     setDetailsOpen(true);
   };
 
+  const handleOpenAssign = (program: TourProgram) => {
+    setSelectedProgram(program);
+    setTaskTitle(`Tour Program: ${program.eventName}`);
+    setTaskDescription(
+      `Event: ${program.eventName}\n` +
+      `Organizer: ${program.organizer}\n` +
+      `Date & Time: ${formatDateTime(program.dateTime || program.eventDate || "").date}\n` +
+      `Venue: ${program.venue}\n` +
+      (program.description ? `Description: ${program.description}` : "")
+    );
+    setAssignDialogOpen(true);
+  };
+
+  const resetAssignForm = () => {
+    setAssignToId("");
+    setTaskTitle("");
+    setTaskDescription("");
+    setDueDate("");
+    setPriority("NORMAL");
+  };
+
+  const handleAssignTask = async () => {
+    if (!selectedProgram || !assignToId || !taskTitle) {
+      alert("Please select a staff member and enter task title");
+      return;
+    }
+    setAssigning(true);
+    try {
+      let finalDueDate: string | undefined;
+      if (dueDate?.trim()) {
+        const dateObj = new Date(dueDate + "T00:00:00");
+        if (!isNaN(dateObj.getTime())) finalDueDate = dateObj.toISOString();
+      }
+      await taskApi.create({
+        title: taskTitle.trim(),
+        description: taskDescription?.trim() || undefined,
+        taskType: "TOUR_PROGRAM",
+        priority: priority || "NORMAL",
+        referenceId: selectedProgram.id,
+        referenceType: "TOUR_PROGRAM",
+        assignedToId: assignToId,
+        dueDate: finalDueDate,
+      });
+      await tourProgramApi.updateDecision(selectedProgram.id, "ACCEPTED", decisionNote || undefined);
+      setAssignDialogOpen(false);
+      resetAssignForm();
+      setDetailsOpen(false);
+      await fetchPrograms();
+      alert("Verified and assigned to staff. Tour invitation accepted.");
+    } catch (err: any) {
+      const msg = err?.message || err?.response?.data?.message || "Failed to assign task";
+      alert(msg);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
   const formatDateTime = (dateStr: string) => {
+    if (!dateStr) return { date: "N/A", time: "" };
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return { date: "N/A", time: "" };
     return {
-      date: date.toLocaleDateString('en-IN', { 
-        weekday: 'short', 
-        day: 'numeric', 
-        month: 'short', 
-        year: 'numeric' 
+      date: date.toLocaleDateString("en-IN", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
       }),
-      time: date.toLocaleTimeString('en-IN', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
+      time: date.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
       }),
     };
   };
@@ -179,11 +271,11 @@ export default function TourProgramQueue() {
                         <Button 
                           size="sm" 
                           className="bg-green-600 hover:bg-green-700"
-                          onClick={() => handleDecision(p.id, 'ACCEPTED')}
-                          disabled={actionLoading === p.id}
+                          onClick={() => handleOpenAssign(p)}
+                          disabled={assigning}
                         >
                           <CheckCircle className="h-4 w-4 mr-1" />
-                          {actionLoading === p.id ? "..." : "Accept"}
+                          Verify and Assign to Staff
                         </Button>
                         <Button 
                           size="sm" 
@@ -270,7 +362,7 @@ export default function TourProgramQueue() {
                   </Button>
                   <Button 
                     variant="destructive"
-                    onClick={() => handleDecision(selectedProgram.id, 'REGRET')}
+                    onClick={() => handleDecision(selectedProgram.id, "REGRET")}
                     disabled={actionLoading === selectedProgram.id}
                   >
                     <XCircle className="h-4 w-4 mr-1" />
@@ -278,15 +370,125 @@ export default function TourProgramQueue() {
                   </Button>
                   <Button 
                     className="bg-green-600 hover:bg-green-700"
-                    onClick={() => handleDecision(selectedProgram.id, 'ACCEPTED')}
-                    disabled={actionLoading === selectedProgram.id}
+                    onClick={() => {
+                      setDetailsOpen(false);
+                      handleOpenAssign(selectedProgram);
+                    }}
+                    disabled={assigning}
                   >
                     <CheckCircle className="h-4 w-4 mr-1" />
-                    Accept (Add to Tour)
+                    Verify and Assign to Staff
                   </Button>
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Verify and Assign to Staff Dialog */}
+        <Dialog
+          open={assignDialogOpen}
+          onOpenChange={(open) => {
+            setAssignDialogOpen(open);
+            if (!open) resetAssignForm();
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5" />
+                Verify and Assign to Staff
+              </DialogTitle>
+              <DialogDescription>
+                Accept this tour invitation and create a task assigned to a staff member
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div>
+                <Label>Assign To <span className="text-red-500">*</span></Label>
+                <Select value={assignToId} onValueChange={setAssignToId}>
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder="Select staff member" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {staffMembers.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        <div>
+                          <p className="font-medium">{s.name}</p>
+                          <p className="text-xs text-muted-foreground">{s.email}</p>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Task Title <span className="text-red-500">*</span></Label>
+                <Input
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  className="mt-2"
+                  placeholder="Task title"
+                />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Textarea
+                  value={taskDescription}
+                  onChange={(e) => setTaskDescription(e.target.value)}
+                  className="mt-2 min-h-[100px]"
+                  placeholder="Task description"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Priority</Label>
+                  <Select value={priority} onValueChange={setPriority}>
+                    <SelectTrigger className="mt-2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="LOW">Low</SelectItem>
+                      <SelectItem value="NORMAL">Normal</SelectItem>
+                      <SelectItem value="HIGH">High</SelectItem>
+                      <SelectItem value="URGENT">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Due Date</Label>
+                  <Input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="mt-2"
+                    min={new Date().toISOString().split("T")[0]}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-4 border-t justify-end">
+              <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-green-600 hover:bg-green-700"
+                onClick={handleAssignTask}
+                disabled={assigning || !assignToId || !taskTitle}
+              >
+                {assigning ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Verify and Assign to Staff
+                  </>
+                )}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </main>

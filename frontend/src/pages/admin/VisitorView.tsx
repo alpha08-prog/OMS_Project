@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { 
   Users, 
   RefreshCw, 
@@ -33,13 +34,14 @@ import {
 } from "@/components/ui/select";
 
 export default function VisitorView() {
+  const [searchParams] = useSearchParams();
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
   const [filterDesignation, setFilterDesignation] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") ?? "");
   const [dateFilter, setDateFilter] = useState<string>("");
 
   const fetchVisitors = async () => {
@@ -73,7 +75,7 @@ export default function VisitorView() {
 
   useEffect(() => {
     fetchVisitors();
-  }, [filterDesignation, dateFilter]);
+  }, [filterDesignation, dateFilter, searchQuery]);
 
   const handleSearch = () => {
     fetchVisitors();

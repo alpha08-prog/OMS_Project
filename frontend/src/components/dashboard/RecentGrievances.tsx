@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { ArrowRight, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { grievanceApi, type Grievance } from "../../lib/api";
 
 const statusStyles: Record<string, string> = {
@@ -53,13 +52,10 @@ export function RecentGrievances() {
 
   return (
     <Card className="rounded-2xl shadow-sm">
-      <CardHeader className="flex flex-row justify-between items-center">
+      <CardHeader>
         <CardTitle className="text-lg font-semibold text-indigo-900">
           Recent Grievances
         </CardTitle>
-        <Button variant="ghost" size="sm">
-          View All <ArrowRight className="h-4 w-4 ml-1" />
-        </Button>
       </CardHeader>
 
       <CardContent className="space-y-3">

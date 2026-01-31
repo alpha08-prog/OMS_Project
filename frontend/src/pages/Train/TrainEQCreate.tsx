@@ -271,7 +271,11 @@ export default function TrainEQCreate() {
         navigate("/staff/home");
       }, 2000);
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to create train request";
+      const e = err as { message?: string; errors?: Array<{ field: string; message: string }> };
+      const errorMessage =
+        Array.isArray(e?.errors) && e.errors.length > 0
+          ? e.errors.map((x) => `${x.field}: ${x.message}`).join('. ')
+          : e?.message || "Failed to create train request";
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -455,7 +459,7 @@ export default function TrainEQCreate() {
                             // Only allow digits
                             const value = e.target.value.replace(/\D/g, '');
                             if (value.length <= 10) {
-                              handleChange("phoneNumber", value);
+                              handleChange("ContactNumber", value);
                             }
                           }}
                           maxLength={10}

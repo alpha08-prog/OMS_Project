@@ -26,7 +26,7 @@ const Home = () => {
       }
     }
 
-    // Fetch dashboard stats
+    // Fetch dashboard stats from API (database-backed: /api/stats/summary)
     const fetchStats = async () => {
       try {
         const data = await statsApi.getSummary();

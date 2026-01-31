@@ -53,6 +53,7 @@ interface StaffMember {
 export default function AdminActionCenter() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [pendingGrievances, setPendingGrievances] = useState<Grievance[]>([]);
   const [pendingTrainRequests, setPendingTrainRequests] = useState<TrainRequest[]>([]);
   const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
@@ -74,6 +75,7 @@ export default function AdminActionCenter() {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       // Fetch all items, not just pending ones - we'll filter client-side
       const [grievancesRes, trainRes, tourRes, staffRes] = await Promise.all([
@@ -105,13 +107,13 @@ export default function AdminActionCenter() {
         : Array.isArray(tourRes) 
           ? tourRes 
           : [];
-      // getStaffMembers() returns res.data.data, so it's already the array
-      // const staff = Array.isArray(staffRes) 
-      //   ? staffRes 
-      //   : Array.isArray(staffRes?.data) 
-      //     ? staffRes.data 
-      //     : [];
-      
+      // getStaffMembers() returns array or { data: array }
+      const staff: StaffMember[] = Array.isArray(staffRes)
+        ? staffRes
+        : Array.isArray((staffRes as { data?: StaffMember[] })?.data)
+          ? (staffRes as { data: StaffMember[] }).data
+          : [];
+
       console.log('ActionCenter - Processed grievances:', grievances.length);
       console.log('ActionCenter - Processed train requests:', trainRequests.length);
       console.log('ActionCenter - Processed tour programs:', tourPrograms.length);
@@ -134,11 +136,11 @@ export default function AdminActionCenter() {
       setPendingGrievances(pendingGrievances);
       setPendingTrainRequests(pendingTrainRequests);
       setPendingTourPrograms(pendingTourPrograms);
-      //setStaffMembers(staff);
-    } catch (error: any) {
-      console.error('Failed to fetch data:', error);
-      console.error('Error details:', (error as any)?.response?.data || (error as any)?.message);
-      // Set empty arrays on error to prevent undefined errors
+      setStaffMembers(staff);
+    } catch (err: any) {
+      console.error('Failed to fetch data:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Failed to load pending actions. Check your connection and that the server is running.';
+      setError(msg);
       setPendingGrievances([]);
       setPendingTrainRequests([]);
       setPendingTourPrograms([]);
@@ -194,24 +196,6 @@ export default function AdminActionCenter() {
     }
     
     setAssignDialogOpen(true);
-  };
-
-  const handleVerifyGrievance = async (id: string) => {
-    try {
-      await grievanceApi.verify(id);
-      fetchData();
-    } catch (error) {
-      console.error('Failed to verify:', error);
-    }
-  };
-
-  const handleApproveTrainRequest = async (id: string) => {
-    try {
-      await trainRequestApi.approve(id);
-      fetchData();
-    } catch (error) {
-      console.error('Failed to approve:', error);
-    }
   };
 
   const handleRejectTrainRequest = async (id: string) => {
@@ -308,11 +292,21 @@ export default function AdminActionCenter() {
       
       console.log('Task created successfully:', createdTask);
       
+      // After assigning, also verify/approve/accept the item
+      if (selectedType === 'grievance') {
+        await grievanceApi.verify(selectedItem.id);
+      } else if (selectedType === 'train') {
+        await trainRequestApi.approve(selectedItem.id);
+      } else if (selectedType === 'tour') {
+        await tourProgramApi.updateDecision(selectedItem.id, 'ACCEPTED');
+      }
+      
       // Show success message with details
       const staffName = createdTask.assignedTo?.name || 'Staff member';
-      alert(`✅ Task assigned successfully!\n\nAssigned to: ${staffName}\nTask: ${createdTask.title}`);
+      alert(`✅ Verified and assigned to staff!\n\nAssigned to: ${staffName}\nTask: ${createdTask.title}`);
       
-      // Close dialog and reset form
+      // Close dialogs and reset form
+      setDetailsOpen(false);
       setAssignDialogOpen(false);
       resetAssignForm();
       
@@ -420,6 +414,24 @@ export default function AdminActionCenter() {
               </div>
             </div>
 
+            {/* Error banner when fetch fails */}
+            {error && (
+              <Card className="rounded-2xl border-destructive/50 bg-destructive/5">
+                <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-destructive">{error}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      If the database is unreachable, ensure it is running and DATABASE_URL in the backend is correct.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={fetchData}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Summary Card */}
             <Card className="rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
               <CardContent className="p-6">
@@ -479,13 +491,9 @@ export default function AdminActionCenter() {
                             <Eye className="h-3 w-3 mr-1" />
                             View
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleVerifyGrievance(g.id)}>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleOpenAssign(g, 'grievance')}>
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            Verify
-                          </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-600" onClick={() => handleOpenAssign(g, 'grievance')}>
-                            <UserPlus className="h-3 w-3 mr-1" />
-                            Assign
+                            Verify and Assign to Staff
                           </Button>
                         </div>
                       </div>
@@ -531,9 +539,9 @@ export default function AdminActionCenter() {
                             <Eye className="h-3 w-3 mr-1" />
                             View
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleApproveTrainRequest(t.id)}>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleOpenAssign(t, 'train')}>
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            Approve
+                            Verify and Assign to Staff
                           </Button>
                           <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleRejectTrainRequest(t.id)}>
                             <XCircle className="h-3 w-3 mr-1" />
@@ -581,9 +589,9 @@ export default function AdminActionCenter() {
                             <Eye className="h-3 w-3 mr-1" />
                             View
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleTourDecision(tour.id, 'ACCEPTED')}>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleOpenAssign(tour, 'tour')}>
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            Accept
+                            Verify and Assign to Staff
                           </Button>
                           <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleTourDecision(tour.id, 'REGRET')}>
                             <XCircle className="h-3 w-3 mr-1" />
@@ -788,29 +796,16 @@ export default function AdminActionCenter() {
                     <div className="bg-white border-2 border-indigo-100 rounded-xl p-5">
                       <h4 className="font-semibold text-indigo-900 mb-4">Quick Actions</h4>
                       <div className="flex flex-wrap gap-3">
-                        {!selectedItem.isVerified && (
-                          <Button 
-                            className="bg-green-600 hover:bg-green-700"
-                            onClick={() => {
-                              handleVerifyGrievance(selectedItem.id);
-                              setDetailsOpen(false);
-                            }}
-                          >
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                            Verify Grievance
-                          </Button>
-                        )}
                         <Button 
-                          className="bg-indigo-600 hover:bg-indigo-700"
+                          className="bg-green-600 hover:bg-green-700"
                           onClick={() => {
                             setDetailsOpen(false);
                             handleOpenAssign(selectedItem, selectedType);
                           }}
                         >
-                          <UserPlus className="h-4 w-4 mr-2" />
-                          Assign to Staff
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Verify and Assign to Staff
                         </Button>
-
                       </div>
                     </div>
                   </>
@@ -894,12 +889,12 @@ export default function AdminActionCenter() {
                         <Button 
                           className="bg-green-600 hover:bg-green-700"
                           onClick={() => {
-                            handleApproveTrainRequest(selectedItem.id);
                             setDetailsOpen(false);
+                            handleOpenAssign(selectedItem, selectedType);
                           }}
                         >
                           <CheckCircle className="h-4 w-4 mr-2" />
-                          Approve Request
+                          Verify and Assign to Staff
                         </Button>
                         <Button 
                           variant="destructive"
@@ -910,16 +905,6 @@ export default function AdminActionCenter() {
                         >
                           <XCircle className="h-4 w-4 mr-2" />
                           Reject Request
-                        </Button>
-                        <Button 
-                          className="bg-indigo-600 hover:bg-indigo-700"
-                          onClick={() => {
-                            setDetailsOpen(false);
-                            handleOpenAssign(selectedItem, selectedType);
-                          }}
-                        >
-                          <UserPlus className="h-4 w-4 mr-2" />
-                          Assign to Staff
                         </Button>
                       </div>
                     </div>
@@ -993,12 +978,12 @@ export default function AdminActionCenter() {
                         <Button 
                           className="bg-green-600 hover:bg-green-700"
                           onClick={() => {
-                            handleTourDecision(selectedItem.id, 'ACCEPTED');
                             setDetailsOpen(false);
+                            handleOpenAssign(selectedItem, selectedType);
                           }}
                         >
                           <CheckCircle className="h-4 w-4 mr-2" />
-                          Accept Invitation
+                          Verify and Assign to Staff
                         </Button>
                         <Button 
                           variant="destructive"
@@ -1009,16 +994,6 @@ export default function AdminActionCenter() {
                         >
                           <XCircle className="h-4 w-4 mr-2" />
                           Send Regret
-                        </Button>
-                        <Button 
-                          className="bg-indigo-600 hover:bg-indigo-700"
-                          onClick={() => {
-                            setDetailsOpen(false);
-                            handleOpenAssign(selectedItem, selectedType);
-                          }}
-                        >
-                          <UserPlus className="h-4 w-4 mr-2" />
-                          Assign to Staff
                         </Button>
                       </div>
                     </div>
@@ -1046,9 +1021,9 @@ export default function AdminActionCenter() {
         }}>
           <DialogContent className="w-[90vw] max-w-none max-h-[95vh] overflow-y-auto">
             <DialogHeader className="pb-4 border-b">
-              <DialogTitle className="text-2xl font-bold text-indigo-900">Assign Task to Staff</DialogTitle>
+              <DialogTitle className="text-2xl font-bold text-indigo-900">Verify and Assign to Staff</DialogTitle>
               <DialogDescription className="text-base">
-                Create a task from this {selectedType === 'grievance' ? 'grievance' : selectedType === 'train' ? 'train request' : 'tour program'} and assign it to a staff member
+                Verify/approve this {selectedType === 'grievance' ? 'grievance' : selectedType === 'train' ? 'train request' : 'tour program'} and create a task assigned to a staff member
               </DialogDescription>
             </DialogHeader>
             
@@ -1263,8 +1238,8 @@ export default function AdminActionCenter() {
                   </>
                 ) : (
                   <>
-                    <UserPlus className="h-4 w-4 mr-2" />
-                    Assign Task
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Verify and Assign to Staff
                   </>
                 )}
               </Button>
