@@ -12,7 +12,7 @@ import { statsApi, type DashboardStats } from "../lib/api";
 const Home = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState("User");
+  const [, setUserName] = useState("User");
 
   useEffect(() => {
     // Get user name
@@ -49,7 +49,7 @@ const Home = () => {
         <main className="p-6 space-y-6 max-w-7xl mx-auto w-full">
           {/* Welcome Banner */}
           <div className="bg-gradient-to-r from-indigo-600 to-indigo-500 rounded-2xl p-6 text-white">
-            <h1 className="text-2xl font-bold">Welcome, {userName}</h1>
+            <h1 className="text-2xl font-bold">Welcome, Shri Prahlad Joshi</h1>
             <p className="text-indigo-100">Super Admin Dashboard - Overview of all operations</p>
           </div>
 

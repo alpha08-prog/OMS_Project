@@ -198,7 +198,7 @@ export function DashboardHeader() {
         {/* Left */}
         <div className="flex flex-col">
           <h1 className="text-xl font-semibold text-indigo-900 tracking-tight">
-            {getGreeting()}, {user?.name?.split(' ')[0] || 'User'}
+            {getGreeting()}, {user?.name || 'User'}
           </h1>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <span>{currentDate}</span>
