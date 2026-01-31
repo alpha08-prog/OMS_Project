@@ -1,8 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Auth/Login";
-import Signup from "./pages/Auth/Signup";
-import ForgotPassword from "./pages/Auth/ForgotPassword";
-import OTP from "./pages/Auth/OTP";         
+import Signup from "./pages/Auth/Signup";         
 import Home from "./pages/Home";
 import GrievanceCreate from "./pages/grievances/GrievanceCreate";
 import GrievanceView from "./pages/grievances/GrievanceView";
@@ -37,8 +35,6 @@ export default function App() {
       {/* Auth - Public Routes */}
       <Route path="/auth/login" element={<Login />} />
       <Route path="/auth/signup" element={<Signup />} />
-      <Route path="/auth/forgot-password" element={<ForgotPassword />} />
-      <Route path="/auth/otp" element={<OTP />} />
 
       {/* ==================== SUPER ADMIN ROUTES ==================== */}
       <Route

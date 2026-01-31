@@ -19,7 +19,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { taskApi, type TaskAssignment, type TaskStatus, type TaskTrackingData } from "@/lib/api";
 import {
@@ -505,11 +504,7 @@ export default function AdminTaskTracker() {
                   )}
                 </div>
                 
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Progress</p>
-                  <Progress value={selectedTask.progressPercent} className="h-3" />
-                  <p className="text-sm font-medium mt-1">{selectedTask.progressPercent}% complete</p>
-                </div>
+
                 
                 {selectedTask.progressNotes && (
                   <div>

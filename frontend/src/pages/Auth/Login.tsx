@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { TextInput } from '../../components/AuthForm/Input'
 import { PasswordInput } from '../../components/AuthForm/PasswordInput'
 import { Checkbox } from '../../components/AuthForm/Checkbox'
@@ -39,8 +39,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
 
-  // Clear any existing auth data when login page loads
-  // This ensures no stale data from previous sessions
+  
   useEffect(() => {
     // Check sessionStorage first (tab-specific), then localStorage
     const sessionToken = sessionStorage.getItem('auth_token')
@@ -207,9 +206,7 @@ export default function Login() {
 
                 <div className="flex items-center justify-between">
                   <Checkbox id="remember" label="Remember me" checked={remember} onChange={setRemember} />
-                  <Link to="/auth/forgot-password" className="text-sm text-blue-900 hover:underline focus:outline-none focus:ring-2 focus:ring-amber-700 rounded">
-                    Forgot password?
-                  </Link>
+
                 </div>
 
                 <button
