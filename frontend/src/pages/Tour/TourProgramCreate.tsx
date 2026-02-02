@@ -55,6 +55,11 @@ export default function TourProgramCreate() {
       setLoading(false);
       return;
     }
+    if (!formData.referencedBy.trim()) {
+      setError("Referenced By field is mandatory");
+      setLoading(false);
+      return;
+    }
 
     try {
       // Staff submits - decision will default to PENDING
@@ -157,7 +162,9 @@ export default function TourProgramCreate() {
                     {/* Reference */}
                     <section className="space-y-4">
                       <div className="space-y-1">
-                        <Label>Referenced By</Label>
+                        <Label>
+                          Referenced By <span className="text-red-500">*</span>
+                        </Label>
                         <Input 
                           placeholder="Eg: School Principal, NGO Head"
                           value={formData.referencedBy}

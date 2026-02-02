@@ -56,6 +56,11 @@ export default function VisitorCreate() {
       setLoading(false);
       return;
     }
+    if (!formData.referencedBy.trim()) {
+      setError("Referenced By field is mandatory");
+      setLoading(false);
+      return;
+    }
 
     try {
       await visitorApi.create({
@@ -178,7 +183,9 @@ export default function VisitorCreate() {
                     {/* Reference */}
                     <section className="space-y-4">
                       <div className="space-y-1">
-                        <Label>Referenced By</Label>
+                        <Label>
+                          Referenced By <span className="text-red-500">*</span>
+                        </Label>
                         <Input 
                           placeholder="Eg: Local Leader, Office Staff"
                           value={formData.referencedBy}

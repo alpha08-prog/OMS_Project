@@ -70,6 +70,11 @@ export default function GrievanceCreate() {
       setLoading(false);
       return;
     }
+    if (!formData.referencedBy.trim()) {
+      setError("Referenced By field is mandatory");
+      setLoading(false);
+      return;
+    }
 
     try {
       await grievanceApi.create({
@@ -303,7 +308,9 @@ export default function GrievanceCreate() {
                         Reference Information
                       </h3>
                       <div className="space-y-1">
-                        <Label>Referenced By</Label>
+                        <Label>
+                          Referenced By <span className="text-red-500">*</span>
+                        </Label>
                         <Input 
                           placeholder="Eg: Hon. MLA, Party President, DC Office"
                           value={formData.referencedBy}

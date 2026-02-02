@@ -65,6 +65,11 @@ export default function NewsIntelligenceCreate() {
       setLoading(false);
       return;
     }
+    if (!formData.referencedBy.trim()) {
+      setError("Referenced By field is mandatory");
+      setLoading(false);
+      return;
+    }
 
     try {
       await newsApi.create({
@@ -271,7 +276,9 @@ export default function NewsIntelligenceCreate() {
                     {/* Reference */}
                     <section className="space-y-4">
                       <div className="space-y-1">
-                        <Label>Referenced By</Label>
+                        <Label>
+                          Referenced By <span className="text-red-500">*</span>
+                        </Label>
                         <Input 
                           placeholder="Eg: Reporter, Informant, Party Worker"
                           value={formData.referencedBy}

@@ -65,7 +65,9 @@ const allMenuItems: MenuItem[] = [
   { icon: CheckCircle, label: "Verify Grievances", route: "/grievances/verify", roles: ['ADMIN'] },
   { icon: Train, label: "Train EQ Queue", route: "/train-eq/queue", roles: ['ADMIN'] },
   { icon: ClipboardList, label: "Tour Invitations", route: "/tour-program/pending", roles: ['ADMIN'] },
-  
+  { icon: Users, label: "View Visitors", route: "/admin/visitors", roles: ["ADMIN"] },
+
+
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['ADMIN'] },
   { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
   { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },

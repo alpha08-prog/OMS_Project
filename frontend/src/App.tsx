@@ -24,6 +24,7 @@ import ActionCenter from "./pages/admin/ActionCenter";
 import TaskTracker from "./pages/admin/TaskTracker";
 import GrievanceVerification from "./pages/admin/GrievienceVerification";
 import TrainEQQueue from "./pages/admin/TrainEQQueue";
+import ViewVisitors from "./pages/admin/ViewVisitors";
 import AdminHome from "./pages/admin/AdminHome";
 import PhotoBooth from "./pages/photo_booth/PhotoBooth";
 
@@ -125,6 +126,14 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
             <Birthdays />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/visitors"
+        element={
+          <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <ViewVisitors />
           </ProtectedRoute>
         }
       />

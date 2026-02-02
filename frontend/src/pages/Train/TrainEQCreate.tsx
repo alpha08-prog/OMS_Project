@@ -235,6 +235,12 @@ export default function TrainEQCreate() {
       setLoading(false);
       return;
     }
+
+    if (!formData.referencedBy.trim()) {
+      setError("Referenced By field is mandatory");
+      setLoading(false);
+      return;
+    }
     
     // Phone number validation
     if (!formData.ContactNumber.trim()) {
@@ -499,7 +505,9 @@ export default function TrainEQCreate() {
                     {/* Reference */}
                     <section className="space-y-4">
                       <div className="space-y-1">
-                        <Label>Referenced By</Label>
+                        <Label>
+                          Referenced By <span className="text-red-500">*</span>
+                        </Label>
                         <Input 
                           placeholder="Eg: MP Recommendation / Emergency Call"
                           value={formData.referencedBy}
