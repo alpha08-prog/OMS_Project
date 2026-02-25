@@ -144,6 +144,31 @@ export default function TrainEQCreate() {
     return '';
   };
 
+  type PnrLookupResponse = {
+    class?: string;
+    dateOfJourney?: string;
+    trainName?: string;
+    trainNumber?: string;
+    from?: string;
+    to?: string;
+    isMock?: boolean;
+  };
+
+  const isPnrLookupResponse = (value: unknown): value is PnrLookupResponse => {
+    if (!value || typeof value !== 'object') return false;
+    const v = value as Record<string, unknown>;
+    const hasOptionalString = (k: string) => v[k] === undefined || typeof v[k] === 'string';
+    return (
+      hasOptionalString('class') &&
+      hasOptionalString('dateOfJourney') &&
+      hasOptionalString('trainName') &&
+      hasOptionalString('trainNumber') &&
+      hasOptionalString('from') &&
+      hasOptionalString('to') &&
+      (v.isMock === undefined || typeof v.isMock === 'boolean')
+    );
+  };
+
   const checkPNR = async () => {
     if (!/^\d{10}$/.test(formData.pnrNumber)) {
       setError("Please enter a valid 10-digit PNR number");
@@ -153,14 +178,18 @@ export default function TrainEQCreate() {
     setPnrLoading(true);
     setError(null);
     try {
-      const pnrData = await trainRequestApi.checkPNR(formData.pnrNumber);
+      const pnrDataUnknown = await trainRequestApi.checkPNR(formData.pnrNumber);
+      if (!isPnrLookupResponse(pnrDataUnknown)) {
+        throw new Error('Invalid PNR response');
+      }
+      const pnrData = pnrDataUnknown;
       console.log('=== PNR Response Debug ===');
       console.log('Full Response:', pnrData);
       console.log('Class from API:', pnrData.class);
       console.log('Date from API:', pnrData.dateOfJourney);
       
-      const mappedClass = mapClassToSelectValue(pnrData.class);
-      const parsedDate = parseDate(pnrData.dateOfJourney);
+      const mappedClass = mapClassToSelectValue(pnrData.class || '');
+      const parsedDate = parseDate(pnrData.dateOfJourney || '');
       
       console.log('Mapped Class:', mappedClass);
       console.log('Parsed Date:', parsedDate);

@@ -60,7 +60,7 @@ const ChartContainer = React.forwardRef<
 ChartContainer.displayName = "Chart";
 
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
-  const colorConfig = Object.entries(config).filter(([_, config]) => config.theme || config.color);
+  const colorConfig = Object.entries(config).filter(([, cfg]) => cfg.theme || cfg.color);
 
   if (!colorConfig.length) {
     return null;
@@ -100,13 +100,13 @@ type ChartTooltipContentProps = React.HTMLAttributes<HTMLDivElement> & {
     payload?: { [k: string]: unknown; fill?: string };
   }>;
   label?: React.ReactNode;
-  labelFormatter?: (value: any, payload: any) => React.ReactNode;
+  labelFormatter?: (value: unknown, payload: unknown) => React.ReactNode;
   formatter?: (
-    value: any,
-    name: any,
-    item: any,
+    value: unknown,
+    name: unknown,
+    item: unknown,
     index: number,
-    raw?: any,
+    raw?: unknown,
   ) => React.ReactNode;
   hideLabel?: boolean;
   hideIndicator?: boolean;

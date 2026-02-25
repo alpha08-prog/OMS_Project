@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { grievanceApi, pdfApi, taskApi, type Grievance } from "@/lib/api";
+import { grievanceApi, pdfApi, taskApi, type Grievance, type TaskAssignment } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -56,25 +56,13 @@ export default function GrievanceVerification() {
       console.log('GrievanceVerification - Tasks response:', tasksRes);
       
       // Handle different response structures
-      let tasksArray: any[] = [];
-      if (tasksRes) {
-        // tasksRes is ApiResponse<TaskAssignment[]>, so it has a data property
-        const resData = (tasksRes as any).data;
-        if (Array.isArray(resData)) {
-          tasksArray = resData;
-        } else if (resData && typeof resData === 'object' && Array.isArray((resData as any).data)) {
-          tasksArray = (resData as any).data;
-        } else if (Array.isArray(tasksRes)) {
-          // Fallback: if tasksRes itself is an array
-          tasksArray = tasksRes;
-        }
-      }
+      const tasksArray: TaskAssignment[] = Array.isArray(tasksRes?.data) ? tasksRes.data : [];
       
       // Get all task reference IDs (filter out undefined/null)
       const taskReferenceIds = new Set(
         tasksArray
-          .map((t: any) => t.referenceId)
-          .filter((id: any): id is string => Boolean(id))
+          .map((t) => t.referenceId)
+          .filter((id): id is string => Boolean(id))
       );
       
       console.log('GrievanceVerification - Task reference IDs:', Array.from(taskReferenceIds));

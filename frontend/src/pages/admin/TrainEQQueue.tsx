@@ -221,38 +221,35 @@ export default function TrainEQQueue() {
       // Remove from list and refresh
       setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
       await fetchRequests();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to assign task - Full error:', error);
-      console.error('Error response:', error?.response?.data);
       
       let errorMessage = 'Failed to assign task. Please check all fields and try again.';
-      if (error?.message) {
-        errorMessage = error.message;
-      } else if (error?.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error?.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      }
+      const e = error as Record<string, unknown> | null;
+      const msg = e && typeof e === 'object' && typeof e.message === 'string' ? e.message : undefined;
+      if (msg) errorMessage = msg;
       
-      if (error?.errors && Array.isArray(error.errors)) {
-        const validationErrors = error.errors.map((e: any) => {
-          const field = e.field || e.path || 'field';
-          const msg = e.message || e.msg || 'Invalid value';
-          return `${field}: ${msg}`;
-        }).join('\n');
-        if (validationErrors) {
-          errorMessage = `Validation Errors:\n${validationErrors}`;
-        }
-      } else if (error?.response?.data?.errors && Array.isArray(error.response.data.errors)) {
-        const validationErrors = error.response.data.errors.map((e: any) => {
-          const field = e.field || 'field';
-          const msg = e.message || 'Invalid value';
-          return `${field}: ${msg}`;
-        }).join('\n');
-        if (validationErrors) {
-          errorMessage = `Validation Errors:\n${validationErrors}`;
-        }
-      }
+      const toValidationMessage = (issues: unknown): string | null => {
+        if (!Array.isArray(issues)) return null;
+        const lines = (issues as Array<Record<string, unknown>>).map((issue) => {
+          const field = typeof issue.field === 'string' ? issue.field : typeof issue.path === 'string' ? issue.path : 'field';
+          const m = typeof issue.message === 'string' ? issue.message : typeof issue.msg === 'string' ? issue.msg : 'Invalid value';
+          return `${field}: ${m}`;
+        });
+        return lines.length ? lines.join('\n') : null;
+      };
+
+      const directErrors = e && typeof e === 'object' ? e.errors : undefined;
+      const respErrors =
+        e && typeof e === 'object' && e.response && typeof e.response === 'object'
+          ? (e.response as Record<string, unknown>).data && typeof (e.response as Record<string, unknown>).data === 'object'
+            ? ((e.response as Record<string, unknown>).data as Record<string, unknown>).errors
+            : undefined
+          : undefined;
+
+      const validationErrors = toValidationMessage(directErrors) || toValidationMessage(respErrors);
+      if (validationErrors) errorMessage = `Validation Errors:\n${validationErrors}`;
+
       alert(`Task Assignment Failed:\n\n${errorMessage}\n\nPlease check the console for more details.`);
     } finally {
       setAssigning(false);
