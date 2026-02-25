@@ -129,7 +129,7 @@ model Grievance {
   monetaryValue   Float?
   actionRequired  ActionRequired   @default(NO_ACTION)
   letterTemplate  String?
-  referencedBy    String?
+  referencedBy    String
   
   // Status tracking
   status          GrievanceStatus  @default(OPEN)
@@ -160,7 +160,7 @@ model Visitor {
   phone        String?
   dob          DateTime?
   purpose      String
-  referencedBy String?
+  referencedBy String
   
   // Timestamps
   visitDate    DateTime @default(now())
@@ -244,7 +244,7 @@ model TourProgram {
   venue        String
   venueLink    String?      // Google Maps link
   description  String?
-  referencedBy String?
+  referencedBy String
   
   // Decision
   decision     TourDecision @default(PENDING)
