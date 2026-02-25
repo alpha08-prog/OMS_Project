@@ -144,9 +144,10 @@ export default function TourProgramQueue() {
       setDetailsOpen(false);
       await fetchPrograms();
       alert("Verified and assigned to staff. Tour invitation accepted.");
-    } catch (err: any) {
-      const msg = err?.message || err?.response?.data?.message || "Failed to assign task";
-      alert(msg);
+    } catch (err: unknown) {
+      const e = err as Record<string, unknown> | null;
+      const msg = e && typeof e === 'object' && typeof e.message === 'string' ? e.message : undefined;
+      alert(msg || "Failed to assign task");
     } finally {
       setAssigning(false);
     }

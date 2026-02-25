@@ -49,9 +49,8 @@ export default function AdminHome() {
         console.log('AdminHome - Tour programs response:', tourRes);
         const tourPrograms = Array.isArray(tourRes?.data) ? tourRes.data : [];
         setPendingTourPrograms(tourPrograms);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to fetch pending items:', error);
-        console.error('Error details:', error?.response?.data || error?.message);
         // Set empty arrays on error to prevent undefined errors
         setPendingGrievances([]);
         setPendingTrainRequests([]);

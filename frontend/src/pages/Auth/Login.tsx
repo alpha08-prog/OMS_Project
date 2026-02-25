@@ -43,7 +43,6 @@ export default function Login() {
   useEffect(() => {
     // Check sessionStorage first (tab-specific), then localStorage
     const sessionToken = sessionStorage.getItem('auth_token')
-    const localToken = localStorage.getItem('auth_token')
     const session = sessionStorage.getItem('auth_session')
     
     // If user is already logged in with valid session in THIS tab, redirect them

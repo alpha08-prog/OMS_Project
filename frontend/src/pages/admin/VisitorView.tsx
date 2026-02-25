@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { 
   Users, 
@@ -44,7 +44,7 @@ export default function VisitorView() {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") ?? "");
   const [dateFilter, setDateFilter] = useState<string>("");
 
-  const fetchVisitors = async () => {
+  const fetchVisitors = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -71,11 +71,11 @@ export default function VisitorView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dateFilter, filterDesignation, searchQuery]);
 
   useEffect(() => {
     fetchVisitors();
-  }, [filterDesignation, dateFilter, searchQuery]);
+  }, [fetchVisitors]);
 
   const handleSearch = () => {
     fetchVisitors();

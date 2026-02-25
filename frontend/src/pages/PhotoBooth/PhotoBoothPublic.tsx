@@ -63,7 +63,7 @@ export default function PhotoBoothPublic() {
         videoRef.current.srcObject = stream;
         setCameraActive(true);
       }
-    } catch (err) {
+    } catch {
       setError('Unable to access camera. Please check permissions.');
     }
   };

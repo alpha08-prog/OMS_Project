@@ -89,9 +89,12 @@ export default function PrintCenter() {
 
       console.log('PrintCenter - Printable items:', items);
       setPrintableItems(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to fetch printable items:', err);
-      const msg = err?.response?.data?.message || err?.message || 'Failed to load printable letters. Check your connection and that the server is running.';
+      const e = err as Record<string, unknown> | null;
+      const msg =
+        (e && typeof e === 'object' && typeof e.message === 'string' && e.message) ||
+        'Failed to load printable letters. Check your connection and that the server is running.';
       setError(msg);
       setPrintableItems([]);
     } finally {
@@ -126,10 +129,11 @@ export default function PrintCenter() {
       } else if (item.type === 'train') {
         await pdfApi.downloadPDF(`/pdf/train-eq/${item.id}`, `TrainEQ_Letter_${item.id}.pdf`);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to download PDF:', error);
-      console.error('Error details:', error?.response?.data || error?.message);
-      alert(`Failed to download PDF: ${error?.message || 'Unknown error'}`);
+      const e = error as Record<string, unknown> | null;
+      const msg = (e && typeof e === 'object' && typeof e.message === 'string' && e.message) ? e.message : 'Unknown error';
+      alert(`Failed to download PDF: ${msg}`);
     }
   };
 
@@ -149,10 +153,11 @@ export default function PrintCenter() {
       console.log('Preview HTML loaded, length:', html?.length);
       setPreviewContent(html);
       setPreviewOpen(true);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to load preview:', error);
-      console.error('Error details:', error?.response?.data || error?.message);
-      alert(`Failed to load preview: ${error?.message || 'Unknown error'}`);
+      const e = error as Record<string, unknown> | null;
+      const msg = (e && typeof e === 'object' && typeof e.message === 'string' && e.message) ? e.message : 'Unknown error';
+      alert(`Failed to load preview: ${msg}`);
     } finally {
       setPreviewLoading(false);
     }
@@ -180,10 +185,11 @@ export default function PrintCenter() {
           printWindow.print();
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to print:', error);
-      console.error('Error details:', error?.response?.data || error?.message);
-      alert(`Failed to open PDF for printing: ${error?.message || 'Unknown error'}`);
+      const e = error as Record<string, unknown> | null;
+      const msg = (e && typeof e === 'object' && typeof e.message === 'string' && e.message) ? e.message : 'Unknown error';
+      alert(`Failed to open PDF for printing: ${msg}`);
     }
   };
 

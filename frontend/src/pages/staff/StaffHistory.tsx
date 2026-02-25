@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   grievanceApi,
   trainRequestApi,
@@ -64,7 +64,7 @@ export default function StaffHistory() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
-  const fetchSubmissions = async () => {
+  const fetchSubmissions = useCallback(async () => {
     setLoading(true);
     try {
       const items: SubmissionItem[] = [];
@@ -90,7 +90,7 @@ export default function StaffHistory() {
 
           grievances.forEach((g: Grievance) => {
             // Filter by current user if we have user ID, otherwise show all (API should filter)
-            if (!currentUserId || (g as any).createdBy?.id === currentUserId || (g as any).createdById === currentUserId) {
+            if (!currentUserId || g.createdBy?.id === currentUserId || g.createdById === currentUserId) {
               items.push({
                 id: g.id,
                 type: 'GRIEVANCE',
@@ -102,9 +102,8 @@ export default function StaffHistory() {
               });
             }
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Failed to fetch grievances:', error);
-          console.error('Error details:', error?.response?.data || error?.message);
         }
       }
 
@@ -127,7 +126,7 @@ export default function StaffHistory() {
           }
 
           trainRequests.forEach((t: TrainRequest) => {
-            if (!currentUserId || (t as any).createdBy?.id === currentUserId || (t as any).createdById === currentUserId) {
+            if (!currentUserId || t.createdBy?.id === currentUserId || t.createdById === currentUserId) {
               items.push({
                 id: t.id,
                 type: 'TRAIN_REQUEST',
@@ -139,9 +138,8 @@ export default function StaffHistory() {
               });
             }
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Failed to fetch train requests:', error);
-          console.error('Error details:', error?.response?.data || error?.message);
         }
       }
 
@@ -164,7 +162,7 @@ export default function StaffHistory() {
           }
 
           tourPrograms.forEach((tp: TourProgram) => {
-            if (!currentUserId || (tp as any).createdBy?.id === currentUserId || (tp as any).createdById === currentUserId) {
+            if (!currentUserId || tp.createdBy?.id === currentUserId || tp.createdById === currentUserId) {
               items.push({
                 id: tp.id,
                 type: 'TOUR_PROGRAM',
@@ -176,9 +174,8 @@ export default function StaffHistory() {
               });
             }
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Failed to fetch tour programs:', error);
-          console.error('Error details:', error?.response?.data || error?.message);
         }
       }
 
@@ -203,18 +200,17 @@ export default function StaffHistory() {
 
       console.log('StaffHistory - Final submissions:', filteredItems);
       setSubmissions(filteredItems);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error fetching submissions:", error);
-      console.error('Error details:', error?.response?.data || error?.message);
       setSubmissions([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [endDate, startDate, statusFilter, typeFilter]);
 
   useEffect(() => {
     fetchSubmissions();
-  }, [typeFilter, statusFilter, startDate, endDate]);
+  }, [fetchSubmissions]);
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -436,12 +432,12 @@ export default function StaffHistory() {
                     const label = key
                       .replace(/([A-Z])/g, " $1")
                       .replace(/^./, (str) => str.toUpperCase());
+                    const isLikelyIsoDateString = (val: unknown): val is string =>
+                      typeof val === 'string' && /\d{4}-\d{2}-\d{2}T/.test(val);
                     const displayValue =
                       typeof value === "object"
                         ? JSON.stringify(value)
-                        : value instanceof Date
-                        ? formatDate(value.toString())
-                        : typeof value === "string" && value.includes("T")
+                        : isLikelyIsoDateString(value)
                         ? formatDate(value)
                         : String(value);
                     return (

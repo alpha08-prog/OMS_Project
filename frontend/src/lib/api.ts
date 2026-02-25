@@ -37,10 +37,13 @@ export type Grievance = {
   actionRequired: ActionRequired
   letterTemplate?: string
   referencedBy?: string
+  attachmentPath?: string
   status: GrievanceStatus
   isVerified: boolean
   createdAt: string
+  verifiedAt?: string
   createdBy: { id: string; name: string; email: string }
+  createdById?: string
   verifiedBy?: { id: string; name: string; email: string }
 }
 
@@ -123,10 +126,15 @@ export type TrainRequest = {
   fromStation: string
   toStation: string
   route?: string
+  quota?: string
+  numberOfPassengers?: number
+  remarks?: string
   referencedBy?: string
   status: TrainRequestStatus
   createdAt: string
+  approvedAt?: string
   createdBy: { id: string; name: string; email: string }
+  createdById?: string
   approvedBy?: { id: string; name: string; email: string }
 }
 
@@ -152,16 +160,20 @@ export type TourProgram = {
   id: string
   eventName: string
   organizer: string
+  contactPerson?: string
+  contactNumber?: string
   dateTime: string  // Backend field name
   eventDate?: string  // Alias for compatibility
   venue: string
   venueLink?: string
   description?: string
+  notes?: string
   referencedBy?: string
   decision: TourProgramDecision
   decisionNote?: string
   createdAt: string
   createdBy: { id: string; name: string; email: string }
+  createdById?: string
 }
 
 export type CreateTourProgramRequest = {
@@ -207,7 +219,7 @@ export type HistoryItem = {
   actionBy: { id: string; name: string; email: string } | null
   actionAt: string
   status: string
-  details: Record<string, any>
+  details: Record<string, unknown>
 }
 
 export type HistoryStats = {
@@ -294,10 +306,16 @@ http.interceptors.response.use(
   (error: AxiosError) => {
     const resp = error?.response
     if (resp) {
-      const msg = (resp.data as any)?.message || 'Request failed'
-      const err: any = new Error(msg)
+      const respData: unknown = resp.data
+      const respMessage =
+        respData && typeof respData === 'object' && 'message' in (respData as Record<string, unknown>)
+          ? (respData as Record<string, unknown>).message
+          : undefined
+      const msg = typeof respMessage === 'string' && respMessage ? respMessage : 'Request failed'
+
+      const err = new Error(msg) as Error & { status?: number } & Record<string, unknown>
       err.status = resp.status
-      if (resp.data && typeof resp.data === 'object') Object.assign(err, resp.data)
+      if (respData && typeof respData === 'object') Object.assign(err, respData)
 
       // Handle 401 - only redirect if we have a token (meaning it's expired/invalid)
       // Don't redirect if we're already on login page or if this is a login attempt
@@ -535,7 +553,7 @@ export const trainRequestApi = {
   },
 
   checkPNR: async (pnr: string) => {
-    const res = await http.get<ApiResponse<any>>(`/train-requests/pnr/${pnr}`)
+    const res = await http.get<ApiResponse<unknown>>(`/train-requests/pnr/${pnr}`)
     return res.data.data
   },
 }
@@ -622,12 +640,12 @@ export const statsApi = {
   },
 
   getMonetization: async () => {
-    const res = await http.get<ApiResponse<any>>('/stats/monetization')
+    const res = await http.get<ApiResponse<unknown>>('/stats/monetization')
     return res.data.data
   },
 
   getRecentActivity: async () => {
-    const res = await http.get<ApiResponse<any>>('/stats/recent-activity')
+    const res = await http.get<ApiResponse<unknown>>('/stats/recent-activity')
     return res.data.data
   },
 }
@@ -707,7 +725,7 @@ export const pdfApi = {
           const text = await res.data.text()
           const errorData = JSON.parse(text)
           throw new Error(errorData.message || `Server error: ${res.status}`)
-        } catch (parseError) {
+        } catch {
           throw new Error(`Failed to generate PDF: ${res.status}`)
         }
       }
@@ -726,9 +744,11 @@ export const pdfApi = {
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
       console.log('TrainEQ PDF download - Success')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('PDF download error:', error)
-      console.error('Error details:', error?.response?.data || error?.message)
+      const errObj = error as Record<string, unknown> | null
+      const errMsg = errObj && typeof errObj === 'object' && typeof errObj.message === 'string' ? errObj.message : undefined
+      console.error('Error details:', errMsg)
       throw error
     }
   },
@@ -754,7 +774,7 @@ export const pdfApi = {
           const text = await res.data.text()
           const errorData = JSON.parse(text)
           throw new Error(errorData.message || `Server error: ${res.status}`)
-        } catch (parseError) {
+        } catch {
           throw new Error(`Failed to generate PDF: ${res.status}`)
         }
       }
@@ -773,9 +793,11 @@ export const pdfApi = {
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
       console.log('Grievance PDF download - Success')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('PDF download error:', error)
-      console.error('Error details:', error?.response?.data || error?.message)
+      const errObj = error as Record<string, unknown> | null
+      const errMsg = errObj && typeof errObj === 'object' && typeof errObj.message === 'string' ? errObj.message : undefined
+      console.error('Error details:', errMsg)
       throw error
     }
   },
@@ -826,7 +848,7 @@ export const pdfApi = {
           const errorData = JSON.parse(text)
           console.error('PDF download - Server error:', errorData)
           throw new Error(errorData.message || `Server error: ${res.status}`)
-        } catch (parseError) {
+        } catch {
           throw new Error(`Failed to generate PDF: ${res.status} ${res.statusText}`)
         }
       }
@@ -839,7 +861,7 @@ export const pdfApi = {
           const text = await res.data.text()
           const errorData = JSON.parse(text)
           throw new Error(errorData.message || 'Failed to generate PDF')
-        } catch (parseError) {
+        } catch {
           throw new Error('Invalid response type from server')
         }
       }
@@ -860,10 +882,11 @@ export const pdfApi = {
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
       console.log('PDF download - Success')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('PDF download error:', error)
-      console.error('Error details:', error?.response?.data || error?.message)
-      console.error('Error status:', error?.response?.status)
+      const errObj = error as Record<string, unknown> | null
+      const errMsg = errObj && typeof errObj === 'object' && typeof errObj.message === 'string' ? errObj.message : undefined
+      console.error('Error details:', errMsg)
       throw error
     }
   },
