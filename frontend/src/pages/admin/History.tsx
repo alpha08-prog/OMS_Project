@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   historyApi,
   type HistoryItem,
@@ -56,6 +56,12 @@ export default function AdminHistory() {
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
 
+  const isCreatedBy = (value: unknown): value is { name: string; email: string } => {
+    if (!value || typeof value !== 'object') return false;
+    const v = value as Record<string, unknown>;
+    return typeof v.name === 'string' && typeof v.email === 'string';
+  };
+
   // Filters
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [actionFilter, setActionFilter] = useState<string>("ALL");
@@ -67,10 +73,10 @@ export default function AdminHistory() {
   const [totalPages, setTotalPages] = useState(1);
   const limit = 15;
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, any> = { page, limit };
+      const params: Record<string, string | number> = { page, limit };
       if (typeFilter !== "ALL") params.type = typeFilter;
       if (actionFilter !== "ALL") params.action = actionFilter;
       if (startDate) params.startDate = startDate;
@@ -93,31 +99,29 @@ export default function AdminHistory() {
       if (res?.meta) {
         setTotalPages(res.meta.totalPages);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error fetching history:", error);
-      console.error('Error details:', error?.response?.data || error?.message);
       setHistory([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [actionFilter, endDate, page, startDate, typeFilter]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       console.log('History - Fetching stats');
       const data = await historyApi.getStats();
       console.log('History - Stats response:', data);
       setStats(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error fetching stats:", error);
-      console.error('Error details:', error?.response?.data || error?.message);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchHistory();
     fetchStats();
-  }, [page]);
+  }, [fetchHistory, fetchStats]);
 
   // Refetch when filters change
   useEffect(() => {
@@ -126,7 +130,7 @@ export default function AdminHistory() {
     } else {
       setPage(1);
     }
-  }, [typeFilter, actionFilter, startDate, endDate]);
+  }, [typeFilter, actionFilter, startDate, endDate, page, fetchHistory]);
 
   const handleFilter = () => {
     setPage(1);
@@ -464,12 +468,12 @@ export default function AdminHistory() {
                       const label = key
                         .replace(/([A-Z])/g, " $1")
                         .replace(/^./, (str) => str.toUpperCase());
+                      const isLikelyIsoDateString = (val: unknown): val is string =>
+                        typeof val === 'string' && /\d{4}-\d{2}-\d{2}T/.test(val);
                       const displayValue =
                         typeof value === "object"
                           ? JSON.stringify(value)
-                          : value instanceof Date
-                          ? formatDate(value.toString())
-                          : typeof value === "string" && value.includes("T")
+                          : isLikelyIsoDateString(value)
                           ? formatDate(value)
                           : String(value);
                       return (
@@ -483,7 +487,7 @@ export default function AdminHistory() {
                     })}
                   </div>
 
-                  {selectedItem.details.createdBy && (
+                  {isCreatedBy(selectedItem.details.createdBy) && (
                     <div className="pt-3 border-t">
                       <p className="text-muted-foreground text-xs uppercase tracking-wider">
                         Created By

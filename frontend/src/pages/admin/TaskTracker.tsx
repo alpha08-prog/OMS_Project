@@ -62,39 +62,23 @@ export default function AdminTaskTracker() {
       console.log('TaskTracker - Tasks response type:', typeof tasksRes);
       console.log('TaskTracker - Tasks response keys:', tasksRes ? Object.keys(tasksRes) : 'null');
       
-      // getTracking() returns res.data.data, so tracking is already TaskTrackingData
-      // But let's handle both cases just in case
-      let trackingDataValue: TaskTrackingData | null = null;
-      if (tracking) {
-        if ('summary' in tracking) {
-          trackingDataValue = tracking as TaskTrackingData;
-        } else if (tracking.data && typeof tracking.data === 'object' && 'summary' in tracking.data) {
-          trackingDataValue = tracking.data as TaskTrackingData;
-        }
-      }
-      setTrackingData(trackingDataValue);
+      // getTracking() returns TaskTrackingData (res.data.data)
+      setTrackingData(tracking ?? null);
       
       // getAll() returns res.data which is ApiResponse<TaskAssignment[]>
       // So it has { success, message, data: TaskAssignment[], meta }
       let tasksArray: TaskAssignment[] = [];
       if (tasksRes) {
-        if (Array.isArray(tasksRes)) {
-          tasksArray = tasksRes;
-        } else if (tasksRes.data && Array.isArray(tasksRes.data)) {
-          tasksArray = tasksRes.data;
-        } else if (typeof tasksRes === 'object' && 'data' in tasksRes) {
-          const nestedData = (tasksRes as any).data;
-          if (Array.isArray(nestedData)) {
-            tasksArray = nestedData;
-          }
-        }
+        if (Array.isArray(tasksRes.data)) tasksArray = tasksRes.data;
       }
       setTasks(tasksArray);
       console.log('TaskTracker - Tasks array length:', tasksArray.length);
       console.log('TaskTracker - Tasks array:', tasksArray);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to fetch data:', error);
-      console.error('Error details:', error?.response?.data || error?.message);
+      const e = error as Record<string, unknown> | null;
+      const msg = e && typeof e === 'object' && typeof e.message === 'string' ? e.message : undefined;
+      console.error('Error details:', msg);
       // Set empty arrays on error to prevent undefined errors
       setTrackingData(null);
       setTasks([]);

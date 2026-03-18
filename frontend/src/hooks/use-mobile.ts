@@ -19,11 +19,13 @@ export function useIsMobile(breakpoint: number = 768) {
       return () => media.removeEventListener("change", onChange);
     } else {
       // Fallback for older browsers
-      // @ts-ignore
-      media.addListener(onChange);
+      const legacyMedia = media as MediaQueryList & {
+        addListener?: (listener: () => void) => void;
+        removeListener?: (listener: () => void) => void;
+      };
+      legacyMedia.addListener?.(onChange);
       return () => {
-        // @ts-ignore
-        media.removeListener(onChange);
+        legacyMedia.removeListener?.(onChange);
       };
     }
   }, [breakpoint]);

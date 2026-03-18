@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,7 @@ export default function Birthdays() {
   const [selectedBirthday, setSelectedBirthday] = useState<Birthday | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const fetchBirthdays = async () => {
+  const fetchBirthdays = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -67,11 +67,11 @@ export default function Birthdays() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterMonth, searchQuery]);
 
   useEffect(() => {
     fetchBirthdays();
-  }, [filterMonth]);
+  }, [fetchBirthdays]);
 
   const handleSearch = () => {
     fetchBirthdays();

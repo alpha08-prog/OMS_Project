@@ -21,7 +21,7 @@ const Home = () => {
       try {
         const user = JSON.parse(userStr);
         setUserName(user.name || "User");
-      } catch (e) {
+      } catch {
         // ignore
       }
     }

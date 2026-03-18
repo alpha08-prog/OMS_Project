@@ -94,8 +94,8 @@ app.listen(PORT, () => {
 ║                                                               ║
 ║   🏛️  Office Management System (OMS) API                      ║
 ║                                                               ║
-║   Server running on: http://localhost:${PORT}                    ║
-║   Environment: ${config.nodeEnv.padEnd(46)}║
+║   Server running on: http://localhost:${PORT}                 ║
+║   Environment: ${config.nodeEnv.padEnd(46)}                   ║
 ║                                                               ║
 ║   API Endpoints:                                              ║
 ║   • Auth:          /api/auth                                  ║

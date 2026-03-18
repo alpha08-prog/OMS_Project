@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { 
   Newspaper, 
   AlertTriangle, 
@@ -39,7 +39,7 @@ export default function NewsIntelligenceView() {
   const [selectedNews, setSelectedNews] = useState<NewsIntelligence | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>("all");
 
-  const fetchNews = async () => {
+  const fetchNews = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -52,20 +52,20 @@ export default function NewsIntelligenceView() {
       const newsArray = Array.isArray(res?.data) ? res.data : [];
       console.log('NewsIntelligenceView - News array:', newsArray);
       setNews(newsArray);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to fetch news:', err);
-      console.error('Error details:', err?.response?.data || err?.message);
-      const error = err instanceof Error ? err : new Error(String(err));
-      setError(error.message || "Failed to load news");
+      const errorObj = err as Record<string, unknown> | null;
+      const message = errorObj && typeof errorObj === 'object' && typeof errorObj.message === 'string' ? errorObj.message : String(err);
+      setError(message || "Failed to load news");
       setNews([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterPriority]);
 
   useEffect(() => {
     fetchNews();
-  }, [filterPriority]);
+  }, [fetchNews]);
 
   const handleViewDetails = (item: NewsIntelligence) => {
     setSelectedNews(item);

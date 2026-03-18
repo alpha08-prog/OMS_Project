@@ -43,6 +43,44 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 type ActionType = 'grievance' | 'train' | 'tour';
+type SelectedActionItem = Grievance | TrainRequest | TourProgram;
+
+type ValidationIssue = {
+  field?: string;
+  path?: string;
+  message?: string;
+  msg?: string;
+};
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'object' && err) {
+    const e = err as Record<string, unknown>;
+    const msg = e.message;
+    if (typeof msg === 'string' && msg) return msg;
+    const resp = e.response;
+    if (typeof resp === 'object' && resp) {
+      const data = (resp as Record<string, unknown>).data;
+      if (typeof data === 'object' && data) {
+        const m = (data as Record<string, unknown>).message;
+        if (typeof m === 'string' && m) return m;
+      }
+    }
+  }
+  return 'Request failed';
+};
+
+const isGrievance = (item: SelectedActionItem): item is Grievance => {
+  return 'grievanceType' in item;
+};
+
+const isTrainRequest = (item: SelectedActionItem): item is TrainRequest => {
+  return 'pnrNumber' in item;
+};
+
+const isTourProgram = (item: SelectedActionItem): item is TourProgram => {
+  return 'eventName' in item;
+};
 
 interface StaffMember {
   id: string;
@@ -62,7 +100,7 @@ export default function AdminActionCenter() {
   // Dialog states
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [selectedItem, setSelectedItem] = useState<SelectedActionItem | null>(null);
   const [selectedType, setSelectedType] = useState<ActionType>('grievance');
   
   // Assignment form
@@ -137,10 +175,9 @@ export default function AdminActionCenter() {
       setPendingTrainRequests(pendingTrainRequests);
       setPendingTourPrograms(pendingTourPrograms);
       setStaffMembers(staff);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to fetch data:', err);
-      const msg = err?.response?.data?.message || err?.message || 'Failed to load pending actions. Check your connection and that the server is running.';
-      setError(msg);
+      setError(getErrorMessage(err) || 'Failed to load pending actions. Check your connection and that the server is running.');
       setPendingGrievances([]);
       setPendingTrainRequests([]);
       setPendingTourPrograms([]);
@@ -154,18 +191,19 @@ export default function AdminActionCenter() {
     fetchData();
   }, []);
 
-  const handleViewDetails = (item: any, type: ActionType) => {
+  const handleViewDetails = (item: SelectedActionItem, type: ActionType) => {
     setSelectedItem(item);
     setSelectedType(type);
     setDetailsOpen(true);
   };
 
-  const handleOpenAssign = (item: any, type: ActionType) => {
+  const handleOpenAssign = (item: SelectedActionItem, type: ActionType) => {
     setSelectedItem(item);
     setSelectedType(type);
     
     // Pre-fill task title and description based on type
     if (type === 'grievance') {
+      if (!isGrievance(item)) return;
       setTaskTitle(`Follow up on ${item.grievanceType} - ${item.petitionerName}`);
       setTaskDescription(
         `Grievance Type: ${item.grievanceType}\n` +
@@ -175,6 +213,7 @@ export default function AdminActionCenter() {
         `Description: ${item.description || 'N/A'}`
       );
     } else if (type === 'train') {
+      if (!isTrainRequest(item)) return;
       setTaskTitle(`Train EQ: ${item.passengerName} - PNR ${item.pnrNumber}`);
       setTaskDescription(
         `Passenger: ${item.passengerName}\n` +
@@ -185,6 +224,7 @@ export default function AdminActionCenter() {
         `Class: ${item.journeyClass}`
       );
     } else if (type === 'tour') {
+      if (!isTourProgram(item)) return;
       setTaskTitle(`Tour Program: ${item.eventName}`);
       setTaskDescription(
         `Event: ${item.eventName}\n` +
@@ -312,42 +352,43 @@ export default function AdminActionCenter() {
       
       // Refresh data to show updated counts
       await fetchData();
-    } catch (error: any) {
-      console.error('Failed to assign task - Full error:', error);
-      console.error('Error response:', (error as any)?.response?.data);
-      console.log('Error status:', (error as any)?.status);
-      
+    } catch (err: unknown) {
+      console.error('Failed to assign task - Full error:', err);
+
       // Extract error message from response
       let errorMessage = 'Failed to assign task. Please check all fields and try again.';
       
       // The interceptor assigns response.data to the error object
-      // The interceptor assigns response.data to the error object
-      if ((error as any)?.message) {
-        errorMessage = (error as any).message;
-      } else if ((error as any)?.response?.data?.message) {
-        errorMessage = (error as any).response.data.message;
-      } else if ((error as any)?.response?.data?.error) {
-        errorMessage = (error as any).response.data.error;
-      }
-      
+      errorMessage = getErrorMessage(err) || errorMessage;
+
       // Also check for validation errors
-      if ((error as any)?.errors && Array.isArray((error as any).errors)) {
-        const validationErrors = (error as any).errors.map((e: any) => {
-          const field = e.field || e.path || 'field';
-          const msg = e.message || e.msg || 'Invalid value';
-          return `${field}: ${msg}`;
-        }).join('\n');
-        if (validationErrors) {
-          errorMessage = `Validation Errors:\n${validationErrors}`;
-        }
-      } else if ((error as any)?.response?.data?.errors && Array.isArray((error as any).response.data.errors)) {
-        const validationErrors = (error as any).response.data.errors.map((e: any) => {
-          const field = e.field || 'field';
-          const msg = e.message || 'Invalid value';
-          return `${field}: ${msg}`;
-        }).join('\n');
-        if (validationErrors) {
-          errorMessage = `Validation Errors:\n${validationErrors}`;
+      if (typeof err === 'object' && err) {
+        const e = err as Record<string, unknown>;
+        const rawErrors = e.errors;
+        if (Array.isArray(rawErrors)) {
+          const validationErrors = (rawErrors as ValidationIssue[])
+            .map((issue) => {
+              const field = issue.field || issue.path || 'field';
+              const msg = issue.message || issue.msg || 'Invalid value';
+              return `${field}: ${msg}`;
+            })
+            .join('\n');
+          if (validationErrors) errorMessage = `Validation Errors:\n${validationErrors}`;
+        } else if (typeof e.response === 'object' && e.response) {
+          const respData = (e.response as Record<string, unknown>).data;
+          if (typeof respData === 'object' && respData) {
+            const respErrors = (respData as Record<string, unknown>).errors;
+            if (Array.isArray(respErrors)) {
+              const validationErrors = (respErrors as ValidationIssue[])
+                .map((issue) => {
+                  const field = issue.field || issue.path || 'field';
+                  const msg = issue.message || issue.msg || 'Invalid value';
+                  return `${field}: ${msg}`;
+                })
+                .join('\n');
+              if (validationErrors) errorMessage = `Validation Errors:\n${validationErrors}`;
+            }
+          }
         }
       }
       
@@ -379,6 +420,14 @@ export default function AdminActionCenter() {
   };
 
   const totalPending = pendingGrievances.length + pendingTrainRequests.length + pendingTourPrograms.length;
+
+  const selectedStatus = selectedItem
+    ? isTourProgram(selectedItem)
+      ? selectedItem.decision || 'PENDING'
+      : selectedItem.status
+    : undefined;
+
+  const selectedStatusVariant = selectedStatus === 'OPEN' || selectedStatus === 'PENDING' ? 'destructive' : 'secondary';
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -721,8 +770,8 @@ export default function AdminActionCenter() {
                   </p>
                 </div>
                 {selectedItem && (
-                  <Badge variant={selectedItem.status === 'OPEN' || selectedItem.status === 'PENDING' ? 'destructive' : 'secondary'} className="text-sm px-3 py-1">
-                    {selectedItem.status || 'PENDING'}
+                  <Badge variant={selectedStatusVariant} className="text-sm px-3 py-1">
+                    {selectedStatus || 'PENDING'}
                   </Badge>
                 )}
               </div>
@@ -730,7 +779,7 @@ export default function AdminActionCenter() {
             
             {selectedItem && (
               <div className="space-y-6 pt-4">
-                {selectedType === 'grievance' && (
+                {selectedType === 'grievance' && isGrievance(selectedItem) && (
                   <>
                     {/* Grievance Header Info */}
                     <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-5">
@@ -811,7 +860,7 @@ export default function AdminActionCenter() {
                   </>
                 )}
                 
-                {selectedType === 'train' && (
+                {selectedType === 'train' && isTrainRequest(selectedItem) && (
                   <>
                     {/* Train Request Header */}
                     <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-5">
@@ -866,7 +915,7 @@ export default function AdminActionCenter() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="bg-white border rounded-xl p-4 shadow-sm">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Contact Number</p>
-                        <p className="font-semibold text-lg">{selectedItem.contactNumber || selectedItem.mobileNumber || 'N/A'}</p>
+                        <p className="font-semibold text-lg">{selectedItem.contactNumber || 'N/A'}</p>
                       </div>
                       <div className="bg-white border rounded-xl p-4 shadow-sm">
                         <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Submitted On</p>
@@ -911,7 +960,7 @@ export default function AdminActionCenter() {
                   </>
                 )}
                 
-                {selectedType === 'tour' && (
+                {selectedType === 'tour' && isTourProgram(selectedItem) && (
                   <>
                     {/* Tour Event Header */}
                     <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-5">
@@ -1035,7 +1084,7 @@ export default function AdminActionCenter() {
                   Reference Information
                 </h4>
                 
-                {selectedItem && selectedType === 'grievance' && (
+                {selectedItem && selectedType === 'grievance' && isGrievance(selectedItem) && (
                   <div className="bg-indigo-50 rounded-xl p-5 space-y-4">
                     <div className="flex justify-between items-start">
                       <div>
@@ -1063,7 +1112,7 @@ export default function AdminActionCenter() {
                   </div>
                 )}
 
-                {selectedItem && selectedType === 'train' && (
+                {selectedItem && selectedType === 'train' && isTrainRequest(selectedItem) && (
                   <div className="bg-amber-50 rounded-xl p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
@@ -1093,7 +1142,7 @@ export default function AdminActionCenter() {
                   </div>
                 )}
 
-                {selectedItem && selectedType === 'tour' && (
+                {selectedItem && selectedType === 'tour' && isTourProgram(selectedItem) && (
                   <div className="bg-green-50 rounded-xl p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>

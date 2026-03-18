@@ -57,13 +57,18 @@ export default function Signup() {
       const res = await authApi.register({ name, email, phone, password })
       push({ type: 'success', title: 'Account created', message: `Welcome, ${res.user.name}` })
       navigate('/auth/login')
-    } catch (err: any) {
-      if (err?.status === 429) {
+    } catch (err: unknown) {
+      const e = err as Record<string, unknown> | null
+      const status = e && typeof e === 'object' && typeof e.status === 'number' ? e.status : undefined
+      const errorsObj = e && typeof e === 'object' ? e.errors : undefined
+      const message = e && typeof e === 'object' && typeof e.message === 'string' ? e.message : undefined
+
+      if (status === 429) {
         push({ type: 'error', title: 'Too many attempts', message: 'Please complete captcha or try later.' })
-      } else if (err?.errors) {
-        setErrors(err.errors)
+      } else if (errorsObj && typeof errorsObj === 'object') {
+        setErrors(errorsObj as Record<string, string>)
       } else {
-        push({ type: 'error', title: 'Signup failed', message: err?.message || 'Please try again.' })
+        push({ type: 'error', title: 'Signup failed', message: message || 'Please try again.' })
       }
     } finally {
       setLoading(false)

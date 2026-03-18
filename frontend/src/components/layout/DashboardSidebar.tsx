@@ -86,36 +86,32 @@ const allMenuItems: MenuItem[] = [
 
 export function DashboardSidebar() {
   const [collapsed, setCollapsed] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole] = useState<string | null>(() => {
+    // Get user role from sessionStorage first (tab-specific), then localStorage
+    let role = sessionStorage.getItem('user_role');
+    if (!role) role = localStorage.getItem('user_role');
+    if (!role) {
+      const userStr = sessionStorage.getItem('user') || localStorage.getItem('user');
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr) as { role?: string };
+          role = user.role || null;
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return role;
+  });
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
-  useEffect(() => {
-    // Get user role from sessionStorage first (tab-specific), then localStorage
-    let role = sessionStorage.getItem('user_role');
-    if (!role) {
-      role = localStorage.getItem('user_role');
-    }
-    if (!role) {
-      // Try parsing from user object
-      const userStr = sessionStorage.getItem('user') || localStorage.getItem('user');
-      if (userStr) {
-        try {
-          const user = JSON.parse(userStr);
-          role = user.role;
-        } catch {
-          console.error('Failed to parse user');
-        }
-      }
-    }
-    setUserRole(role);
-  }, []);
-
   // Close submenu when route changes
   useEffect(() => {
-    setHoveredItem(null);
+    const t = setTimeout(() => setHoveredItem(null), 0);
+    return () => clearTimeout(t);
   }, [location.pathname]);
 
   // Filter menu items based on user role

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useRef, useState } from 'react'
 
 type Toast = { id: number; type: 'success'|'error'|'info'; title: string; message?: string }
 
@@ -6,8 +6,9 @@ const ToastCtx = createContext<{ toasts: Toast[]; push: (t: Omit<Toast,'id'>) =>
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
+  const nextIdRef = useRef(1)
   const push = (t: Omit<Toast,'id'>) => {
-    const id = Date.now() + Math.random()
+    const id = nextIdRef.current++
     setToasts((prev) => [...prev, { id, ...t }])
     setTimeout(() => remove(id), 4000)
   }

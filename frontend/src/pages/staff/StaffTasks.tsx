@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   ClipboardList, 
@@ -48,7 +48,7 @@ export default function StaffTasks() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -63,11 +63,11 @@ export default function StaffTasks() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterStatus]);
 
   useEffect(() => {
     fetchTasks();
-  }, [filterStatus]);
+  }, [fetchTasks]);
 
   const handleOpenUpdate = async (task: TaskAssignment) => {
     setSelectedTask(task);

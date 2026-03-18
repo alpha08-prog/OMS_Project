@@ -123,8 +123,8 @@ export function DashboardHeader() {
         grievanceApi.getAll({ search: q, limit: "5" }),
         visitorApi.getAll({ search: q, limit: "5" }),
       ]);
-      const grievances = Array.isArray(gRes) ? gRes : (gRes as any)?.data ?? [];
-      const visitors = Array.isArray(vRes) ? vRes : (vRes as any)?.data ?? [];
+      const grievances = Array.isArray(gRes?.data) ? gRes.data : [];
+      const visitors = Array.isArray(vRes?.data) ? vRes.data : [];
       setSearchResults({ grievances, visitors });
     } catch {
       setSearchResults({ grievances: [], visitors: [] });
