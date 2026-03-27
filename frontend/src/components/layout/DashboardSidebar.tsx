@@ -21,7 +21,7 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "../../lib/utils";
 
@@ -43,8 +43,17 @@ const allMenuItems: MenuItem[] = [
   // Staff - Data Entry
   { icon: ClipboardList, label: "My Tasks", route: "/staff/tasks", roles: ['STAFF'] },
   { icon: History, label: "My History", route: "/staff/history", roles: ['STAFF'] },
-  { icon: Plus, label: "New Grievance", route: "/grievances/new", roles: ['STAFF'] },
-  { icon: Search, label: "View Grievances", route: "/grievances/view", roles: ['STAFF'] },
+  { 
+    icon: FileText, 
+    label: "Grievance", 
+    route: "/grievances", 
+    roles: ['STAFF'],
+    submenu: [
+      { label: "New Grievance", route: "/grievances/new", icon: Plus },
+      { label: "Old Grievance", route: "/grievances/view", icon: Search },
+      { label: "Office Grievance", route: "/grievances/office", icon: Plus }
+    ]
+  },
   { icon: Users, label: "Log Visitor", route: "/visitors/new", roles: ['STAFF'] },
   { icon: Cake, label: "Add Birthday", route: "/birthday/new", roles: ['STAFF'] },
   { icon: Train, label: "Train EQ Request", route: "/train-eq/new", roles: ['STAFF'] },
@@ -97,7 +106,6 @@ export function DashboardSidebar() {
     return role;
   });
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
-  const submenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -223,23 +231,10 @@ export function DashboardSidebar() {
                 )}
               </NavLink>
               
-              {/* Submenu - positioned right next to parent with no gap */}
+              {/* Submenu - inline accordion */}
               {hasSubmenu && isHovered && (
-                <div 
-                  className="absolute left-full top-0 pl-1" 
-                  style={{ zIndex: 9999 }}
-                  onMouseEnter={() => setHoveredItem(item.label)}
-                  onMouseLeave={() => {
-                    setTimeout(() => {
-                      setHoveredItem(null);
-                    }, 100);
-                  }}
-                >
-                  {/* Submenu panel */}
-                  <div
-                    ref={submenuRef}
-                    className="w-52 bg-indigo-800 rounded-xl shadow-2xl border border-indigo-700 py-2"
-                  >
+                <div className="pt-1 pb-1 w-full">
+                  <div className="flex flex-col gap-1 border-l-2 border-indigo-700/50 pl-2 ml-5">
                     {item.submenu!.map((subItem) => (
                       <NavLink
                         key={subItem.route}
@@ -259,9 +254,9 @@ export function DashboardSidebar() {
                         }}
                         className={({ isActive }) =>
                           cn(
-                            "flex items-center gap-3 h-11 px-4 mx-2 rounded-lg transition-colors",
-                            "text-indigo-100 hover:text-white hover:bg-indigo-700",
-                            isActive && "bg-amber-400 text-black font-semibold hover:bg-amber-400"
+                            "flex items-center gap-3 h-10 px-3 rounded-lg transition-colors text-sm",
+                            "text-indigo-200 hover:text-white hover:bg-indigo-800",
+                            isActive && "bg-amber-400 text-black font-semibold hover:bg-amber-500 hover:text-black"
                           )
                         }
                       >

@@ -3,6 +3,7 @@ import Login from "./pages/Auth/Login";
 import Signup from "./pages/Auth/Signup";         
 import Home from "./pages/Home";
 import GrievanceCreate from "./pages/grievances/GrievanceCreate";
+import OfficeGrievanceCreate from "./pages/grievances/OfficeGrievanceCreate";
 import GrievanceView from "./pages/grievances/GrievanceView";
 import VisitorCreate from "./pages/visitors/VisitorCreate";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
@@ -146,6 +147,14 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={['STAFF']}>
             <GrievanceCreate />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/grievances/office"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF']}>
+            <OfficeGrievanceCreate />
           </ProtectedRoute>
         }
       />
