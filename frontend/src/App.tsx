@@ -26,7 +26,7 @@ import GrievanceVerification from "./pages/admin/GrievienceVerification";
 import TrainEQQueue from "./pages/admin/TrainEQQueue";
 import ViewVisitors from "./pages/admin/ViewVisitors";
 import AdminHome from "./pages/admin/AdminHome";
-import PhotoBooth from "./pages/photo_booth/PhotoBooth";
+import PhotoBooth from "./pages/PhotoBooth/PhotoBooth.tsx"; 
 
 export default function App() {
   return (
