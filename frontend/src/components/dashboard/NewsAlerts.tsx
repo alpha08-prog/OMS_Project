@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Newspaper } from "lucide-react";
+import { AlertTriangle, Newspaper, ChevronDown, ChevronUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Button } from "../ui/button";
 import { newsApi, type NewsIntelligence } from "../../lib/api";
 
 const styles: Record<string, string> = {
@@ -12,11 +13,13 @@ const styles: Record<string, string> = {
 export function NewsAlerts() {
   const [newsItems, setNewsItems] = useState<NewsIntelligence[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+  const limit = 3;
 
   useEffect(() => {
     const fetchNews = async () => {
       try {
-        const res = await newsApi.getAll({ limit: '5' });
+        const res = await newsApi.getAll({ limit: '20' });
         setNewsItems(res.data);
       } catch (error) {
         console.error('Failed to fetch news:', error);
@@ -52,28 +55,45 @@ export function NewsAlerts() {
         ) : newsItems.length === 0 ? (
           <p className="text-muted-foreground text-center py-4">No news items</p>
         ) : (
-          newsItems.map((n) => {
-            const Icon = n.priority === 'CRITICAL' ? AlertTriangle : Newspaper;
-            return (
-              <div
-                key={n.id}
-                className={`p-4 rounded-2xl border ${styles[n.priority] || styles.NORMAL}`}
-              >
-                <div className="flex gap-3">
-                  <div className={`p-2 rounded-lg ${n.priority === 'CRITICAL' ? 'bg-red-100' : 'bg-amber-100'}`}>
-                    <Icon className={`h-4 w-4 ${n.priority === 'CRITICAL' ? 'text-red-600' : 'text-amber-600'}`} />
-                  </div>
+          <>
+            {(showAll ? newsItems : newsItems.slice(0, limit)).map((n) => {
+              const Icon = n.priority === 'CRITICAL' ? AlertTriangle : Newspaper;
+              return (
+                <div
+                  key={n.id}
+                  className={`p-4 rounded-2xl border ${styles[n.priority] || styles.NORMAL}`}
+                >
+                  <div className="flex gap-3">
+                    <div className={`p-2 rounded-lg ${n.priority === 'CRITICAL' ? 'bg-red-100' : 'bg-amber-100'}`}>
+                      <Icon className={`h-4 w-4 ${n.priority === 'CRITICAL' ? 'text-red-600' : 'text-amber-600'}`} />
+                    </div>
 
-                  <div className="flex-1">
-                    <p className="font-medium">{n.headline}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {n.mediaSource} • {formatTime(n.createdAt)}
-                    </p>
+                    <div className="flex-1">
+                      <p className="font-medium">{n.headline}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {n.mediaSource} • {formatTime(n.createdAt)}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })
+              );
+            })}
+            
+            {newsItems.length > limit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full mt-2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowAll(!showAll)}
+              >
+                {showAll ? (
+                  <>Show Less <ChevronUp className="ml-2 h-4 w-4" /></>
+                ) : (
+                  <>Show All ({newsItems.length}) <ChevronDown className="ml-2 h-4 w-4" /></>
+                )}
+              </Button>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
