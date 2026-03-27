@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Upload } from "lucide-react";
 import { grievanceApi, type GrievanceType, type ActionRequired } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
@@ -20,6 +21,7 @@ export default function GrievanceCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -98,6 +100,12 @@ export default function GrievanceCreate() {
       setError(error.message || "Failed to create grievance");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFileName(e.target.files[0].name);
     }
   };
 
@@ -250,6 +258,33 @@ export default function GrievanceCreate() {
                         <p className="text-xs text-muted-foreground mt-1">
                           Monetised value of work or aid requested
                         </p>
+                      </div>
+                    </section>
+
+                    {/* File Upload */}
+                    <section className="space-y-4">
+                      <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
+                        Supporting Documents
+                      </h3>
+                      <div>
+                        <input 
+                          id="file-upload" 
+                          type="file" 
+                          className="hidden" 
+                          onChange={handleFileUpload}
+                        />
+                        <label 
+                          htmlFor="file-upload" 
+                          className="cursor-pointer border border-dashed border-indigo-200 hover:border-indigo-400 bg-white hover:bg-indigo-50 transition-colors rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center"
+                        >
+                          <Upload className="h-6 w-6 text-indigo-500" />
+                          <p className="text-sm font-medium text-indigo-900">
+                            {fileName ? fileName : "Upload physical grievance copy"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Scan or photo (PNG, JPG, PDF up to 10MB)
+                          </p>
+                        </label>
                       </div>
                     </section>
 

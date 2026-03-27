@@ -6,7 +6,7 @@ import { RecentGrievances } from "../components/dashboard/RecentGrievances";
 import { NewsAlerts } from "../components/dashboard/NewsAlerts";
 import { BirthdayWidget } from "../components/dashboard/BirthdayWidget";
 import { GrievanceChart } from "../components/dashboard/GrievanceChart";
-import { FileText, Users, CheckCircle2, AlertTriangle } from "lucide-react";
+import { FileText, CheckCircle2, AlertTriangle } from "lucide-react";
 import { statsApi, type DashboardStats } from "../lib/api";
 
 const Home = () => {
@@ -54,17 +54,12 @@ const Home = () => {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <StatsCard 
               title="Total Grievances" 
               value={loading ? "..." : stats?.grievances.total || 0} 
               icon={FileText} 
               variant="primary" 
-            />
-            <StatsCard 
-              title="Today's Visitors" 
-              value={loading ? "..." : stats?.visitors.today || 0} 
-              icon={Users} 
             />
             <StatsCard 
               title="Resolved" 

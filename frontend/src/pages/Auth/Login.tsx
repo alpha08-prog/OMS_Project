@@ -145,10 +145,9 @@ export default function Login() {
         <div className="h-60 md:h-auto">
           <GovernmentHeroSection
             imageUrl={portrait}
-            name="Shri Prahlad Joshi"
-            currentRole=" Union Minister of Consumer Affairs, Food and Public Distribution, Government of India"
+            name="Shri Pralhad Joshi"
+            currentRole=" Union Minister of Consumer Affairs, Food and Public Distribution, New and Renewable Energy, Government of India"
             pastRoles={[
-              'Former Minister of New and Renewable Energy',
               'Former Minister of Coal and Mines',
             ]}
             constituency="Member of Parliament – Dharwad, Karnataka"
