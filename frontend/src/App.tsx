@@ -27,6 +27,7 @@ import TrainEQQueue from "./pages/admin/TrainEQQueue";
 import ViewVisitors from "./pages/admin/ViewVisitors";
 import AdminHome from "./pages/admin/AdminHome";
 import PhotoBooth from "./pages/PhotoBooth/PhotoBooth.tsx"; 
+import AboutUs from "./pages/AboutUs";
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
       <Route path="/" element={<Navigate to="/auth/login" replace />} />
 
       {/* Auth - Public Routes */}
+      <Route path="/about" element={<AboutUs />} />
       <Route path="/auth/login" element={<Login />} />
       <Route path="/auth/signup" element={<Signup />} />
 

@@ -311,8 +311,8 @@ export default function TourProgramQueue() {
             </DialogHeader>
             
             {selectedProgram && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4 w-full overflow-x-hidden p-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Event Name</p>
                     <p className="font-medium">{selectedProgram.eventName}</p>
@@ -332,9 +332,9 @@ export default function TourProgramQueue() {
                     <p className="font-medium">{selectedProgram.venue}</p>
                   </div>
                   {selectedProgram.referencedBy && (
-                    <div className="col-span-2">
+                    <div className="col-span-1 sm:col-span-2">
                       <p className="text-sm text-muted-foreground">Referenced By</p>
-                      <p className="font-medium">{selectedProgram.referencedBy}</p>
+                      <p className="font-medium break-words">{selectedProgram.referencedBy}</p>
                     </div>
                   )}
                 </div>
@@ -353,11 +353,11 @@ export default function TourProgramQueue() {
                     placeholder="Add a note for this decision..."
                     value={decisionNote}
                     onChange={(e) => setDecisionNote(e.target.value)}
-                    className="mt-1"
+                    className="mt-1 resize-y"
                   />
                 </div>
                 
-                <div className="flex justify-end gap-2 pt-4 border-t">
+                <div className="flex flex-wrap justify-end gap-3 pt-5 border-t">
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Cancel
                   </Button>
@@ -370,7 +370,7 @@ export default function TourProgramQueue() {
                     Regret (Send Letter)
                   </Button>
                   <Button 
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-amber-500 hover:bg-amber-600 text-white"
                     onClick={() => {
                       setDetailsOpen(false);
                       handleOpenAssign(selectedProgram);

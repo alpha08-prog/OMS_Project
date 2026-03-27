@@ -43,16 +43,8 @@ const allMenuItems: MenuItem[] = [
   // Staff - Data Entry
   { icon: ClipboardList, label: "My Tasks", route: "/staff/tasks", roles: ['STAFF'] },
   { icon: History, label: "My History", route: "/staff/history", roles: ['STAFF'] },
-  { 
-    icon: FileText, 
-    label: "Grievances", 
-    route: "/grievances/new", 
-    roles: ['STAFF'],
-    submenu: [
-      { label: "New Grievance", route: "/grievances/new", icon: Plus },
-      { label: "Old Grievances", route: "/grievances/view", icon: Search },
-    ]
-  },
+  { icon: Plus, label: "New Grievance", route: "/grievances/new", roles: ['STAFF'] },
+  { icon: Search, label: "View Grievances", route: "/grievances/view", roles: ['STAFF'] },
   { icon: Users, label: "Log Visitor", route: "/visitors/new", roles: ['STAFF'] },
   { icon: Cake, label: "Add Birthday", route: "/birthday/new", roles: ['STAFF'] },
   { icon: Train, label: "Train EQ Request", route: "/train-eq/new", roles: ['STAFF'] },
@@ -82,6 +74,7 @@ const allMenuItems: MenuItem[] = [
 
   // Common
   { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
+  { icon: Users, label: "About Team", route: "/about" },
 ];
 
 export function DashboardSidebar() {
@@ -170,7 +163,7 @@ export function DashboardSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-1 relative overflow-visible">
+      <nav className="flex-1 p-3 space-y-1 relative overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-indigo-400/30 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-indigo-400/50 [scrollbar-width:thin] [scrollbar-color:rgba(129,140,248,0.3)_transparent]">
         {menuItems.map((item) => {
           const hasSubmenu = item.submenu && item.submenu.length > 0 && !collapsed;
           const isHovered = hoveredItem === item.label;

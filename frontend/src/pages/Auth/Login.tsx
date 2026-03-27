@@ -140,7 +140,16 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      <div className="grid min-h-screen md:grid-cols-2">
+      <div className="grid min-h-screen md:grid-cols-2 relative">
+        <div className="absolute top-4 right-4 z-[60]">
+          <button
+            type="button"
+            onClick={() => navigate('/about')}
+            className="flex items-center gap-2 text-sm font-semibold text-slate-700 bg-white/80 backdrop-blur-md shadow-sm ring-1 ring-slate-200/50 px-5 py-2.5 rounded-full hover:bg-slate-50 hover:text-indigo-600 hover:shadow transition-all duration-300 transform hover:-translate-y-0.5"
+          >
+            About Team
+          </button>
+        </div>
         {/* Left: Government identity section */}
         <div className="h-60 md:h-auto">
           <GovernmentHeroSection
