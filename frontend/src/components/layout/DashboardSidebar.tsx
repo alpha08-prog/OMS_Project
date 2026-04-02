@@ -3,7 +3,6 @@ import {
   FileText,
   Train,
   Calendar,
-  Camera,
   Newspaper,
   Users,
   LogOut,
@@ -82,7 +81,6 @@ const allMenuItems: MenuItem[] = [
   { icon: History, label: "Action History", route: "/admin/history", roles: ['SUPER_ADMIN'] },
 
   // Common
-  { icon: Camera, label: "Photo Booth", route: "/photo-booth" },
   { icon: Users, label: "About Team", route: "/about" },
 ];
 
