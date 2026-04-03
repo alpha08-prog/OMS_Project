@@ -112,7 +112,7 @@ export type CreateNewsRequest = {
 }
 
 // Train Request Types
-export type TrainRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+export type TrainRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RESOLVED'
 
 export type TrainRequest = {
   id: string
@@ -160,6 +160,8 @@ export type TourProgram = {
   id: string
   eventName: string
   organizer: string
+  organizerPhone?: string
+  organizerEmail?: string
   contactPerson?: string
   contactNumber?: string
   dateTime: string  // Backend field name
@@ -171,6 +173,15 @@ export type TourProgram = {
   referencedBy?: string
   decision: TourProgramDecision
   decisionNote?: string
+  // Post-event report fields
+  isCompleted?: boolean
+  completedAt?: string
+  driveLink?: string
+  keynotes?: string
+  attendeesCount?: number
+  outcomeSummary?: string
+  mediaLink?: string
+  completedBy?: { id: string; name: string; email: string }
   createdAt: string
   createdBy: { id: string; name: string; email: string }
   createdById?: string
@@ -179,6 +190,8 @@ export type TourProgram = {
 export type CreateTourProgramRequest = {
   eventName: string
   organizer: string
+  organizerPhone?: string
+  organizerEmail?: string
   dateTime: string  // Backend expects dateTime, not eventDate
   venue: string
   venueLink?: string
@@ -224,7 +237,7 @@ export type HistoryItem = {
 
 export type HistoryStats = {
   grievances: { resolved: number; rejected: number; verified?: number; inProgress?: number; total: number }
-  trainRequests: { approved: number; rejected: number; total: number }
+  trainRequests: { approved: number; rejected: number; resolved?: number; total: number }
   tourPrograms: { accepted: number; regret: number; total: number }
   totalActions: number
 }
@@ -542,6 +555,11 @@ export const trainRequestApi = {
     return res.data.data
   },
 
+  resolve: async (id: string) => {
+    const res = await http.patch<ApiResponse<TrainRequest>>(`/train-requests/${id}/resolve`)
+    return res.data.data
+  },
+
   delete: async (id: string) => {
     const res = await http.delete<ApiResponse<null>>(`/train-requests/${id}`)
     return res.data
@@ -609,6 +627,22 @@ export const tourProgramApi = {
   getPendingDecisions: async (params?: Record<string, string>) => {
     const res = await http.get<ApiResponse<TourProgram[]>>('/tour-programs/pending', { params })
     return res.data
+  },
+
+  getEvents: async (params?: Record<string, string>) => {
+    const res = await http.get<ApiResponse<TourProgram[]>>('/tour-programs/events', { params })
+    return res.data
+  },
+
+  submitEventReport: async (id: string, data: {
+    driveLink?: string;
+    keynotes?: string;
+    attendeesCount?: number;
+    outcomeSummary?: string;
+    mediaLink?: string;
+  }) => {
+    const res = await http.patch<ApiResponse<TourProgram>>(`/tour-programs/${id}/complete`, data)
+    return res.data.data
   },
 }
 
@@ -1005,6 +1039,51 @@ export const taskApi = {
 
   delete: async (id: string) => {
     const res = await http.delete<ApiResponse<null>>(`/tasks/${id}`)
+    return res.data
+  },
+}
+
+// Google Calendar API
+export type CalendarEvent = {
+  id: string
+  title: string
+  start: string | Date
+  end: string | Date
+  type: 'TOUR' | 'CUSTOM'
+  organizer?: string
+  venue?: string
+  description?: string
+  googleSynced: boolean
+}
+
+export const googleCalendarApi = {
+  getStatus: async (): Promise<{ connected: boolean }> => {
+    const res = await http.get<ApiResponse<{ connected: boolean }>>('/google/status')
+    return res.data.data
+  },
+
+  getEvents: async (): Promise<CalendarEvent[]> => {
+    const res = await http.get<ApiResponse<CalendarEvent[]>>('/google/events')
+    return res.data.data
+  },
+
+  disconnect: async () => {
+    const res = await http.delete<ApiResponse<null>>('/google/disconnect')
+    return res.data
+  },
+
+  syncAll: async (): Promise<{ synced: number; total: number }> => {
+    const res = await http.post<ApiResponse<{ synced: number; total: number }>>('/google/sync')
+    return res.data.data
+  },
+
+  addCustomEvent: async (data: { title: string; startDateTime: string; description?: string }) => {
+    const res = await http.post<ApiResponse<CalendarEvent>>('/google/events', data)
+    return res.data.data
+  },
+
+  deleteCustomEvent: async (id: string) => {
+    const res = await http.delete<ApiResponse<null>>(`/google/events/${id}`)
     return res.data
   },
 }

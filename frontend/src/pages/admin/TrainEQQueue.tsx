@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Train, Printer, CheckCircle, XCircle, RefreshCw, Eye, Download } from "lucide-react";
+import { Train, Printer, CheckCircle, XCircle, RefreshCw, Eye, Download, CircleCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,12 +49,15 @@ export default function TrainEQQueue() {
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("NORMAL");
   const [assigning, setAssigning] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
   const fetchRequests = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await trainRequestApi.getAll({ status: 'PENDING' });
+      const params: Record<string, string> = { limit: "500" };
+      if (statusFilter !== "ALL") params.status = statusFilter;
+      const res = await trainRequestApi.getAll(params);
       setRequests(res.data);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load train requests";
@@ -65,9 +68,12 @@ export default function TrainEQQueue() {
   };
 
   useEffect(() => {
-    fetchRequests();
     fetchStaffMembers();
   }, []);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [statusFilter]);
 
   const fetchStaffMembers = async () => {
     try {
@@ -75,6 +81,20 @@ export default function TrainEQQueue() {
       setStaffMembers(staffRes || []);
     } catch (err) {
       console.error('Failed to fetch staff members:', err);
+    }
+  };
+
+  const handleResolve = async (id: string) => {
+    if (!confirm("Mark this train EQ request as resolved (journey completed)?")) return;
+    setActionLoading(id);
+    try {
+      await trainRequestApi.resolve(id);
+      await fetchRequests();
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to mark resolved";
+      setError(errorMessage);
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -135,6 +155,7 @@ export default function TrainEQQueue() {
     setTaskDescription(
       `Passenger: ${request.passengerName}\n` +
       `PNR: ${request.pnrNumber}\n` +
+      `Contact: ${request.contactNumber || "N/A"}\n` +
       `Train: ${request.trainName || 'N/A'} (${request.trainNumber || 'N/A'})\n` +
       `Journey Date: ${formatDate(request.dateOfJourney)}\n` +
       `Route: ${request.fromStation} → ${request.toStation}\n` +
@@ -263,7 +284,7 @@ export default function TrainEQQueue() {
       <main className="flex-1 p-6 bg-gradient-to-b from-indigo-50/60 to-white">
         <div className="max-w-7xl mx-auto space-y-6">
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-indigo-900">
                 Train EQ Requests
@@ -272,10 +293,23 @@ export default function TrainEQQueue() {
                 Review and issue emergency quota letters
               </p>
             </div>
-            <Button variant="outline" onClick={fetchRequests} disabled={loading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All</SelectItem>
+                  <SelectItem value="APPROVED">Accepted</SelectItem>
+                  <SelectItem value="REJECTED">Regret</SelectItem>
+                  <SelectItem value="RESOLVED">Resolved</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={fetchRequests} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
 
           {error && (
@@ -286,7 +320,9 @@ export default function TrainEQQueue() {
 
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
-              <CardTitle>Pending EQ Requests ({requests.length})</CardTitle>
+              <CardTitle>
+                {statusFilter === "ALL" ? "All" : statusFilter === "APPROVED" ? "Accepted" : statusFilter === "REJECTED" ? "Regret" : "Resolved"} EQ Requests ({requests.length})
+              </CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-4">
@@ -295,7 +331,7 @@ export default function TrainEQQueue() {
               ) : requests.length === 0 ? (
                 <div className="text-center py-8">
                   <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
-                  <p className="text-muted-foreground">No pending train EQ requests!</p>
+                  <p className="text-muted-foreground">No train EQ requests in this filter.</p>
                 </div>
               ) : (
                 requests.map((r) => (
@@ -318,6 +354,9 @@ export default function TrainEQQueue() {
                         <p className="text-sm text-muted-foreground">
                           PNR: {r.pnrNumber} • {r.fromStation} → {r.toStation} • {new Date(r.dateOfJourney).toLocaleDateString()} • {r.journeyClass}
                         </p>
+                        {r.contactNumber && (
+                          <p className="text-xs text-indigo-700 font-medium">Contact: {r.contactNumber}</p>
+                        )}
                         {r.trainName && (
                           <p className="text-xs text-muted-foreground mt-1">
                             🚂 {r.trainNumber} - {r.trainName}
@@ -329,7 +368,7 @@ export default function TrainEQQueue() {
                       </div>
                     </div>
 
-                    <div className="flex gap-2 flex-shrink-0">
+                    <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
                       <Button 
                         size="sm" 
                         variant="outline"
@@ -347,23 +386,38 @@ export default function TrainEQQueue() {
                         <Download className="h-4 w-4 mr-1" />
                         Download PDF
                       </Button>
-                      <Button 
-                        size="sm" 
-                        className="bg-green-600 hover:bg-green-700"
-                        onClick={() => handleOpenAssign(r)}
-                      >
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Verify and Assign to Staff
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        variant="destructive"
-                        onClick={() => handleReject(r.id)}
-                        disabled={actionLoading === r.id}
-                      >
-                        <XCircle className="h-4 w-4 mr-1" />
-                        Reject
-                      </Button>
+                      {r.status === "PENDING" && (
+                        <>
+                          <Button 
+                            size="sm" 
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => handleOpenAssign(r)}
+                          >
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Verify and Assign to Staff
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="destructive"
+                            onClick={() => handleReject(r.id)}
+                            disabled={actionLoading === r.id}
+                          >
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Reject
+                          </Button>
+                        </>
+                      )}
+                      {r.status === "APPROVED" && (
+                        <Button
+                          size="sm"
+                          className="bg-violet-600 hover:bg-violet-700"
+                          onClick={() => handleResolve(r.id)}
+                          disabled={actionLoading === r.id}
+                        >
+                          <CircleCheck className="h-4 w-4 mr-1" />
+                          Mark resolved
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))

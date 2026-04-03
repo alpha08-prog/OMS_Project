@@ -27,8 +27,11 @@ import GrievanceVerification from "./pages/admin/GrievienceVerification";
 import TrainEQQueue from "./pages/admin/TrainEQQueue";
 import ViewVisitors from "./pages/admin/ViewVisitors";
 import AdminHome from "./pages/admin/AdminHome";
-import PhotoBooth from "./pages/PhotoBooth/PhotoBooth.tsx"; 
+import PhotoBooth from "./pages/PhotoBooth/PhotoBooth.tsx";
 import AboutUs from "./pages/AboutUs";
+import EventReport from "./pages/Events/EventReport";
+import EventsView from "./pages/admin/EventsView";
+import AdminCalendar from "./pages/admin/AdminCalendar";
 
 export default function App() {
   return (
@@ -191,6 +194,14 @@ export default function App() {
         }
       />
       <Route
+        path="/events/report"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF']}>
+            <EventReport />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/news-intelligence/new"
         element={
           <ProtectedRoute allowedRoles={['STAFF']}>
@@ -212,6 +223,22 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={['ADMIN']}>
             <TourProgramQueue />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/events"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <EventsView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/calendar"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <AdminCalendar />
           </ProtectedRoute>
         }
       />

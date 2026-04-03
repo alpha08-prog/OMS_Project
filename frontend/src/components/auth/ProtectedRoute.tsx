@@ -13,8 +13,9 @@ function hasAuth() {
   // Check sessionStorage first (tab-specific), then localStorage
   const sessionToken = sessionStorage.getItem('auth_token')
   const localToken = localStorage.getItem('auth_token')
-  const session = sessionStorage.getItem('auth_session')
-  return Boolean(sessionToken || (localToken && session))
+  const localSession = localStorage.getItem('auth_session')
+  const sessionSession = sessionStorage.getItem('auth_session')
+  return Boolean(sessionToken || (localToken && (sessionSession || localSession)))
 }
 
 function getUserRole(): UserRole | null {

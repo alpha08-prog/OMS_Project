@@ -993,14 +993,20 @@ export default function AdminActionCenter() {
                     </div>
 
                     {/* Organizer Contact */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="bg-white border rounded-xl p-4 shadow-sm">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Contact Person</p>
-                        <p className="font-semibold">{selectedItem.contactPerson || selectedItem.organizer}</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Organizer</p>
+                        <p className="font-semibold">{selectedItem.organizer}</p>
                       </div>
                       <div className="bg-white border rounded-xl p-4 shadow-sm">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Contact Number</p>
-                        <p className="font-semibold">{selectedItem.contactNumber || 'N/A'}</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Phone</p>
+                        <p className="font-semibold">
+                          {selectedItem.organizerPhone || selectedItem.contactNumber || "N/A"}
+                        </p>
+                      </div>
+                      <div className="bg-white border rounded-xl p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Email</p>
+                        <p className="font-semibold break-all">{selectedItem.organizerEmail || "N/A"}</p>
                       </div>
                     </div>
 

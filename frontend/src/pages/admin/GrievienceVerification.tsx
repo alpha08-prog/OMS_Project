@@ -25,13 +25,16 @@ import {
 
 export default function GrievanceVerification() {
   const [grievances, setGrievances] = useState<Grievance[]>([]);
-  const [verifiedGrievances, setVerifiedGrievances] = useState<Grievance[]>([]);
+  const [, setVerifiedGrievances] = useState<Grievance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
   
+  // Status filter
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
   // Task assignment state
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [verifiedGrievance, setVerifiedGrievance] = useState<Grievance | null>(null);
@@ -47,8 +50,10 @@ export default function GrievanceVerification() {
     setLoading(true);
     setError(null);
     try {
+      const grievanceParams: Record<string, string> = {};
+      if (statusFilter !== "all") grievanceParams.status = statusFilter;
       const [grievancesRes, tasksRes] = await Promise.all([
-        grievanceApi.getAll(), // Get all grievances, not just OPEN
+        grievanceApi.getAll(grievanceParams), // Get all grievances, not just OPEN
         taskApi.getAll({ limit: '1000' }) // Get all tasks
       ]);
       
@@ -100,6 +105,10 @@ export default function GrievanceVerification() {
     fetchGrievances();
     fetchStaffMembers();
   }, []);
+
+  useEffect(() => {
+    fetchGrievances();
+  }, [statusFilter]);
 
   const fetchStaffMembers = async () => {
     try {
@@ -233,7 +242,7 @@ export default function GrievanceVerification() {
       <main className="flex-1 p-6 bg-gradient-to-b from-indigo-50/60 to-white">
         <div className="max-w-7xl mx-auto space-y-6">
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-indigo-900">
                 Verify Grievances
@@ -242,10 +251,23 @@ export default function GrievanceVerification() {
                 Review and approve submitted grievances
               </p>
             </div>
-            <Button variant="outline" onClick={fetchGrievances} disabled={loading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                  <SelectItem value="RESOLVED">Resolved</SelectItem>
+                  <SelectItem value="REJECTED">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={fetchGrievances} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
 
           {error && (
@@ -316,18 +338,8 @@ export default function GrievanceVerification() {
                         <CheckCircle className="h-4 w-4 mr-1" />
                         {actionLoading === g.id ? "..." : "Verify"}
                       </Button>
-                      {g.isVerified && (
-                        <Button 
-                          size="sm" 
-                          className="bg-purple-600 hover:bg-purple-700"
-                          onClick={() => handleOpenAssignDialog(g)}
-                        >
-                          <UserPlus className="h-4 w-4 mr-1" />
-                          Assign Task
-                        </Button>
-                      )}
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         className="bg-indigo-600 hover:bg-indigo-700"
                         onClick={() => handleDownloadPDF(g.id)}
                       >
@@ -349,76 +361,6 @@ export default function GrievanceVerification() {
               )}
             </CardContent>
           </Card>
-
-          {/* Verified Grievances Needing Task Assignment */}
-          {verifiedGrievances.length > 0 && (
-            <Card className="rounded-2xl shadow-sm border-purple-200">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UserPlus className="h-5 w-5 text-purple-600" />
-                  Verified - Assign Tasks ({verifiedGrievances.length})
-                </CardTitle>
-              </CardHeader>
-
-              <CardContent className="space-y-4">
-                {verifiedGrievances.map((g) => (
-                  <div
-                    key={g.id}
-                    className="flex items-center justify-between p-4 rounded-xl border bg-purple-50 border-purple-200"
-                  >
-                    <div className="flex gap-4">
-                      <div className="p-2 bg-purple-100 rounded-lg">
-                        <CheckCircle className="h-5 w-5 text-purple-700" />
-                      </div>
-
-                      <div>
-                        <div className="font-medium flex items-center gap-2">
-                          <span>{g.petitionerName}</span>
-                          <Badge className="ml-2 bg-green-100 text-green-800">Verified</Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {g.grievanceType} • {g.constituency} • {formatCurrency(g.monetaryValue)}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          📞 {g.mobileNumber}
-                        </p>
-                        {g.description && (
-                          <p className="text-sm mt-2 line-clamp-2">{g.description}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 flex-shrink-0">
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => handleViewDetails(g)}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        className="bg-purple-600 hover:bg-purple-700"
-                        onClick={() => handleOpenAssignDialog(g)}
-                      >
-                        <UserPlus className="h-4 w-4 mr-1" />
-                        Assign Task
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        className="bg-indigo-600 hover:bg-indigo-700"
-                        onClick={() => handleDownloadPDF(g.id)}
-                      >
-                        <Download className="h-4 w-4 mr-1" />
-                        PDF
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
 
         </div>
 

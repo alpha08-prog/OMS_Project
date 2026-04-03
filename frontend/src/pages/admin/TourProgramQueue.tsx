@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Calendar, CheckCircle, XCircle, RefreshCw, MapPin, User, Clock, Eye, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ interface StaffMember {
 }
 
 export default function TourProgramQueue() {
+  const navigate = useNavigate();
   const [programs, setPrograms] = useState<TourProgram[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,12 +48,18 @@ export default function TourProgramQueue() {
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("NORMAL");
   const [assigning, setAssigning] = useState(false);
+  const [decisionFilter, setDecisionFilter] = useState<string>("ALL");
 
   const fetchPrograms = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await tourProgramApi.getPending();
+      const params: Record<string, string> = { limit: "500" };
+      if (decisionFilter === "ACCEPTED") params.decision = "ACCEPTED";
+      else if (decisionFilter === "REGRET") params.decision = "REGRET";
+      const res = decisionFilter === "ALL"
+        ? await tourProgramApi.getPending()
+        : await tourProgramApi.getAll(params);
       setPrograms(res.data);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load tour programs");
@@ -73,6 +81,10 @@ export default function TourProgramQueue() {
     fetchPrograms();
     fetchStaff();
   }, []);
+
+  useEffect(() => {
+    fetchPrograms();
+  }, [decisionFilter]);
 
   const handleDecision = async (id: string, decision: 'ACCEPTED' | 'REGRET') => {
     setActionLoading(id);
@@ -101,6 +113,8 @@ export default function TourProgramQueue() {
     setTaskDescription(
       `Event: ${program.eventName}\n` +
       `Organizer: ${program.organizer}\n` +
+      (program.organizerPhone ? `Organizer phone: ${program.organizerPhone}\n` : "") +
+      (program.organizerEmail ? `Organizer email: ${program.organizerEmail}\n` : "") +
       `Date & Time: ${formatDateTime(program.dateTime || program.eventDate || "").date}\n` +
       `Venue: ${program.venue}\n` +
       (program.description ? `Description: ${program.description}` : "")
@@ -144,6 +158,7 @@ export default function TourProgramQueue() {
       setDetailsOpen(false);
       await fetchPrograms();
       alert("Verified and assigned to staff. Tour invitation accepted.");
+      navigate("/admin/events");
     } catch (err: unknown) {
       const e = err as Record<string, unknown> | null;
       const msg = e && typeof e === 'object' && typeof e.message === 'string' ? e.message : undefined;
@@ -178,7 +193,7 @@ export default function TourProgramQueue() {
       <main className="flex-1 p-6 bg-gradient-to-b from-indigo-50/60 to-white">
         <div className="max-w-7xl mx-auto space-y-6">
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-indigo-900">
                 Tour Program Queue
@@ -187,10 +202,22 @@ export default function TourProgramQueue() {
                 Review and decide on submitted invitations
               </p>
             </div>
-            <Button variant="outline" onClick={fetchPrograms} disabled={loading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={decisionFilter} onValueChange={setDecisionFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Pending (All)</SelectItem>
+                  <SelectItem value="ACCEPTED">Accepted</SelectItem>
+                  <SelectItem value="REGRET">Regret</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={fetchPrograms} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
 
           {error && (
@@ -201,7 +228,9 @@ export default function TourProgramQueue() {
 
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
-              <CardTitle>Pending Invitations ({programs.length})</CardTitle>
+              <CardTitle>
+              {decisionFilter === "ACCEPTED" ? "Accepted" : decisionFilter === "REGRET" ? "Regret" : "Pending"} Invitations ({programs.length})
+            </CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-4">
@@ -239,6 +268,12 @@ export default function TourProgramQueue() {
                             <span className="flex items-center gap-1">
                               <User className="h-3.5 w-3.5" />
                               {p.organizer}
+                              {(p.organizerPhone || p.organizerEmail) && (
+                                <span className="text-xs">
+                                  {p.organizerPhone ? ` • ${p.organizerPhone}` : ""}
+                                  {p.organizerEmail ? ` • ${p.organizerEmail}` : ""}
+                                </span>
+                              )}
                             </span>
                             <span className="flex items-center gap-1">
                               <Clock className="h-3.5 w-3.5" />
@@ -320,6 +355,14 @@ export default function TourProgramQueue() {
                   <div>
                     <p className="text-sm text-muted-foreground">Organizer</p>
                     <p className="font-medium">{selectedProgram.organizer}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Organizer phone</p>
+                    <p className="font-medium">{selectedProgram.organizerPhone || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Organizer email</p>
+                    <p className="font-medium break-all">{selectedProgram.organizerEmail || "—"}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Date & Time</p>

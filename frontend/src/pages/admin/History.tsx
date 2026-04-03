@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   historyApi,
   type HistoryItem,
@@ -65,6 +65,37 @@ export default function AdminHistory() {
   // Filters
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [actionFilter, setActionFilter] = useState<string>("ALL");
+
+  const actionOptions = useMemo(() => {
+    if (typeFilter === "ALL") {
+      return [{ value: "ALL", label: "All actions" }];
+    }
+    if (typeFilter === "GRIEVANCE") {
+      return [
+        { value: "ALL", label: "All actions" },
+        { value: "IN_PROGRESS", label: "In progress" },
+        { value: "RESOLVED", label: "Resolved" },
+        { value: "REJECTED", label: "Rejected" },
+      ];
+    }
+    if (typeFilter === "TRAIN_REQUEST") {
+      return [
+        { value: "ALL", label: "All actions" },
+        { value: "ACCEPTED", label: "Accepted" },
+        { value: "REGRET", label: "Regret" },
+        { value: "RESOLVED", label: "Resolved" },
+      ];
+    }
+    if (typeFilter === "TOUR_PROGRAM") {
+      return [
+        { value: "ALL", label: "All actions" },
+        { value: "ACCEPTED", label: "Accepted" },
+        { value: "REGRET", label: "Regret" },
+      ];
+    }
+    return [{ value: "ALL", label: "All actions" }];
+  }, [typeFilter]);
+
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
@@ -123,14 +154,9 @@ export default function AdminHistory() {
     fetchStats();
   }, [fetchHistory, fetchStats]);
 
-  // Refetch when filters change
   useEffect(() => {
-    if (page === 1) {
-      fetchHistory();
-    } else {
-      setPage(1);
-    }
-  }, [typeFilter, actionFilter, startDate, endDate, page, fetchHistory]);
+    setPage(1);
+  }, [typeFilter, actionFilter, startDate, endDate]);
 
   const handleFilter = () => {
     setPage(1);
@@ -162,10 +188,13 @@ export default function AdminHistory() {
   const getActionBadge = (action: string) => {
     const variants: Record<string, string> = {
       "Verified & Resolved": "bg-emerald-100 text-emerald-700 border-emerald-200",
+      Resolved: "bg-emerald-100 text-emerald-700 border-emerald-200",
+      "In Progress": "bg-sky-100 text-sky-800 border-sky-200",
       Approved: "bg-emerald-100 text-emerald-700 border-emerald-200",
       Accepted: "bg-emerald-100 text-emerald-700 border-emerald-200",
       Rejected: "bg-red-100 text-red-700 border-red-200",
       Regret: "bg-amber-100 text-amber-700 border-amber-200",
+      Verified: "bg-indigo-100 text-indigo-800 border-indigo-200",
     };
     return (
       <Badge className={variants[action] || "bg-gray-100 text-gray-700"} variant="outline">
@@ -238,8 +267,11 @@ export default function AdminHistory() {
                       <p className="text-2xl font-bold text-purple-900">{stats.trainRequests.total}</p>
                     </div>
                     <div className="flex flex-col items-end text-xs">
-                      <span className="text-emerald-600">✓ {stats.trainRequests.approved} approved</span>
-                      <span className="text-red-600">✗ {stats.trainRequests.rejected} rejected</span>
+                      <span className="text-emerald-600">✓ {stats.trainRequests.approved} accepted</span>
+                      <span className="text-red-600">✗ {stats.trainRequests.rejected} regret</span>
+                      {typeof stats.trainRequests.resolved === "number" && (
+                        <span className="text-indigo-600">○ {stats.trainRequests.resolved} resolved</span>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -288,7 +320,14 @@ export default function AdminHistory() {
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <label className="text-sm text-muted-foreground mb-1 block">Type</label>
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <Select
+                    value={typeFilter}
+                    onValueChange={(v) => {
+                      setTypeFilter(v);
+                      setActionFilter("ALL");
+                      setPage(1);
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -308,12 +347,11 @@ export default function AdminHistory() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ALL">All Actions</SelectItem>
-                      <SelectItem value="RESOLVED">Resolved</SelectItem>
-                      <SelectItem value="APPROVED">Approved</SelectItem>
-                      <SelectItem value="ACCEPTED">Accepted</SelectItem>
-                      <SelectItem value="REJECTED">Rejected</SelectItem>
-                      <SelectItem value="REGRET">Regret</SelectItem>
+                      {actionOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

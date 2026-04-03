@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Plus,
   Search,
+  Star,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -57,6 +58,7 @@ const allMenuItems: MenuItem[] = [
   { icon: Cake, label: "Add Birthday", route: "/birthday/new", roles: ['STAFF'] },
   { icon: Train, label: "Train EQ Request", route: "/train-eq/new", roles: ['STAFF'] },
   { icon: Calendar, label: "Add Invitation", route: "/tour-program/new", roles: ['STAFF'] },
+  { icon: Star, label: "Event Reports", route: "/events/report", roles: ['STAFF'] },
   { icon: Newspaper, label: "Add News", route: "/news-intelligence/new", roles: ['STAFF'] },
 
   // Admin - Main Actions
@@ -65,6 +67,8 @@ const allMenuItems: MenuItem[] = [
   { icon: CheckCircle, label: "Verify Grievances", route: "/grievances/verify", roles: ['ADMIN'] },
   { icon: Train, label: "Train EQ Queue", route: "/train-eq/queue", roles: ['ADMIN'] },
   { icon: ClipboardList, label: "Tour Invitations", route: "/tour-program/pending", roles: ['ADMIN'] },
+  { icon: Star, label: "Events", route: "/admin/events", roles: ['ADMIN'] },
+  { icon: Calendar, label: "Calendar", route: "/admin/calendar", roles: ['ADMIN'] },
   { icon: Users, label: "View Visitors", route: "/admin/visitors", roles: ["ADMIN"] },
 
 

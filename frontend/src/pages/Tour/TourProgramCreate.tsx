@@ -19,6 +19,8 @@ export default function TourProgramCreate() {
   const [formData, setFormData] = useState({
     eventName: "",
     organizer: "",
+    organizerPhone: "",
+    organizerEmail: "",
     dateTime: "",  // Changed from eventDate to match backend
     venue: "",
     description: "",
@@ -68,6 +70,8 @@ export default function TourProgramCreate() {
       await tourProgramApi.create({
         eventName: formData.eventName,
         organizer: formData.organizer,
+        organizerPhone: formData.organizerPhone.trim() || undefined,
+        organizerEmail: formData.organizerEmail.trim() || undefined,
         dateTime: new Date(formData.dateTime).toISOString(),
         venue: formData.venue,
         description: formData.description || undefined,
@@ -161,6 +165,24 @@ export default function TourProgramCreate() {
                             placeholder="Enter organizer name" 
                             value={formData.organizer}
                             onChange={(e) => handleChange("organizer", e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Organizer phone</Label>
+                          <Input
+                            type="tel"
+                            placeholder="10-digit mobile"
+                            value={formData.organizerPhone}
+                            onChange={(e) => handleChange("organizerPhone", e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Organizer email</Label>
+                          <Input
+                            type="email"
+                            placeholder="contact@example.com"
+                            value={formData.organizerEmail}
+                            onChange={(e) => handleChange("organizerEmail", e.target.value)}
                           />
                         </div>
                       </div>

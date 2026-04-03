@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { taskApi, type TaskAssignment, type TaskStatus, type TaskTrackingData } from "@/lib/api";
+import { taskApi, type TaskAssignment, type TaskStatus, type TaskTrackingData, type TaskType } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,12 @@ export default function AdminTaskTracker() {
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterStaff, setFilterStaff] = useState<string>("all");
+  const [filterTaskType, setFilterTaskType] = useState<string>("all");
+
+  // Reset status filter when task type changes
+  useEffect(() => {
+    setFilterStatus("all");
+  }, [filterTaskType]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -92,10 +98,57 @@ export default function AdminTaskTracker() {
   }, []);
 
   const filteredTasks = tasks.filter(task => {
+    if (filterTaskType !== "all" && task.taskType !== filterTaskType) return false;
     if (filterStatus !== "all" && task.status !== filterStatus) return false;
     if (filterStaff !== "all" && task.assignedTo.id !== filterStaff) return false;
     return true;
   });
+
+  const getStatusOptions = (taskType: string) => {
+    switch (taskType) {
+      case 'GRIEVANCE':
+        return [
+          { value: 'all', label: 'All Status' },
+          { value: 'IN_PROGRESS', label: 'In Progress' },
+          { value: 'COMPLETED', label: 'Resolved' },
+          { value: 'ON_HOLD', label: 'Rejected' },
+        ];
+      case 'TRAIN_REQUEST':
+        return [
+          { value: 'all', label: 'All Status' },
+          { value: 'IN_PROGRESS', label: 'Accepted' },
+          { value: 'ON_HOLD', label: 'Regret' },
+          { value: 'COMPLETED', label: 'Resolved' },
+        ];
+      case 'TOUR_PROGRAM':
+        return [
+          { value: 'all', label: 'All Status' },
+          { value: 'IN_PROGRESS', label: 'Accepted' },
+          { value: 'ON_HOLD', label: 'Regret' },
+        ];
+      default:
+        return [
+          { value: 'all', label: 'All Status' },
+          { value: 'ASSIGNED', label: 'Assigned' },
+          { value: 'IN_PROGRESS', label: 'In Progress' },
+          { value: 'COMPLETED', label: 'Completed' },
+          { value: 'ON_HOLD', label: 'On Hold' },
+        ];
+    }
+  };
+
+  const taskTypeLabel = (t: TaskType) => {
+    switch (t) {
+      case "GRIEVANCE":
+        return "Grievance";
+      case "TRAIN_REQUEST":
+        return "Train";
+      case "TOUR_PROGRAM":
+        return "Tour";
+      default:
+        return "General";
+    }
+  };
 
   const handleViewDetails = (task: TaskAssignment) => {
     setSelectedTask(task);
@@ -289,16 +342,29 @@ export default function AdminTaskTracker() {
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Filter:</span>
                 
+                <Select value={filterTaskType} onValueChange={setFilterTaskType}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Task type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    <SelectItem value="GRIEVANCE">Grievance</SelectItem>
+                    <SelectItem value="TRAIN_REQUEST">Train</SelectItem>
+                    <SelectItem value="TOUR_PROGRAM">Tour</SelectItem>
+                    <SelectItem value="GENERAL">General</SelectItem>
+                  </SelectContent>
+                </Select>
+
                 <Select value={filterStatus} onValueChange={setFilterStatus}>
                   <SelectTrigger className="w-40">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                    <SelectItem value="COMPLETED">Completed</SelectItem>
-                    <SelectItem value="ON_HOLD">On Hold</SelectItem>
+                    {getStatusOptions(filterTaskType).map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 
@@ -316,11 +382,11 @@ export default function AdminTaskTracker() {
                   </SelectContent>
                 </Select>
                 
-                {(filterStatus !== "all" || filterStaff !== "all") && (
+                {(filterStatus !== "all" || filterStaff !== "all" || filterTaskType !== "all") && (
                   <Button 
                     variant="ghost" 
                     size="sm"
-                    onClick={() => { setFilterStatus("all"); setFilterStaff("all"); }}
+                    onClick={() => { setFilterStatus("all"); setFilterStaff("all"); setFilterTaskType("all"); }}
                   >
                     Clear Filters
                   </Button>
@@ -357,7 +423,7 @@ export default function AdminTaskTracker() {
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <p className="font-semibold text-indigo-900">{task.title}</p>
                             {getStatusBadge(task.status)}
-                            <Badge variant="outline">{task.taskType}</Badge>
+                            <Badge variant="outline">{taskTypeLabel(task.taskType)}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
                             Assigned to: <span className="font-medium">{task.assignedTo.name}</span>
@@ -443,7 +509,7 @@ export default function AdminTaskTracker() {
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   {getStatusBadge(selectedTask.status)}
-                  <Badge variant="outline">{selectedTask.taskType}</Badge>
+                  <Badge variant="outline">{taskTypeLabel(selectedTask.taskType)}</Badge>
                   <Badge variant={selectedTask.priority === 'URGENT' ? 'destructive' : 'secondary'}>
                     {selectedTask.priority}
                   </Badge>
