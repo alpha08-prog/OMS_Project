@@ -3,7 +3,9 @@ import { TourDecision } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { sendSuccess, sendError, sendNotFound, sendServerError } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
-import type { AuthenticatedRequest, TourProgramFilters } from '../types';
+import type { AuthenticatedRequest, TourProgramFilters, EventFilters } from '../types';
+import { createTourCalendarEvent } from '../services/google.service';
+import { cacheClear } from '../lib/cache';
 
 /**
  * Create tour program entry
@@ -22,6 +24,8 @@ export async function createTourProgram(
     const {
       eventName,
       organizer,
+      organizerPhone,
+      organizerEmail,
       dateTime,
       venue,
       venueLink,
@@ -33,6 +37,8 @@ export async function createTourProgram(
       data: {
         eventName,
         organizer,
+        organizerPhone: organizerPhone?.trim() || null,
+        organizerEmail: organizerEmail?.trim() || null,
         dateTime: new Date(dateTime),
         venue,
         venueLink,
@@ -203,6 +209,32 @@ export async function updateDecision(
       },
     });
 
+    // If accepted, push event to the admin's Google Calendar (silently — never block the response)
+    if (decision === TourDecision.ACCEPTED && req.user?.id) {
+      createTourCalendarEvent(req.user.id, {
+        id: tourProgram.id,
+        eventName: tourProgram.eventName,
+        organizer: tourProgram.organizer,
+        venue: tourProgram.venue,
+        dateTime: tourProgram.dateTime,
+        description: tourProgram.description,
+        venueLink: tourProgram.venueLink,
+      })
+        .then(async (googleEventId) => {
+          if (googleEventId) {
+            await prisma.tourProgram.update({
+              where: { id: tourProgram.id },
+              data: { googleCalendarEventId: googleEventId },
+            });
+          }
+        })
+        .catch((err) => {
+          console.error('Google Calendar event creation failed (non-blocking):', err);
+        });
+    }
+
+    cacheClear('calendar_events_');
+    cacheClear('dashboard_stats');
     sendSuccess(res, tourProgram, 'Decision updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update decision', error);
@@ -336,5 +368,118 @@ export async function getPendingDecisions(
     sendSuccess(res, tourPrograms, 'Pending decisions retrieved', 200, meta);
   } catch (error) {
     sendServerError(res, 'Failed to get pending decisions', error);
+  }
+}
+
+/**
+ * Get all completed events (ACCEPTED tours where dateTime has passed)
+ * GET /api/tour-programs/events
+ */
+export async function getEvents(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { page, limit, skip } = parsePagination(req.query as { page?: string; limit?: string });
+    const filters = req.query as EventFilters;
+    const now = new Date();
+
+    const where: any = {
+      decision: TourDecision.ACCEPTED,
+      dateTime: { lt: now },
+    };
+
+    if (filters.search) {
+      where.OR = [
+        { eventName: { contains: filters.search, mode: 'insensitive' } },
+        { organizer: { contains: filters.search, mode: 'insensitive' } },
+        { venue: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+    if (filters.venue) {
+      where.venue = { contains: filters.venue, mode: 'insensitive' };
+    }
+    if (filters.startDate || filters.endDate) {
+      where.dateTime = { lt: now };
+      if (filters.startDate) where.dateTime.gte = new Date(filters.startDate);
+      if (filters.endDate) where.dateTime.lte = new Date(filters.endDate);
+    }
+    if (filters.isCompleted !== undefined) {
+      where.isCompleted = filters.isCompleted === 'true';
+    }
+
+    const [total, events] = await Promise.all([
+      prisma.tourProgram.count({ where }),
+      prisma.tourProgram.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { dateTime: 'desc' },
+        include: {
+          createdBy: { select: { id: true, name: true, email: true } },
+          completedBy: { select: { id: true, name: true, email: true } },
+        },
+      }),
+    ]);
+
+    const meta = calculatePaginationMeta(total, page, limit);
+    sendSuccess(res, events, 'Events retrieved successfully', 200, meta);
+  } catch (error) {
+    sendServerError(res, 'Failed to get events', error);
+  }
+}
+
+/**
+ * Submit post-event report (staff)
+ * PATCH /api/tour-programs/:id/complete
+ */
+export async function submitEventReport(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      sendError(res, 'Not authenticated', 401);
+      return;
+    }
+
+    const { id } = req.params;
+    const { driveLink, keynotes, attendeesCount, outcomeSummary, mediaLink } = req.body;
+
+    const existing = await prisma.tourProgram.findUnique({ where: { id } });
+    if (!existing) {
+      sendNotFound(res, 'Tour program not found');
+      return;
+    }
+    if (existing.decision !== TourDecision.ACCEPTED) {
+      sendError(res, 'Only accepted tour programs can have event reports', 400);
+      return;
+    }
+    if (new Date(existing.dateTime) > new Date()) {
+      sendError(res, 'Event has not occurred yet', 400);
+      return;
+    }
+
+    const updated = await prisma.tourProgram.update({
+      where: { id },
+      data: {
+        isCompleted: true,
+        completedAt: new Date(),
+        driveLink: driveLink?.trim() || null,
+        keynotes: keynotes?.trim() || null,
+        attendeesCount: attendeesCount ? parseInt(attendeesCount) : null,
+        outcomeSummary: outcomeSummary?.trim() || null,
+        mediaLink: mediaLink?.trim() || null,
+        completedById: req.user.id,
+      },
+      include: {
+        createdBy: { select: { id: true, name: true, email: true } },
+        completedBy: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    sendSuccess(res, updated, 'Event report submitted successfully');
+  } catch (error) {
+    sendServerError(res, 'Failed to submit event report', error);
   }
 }

@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { GrievanceStatus, NewsPriority, TrainRequestStatus, TourDecision } from '@prisma/client';
 import prisma from '../lib/prisma';
+import { cacheGet, cacheSet } from '../lib/cache';
 import { sendSuccess, sendServerError } from '../utils/response';
 import type { AuthenticatedRequest, DashboardStats } from '../types';
 
@@ -13,6 +14,13 @@ export async function getDashboardSummary(
   res: Response
 ): Promise<void> {
   try {
+    // Check cache first (30-second TTL — dashboard refreshes frequently)
+    const cached = cacheGet<DashboardStats>('dashboard_stats');
+    if (cached) {
+      sendSuccess(res, cached, 'Dashboard statistics (cached)');
+      return;
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -113,6 +121,7 @@ export async function getDashboardSummary(
       },
     };
 
+    cacheSet('dashboard_stats', stats, 30); // cache for 30 seconds
     sendSuccess(res, stats, 'Dashboard statistics retrieved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to get dashboard statistics', error);

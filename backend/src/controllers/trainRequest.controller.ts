@@ -209,6 +209,16 @@ export async function approveTrainRequest(
 
     const { id } = req.params;
 
+    const existing = await prisma.trainRequest.findUnique({ where: { id } });
+    if (!existing) {
+      sendNotFound(res, 'Train request not found');
+      return;
+    }
+    if (existing.status !== TrainRequestStatus.PENDING) {
+      sendError(res, 'Only pending train requests can be approved', 400);
+      return;
+    }
+
     const trainRequest = await prisma.trainRequest.update({
       where: { id },
       data: {
@@ -249,6 +259,16 @@ export async function rejectTrainRequest(
     const { id } = req.params;
     const { reason } = req.body;
 
+    const existing = await prisma.trainRequest.findUnique({ where: { id } });
+    if (!existing) {
+      sendNotFound(res, 'Train request not found');
+      return;
+    }
+    if (existing.status !== TrainRequestStatus.PENDING) {
+      sendError(res, 'Only pending train requests can be rejected', 400);
+      return;
+    }
+
     const trainRequest = await prisma.trainRequest.update({
       where: { id },
       data: {
@@ -269,6 +289,53 @@ export async function rejectTrainRequest(
     sendSuccess(res, trainRequest, 'Train request rejected');
   } catch (error) {
     sendServerError(res, 'Failed to reject train request', error);
+  }
+}
+
+/**
+ * Mark approved train request as resolved (Admin only)
+ * PATCH /api/train-requests/:id/resolve
+ */
+export async function resolveTrainRequest(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      sendError(res, 'Not authenticated', 401);
+      return;
+    }
+
+    const { id } = req.params;
+
+    const existing = await prisma.trainRequest.findUnique({ where: { id } });
+    if (!existing) {
+      sendNotFound(res, 'Train request not found');
+      return;
+    }
+    if (existing.status !== TrainRequestStatus.APPROVED) {
+      sendError(res, 'Only accepted (approved) train requests can be marked resolved', 400);
+      return;
+    }
+
+    const trainRequest = await prisma.trainRequest.update({
+      where: { id },
+      data: {
+        status: TrainRequestStatus.RESOLVED,
+      },
+      include: {
+        createdBy: {
+          select: { id: true, name: true, email: true },
+        },
+        approvedBy: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    sendSuccess(res, trainRequest, 'Train request marked as resolved');
+  } catch (error) {
+    sendServerError(res, 'Failed to resolve train request', error);
   }
 }
 

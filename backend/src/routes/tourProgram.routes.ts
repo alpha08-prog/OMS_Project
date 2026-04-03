@@ -10,6 +10,8 @@ import {
   getTodaySchedule,
   getUpcomingEvents,
   getPendingDecisions,
+  getEvents,
+  submitEventReport,
 } from '../controllers/tourProgram.controller';
 import { authenticate, staffOnly, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -53,6 +55,12 @@ router.get('/upcoming', getUpcomingEvents);
 
 // Get pending decisions (admin only)
 router.get('/pending', adminOnly, getPendingDecisions);
+
+// Get all past events (ACCEPTED + date passed)
+router.get('/events', getEvents);
+
+// Submit post-event report (staff)
+router.patch('/:id/complete', validate(idParamValidation), submitEventReport);
 
 // Get single tour program
 router.get('/:id', validate(idParamValidation), getTourProgramById);

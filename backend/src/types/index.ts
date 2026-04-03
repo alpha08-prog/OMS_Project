@@ -132,3 +132,11 @@ export interface TourProgramFilters {
   endDate?: Date;
   search?: string;
 }
+
+export interface EventFilters {
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  venue?: string;
+  isCompleted?: string;
+}

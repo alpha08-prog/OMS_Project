@@ -41,9 +41,9 @@ export async function getAdminHistory(
     if (endDate) dateFilter.lte = new Date(endDate as string);
     const hasDateFilter = Object.keys(dateFilter).length > 0;
 
-    // Define which actions belong to which entity type
+    // Define which actions belong to which entity type (query param values)
     const grievanceActions = ['VERIFIED', 'RESOLVED', 'REJECTED', 'IN_PROGRESS'];
-    const trainActions = ['APPROVED', 'REJECTED'];
+    const trainActions = ['APPROVED', 'REJECTED', 'REGRET', 'ACCEPTED', 'RESOLVED'];
     const tourActions = ['ACCEPTED', 'REGRET'];
 
     // Fetch verified/resolved/rejected/in_progress grievances
@@ -127,7 +127,7 @@ export async function getAdminHistory(
       grievances.forEach((g) => {
         let actionLabel = 'Verified';
         if (g.status === GrievanceStatus.RESOLVED) {
-          actionLabel = 'Verified & Resolved';
+          actionLabel = 'Resolved';
         } else if (g.status === GrievanceStatus.REJECTED) {
           actionLabel = 'Rejected';
         } else if (g.status === GrievanceStatus.IN_PROGRESS) {
@@ -169,11 +169,23 @@ export async function getAdminHistory(
     
     if (shouldFetchTrainRequests) {
       const trainWhere: any = {
-        status: { in: [TrainRequestStatus.APPROVED, TrainRequestStatus.REJECTED] },
+        status: {
+          in: [TrainRequestStatus.APPROVED, TrainRequestStatus.REJECTED, TrainRequestStatus.RESOLVED],
+        },
       };
-      if (action === 'APPROVED') trainWhere.status = TrainRequestStatus.APPROVED;
-      if (action === 'REJECTED') trainWhere.status = TrainRequestStatus.REJECTED;
-      if (hasDateFilter) trainWhere.approvedAt = dateFilter;
+      if (action === 'APPROVED' || action === 'ACCEPTED') {
+        trainWhere.status = TrainRequestStatus.APPROVED;
+      } else if (action === 'REJECTED' || action === 'REGRET') {
+        trainWhere.status = TrainRequestStatus.REJECTED;
+      } else if (action === 'RESOLVED') {
+        trainWhere.status = TrainRequestStatus.RESOLVED;
+      }
+      if (hasDateFilter) {
+        trainWhere.OR = [
+          { approvedAt: dateFilter },
+          { updatedAt: dateFilter },
+        ];
+      }
 
       // Remove the take limit to get ALL history items
       const trainRequests = await prisma.trainRequest.findMany({
@@ -193,10 +205,14 @@ export async function getAdminHistory(
       console.log(`History - Found ${trainRequests.length} train requests matching criteria`);
 
       trainRequests.forEach((t) => {
+        let trainActionLabel = 'Accepted';
+        if (t.status === TrainRequestStatus.REJECTED) trainActionLabel = 'Regret';
+        else if (t.status === TrainRequestStatus.RESOLVED) trainActionLabel = 'Resolved';
+
         history.push({
           id: t.id,
           type: 'TRAIN_REQUEST',
-          action: t.status === TrainRequestStatus.APPROVED ? 'Approved' : 'Rejected',
+          action: trainActionLabel,
           title: `Train EQ - ${t.trainName || t.trainNumber || 'N/A'}`,
           description: `${t.passengerName} • PNR: ${t.pnrNumber}`,
           actionBy: t.approvedBy,
@@ -205,6 +221,7 @@ export async function getAdminHistory(
           details: {
             passengerName: t.passengerName,
             pnrNumber: t.pnrNumber,
+            contactNumber: t.contactNumber,
             trainName: t.trainName,
             trainNumber: t.trainNumber,
             dateOfJourney: t.dateOfJourney,
@@ -259,6 +276,8 @@ export async function getAdminHistory(
           details: {
             eventName: tp.eventName,
             organizer: tp.organizer,
+            organizerPhone: tp.organizerPhone,
+            organizerEmail: tp.organizerEmail,
             dateTime: tp.dateTime,
             venue: tp.venue,
             venueLink: tp.venueLink,
@@ -301,6 +320,7 @@ export async function getHistoryStats(
       rejectedGrievances,
       approvedTrainRequests,
       rejectedTrainRequests,
+      resolvedTrainRequests,
       acceptedTours,
       regretTours,
     ] = await Promise.all([
@@ -308,6 +328,7 @@ export async function getHistoryStats(
       prisma.grievance.count({ where: { status: GrievanceStatus.REJECTED } }),
       prisma.trainRequest.count({ where: { status: TrainRequestStatus.APPROVED } }),
       prisma.trainRequest.count({ where: { status: TrainRequestStatus.REJECTED } }),
+      prisma.trainRequest.count({ where: { status: TrainRequestStatus.RESOLVED } }),
       prisma.tourProgram.count({ where: { decision: TourDecision.ACCEPTED } }),
       prisma.tourProgram.count({ where: { decision: TourDecision.REGRET } }),
     ]);
@@ -327,14 +348,22 @@ export async function getHistoryStats(
       trainRequests: {
         approved: approvedTrainRequests,
         rejected: rejectedTrainRequests,
-        total: approvedTrainRequests + rejectedTrainRequests,
+        resolved: resolvedTrainRequests,
+        total: approvedTrainRequests + rejectedTrainRequests + resolvedTrainRequests,
       },
       tourPrograms: {
         accepted: acceptedTours,
         regret: regretTours,
         total: acceptedTours + regretTours,
       },
-      totalActions: resolvedGrievances + rejectedGrievances + approvedTrainRequests + rejectedTrainRequests + acceptedTours + regretTours,
+      totalActions:
+        resolvedGrievances +
+        rejectedGrievances +
+        approvedTrainRequests +
+        rejectedTrainRequests +
+        resolvedTrainRequests +
+        acceptedTours +
+        regretTours,
     };
 
     sendSuccess(res, stats, 'History stats retrieved successfully');

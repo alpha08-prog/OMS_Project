@@ -7,6 +7,7 @@ import {
   updateTrainRequest,
   approveTrainRequest,
   rejectTrainRequest,
+  resolveTrainRequest,
   deleteTrainRequest,
   getPendingQueue,
   checkPNRStatus,
@@ -68,6 +69,9 @@ router.patch('/:id/approve', adminOnly, validate(idParamValidation), approveTrai
 
 // Reject train request (admin only)
 router.patch('/:id/reject', adminOnly, validate([...idParamValidation, ...rejectValidation]), rejectTrainRequest);
+
+// Mark approved request as resolved (admin only)
+router.patch('/:id/resolve', adminOnly, validate(idParamValidation), resolveTrainRequest);
 
 // Delete train request (admin only)
 router.delete('/:id', adminOnly, validate(idParamValidation), deleteTrainRequest);

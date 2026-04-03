@@ -1,6 +1,3 @@
-// Prisma Schema for Office Management System (OMS)
-// This schema defines all database models for the government minister office management
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,7 +7,352 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ==================== ENUMS ====================
+model User {
+  id                  String                @id @default(uuid())
+  name                String
+  email               String                @unique
+  phone               String?               @unique
+  password            String
+  role                UserRole              @default(STAFF)
+  isActive            Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // Google Calendar OAuth
+  googleAccessToken   String?
+  googleRefreshToken  String?
+  googleTokenExpiry   DateTime?
+  calendarConnected   Boolean               @default(false)
+
+  audit_logs          AuditLog[]
+  birthday_wish_logs  birthday_wish_logs[]
+  createdBirthdays    Birthday[]
+  grievance_history   grievance_history[]
+  createdGrievances   Grievance[]           @relation("CreatedGrievances")
+  verifiedGrievances  Grievance[]           @relation("VerifiedGrievances")
+  createdNews         NewsIntelligence[]
+  createdTasks        TaskAssignment[]      @relation("CreatedTasks")
+  assignedTasks       TaskAssignment[]      @relation("AssignedTasks")
+  progressUpdates     TaskProgressHistory[] @relation("ProgressUpdates")
+  createdTourPrograms     TourProgram[]
+  completedTourPrograms   TourProgram[]         @relation("CompletedTourPrograms")
+  customCalendarEvents    CustomCalendarEvent[]
+  approvedTrainReqs       TrainRequest[]        @relation("ApprovedTrainRequests")
+  createdTrainReqs    TrainRequest[]        @relation("CreatedTrainRequests")
+  createdVisitors     Visitor[]
+
+  @@map("users")
+}
+
+model Grievance {
+  id                String              @id @default(uuid())
+  petitionerName    String
+  mobileNumber      String
+  constituency      String
+  grievanceType     GrievanceType
+  description       String
+  monetaryValue     Float?
+  actionRequired    ActionRequired      @default(NO_ACTION)
+  letterTemplate    String?
+  referencedBy      String?
+  status            GrievanceStatus     @default(OPEN)
+  isVerified        Boolean             @default(false)
+  verifiedAt        DateTime?
+  resolvedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  createdById       String
+  verifiedById      String?
+  currentStage      GrievanceStage      @default(RECEIVED)
+  isLocked          Boolean             @default(false)
+  grievance_history grievance_history[]
+  createdBy         User                @relation("CreatedGrievances", fields: [createdById], references: [id])
+  verifiedBy        User?               @relation("VerifiedGrievances", fields: [verifiedById], references: [id])
+
+  @@index([mobileNumber])
+  @@index([status])
+  @@index([grievanceType])
+  @@index([currentStage])
+  @@index([createdById])
+  @@index([verifiedById])
+  @@index([createdAt])
+  @@index([isVerified, status])
+  @@map("grievances")
+}
+
+model Visitor {
+  id           String    @id @default(uuid())
+  name         String
+  designation  String
+  phone        String?
+  dob          DateTime?
+  purpose      String
+  referencedBy String?
+  visitDate    DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdById  String
+  createdBy    User      @relation(fields: [createdById], references: [id])
+
+  @@index([dob])
+  @@index([visitDate])
+  @@index([createdById])
+  @@map("visitors")
+}
+
+model NewsIntelligence {
+  id          String       @id @default(uuid())
+  headline    String
+  category    NewsCategory
+  priority    NewsPriority @default(NORMAL)
+  mediaSource String
+  region      String
+  description String?
+  imageUrl    String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdById String
+  createdBy   User         @relation(fields: [createdById], references: [id])
+
+  @@index([priority])
+  @@index([category])
+  @@index([createdById])
+  @@map("news_intelligence")
+}
+
+model TrainRequest {
+  id               String             @id @default(uuid())
+  pnrNumber        String
+  trainName        String?
+  trainNumber      String?
+  journeyClass     String
+  dateOfJourney    DateTime
+  fromStation      String
+  toStation        String
+  route            String?
+  referencedBy     String?
+  status           TrainRequestStatus @default(PENDING)
+  approvedAt       DateTime?
+  rejectionReason  String?
+  signatureData    String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  createdById      String
+  approvedById     String?
+  contactNumber    String?
+  boardingPoint    String?
+  bookingType      BookingType        @default(GENERAL)
+  remarks          String?
+  passengerName    String
+  train_passengers train_passengers[]
+  approvedBy       User?              @relation("ApprovedTrainRequests", fields: [approvedById], references: [id])
+  createdBy        User               @relation("CreatedTrainRequests", fields: [createdById], references: [id])
+
+  @@index([pnrNumber])
+  @@index([status])
+  @@map("train_requests")
+}
+
+model TourProgram {
+  id               String       @id @default(uuid())
+  eventName        String
+  organizer        String
+  dateTime         DateTime
+  venue            String
+  venueLink        String?
+  description      String?
+  referencedBy     String?
+  decision         TourDecision @default(PENDING)
+  decisionNote     String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  createdById      String
+  chiefGuest       String?
+  contactPhone     String?
+  expectedFootfall String?
+  organizerPhone   String?
+  organizerEmail   String?
+  isCompleted      Boolean      @default(false)
+  completedAt      DateTime?
+  driveLink        String?
+  keynotes         String?
+  attendeesCount   Int?
+  outcomeSummary   String?
+  mediaLink        String?
+  completedById    String?
+  completedBy      User?        @relation("CompletedTourPrograms", fields: [completedById], references: [id])
+  googleCalendarEventId String?
+  createdBy        User         @relation(fields: [createdById], references: [id])
+
+  @@index([dateTime])
+  @@index([decision])
+  @@index([createdById])
+  @@index([completedById])
+  @@index([decision, dateTime])
+  @@map("tour_programs")
+}
+
+model Birthday {
+  id                 String               @id @default(uuid())
+  name               String
+  phone              String?
+  dob                DateTime
+  relation           String
+  notes              String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  createdById        String
+  designation        String?
+  birthday_wish_logs birthday_wish_logs[]
+  createdBy          User                 @relation(fields: [createdById], references: [id])
+
+  @@index([dob])
+  @@map("birthdays")
+}
+
+model TaskAssignment {
+  id              String                @id @default(uuid())
+  title           String
+  description     String?
+  taskType        TaskType
+  status          TaskStatus            @default(ASSIGNED)
+  priority        String                @default("NORMAL")
+  referenceId     String?
+  referenceType   String?
+  progressNotes   String?
+  progressPercent Int                   @default(0)
+  assignedAt      DateTime              @default(now())
+  dueDate         DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  assignedToId    String
+  assignedById    String
+  assignedBy      User                  @relation("CreatedTasks", fields: [assignedById], references: [id])
+  assignedTo      User                  @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  progressHistory TaskProgressHistory[]
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([taskType])
+  @@index([referenceId])
+  @@map("task_assignments")
+}
+
+model TaskProgressHistory {
+  id          String         @id @default(uuid())
+  taskId      String
+  note        String
+  status      TaskStatus?
+  createdAt   DateTime       @default(now())
+  createdById String
+  createdBy   User           @relation("ProgressUpdates", fields: [createdById], references: [id])
+  task        TaskAssignment @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_progress_history")
+}
+
+model CustomCalendarEvent {
+  id          String   @id @default(uuid())
+  title       String
+  startTime   DateTime
+  endTime     DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  @@index([createdById])
+  @@index([startTime])
+  @@map("custom_calendar_events")
+}
+
+model LetterTemplate {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  subject    String
+  body       String
+  department String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("letter_templates")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  action     String
+  entityType String
+  entityId   String
+  oldData    Json?
+  newData    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  users      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model birthday_wish_logs {
+  id         String   @id
+  birthdayId String
+  wishYear   Int
+  sentAt     DateTime @default(now())
+  sentVia    String   @default("WHATSAPP")
+  sentById   String
+  notes      String?
+  birthdays  Birthday @relation(fields: [birthdayId], references: [id], onDelete: Cascade)
+  users      User     @relation(fields: [sentById], references: [id])
+
+  @@unique([birthdayId, wishYear])
+  @@index([birthdayId])
+  @@index([wishYear])
+}
+
+model grievance_history {
+  id           String           @id
+  grievanceId  String
+  stage        GrievanceStage
+  status       GrievanceStatus?
+  remarks      String?
+  department   String?
+  officerName  String?
+  fileLocation String?
+  createdAt    DateTime         @default(now())
+  createdById  String
+  users        User             @relation(fields: [createdById], references: [id])
+  grievances   Grievance        @relation(fields: [grievanceId], references: [id], onDelete: Cascade)
+
+  @@index([grievanceId])
+  @@index([stage])
+}
+
+model train_passengers {
+  id              String       @id
+  trainRequestId  String
+  name            String
+  age             Int
+  gender          Gender
+  berthPreference String?
+  seatNumber      String?
+  coachNumber     String?
+  bookingStatus   String?
+  currentStatus   String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime
+  train_requests  TrainRequest @relation(fields: [trainRequestId], references: [id], onDelete: Cascade)
+
+  @@index([trainRequestId])
+}
 
 enum UserRole {
   STAFF
@@ -66,6 +408,7 @@ enum TrainRequestStatus {
   PENDING
   APPROVED
   REJECTED
+  RESOLVED
 }
 
 enum TourDecision {
@@ -88,291 +431,31 @@ enum TaskType {
   GENERAL
 }
 
-// ==================== MODELS ====================
-
-model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  phone     String?  @unique
-  password  String
-  role      UserRole @default(STAFF)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  createdGrievances  Grievance[]        @relation("CreatedGrievances")
-  verifiedGrievances Grievance[]        @relation("VerifiedGrievances")
-  createdNews        NewsIntelligence[]
-  createdTrainReqs   TrainRequest[]     @relation("CreatedTrainRequests")
-  approvedTrainReqs  TrainRequest[]     @relation("ApprovedTrainRequests")
-  createdVisitors    Visitor[]
-  createdTourPrograms TourProgram[]
-  createdBirthdays   Birthday[]
-  
-  // Task Assignment Relations
-  assignedTasks      TaskAssignment[]   @relation("AssignedTasks")
-  createdTasks       TaskAssignment[]   @relation("CreatedTasks")
-  progressUpdates    TaskProgressHistory[] @relation("ProgressUpdates")
-
-  @@map("users")
+enum BookingType {
+  GENERAL
+  TATKAL
+  PREMIUM_TATKAL
+  LADIES
+  LOWER_BERTH
+  DUTY_PASS
 }
 
-model Grievance {
-  id              String           @id @default(uuid())
-  petitionerName  String
-  mobileNumber    String
-  constituency    String
-  grievanceType   GrievanceType
-  description     String
-  monetaryValue   Float?
-  actionRequired  ActionRequired   @default(NO_ACTION)
-  letterTemplate  String?
-  referencedBy    String
-  
-  // Status tracking
-  status          GrievanceStatus  @default(OPEN)
-  isVerified      Boolean          @default(false)
-  verifiedAt      DateTime?
-  resolvedAt      DateTime?
-  
-  // Timestamps
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  
-  // Relations
-  createdById     String
-  createdBy       User             @relation("CreatedGrievances", fields: [createdById], references: [id])
-  verifiedById    String?
-  verifiedBy      User?            @relation("VerifiedGrievances", fields: [verifiedById], references: [id])
-
-  @@index([mobileNumber])
-  @@index([status])
-  @@index([grievanceType])
-  @@map("grievances")
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
 }
 
-model Visitor {
-  id           String   @id @default(uuid())
-  name         String
-  designation  String
-  phone        String?
-  dob          DateTime?
-  purpose      String
-  referencedBy String
-  
-  // Timestamps
-  visitDate    DateTime @default(now())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  // Relations
-  createdById  String
-  createdBy    User     @relation(fields: [createdById], references: [id])
-
-  @@index([dob])
-  @@index([visitDate])
-  @@map("visitors")
-}
-
-model NewsIntelligence {
-  id          String       @id @default(uuid())
-  headline    String
-  category    NewsCategory
-  priority    NewsPriority @default(NORMAL)
-  mediaSource String
-  region      String
-  description String?
-  imageUrl    String?
-  
-  // Timestamps
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  
-  // Relations
-  createdById String
-  createdBy   User         @relation(fields: [createdById], references: [id])
-
-  @@index([priority])
-  @@index([category])
-  @@map("news_intelligence")
-}
-
-model TrainRequest {
-  id             String             @id @default(uuid())
-  passengerName  String
-  pnrNumber      String
-  contactNumber  String?
-  trainName      String?
-  trainNumber    String?
-  journeyClass   String
-  dateOfJourney  DateTime
-  fromStation    String
-  toStation      String
-  route          String?
-  referencedBy   String?
-  
-  // Status
-  status         TrainRequestStatus @default(PENDING)
-  approvedAt     DateTime?
-  rejectionReason String?
-  
-  // Digital signature (for future use)
-  signatureData  String?
-  
-  // Timestamps
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  
-  // Relations
-  createdById    String
-  createdBy      User               @relation("CreatedTrainRequests", fields: [createdById], references: [id])
-  approvedById   String?
-  approvedBy     User?              @relation("ApprovedTrainRequests", fields: [approvedById], references: [id])
-
-  @@index([pnrNumber])
-  @@index([status])
-  @@map("train_requests")
-}
-
-model TourProgram {
-  id           String       @id @default(uuid())
-  eventName    String
-  organizer    String
-  dateTime     DateTime
-  venue        String
-  venueLink    String?      // Google Maps link
-  description  String?
-  referencedBy String
-  
-  // Decision
-  decision     TourDecision @default(PENDING)
-  decisionNote String?
-  
-  // Timestamps
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  
-  // Relations
-  createdById  String
-  createdBy    User         @relation(fields: [createdById], references: [id])
-
-  @@index([dateTime])
-  @@index([decision])
-  @@map("tour_programs")
-}
-
-// ==================== BIRTHDAY TRACKING ====================
-
-model Birthday {
-  id           String   @id @default(uuid())
-  name         String
-  phone        String?
-  dob          DateTime // Date of birth
-  relation     String   // e.g., Party Worker, Family, Official, VIP, etc.
-  notes        String?
-  
-  // Timestamps
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  // Relations
-  createdById  String
-  createdBy    User     @relation(fields: [createdById], references: [id])
-
-  @@index([dob])
-  @@map("birthdays")
-}
-
-// ==================== TASK ASSIGNMENT ====================
-
-model TaskAssignment {
-  id              String     @id @default(uuid())
-  title           String
-  description     String?
-  taskType        TaskType
-  status          TaskStatus @default(ASSIGNED)
-  priority        String     @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
-  
-  // Reference to the source entity (grievance, train request, etc.)
-  referenceId     String?
-  referenceType   String?    // GRIEVANCE, TRAIN_REQUEST, TOUR_PROGRAM
-  
-  // Progress tracking
-  progressNotes   String?
-  progressPercent Int        @default(0)
-  
-  // Timestamps
-  assignedAt      DateTime   @default(now())
-  dueDate         DateTime?
-  startedAt       DateTime?
-  completedAt     DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  
-  // Relations
-  assignedToId    String
-  assignedTo      User       @relation("AssignedTasks", fields: [assignedToId], references: [id])
-  assignedById    String
-  assignedBy      User       @relation("CreatedTasks", fields: [assignedById], references: [id])
-
-  // Progress history relation
-  progressHistory TaskProgressHistory[]
-
-  @@index([assignedToId])
-  @@index([status])
-  @@index([taskType])
-  @@index([referenceId])
-  @@map("task_assignments")
-}
-
-// ==================== TASK PROGRESS HISTORY ====================
-
-model TaskProgressHistory {
-  id            String         @id @default(uuid())
-  taskId        String
-  task          TaskAssignment @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  
-  note          String         // The progress update comment
-  status        TaskStatus?    // Optional status change (e.g., ASSIGNED -> IN_PROGRESS)
-  
-  createdAt     DateTime       @default(now())
-  createdById   String
-  createdBy     User           @relation("ProgressUpdates", fields: [createdById], references: [id])
-
-  @@index([taskId])
-  @@map("task_progress_history")
-}
-
-// ==================== UTILITY MODELS ====================
-
-model LetterTemplate {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  subject     String
-  body        String
-  department  String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("letter_templates")
-}
-
-model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String
-  action      String
-  entityType  String
-  entityId    String
-  oldData     Json?
-  newData     Json?
-  ipAddress   String?
-  userAgent   String?
-  createdAt   DateTime @default(now())
-
-  @@index([userId])
-  @@index([entityType, entityId])
-  @@map("audit_logs")
+enum GrievanceStage {
+  RECEIVED
+  UNDER_REVIEW
+  FORWARDED_TO_DEPT
+  DEPT_PROCESSING
+  AWAITING_RESPONSE
+  RESPONSE_RECEIVED
+  LETTER_GENERATED
+  LETTER_SENT
+  FOLLOW_UP
+  COMPLETED
+  CLOSED
 }
