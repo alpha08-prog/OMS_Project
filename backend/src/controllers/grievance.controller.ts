@@ -3,7 +3,16 @@ import { GrievanceStatus } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { sendSuccess, sendError, sendNotFound, sendServerError } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
+import { cacheClear } from '../lib/cache';
 import type { AuthenticatedRequest, GrievanceFilters } from '../types';
+
+/** Bust all stat caches when grievance data changes */
+function invalidateStatCaches() {
+  cacheClear('dashboard_stats');
+  cacheClear('stats_by_type');
+  cacheClear('stats_by_status');
+  cacheClear('stats_by_constituency');
+}
 
 /**
  * Create a new grievance
@@ -51,6 +60,7 @@ export async function createGrievance(
       },
     });
 
+    invalidateStatCaches();
     sendSuccess(res, grievance, 'Grievance created successfully', 201);
   } catch (error) {
     sendServerError(res, 'Failed to create grievance', error);
@@ -72,8 +82,16 @@ export async function getGrievances(
     // Build where clause
     const where: any = {};
 
+    // Staff can only see grievances they submitted
+    if (req.user?.role === 'STAFF') {
+      where.createdById = req.user.id;
+    }
+
     if (filters.status) {
       where.status = filters.status;
+    }
+    if (filters.isVerified !== undefined) {
+      where.isVerified = filters.isVerified === 'true';
     }
     if (filters.grievanceType) {
       where.grievanceType = filters.grievanceType;
@@ -226,6 +244,7 @@ export async function verifyGrievance(
       },
     });
 
+    invalidateStatCaches();
     sendSuccess(res, grievance, 'Grievance verified and resolved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to verify grievance', error);
@@ -263,6 +282,7 @@ export async function updateGrievanceStatus(
       },
     });
 
+    invalidateStatCaches();
     sendSuccess(res, grievance, 'Grievance status updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update grievance status', error);

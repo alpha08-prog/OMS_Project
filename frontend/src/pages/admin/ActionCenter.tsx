@@ -117,9 +117,9 @@ export default function AdminActionCenter() {
     try {
       // Fetch all items, not just pending ones - we'll filter client-side
       const [grievancesRes, trainRes, tourRes, staffRes] = await Promise.all([
-        grievanceApi.getAll({ limit: '200' }), // Get more grievances
-        trainRequestApi.getAll({ limit: '200' }), // Get all train requests
-        tourProgramApi.getAll({ limit: '200' }), // Get all tour programs
+        grievanceApi.getAll({ isVerified: 'false', limit: '500' }), // Only unverified — DB filtered
+        trainRequestApi.getAll({ status: 'PENDING', limit: '500' }), // Only pending
+        tourProgramApi.getAll({ decision: 'PENDING', limit: '500' }), // Only pending
         taskApi.getStaffMembers(),
       ]);
       
@@ -156,16 +156,12 @@ export default function AdminActionCenter() {
       console.log('ActionCenter - Processed train requests:', trainRequests.length);
       console.log('ActionCenter - Processed tour programs:', tourPrograms.length);
       
-      // Filter for pending items: OPEN grievances that are not verified, PENDING train requests, PENDING tour programs
-      const pendingGrievances = grievances.filter((g: Grievance) => 
-        g.status === 'OPEN' && !g.isVerified
+      // Data is already filtered at DB level — just exclude edge-case statuses
+      const pendingGrievances = grievances.filter((g: Grievance) =>
+        g.status !== 'RESOLVED' && g.status !== 'REJECTED'
       );
-      const pendingTrainRequests = trainRequests.filter((t: TrainRequest) => 
-        t.status === 'PENDING'
-      );
-      const pendingTourPrograms = tourPrograms.filter((tp: TourProgram) => 
-        !tp.decision || tp.decision === 'PENDING'
-      );
+      const pendingTrainRequests = trainRequests; // Already status=PENDING from DB
+      const pendingTourPrograms = tourPrograms;   // Already decision=PENDING from DB
       
       console.log('ActionCenter - Pending grievances:', pendingGrievances.length);
       console.log('ActionCenter - Pending train requests:', pendingTrainRequests.length);

@@ -79,6 +79,11 @@ export async function getTrainRequests(
     // Build where clause
     const where: any = {};
 
+    // Staff can only see train requests they submitted
+    if (req.user?.role === 'STAFF') {
+      where.createdById = req.user.id;
+    }
+
     if (filters.status) {
       where.status = filters.status;
     }

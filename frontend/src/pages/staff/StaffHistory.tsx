@@ -64,6 +64,47 @@ export default function StaffHistory() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
+  // Status options keyed by type
+  const STATUS_OPTIONS: Record<string, { value: string; label: string }[]> = {
+    ALL: [
+      { value: "ALL", label: "All Statuses" },
+      { value: "OPEN", label: "Open" },
+      { value: "PENDING", label: "Pending" },
+      { value: "IN_PROGRESS", label: "In Progress" },
+      { value: "RESOLVED", label: "Resolved" },
+      { value: "APPROVED", label: "Approved" },
+      { value: "ACCEPTED", label: "Accepted" },
+      { value: "REGRET", label: "Regret" },
+      { value: "REJECTED", label: "Rejected" },
+    ],
+    GRIEVANCE: [
+      { value: "ALL", label: "All Statuses" },
+      { value: "OPEN", label: "Open" },
+      { value: "IN_PROGRESS", label: "In Progress" },
+      { value: "VERIFIED", label: "Verified" },
+      { value: "RESOLVED", label: "Resolved" },
+      { value: "REJECTED", label: "Rejected" },
+    ],
+    TRAIN_REQUEST: [
+      { value: "ALL", label: "All Statuses" },
+      { value: "PENDING", label: "Pending" },
+      { value: "APPROVED", label: "Approved" },
+      { value: "REJECTED", label: "Rejected" },
+      { value: "RESOLVED", label: "Resolved" },
+    ],
+    TOUR_PROGRAM: [
+      { value: "ALL", label: "All Statuses" },
+      { value: "PENDING", label: "Pending" },
+      { value: "ACCEPTED", label: "Accepted" },
+      { value: "REGRET", label: "Regret" },
+    ],
+  };
+
+  const handleTypeChange = (value: string) => {
+    setTypeFilter(value);
+    setStatusFilter("ALL"); // reset status when type changes
+  };
+
   const fetchSubmissions = useCallback(async () => {
     setLoading(true);
     try {
@@ -230,6 +271,7 @@ export default function StaffHistory() {
       RESOLVED: "bg-emerald-100 text-emerald-700 border-emerald-200",
       APPROVED: "bg-emerald-100 text-emerald-700 border-emerald-200",
       ACCEPTED: "bg-emerald-100 text-emerald-700 border-emerald-200",
+      VERIFIED: "bg-teal-100 text-teal-700 border-teal-200",
       REJECTED: "bg-red-100 text-red-700 border-red-200",
       REGRET: "bg-amber-100 text-amber-700 border-amber-200",
       IN_PROGRESS: "bg-blue-100 text-blue-700 border-blue-200",
@@ -293,7 +335,7 @@ export default function StaffHistory() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="text-sm text-muted-foreground mb-1 block">Type</label>
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <Select value={typeFilter} onValueChange={handleTypeChange}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -313,13 +355,11 @@ export default function StaffHistory() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ALL">All Statuses</SelectItem>
-                      <SelectItem value="OPEN">Open</SelectItem>
-                      <SelectItem value="PENDING">Pending</SelectItem>
-                      <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                      <SelectItem value="RESOLVED">Resolved</SelectItem>
-                      <SelectItem value="APPROVED">Approved</SelectItem>
-                      <SelectItem value="REJECTED">Rejected</SelectItem>
+                      {(STATUS_OPTIONS[typeFilter] ?? STATUS_OPTIONS.ALL).map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

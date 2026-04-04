@@ -45,6 +45,16 @@ export default function PrintCenter() {
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // Determine role for feature gating
+  const userRole = (() => {
+    const s = sessionStorage.getItem('user_role') || localStorage.getItem('user_role');
+    if (s) return s;
+    const u = sessionStorage.getItem('user') || localStorage.getItem('user');
+    if (u) { try { return JSON.parse(u).role; } catch { /* ignore */ } }
+    return null;
+  })();
+  const isStaff = userRole === 'STAFF';
+
   const fetchPrintableItems = async () => {
     setLoading(true);
     setError(null);
@@ -271,14 +281,16 @@ export default function PrintCenter() {
                   <Train className="h-4 w-4 mr-2" />
                   Train EQ ({printableItems.filter(i => i.type === 'train').length})
                 </Button>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTourDialogOpen(true)}
-                >
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Tour Program PDF
-                </Button>
+                {!isStaff && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTourDialogOpen(true)}
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Tour Program PDF
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
@@ -309,7 +321,9 @@ export default function PrintCenter() {
                     <Printer className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-muted-foreground">No letters ready for printing</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Verify grievances or approve train requests to generate letters
+                      {isStaff
+                        ? 'Your verified grievances and approved train EQ requests will appear here'
+                        : 'Verify grievances or approve train requests to generate letters'}
                     </p>
                   </div>
                 ) : (

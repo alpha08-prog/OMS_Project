@@ -6,52 +6,59 @@ import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { BirthdayWidget } from "@/components/dashboard/BirthdayWidget";
-import { grievanceApi, trainRequestApi, tourProgramApi, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
+import { grievanceApi, trainRequestApi, tourProgramApi, statsApi, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
 
 export default function AdminHome() {
   const navigate = useNavigate();
+
+  // Counts from the cached stats API (fast)
+  const [grievanceCount, setGrievanceCount] = useState<number | null>(null);
+  const [trainCount, setTrainCount] = useState<number | null>(null);
+  const [tourCount, setTourCount] = useState<number | null>(null);
+
+  // Preview lists (small fetches — just enough to show names)
   const [pendingGrievances, setPendingGrievances] = useState<Grievance[]>([]);
   const [pendingTrainRequests, setPendingTrainRequests] = useState<TrainRequest[]>([]);
   const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Admin");
 
   useEffect(() => {
-    // Get user name from localStorage
-    const userStr = localStorage.getItem('user');
+    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
     if (userStr) {
       try {
         const user = JSON.parse(userStr);
         setUserName(user.name || "Admin");
-      } catch {
-        // ignore parse errors
-      }
+      } catch { /* ignore */ }
     }
 
-    // Fetch pending items
-    const fetchPendingItems = async () => {
+    const fetchData = async () => {
+      setLoading(true);
       try {
-        setLoading(true);
-        // Fetch unverified grievances
-        const grievancesRes = await grievanceApi.getAll({ status: 'OPEN', limit: '5' });
-        console.log('AdminHome - Grievances response:', grievancesRes);
-        const grievances = Array.isArray(grievancesRes?.data) ? grievancesRes.data : [];
-        setPendingGrievances(grievances.filter((g: Grievance) => !g.isVerified));
+        // 1. Stats API — single cached call, gives all counts instantly
+        const [stats, grievancesRes, trainRes, tourRes] = await Promise.all([
+          statsApi.getSummary(),
+          // Small previews: only 5 rows, DB-filtered
+          grievanceApi.getAll({ isVerified: 'false', limit: '5' }),
+          trainRequestApi.getAll({ status: 'PENDING', limit: '5' }),
+          tourProgramApi.getAll({ decision: 'PENDING', limit: '5' }),
+        ]);
 
-        // Fetch pending train requests
-        const trainRes = await trainRequestApi.getAll({ status: 'PENDING', limit: '5' });
-        console.log('AdminHome - Train requests response:', trainRes);
-        const trainRequests = Array.isArray(trainRes?.data) ? trainRes.data : [];
-        setPendingTrainRequests(trainRequests);
+        // Counts from stats cache
+        setGrievanceCount(stats?.grievances?.pendingVerification ?? 0);
+        setTrainCount(stats?.trainRequests?.pending ?? 0);
+        setTourCount(stats?.tourPrograms?.pending ?? 0);
 
-        // Fetch pending tour programs
-        const tourRes = await tourProgramApi.getAll({ decision: 'PENDING', limit: '5' });
-        console.log('AdminHome - Tour programs response:', tourRes);
-        const tourPrograms = Array.isArray(tourRes?.data) ? tourRes.data : [];
-        setPendingTourPrograms(tourPrograms);
-      } catch (error: unknown) {
+        // Preview rows
+        setPendingGrievances(Array.isArray(grievancesRes?.data) ? grievancesRes.data : []);
+        setPendingTrainRequests(Array.isArray(trainRes?.data) ? trainRes.data : []);
+        setPendingTourPrograms(Array.isArray(tourRes?.data) ? tourRes.data : []);
+      } catch (error) {
         console.error('Failed to fetch pending items:', error);
-        // Set empty arrays on error to prevent undefined errors
+        setGrievanceCount(0);
+        setTrainCount(0);
+        setTourCount(0);
         setPendingGrievances([]);
         setPendingTrainRequests([]);
         setPendingTourPrograms([]);
@@ -60,17 +67,15 @@ export default function AdminHome() {
       }
     };
 
-    fetchPendingItems();
+    fetchData();
   }, []);
 
-  const totalPending = pendingGrievances.length + pendingTrainRequests.length + pendingTourPrograms.length;
+  const totalPending = (grievanceCount ?? 0) + (trainCount ?? 0) + (tourCount ?? 0);
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
       <DashboardSidebar />
 
-      {/* Main Content */}
       <main className="flex-1 overflow-auto">
         <div className="w-full bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
           <div className="max-w-7xl mx-auto space-y-6">
@@ -84,7 +89,6 @@ export default function AdminHome() {
                   Verification & Letter Management
                 </p>
               </div>
-
               <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
                 ADMIN ACCESS
               </span>
@@ -97,13 +101,9 @@ export default function AdminHome() {
                   <FileCheck className="h-6 w-6 text-indigo-700" />
                   <h3 className="font-semibold">Verify Grievances</h3>
                   <p className="text-sm text-muted-foreground">
-                    {pendingGrievances.length} pending verification
+                    {grievanceCount === null ? "Loading…" : `${grievanceCount} pending verification`}
                   </p>
-                  <Button
-                    size="sm"
-                    onClick={() => navigate("/grievances/verify")}
-                    className="w-full"
-                  >
+                  <Button size="sm" onClick={() => navigate("/grievances/verify")} className="w-full">
                     Open Queue
                   </Button>
                 </CardContent>
@@ -113,14 +113,8 @@ export default function AdminHome() {
                 <CardContent className="p-5 space-y-3">
                   <Printer className="h-6 w-6 text-indigo-700" />
                   <h3 className="font-semibold">Print Letters</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Generate and print official letters
-                  </p>
-                  <Button
-                    size="sm"
-                    onClick={() => navigate("/admin/print-center")}
-                    className="w-full"
-                  >
+                  <p className="text-sm text-muted-foreground">Generate and print official letters</p>
+                  <Button size="sm" onClick={() => navigate("/admin/print-center")} className="w-full">
                     Print Center
                   </Button>
                 </CardContent>
@@ -131,13 +125,9 @@ export default function AdminHome() {
                   <Train className="h-6 w-6 text-indigo-700" />
                   <h3 className="font-semibold">Train EQ Letters</h3>
                   <p className="text-sm text-muted-foreground">
-                    {pendingTrainRequests.length} pending approval
+                    {trainCount === null ? "Loading…" : `${trainCount} pending approval`}
                   </p>
-                  <Button
-                    size="sm"
-                    onClick={() => navigate("/train-eq/queue")}
-                    className="w-full"
-                  >
+                  <Button size="sm" onClick={() => navigate("/train-eq/queue")} className="w-full">
                     View Requests
                   </Button>
                 </CardContent>
@@ -148,13 +138,9 @@ export default function AdminHome() {
                   <ClipboardList className="h-6 w-6 text-indigo-700" />
                   <h3 className="font-semibold">Tour Decisions</h3>
                   <p className="text-sm text-muted-foreground">
-                    {pendingTourPrograms.length} pending decisions
+                    {tourCount === null ? "Loading…" : `${tourCount} pending decisions`}
                   </p>
-                  <Button
-                    size="sm"
-                    onClick={() => navigate("/tour-program/pending")}
-                    className="w-full"
-                  >
+                  <Button size="sm" onClick={() => navigate("/tour-program/pending")} className="w-full">
                     Review
                   </Button>
                 </CardContent>
@@ -174,12 +160,12 @@ export default function AdminHome() {
 
                   <CardContent className="space-y-4 text-sm">
                     {loading ? (
-                      <p className="text-muted-foreground">Loading pending items...</p>
+                      <p className="text-muted-foreground">Loading pending items…</p>
                     ) : totalPending === 0 ? (
                       <p className="text-muted-foreground">All caught up! No pending approvals.</p>
                     ) : (
                       <>
-                        {pendingGrievances.slice(0, 3).map((g) => (
+                        {pendingGrievances.map((g) => (
                           <div key={g.id} className="flex items-center justify-between">
                             <div>
                               <p className="font-medium">Grievance – {g.grievanceType}</p>
@@ -187,13 +173,13 @@ export default function AdminHome() {
                                 {g.petitionerName} • {new Date(g.createdAt).toLocaleDateString()}
                               </p>
                             </div>
-                            <Button size="sm" variant="outline" onClick={() => navigate(`/grievances/verify`)}>
+                            <Button size="sm" variant="outline" onClick={() => navigate("/grievances/verify")}>
                               Review
                             </Button>
                           </div>
                         ))}
 
-                        {pendingTrainRequests.slice(0, 2).map((t) => (
+                        {pendingTrainRequests.map((t) => (
                           <div key={t.id} className="flex items-center justify-between">
                             <div>
                               <p className="font-medium">Train EQ – {t.passengerName}</p>
@@ -201,13 +187,13 @@ export default function AdminHome() {
                                 PNR: {t.pnrNumber} • {new Date(t.createdAt).toLocaleDateString()}
                               </p>
                             </div>
-                            <Button size="sm" variant="outline" onClick={() => navigate(`/train-eq/queue`)}>
+                            <Button size="sm" variant="outline" onClick={() => navigate("/train-eq/queue")}>
                               Review
                             </Button>
                           </div>
                         ))}
 
-                        {pendingTourPrograms.slice(0, 2).map((tour) => (
+                        {pendingTourPrograms.map((tour) => (
                           <div key={tour.id} className="flex items-center justify-between">
                             <div>
                               <p className="font-medium">Tour – {tour.eventName}</p>
@@ -215,7 +201,7 @@ export default function AdminHome() {
                                 {tour.organizer} • Decision Pending
                               </p>
                             </div>
-                            <Button size="sm" variant="outline" onClick={() => navigate(`/tour-program/pending`)}>
+                            <Button size="sm" variant="outline" onClick={() => navigate("/tour-program/pending")}>
                               Decide
                             </Button>
                           </div>
@@ -226,7 +212,6 @@ export default function AdminHome() {
                 </Card>
               </div>
 
-              {/* Birthday Widget for Admin */}
               <div>
                 <BirthdayWidget />
               </div>

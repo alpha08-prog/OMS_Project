@@ -322,10 +322,6 @@ export function DashboardHeader() {
                 <Calendar className="mr-2 h-4 w-4" />
                 <span>{stats?.tourPrograms?.pending ?? 0} tour invitations</span>
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate("/admin/action-center")} className="text-indigo-600 font-medium">
-                Open Action Center
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 

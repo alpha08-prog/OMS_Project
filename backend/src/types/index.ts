@@ -72,6 +72,7 @@ export interface DashboardStats {
     inProgress: number;
     verified: number;
     resolved: number;
+    pendingVerification: number;
   };
   visitors: {
     total: number;
@@ -104,6 +105,7 @@ export interface GrievanceFilters {
   startDate?: Date;
   endDate?: Date;
   search?: string;
+  isVerified?: string;
 }
 
 export interface VisitorFilters {

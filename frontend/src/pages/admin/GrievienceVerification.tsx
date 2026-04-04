@@ -28,7 +28,6 @@ export default function GrievanceVerification() {
   const [, setVerifiedGrievances] = useState<Grievance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
   
@@ -45,12 +44,14 @@ export default function GrievanceVerification() {
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("NORMAL");
   const [assigning, setAssigning] = useState(false);
+  const [_actionLoading, setActionLoading] = useState<string | null>(null);
 
   const fetchGrievances = async () => {
     setLoading(true);
     setError(null);
     try {
-      const grievanceParams: Record<string, string> = {};
+      // Use isVerified=false filter so the DB returns only unverified rows (fast index scan)
+      const grievanceParams: Record<string, string> = { isVerified: 'false', limit: '1000' };
       if (statusFilter !== "all") grievanceParams.status = statusFilter;
       const [grievancesRes, tasksRes] = await Promise.all([
         grievanceApi.getAll(grievanceParams), // Get all grievances, not just OPEN
@@ -82,17 +83,13 @@ export default function GrievanceVerification() {
         }
       }
       
-      // Filter to show only unverified grievances
-      setGrievances(grievancesArray.filter((g: Grievance) => !g.isVerified));
+      // All rows are already unverified (filtered by backend)
+      setGrievances(grievancesArray);
+
+      // No verified grievances to track (they were excluded by the isVerified=false filter)
+      setVerifiedGrievances([]);
       
-      // Show verified grievances that don't have tasks assigned yet
-      const verified = grievancesArray.filter((g: Grievance) => 
-        g.isVerified && !taskReferenceIds.has(g.id)
-      );
-      setVerifiedGrievances(verified);
-      
-      console.log('GrievanceVerification - Unverified grievances:', grievancesArray.filter((g: Grievance) => !g.isVerified).length);
-      console.log('GrievanceVerification - Verified grievances without tasks:', verified.length);
+      console.log('GrievanceVerification - Unverified grievances:', grievancesArray.length);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load grievances";
       setError(errorMessage);
@@ -126,31 +123,11 @@ export default function GrievanceVerification() {
     setAssignDialogOpen(true);
   };
 
-  const handleVerify = async (id: string) => {
-    setActionLoading(id);
-    try {
-      await grievanceApi.verify(id);
-      // Find the verified grievance
-      const verified = grievances.find((g) => g.id === id);
-      if (verified) {
-        // Mark as verified locally
-        const verifiedCopy = { ...verified, isVerified: true };
-        // Add to verified grievances list (will show in "Assign Tasks" section)
-        setVerifiedGrievances((prev) => {
-          // Check if already exists
-          if (prev.find(g => g.id === verifiedCopy.id)) return prev;
-          return [...prev, verifiedCopy];
-        });
-        // Remove from pending verification queue
-        setGrievances((prev) => prev.filter((g) => g.id !== id));
-        // Open assign dialog after verification
-        handleOpenAssignDialog(verifiedCopy);
-      }
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to verify grievance";
-      setError(errorMessage);
-    } finally {
-      setActionLoading(null);
+  const handleVerify = (id: string) => {
+    // Just open the assign dialog — actual verify API call happens only on form submit
+    const grievance = grievances.find((g) => g.id === id);
+    if (grievance) {
+      handleOpenAssignDialog(grievance);
     }
   };
 
@@ -159,9 +136,13 @@ export default function GrievanceVerification() {
       setError("Please select a staff member and enter task title");
       return;
     }
-    
+
     setAssigning(true);
     try {
+      // Step 1: Verify the grievance in the database
+      await grievanceApi.verify(verifiedGrievance.id);
+
+      // Step 2: Create the assigned task
       await taskApi.create({
         title: taskTitle,
         description: taskDescription || undefined,
@@ -172,17 +153,15 @@ export default function GrievanceVerification() {
         assignedToId: assignToId,
         dueDate: dueDate || undefined,
       });
-      
-      // Remove from verified grievances list after successful assignment
-      setVerifiedGrievances((prev) => prev.filter((g) => g.id !== verifiedGrievance.id));
-      
+
+      // Remove from pending queue only after successful verify + assign
+      setGrievances((prev) => prev.filter((g) => g.id !== verifiedGrievance.id));
       setAssignDialogOpen(false);
       resetAssignForm();
       setError(null);
-      // Refresh to get updated data
       fetchGrievances();
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to assign task";
+      const errorMessage = err instanceof Error ? err.message : "Failed to verify and assign task";
       setError(errorMessage);
     } finally {
       setAssigning(false);
@@ -329,14 +308,13 @@ export default function GrievanceVerification() {
                         <Eye className="h-4 w-4 mr-1" />
                         View
                       </Button>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         className="bg-green-600 hover:bg-green-700"
                         onClick={() => handleVerify(g.id)}
-                        disabled={actionLoading === g.id}
                       >
                         <CheckCircle className="h-4 w-4 mr-1" />
-                        {actionLoading === g.id ? "..." : "Verify"}
+                        Verify
                       </Button>
                       <Button
                         size="sm"
@@ -346,11 +324,10 @@ export default function GrievanceVerification() {
                         <Download className="h-4 w-4 mr-1" />
                         PDF
                       </Button>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="destructive"
                         onClick={() => handleReject(g.id)}
-                        disabled={actionLoading === g.id}
                       >
                         <XCircle className="h-4 w-4 mr-1" />
                         Reject
@@ -429,16 +406,15 @@ export default function GrievanceVerification() {
                   </Button>
                   {!selectedGrievance.isVerified ? (
                     <>
-                      <Button 
+                      <Button
                         className="bg-green-600 hover:bg-green-700"
                         onClick={() => {
-                          handleVerify(selectedGrievance.id);
                           setDetailsOpen(false);
+                          handleVerify(selectedGrievance.id);
                         }}
-                        disabled={actionLoading === selectedGrievance.id}
                       >
                         <CheckCircle className="h-4 w-4 mr-1" />
-                        Verify
+                        Verify &amp; Assign
                       </Button>
                       <Button 
                         className="bg-indigo-600 hover:bg-indigo-700"
@@ -469,8 +445,7 @@ export default function GrievanceVerification() {
         {/* Task Assignment Dialog */}
         <Dialog open={assignDialogOpen} onOpenChange={(open) => {
           if (!open && !assigning) {
-            // Dialog was closed without assigning - keep verified grievance visible
-            // Just clear the form fields, but verified grievance stays in verifiedGrievances list
+            // Dialog closed without assigning — grievance stays unverified in the pending queue
             setAssignToId("");
             setTaskTitle("");
             setTaskDescription("");
@@ -484,10 +459,10 @@ export default function GrievanceVerification() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <UserPlus className="h-5 w-5" />
-                Assign Task to Staff
+                Verify &amp; Assign Task
               </DialogTitle>
               <DialogDescription>
-                Assign this verified grievance to a staff member for follow-up
+                Submitting this form will verify the grievance and assign a follow-up task to a staff member
               </DialogDescription>
             </DialogHeader>
             
@@ -576,7 +551,7 @@ export default function GrievanceVerification() {
                   >
                     Cancel
                   </Button>
-                  <Button 
+                  <Button
                     className="bg-indigo-600 hover:bg-indigo-700"
                     onClick={handleAssignTask}
                     disabled={assigning || !assignToId || !taskTitle}
@@ -584,12 +559,12 @@ export default function GrievanceVerification() {
                     {assigning ? (
                       <>
                         <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Assigning...
+                        Verifying & Assigning...
                       </>
                     ) : (
                       <>
                         <UserPlus className="h-4 w-4 mr-2" />
-                        Assign Task
+                        Verify &amp; Assign
                       </>
                     )}
                   </Button>

@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import prisma from '../lib/prisma';
-import { sendError, sendNotFound, sendServerError } from '../utils/response';
+import { sendError, sendNotFound, sendServerError, sendForbidden } from '../utils/response';
 import {
   generateTrainEQLetter,
   generateGrievanceLetter,
@@ -28,6 +28,12 @@ export async function generateTrainEQPDF(
 
     if (!trainRequest) {
       sendNotFound(res, 'Train request not found');
+      return;
+    }
+
+    // Staff can only download their own documents
+    if (req.user?.role === 'STAFF' && trainRequest.createdById !== req.user.id) {
+      sendForbidden(res, 'You can only download your own train EQ letters');
       return;
     }
 
@@ -84,6 +90,12 @@ export async function generateGrievancePDF(
 
     if (!grievance) {
       sendNotFound(res, 'Grievance not found');
+      return;
+    }
+
+    // Staff can only download their own documents
+    if (req.user?.role === 'STAFF' && grievance.createdById !== req.user.id) {
+      sendForbidden(res, 'You can only download your own grievance letters');
       return;
     }
 
@@ -269,6 +281,11 @@ export async function previewTrainEQ(
       return;
     }
 
+    if (req.user?.role === 'STAFF' && trainRequest.createdById !== req.user.id) {
+      sendForbidden(res, 'You can only preview your own train EQ letters');
+      return;
+    }
+
     const refNumber = `EQ/${new Date().getFullYear()}/${trainRequest.id.slice(0, 8).toUpperCase()}`;
     const date = new Date().toLocaleDateString('en-IN', {
       day: '2-digit',
@@ -379,6 +396,11 @@ export async function previewGrievance(
 
     if (!grievance) {
       sendNotFound(res, 'Grievance not found');
+      return;
+    }
+
+    if (req.user?.role === 'STAFF' && grievance.createdById !== req.user.id) {
+      sendForbidden(res, 'You can only preview your own grievance letters');
       return;
     }
 

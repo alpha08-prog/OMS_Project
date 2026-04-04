@@ -16,6 +16,15 @@ export async function createBirthday(
     const { name, phone, dob, relation, notes } = req.body;
     const userId = req.user!.id;
 
+    // Prevent duplicate entries by full name (case-insensitive)
+    const duplicate = await prisma.birthday.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+    });
+    if (duplicate) {
+      sendError(res, `A birthday entry for "${name}" already exists`, 409);
+      return;
+    }
+
     const birthday = await prisma.birthday.create({
       data: {
         name,

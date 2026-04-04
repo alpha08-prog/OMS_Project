@@ -7,7 +7,7 @@ import {
   previewTrainEQ,
   previewGrievance,
 } from '../controllers/pdf.controller';
-import { authenticate, adminOnly } from '../middleware/auth';
+import { authenticate, adminOnly, staffOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
@@ -17,19 +17,18 @@ const idParamValidation = [
   param('id').isUUID().withMessage('Invalid ID'),
 ];
 
-// All routes require authentication and admin access
+// All routes require authentication
 router.use(authenticate);
-router.use(adminOnly);
 
-// Train EQ Letter
-router.get('/train-eq/:id', validate(idParamValidation), generateTrainEQPDF);
-router.get('/train-eq/:id/preview', validate(idParamValidation), previewTrainEQ);
+// Train EQ Letter — staff can download their own, admins can download any
+router.get('/train-eq/:id', staffOnly, validate(idParamValidation), generateTrainEQPDF);
+router.get('/train-eq/:id/preview', staffOnly, validate(idParamValidation), previewTrainEQ);
 
-// Grievance Letter
-router.get('/grievance/:id', validate(idParamValidation), generateGrievancePDF);
-router.get('/grievance/:id/preview', validate(idParamValidation), previewGrievance);
+// Grievance Letter — staff can download their own, admins can download any
+router.get('/grievance/:id', staffOnly, validate(idParamValidation), generateGrievancePDF);
+router.get('/grievance/:id/preview', staffOnly, validate(idParamValidation), previewGrievance);
 
-// Tour Program PDF
-router.get('/tour-program', generateTourProgramPDFController);
+// Tour Program PDF — admin only (overview of all accepted tours)
+router.get('/tour-program', adminOnly, generateTourProgramPDFController);
 
 export default router;

@@ -63,6 +63,11 @@ export default function TourProgramCreate() {
       setLoading(false);
       return;
     }
+    if (formData.organizerPhone.trim() && !/^\d{10}$/.test(formData.organizerPhone.trim())) {
+      setError("Organizer phone must be exactly 10 digits");
+      setLoading(false);
+      return;
+    }
 
     try {
       // Staff submits - decision will default to PENDING
@@ -171,10 +176,19 @@ export default function TourProgramCreate() {
                           <Label>Organizer phone</Label>
                           <Input
                             type="tel"
-                            placeholder="10-digit mobile"
+                            placeholder="10-digit mobile number"
                             value={formData.organizerPhone}
-                            onChange={(e) => handleChange("organizerPhone", e.target.value)}
+                            maxLength={10}
+                            onChange={(e) => {
+                              const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                              handleChange("organizerPhone", digits);
+                            }}
                           />
+                          {formData.organizerPhone.length > 0 && formData.organizerPhone.length < 10 && (
+                            <p className="text-xs text-red-500 mt-1">
+                              {10 - formData.organizerPhone.length} more digit{10 - formData.organizerPhone.length !== 1 ? "s" : ""} required
+                            </p>
+                          )}
                         </div>
                         <div>
                           <Label>Organizer email</Label>

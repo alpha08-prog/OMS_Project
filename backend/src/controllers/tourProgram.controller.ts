@@ -319,10 +319,16 @@ export async function getUpcomingEvents(
         },
       },
       orderBy: { dateTime: 'asc' },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true },
-        },
+      take: 20, // safety cap — no unbounded result sets
+      select: {
+        id: true,
+        eventName: true,
+        organizer: true,
+        venue: true,
+        dateTime: true,
+        decision: true,
+        description: true,
+        createdBy: { select: { id: true, name: true, email: true } },
       },
     });
 
@@ -446,7 +452,11 @@ export async function submitEventReport(
     const { id } = req.params;
     const { driveLink, keynotes, attendeesCount, outcomeSummary, mediaLink } = req.body;
 
-    const existing = await prisma.tourProgram.findUnique({ where: { id } });
+    // Single query: fetch only needed validation fields, skip full include
+    const existing = await prisma.tourProgram.findUnique({
+      where: { id },
+      select: { id: true, decision: true, dateTime: true },
+    });
     if (!existing) {
       sendNotFound(res, 'Tour program not found');
       return;

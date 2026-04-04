@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Calendar, dateFnsLocalizer, Views } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
@@ -170,6 +170,20 @@ export default function AdminCalendar() {
       alert("Please enter a title and date.");
       return;
     }
+
+    // Check for scheduling conflicts
+    const newStart = new Date(`${newDate}T${newTime}:00`);
+    const conflicts = events.filter((ev) => {
+      const evStart = new Date(ev.start);
+      const evEnd = new Date(ev.end);
+      return newStart >= evStart && newStart < evEnd;
+    });
+    if (conflicts.length > 0) {
+      const names = conflicts.map((e) => e.title).join(", ");
+      const proceed = window.confirm(`⚠️ Schedule conflict with: "${names}". Add this event anyway?`);
+      if (!proceed) return;
+    }
+
     setAdding(true);
     try {
       await googleCalendarApi.addCustomEvent({
@@ -189,6 +203,42 @@ export default function AdminCalendar() {
       setAdding(false);
     }
   };
+
+  // ── Normalize events: parse strings → Date, clamp end to same day, ensure minimum 1-hour duration
+  const calendarEvents = useMemo(() =>
+    events.map((ev) => {
+      const start = new Date(ev.start);
+      const rawEnd = new Date(ev.end);
+
+      // Clamp end so the event never spills into the next day's cell
+      const dayEnd = new Date(start);
+      dayEnd.setHours(23, 59, 59, 999);
+      const clamped = rawEnd > dayEnd ? dayEnd : rawEnd;
+
+      // Guarantee at least 1-hour visible block (capped at dayEnd)
+      const minEnd = new Date(start.getTime() + 60 * 60 * 1000);
+      const end = clamped <= start ? (minEnd > dayEnd ? dayEnd : minEnd) : clamped;
+
+      return { ...ev, start, end };
+    }),
+    [events]
+  );
+
+  // Auto-scroll to the earliest event's hour (or 8 AM when no events)
+  const scrollToTime = useMemo(() => {
+    if (calendarEvents.length > 0) {
+      const earliest = calendarEvents.reduce<Date>(
+        (min, ev) => (ev.start < min ? ev.start : min),
+        calendarEvents[0].start as Date
+      );
+      const t = new Date(earliest);
+      t.setHours(Math.max(0, t.getHours() - 1), 0, 0, 0);
+      return t;
+    }
+    const t = new Date();
+    t.setHours(8, 0, 0, 0);
+    return t;
+  }, [calendarEvents]);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -266,9 +316,9 @@ export default function AdminCalendar() {
 
           <Calendar
             localizer={localizer}
-            events={events}
-            startAccessor={(e: CalendarEvent) => new Date(e.start)}
-            endAccessor={(e: CalendarEvent) => new Date(e.end)}
+            events={calendarEvents}
+            startAccessor="start"
+            endAccessor="end"
             titleAccessor="title"
             view={view}
             onView={setView}
@@ -276,6 +326,7 @@ export default function AdminCalendar() {
             onNavigate={setDate}
             eventPropGetter={eventStyleGetter}
             onSelectEvent={(e: CalendarEvent) => setSelectedEvent(e)}
+            scrollToTime={scrollToTime}
             style={{ height: "100%", padding: "12px" }}
             popup
           />

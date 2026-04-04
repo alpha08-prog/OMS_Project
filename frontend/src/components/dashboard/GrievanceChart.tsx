@@ -23,14 +23,12 @@ export function GrievanceChart() {
         const stats = await statsApi.getSummary();
         const grievances = stats.grievances;
         const totalCount = grievances.total || 1; // Avoid division by zero
-        const rejected = Math.max(0, grievances.total - grievances.resolved - grievances.inProgress - grievances.verified - grievances.open);
-        
+
         setTotal(grievances.total);
         setData([
           { name: "Resolved", value: Math.round((grievances.resolved / totalCount) * 100), color: "#22c55e" },
           { name: "In Progress", value: Math.round(((grievances.inProgress + grievances.verified) / totalCount) * 100), color: "#f59e0b" },
           { name: "Open", value: Math.round((grievances.open / totalCount) * 100), color: "#6366f1" },
-          ...(rejected > 0 ? [{ name: "Rejected", value: Math.round((rejected / totalCount) * 100), color: "#ef4444" }] : []),
         ]);
       } catch (error) {
         console.error('Failed to fetch grievance stats:', error);
@@ -76,13 +74,13 @@ export function GrievanceChart() {
                 </div>
               </div>
             </div>
-            <div className={`mt-4 grid gap-2 text-center ${data.length === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+            <div className="mt-4 grid gap-2 text-center grid-cols-3">
               {data.map((item) => (
                 <div key={item.name} className="p-2 rounded-lg bg-muted/50">
-                  <p className={`font-bold ${data.length === 4 ? 'text-lg' : 'text-2xl'}`} style={{ color: item.color }}>
+                  <p className="font-bold text-2xl" style={{ color: item.color }}>
                     {item.value}%
                   </p>
-                  <p className={`text-muted-foreground break-words ${data.length === 4 ? 'text-[10px]' : 'text-xs'}`}>{item.name}</p>
+                  <p className="text-muted-foreground break-words text-xs">{item.name}</p>
                 </div>
               ))}
             </div>

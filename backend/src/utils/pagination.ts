@@ -29,8 +29,10 @@ export function parsePagination(
 ): PaginationParams {
   const pageStr = getQueryString(query.page);
   const limitStr = getQueryString(query.limit);
-  const page = Math.max(1, parseInt(pageStr || '1', 10));
-  const limit = Math.min(100, Math.max(1, parseInt(limitStr || '10', 10)));
+  const parsedPage = parseInt(pageStr || '1', 10);
+  const parsedLimit = parseInt(limitStr || '10', 10);
+  const page = Math.max(1, isNaN(parsedPage) ? 1 : parsedPage);
+  const limit = Math.min(1000, Math.max(1, isNaN(parsedLimit) ? 10 : parsedLimit));
   const skip = (page - 1) * limit;
 
   return { page, limit, skip };

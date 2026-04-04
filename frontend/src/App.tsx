@@ -127,6 +127,15 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      {/* Staff Print Center — same component, staff-accessible path */}
+      <Route
+        path="/staff/print-center"
+        element={
+          <ProtectedRoute allowedRoles={['STAFF']}>
+            <PrintCenter />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/admin/birthdays"
         element={

@@ -74,6 +74,7 @@ const allMenuItems: MenuItem[] = [
 
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['ADMIN'] },
   { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
+  { icon: Printer, label: "Print Center", route: "/staff/print-center", roles: ['STAFF'] },
   { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },
   { icon: Gift, label: "View Birthdays", route: "/admin/birthdays", roles: ['ADMIN', 'SUPER_ADMIN'] },
 

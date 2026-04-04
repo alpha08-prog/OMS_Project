@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { GrievanceStatus, NewsPriority, TrainRequestStatus, TourDecision } from '@prisma/client';
 import prisma from '../lib/prisma';
-import { cacheGet, cacheSet } from '../lib/cache';
+import { cacheGet, cacheSet, cacheClear } from '../lib/cache';
 import { sendSuccess, sendServerError } from '../utils/response';
 import type { AuthenticatedRequest, DashboardStats } from '../types';
 
@@ -35,6 +35,7 @@ export async function getDashboardSummary(
       inProgressGrievances,
       verifiedGrievances,
       resolvedGrievances,
+      pendingVerificationGrievances,
       totalVisitors,
       todayVisitors,
       totalTrainRequests,
@@ -52,6 +53,12 @@ export async function getDashboardSummary(
       prisma.grievance.count({ where: { status: GrievanceStatus.IN_PROGRESS } }),
       prisma.grievance.count({ where: { status: GrievanceStatus.VERIFIED } }),
       prisma.grievance.count({ where: { status: GrievanceStatus.RESOLVED } }),
+      prisma.grievance.count({
+        where: {
+          isVerified: false,
+          status: { notIn: [GrievanceStatus.RESOLVED, GrievanceStatus.REJECTED] },
+        },
+      }),
       // Visitors
       prisma.visitor.count(),
       prisma.visitor.count({
@@ -97,6 +104,7 @@ export async function getDashboardSummary(
         inProgress: inProgressGrievances,
         verified: verifiedGrievances,
         resolved: resolvedGrievances,
+        pendingVerification: pendingVerificationGrievances,
       },
       visitors: {
         total: totalVisitors,
@@ -121,7 +129,7 @@ export async function getDashboardSummary(
       },
     };
 
-    cacheSet('dashboard_stats', stats, 30); // cache for 30 seconds
+    cacheSet('dashboard_stats', stats, 300); // cache for 5 minutes
     sendSuccess(res, stats, 'Dashboard statistics retrieved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to get dashboard statistics', error);
@@ -137,6 +145,9 @@ export async function getGrievancesByType(
   res: Response
 ): Promise<void> {
   try {
+    const cached = cacheGet<unknown[]>('stats_by_type');
+    if (cached) { sendSuccess(res, cached, 'Grievance statistics by type (cached)'); return; }
+
     const stats = await prisma.grievance.groupBy({
       by: ['grievanceType'],
       _count: { id: true },
@@ -147,6 +158,7 @@ export async function getGrievancesByType(
       count: s._count.id,
     }));
 
+    cacheSet('stats_by_type', formatted, 300);
     sendSuccess(res, formatted, 'Grievance statistics by type retrieved');
   } catch (error) {
     sendServerError(res, 'Failed to get grievance statistics', error);
@@ -162,6 +174,9 @@ export async function getGrievancesByStatus(
   res: Response
 ): Promise<void> {
   try {
+    const cached = cacheGet<unknown[]>('stats_by_status');
+    if (cached) { sendSuccess(res, cached, 'Grievance statistics by status (cached)'); return; }
+
     const stats = await prisma.grievance.groupBy({
       by: ['status'],
       _count: { id: true },
@@ -172,6 +187,7 @@ export async function getGrievancesByStatus(
       count: s._count.id,
     }));
 
+    cacheSet('stats_by_status', formatted, 300);
     sendSuccess(res, formatted, 'Grievance statistics by status retrieved');
   } catch (error) {
     sendServerError(res, 'Failed to get grievance statistics', error);
@@ -187,6 +203,9 @@ export async function getGrievancesByConstituency(
   res: Response
 ): Promise<void> {
   try {
+    const cached = cacheGet<unknown[]>('stats_by_constituency');
+    if (cached) { sendSuccess(res, cached, 'Grievance statistics by constituency (cached)'); return; }
+
     const stats = await prisma.grievance.groupBy({
       by: ['constituency'],
       _count: { id: true },
@@ -199,6 +218,7 @@ export async function getGrievancesByConstituency(
       count: s._count.id,
     }));
 
+    cacheSet('stats_by_constituency', formatted, 300);
     sendSuccess(res, formatted, 'Grievance statistics by constituency retrieved');
   } catch (error) {
     sendServerError(res, 'Failed to get grievance statistics', error);
@@ -214,6 +234,9 @@ export async function getMonthlyGrievanceTrends(
   res: Response
 ): Promise<void> {
   try {
+    const cached = cacheGet<unknown[]>('stats_monthly_trends');
+    if (cached) { sendSuccess(res, cached, 'Monthly grievance trends (cached)'); return; }
+
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
@@ -231,6 +254,7 @@ export async function getMonthlyGrievanceTrends(
       count: Number(t.count),
     }));
 
+    cacheSet('stats_monthly_trends', formatted, 600); // 10 min — historical data barely changes
     sendSuccess(res, formatted, 'Monthly grievance trends retrieved');
   } catch (error) {
     sendServerError(res, 'Failed to get monthly trends', error);

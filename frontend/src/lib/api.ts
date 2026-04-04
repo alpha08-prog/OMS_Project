@@ -250,6 +250,7 @@ export type DashboardStats = {
     inProgress: number
     verified: number
     resolved: number
+    pendingVerification: number
   }
   visitors: {
     total: number
