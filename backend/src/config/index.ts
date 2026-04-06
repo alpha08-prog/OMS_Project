@@ -2,34 +2,46 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+function normalizeEnvValue(value: string): string {
+  return value.trim().replace(/^['"]+|['"]+$/g, '');
+}
+
+function normalizeOrigin(origin: string): string {
+  return normalizeEnvValue(origin).replace(/\/+$/, '');
+}
+
+function parseOrigins(...values: Array<string | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .flatMap((value) => (value ? value.split(',') : []))
+        .map((value) => normalizeOrigin(value))
+        .filter(Boolean)
+    )
+  );
+}
+
 export const config = {
   // Server
   port: parseInt(process.env.PORT || '5000', 10),
-  nodeEnv: process.env.NODE_ENV || 'development',
-  backendUrl: process.env.BACKEND_URL || 'https://oms-project-moep.onrender.com',
+  nodeEnv: normalizeEnvValue(process.env.NODE_ENV || 'development'),
+  backendUrl: normalizeOrigin(process.env.BACKEND_URL || 'https://oms-project-moep.onrender.com'),
   
   // JWT
   jwtSecret: process.env.JWT_SECRET || 'fallback-secret-change-in-production',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   
   // CORS
-  frontendUrl: process.env.FRONTEND_URL || 'https://oms-project-flax.vercel.app',
-  allowedOrigins: Array.from(
-    new Set(
-      [
-        process.env.FRONTEND_URL,
-        process.env.CORS_ORIGINS,
-        'https://oms-project-flax.vercel.app',
-        'http://localhost:5173',
-        'http://localhost:5174',
-        'http://localhost:5175',
-        'http://127.0.0.1:5173',
-        'http://127.0.0.1:5174',
-      ]
-        .flatMap((value) => (value ? value.split(',') : []))
-        .map((origin) => origin.trim())
-        .filter(Boolean)
-    )
+  frontendUrl: normalizeOrigin(process.env.FRONTEND_URL || 'https://oms-project-flax.vercel.app'),
+  allowedOrigins: parseOrigins(
+    process.env.FRONTEND_URL,
+    process.env.CORS_ORIGINS,
+    'https://oms-project-flax.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174'
   ),
   
   // Database
