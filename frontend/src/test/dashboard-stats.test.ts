@@ -2,7 +2,7 @@
  * Unit tests for dashboard stats shape and AdminHome pending-count logic.
  * Tests the client-side filtering rules that determine what shows as "pending".
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 // ── Types (mirror api.ts) ─────────────────────────────────────────────────────
 

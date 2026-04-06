@@ -1,10 +1,158 @@
 import { Response } from 'express';
-import { TrainRequestStatus } from '@prisma/client';
+import { Prisma, TrainRequestStatus } from '@prisma/client';
 import prisma from '../lib/prisma';
 import config from '../config';
 import { sendSuccess, sendError, sendNotFound, sendServerError } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import type { AuthenticatedRequest, TrainRequestFilters } from '../types';
+
+const trainRequestSelect = {
+  id: true,
+  passengerName: true,
+  pnrNumber: true,
+  contactNumber: true,
+  trainName: true,
+  trainNumber: true,
+  journeyClass: true,
+  dateOfJourney: true,
+  fromStation: true,
+  toStation: true,
+  route: true,
+  referencedBy: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+  createdById: true,
+  approvedById: true,
+  createdBy: {
+    select: { id: true, name: true, email: true },
+  },
+  approvedBy: {
+    select: { id: true, name: true, email: true },
+  },
+} satisfies Prisma.TrainRequestSelect;
+
+const PASSENGER_NAME_PLACEHOLDER = 'Passenger details unavailable';
+
+type TrainRequestRecord = Prisma.TrainRequestGetPayload<{
+  select: typeof trainRequestSelect;
+}>;
+
+function hasMissingPassengerName(passengerName: string | null | undefined): boolean {
+  return !passengerName || passengerName.trim() === '' || passengerName.trim() === PASSENGER_NAME_PLACEHOLDER;
+}
+
+function extractPassengerNameFromTask(
+  title?: string | null,
+  description?: string | null
+): string | null {
+  const descriptionMatch = description?.match(/^Passenger:\s*(.+)$/m);
+  if (descriptionMatch?.[1]) {
+    const name = descriptionMatch[1].trim();
+    if (name && !hasMissingPassengerName(name)) {
+      return name;
+    }
+  }
+
+  const titleMatch = title?.match(/^Train EQ:\s*(.+?)\s*-\s*PNR\b/i);
+  if (titleMatch?.[1]) {
+    const name = titleMatch[1].trim();
+    if (name && !hasMissingPassengerName(name)) {
+      return name;
+    }
+  }
+
+  return null;
+}
+
+function buildPassengerNameFallback(trainRequest: TrainRequestRecord): string {
+  const trainName = trainRequest.trainName?.trim();
+  if (trainName) {
+    return `${trainName} passenger`;
+  }
+
+  return `PNR ${trainRequest.pnrNumber}`;
+}
+
+async function resolvePassengerNames(
+  trainRequests: TrainRequestRecord[]
+): Promise<TrainRequestRecord[]> {
+  const requestsNeedingNames = trainRequests.filter((request) =>
+    hasMissingPassengerName(request.passengerName)
+  );
+
+  if (requestsNeedingNames.length === 0) {
+    return trainRequests;
+  }
+
+  const taskAssignments = await prisma.taskAssignment.findMany({
+    where: {
+      referenceType: 'TRAIN_REQUEST',
+      referenceId: {
+        in: requestsNeedingNames.map((request) => request.id),
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      referenceId: true,
+      title: true,
+      description: true,
+    },
+  });
+
+  const recoveredNames = new Map<string, string>();
+
+  for (const taskAssignment of taskAssignments) {
+    if (!taskAssignment.referenceId || recoveredNames.has(taskAssignment.referenceId)) {
+      continue;
+    }
+
+    const recoveredName = extractPassengerNameFromTask(
+      taskAssignment.title,
+      taskAssignment.description
+    );
+
+    if (recoveredName) {
+      recoveredNames.set(taskAssignment.referenceId, recoveredName);
+    }
+  }
+
+  return trainRequests.map((trainRequest) => {
+    if (!hasMissingPassengerName(trainRequest.passengerName)) {
+      return trainRequest;
+    }
+
+    return {
+      ...trainRequest,
+      passengerName:
+        recoveredNames.get(trainRequest.id) || buildPassengerNameFallback(trainRequest),
+    };
+  });
+}
+
+function buildMockPnrStatus(pnr: string, reason?: string) {
+  const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  return {
+    pnrNumber: pnr,
+    trainNumber: '12301',
+    trainName: 'Rajdhani Express',
+    dateOfJourney: futureDate.toISOString().split('T')[0],
+    from: 'NDLS (New Delhi)',
+    to: 'HWH (Howrah)',
+    class: '2A',
+    passengers: [
+      {
+        name: 'Passenger 1',
+        bookingStatus: 'CNF/A1/23',
+        currentStatus: 'CNF/A1/23',
+      },
+    ],
+    chartStatus: 'CHART NOT PREPARED',
+    isMock: true,
+    reason,
+  };
+}
 
 /**
  * Create train EQ request
@@ -51,11 +199,7 @@ export async function createTrainRequest(
         contactNumber,
         createdById: req.user.id,
       },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
+      select: trainRequestSelect,
     });
 
     sendSuccess(res, trainRequest, 'Train request created successfully', 201);
@@ -107,19 +251,14 @@ export async function getTrainRequests(
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
-          createdBy: {
-            select: { id: true, name: true, email: true },
-          },
-          approvedBy: {
-            select: { id: true, name: true, email: true },
-          },
-        },
+        select: trainRequestSelect,
       }),
     ]);
 
+    const hydratedTrainRequests = await resolvePassengerNames(trainRequests);
+
     const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, trainRequests, 'Train requests retrieved successfully', 200, meta);
+    sendSuccess(res, hydratedTrainRequests, 'Train requests retrieved successfully', 200, meta);
   } catch (error) {
     sendServerError(res, 'Failed to get train requests', error);
   }
@@ -138,14 +277,7 @@ export async function getTrainRequestById(
 
     const trainRequest = await prisma.trainRequest.findUnique({
       where: { id },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true },
-        },
-        approvedBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
+      select: trainRequestSelect,
     });
 
     if (!trainRequest) {
@@ -153,7 +285,9 @@ export async function getTrainRequestById(
       return;
     }
 
-    sendSuccess(res, trainRequest, 'Train request retrieved successfully');
+    const [hydratedTrainRequest] = await resolvePassengerNames([trainRequest]);
+
+    sendSuccess(res, hydratedTrainRequest, 'Train request retrieved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to get train request', error);
   }
@@ -182,14 +316,7 @@ export async function updateTrainRequest(
     const trainRequest = await prisma.trainRequest.update({
       where: { id },
       data: updateData,
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true },
-        },
-        approvedBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
+      select: trainRequestSelect,
     });
 
     sendSuccess(res, trainRequest, 'Train request updated successfully');
@@ -231,14 +358,7 @@ export async function approveTrainRequest(
         approvedById: req.user.id,
         approvedAt: new Date(),
       },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true },
-        },
-        approvedBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
+      select: trainRequestSelect,
     });
 
     sendSuccess(res, trainRequest, 'Train request approved successfully');
@@ -281,14 +401,7 @@ export async function rejectTrainRequest(
         rejectionReason: reason,
         approvedById: req.user.id,
       },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true },
-        },
-        approvedBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
+      select: trainRequestSelect,
     });
 
     sendSuccess(res, trainRequest, 'Train request rejected');
@@ -328,14 +441,7 @@ export async function resolveTrainRequest(
       data: {
         status: TrainRequestStatus.RESOLVED,
       },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true },
-        },
-        approvedBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
+      select: trainRequestSelect,
     });
 
     sendSuccess(res, trainRequest, 'Train request marked as resolved');
@@ -387,16 +493,14 @@ export async function getPendingQueue(
         skip,
         take: limit,
         orderBy: { dateOfJourney: 'asc' }, // Earliest journey date first
-        include: {
-          createdBy: {
-            select: { id: true, name: true, email: true },
-          },
-        },
+        select: trainRequestSelect,
       }),
     ]);
 
+    const hydratedTrainRequests = await resolvePassengerNames(trainRequests);
+
     const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, trainRequests, 'Pending queue retrieved', 200, meta);
+    sendSuccess(res, hydratedTrainRequests, 'Pending queue retrieved', 200, meta);
   } catch (error) {
     sendServerError(res, 'Failed to get pending queue', error);
   }
@@ -421,26 +525,7 @@ export async function checkPNRStatus(
 
     // Check if RapidAPI key is configured
     if (!config.rapidApi.key) {
-      // Fall back to mock data if API key not configured
-      const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      const mockStatus = {
-        pnrNumber: pnr,
-        trainNumber: '12301',
-        trainName: 'Rajdhani Express',
-        dateOfJourney: futureDate.toISOString().split('T')[0], // YYYY-MM-DD format
-        from: 'NDLS (New Delhi)',
-        to: 'HWH (Howrah)',
-        class: '2A', // Use select-compatible value
-        passengers: [
-          {
-            name: 'Passenger 1',
-            bookingStatus: 'CNF/A1/23',
-            currentStatus: 'CNF/A1/23',
-          },
-        ],
-        chartStatus: 'CHART NOT PREPARED',
-        isMock: true,
-      };
+      const mockStatus = buildMockPnrStatus(pnr, 'RAPIDAPI_KEY is not configured');
       sendSuccess(res, mockStatus, 'PNR status retrieved (mock data - API key not configured)');
       return;
     }
@@ -459,10 +544,13 @@ export async function checkPNRStatus(
         sendError(res, 'PNR not found or invalid', 404);
         return;
       }
-      if (response.status === 429) {
-        sendError(res, 'API rate limit exceeded. Please try again later.', 429);
+
+      if (response.status === 429 || response.status === 401 || response.status === 403 || response.status >= 500) {
+        const mockStatus = buildMockPnrStatus(pnr, `RapidAPI unavailable (${response.status})`);
+        sendSuccess(res, mockStatus, 'PNR status retrieved (mock data - RapidAPI unavailable)');
         return;
       }
+
       throw new Error(`API responded with status ${response.status}`);
     }
 
@@ -496,6 +584,7 @@ export async function checkPNRStatus(
     sendSuccess(res, pnrStatus, 'PNR status retrieved successfully');
   } catch (error) {
     console.error('PNR API Error:', error);
-    sendServerError(res, 'Failed to check PNR status', error);
+    const mockStatus = buildMockPnrStatus(req.params.pnr, 'RapidAPI request failed');
+    sendSuccess(res, mockStatus, 'PNR status retrieved (mock data - external API request failed)');
   }
 }
