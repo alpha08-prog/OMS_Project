@@ -32,10 +32,11 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   
   // CORS
-  frontendUrl: normalizeOrigin(process.env.FRONTEND_URL || 'https://oms-project-flax.vercel.app'),
+  frontendUrl: normalizeOrigin(process.env.FRONTEND_URL || 'https://oms-project1-flax.vercel.app'),
   allowedOrigins: parseOrigins(
     process.env.FRONTEND_URL,
     process.env.CORS_ORIGINS,
+    'https://oms-project1-flax.vercel.app',
     'https://oms-project-flax.vercel.app',
     'http://localhost:5173',
     'http://localhost:5174',
