@@ -1,10 +1,13 @@
 import { google } from 'googleapis';
 import prisma from '../lib/prisma';
+import config from '../config';
+
+const googleRedirectUri = process.env.GOOGLE_REDIRECT_URI || `${config.backendUrl}/api/google/callback`;
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
+  googleRedirectUri
 );
 
 const SCOPES = [
@@ -89,7 +92,7 @@ export async function createTourCalendarEvent(
   const auth = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
+    googleRedirectUri
   );
   auth.setCredentials({ access_token: accessToken });
 

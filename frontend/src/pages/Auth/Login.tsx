@@ -122,11 +122,11 @@ export default function Login() {
       
       // Check for connection errors
       if (error?.code === 'ERR_NETWORK' || error?.message?.includes('ERR_CONNECTION_REFUSED') || error?.message?.includes('Failed to fetch')) {
-        setErrors({ server: 'Cannot connect to server. Please make sure the backend server is running on port 5000.' })
+        setErrors({ server: 'Cannot connect to the OMS backend. Please check that the API URL is correct and the backend is running.' })
         push({ 
           type: 'error', 
           title: 'Connection Error', 
-          message: 'Cannot connect to server. Please check if the backend server is running.' 
+          message: 'Cannot connect to the OMS backend. Please check the deployed backend and frontend API configuration.' 
         })
       } else {
         const message = error?.message || 'Invalid credentials'

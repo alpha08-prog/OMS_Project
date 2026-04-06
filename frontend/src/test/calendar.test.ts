@@ -115,10 +115,10 @@ describe('Calendar Event Data', () => {
 
 describe('Google Calendar Connect Flow', () => {
   it('should construct correct OAuth redirect URL', () => {
-    const apiBase = 'http://localhost:5000/api';
+    const apiBase = 'https://example.com/api';
     const token = 'my-jwt-token';
     const url = `${apiBase}/google/connect?token=${token}`;
-    expect(url).toBe('http://localhost:5000/api/google/connect?token=my-jwt-token');
+    expect(url).toBe('https://example.com/api/google/connect?token=my-jwt-token');
   });
 
   it('should persist auth data to localStorage before redirect', () => {

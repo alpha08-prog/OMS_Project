@@ -292,10 +292,10 @@ export type ApiResponse<T> = {
 // API Configuration
 // ===========================================
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+export const API_URL = (import.meta.env.VITE_API_URL || 'https://oms-project-moep.onrender.com/api').replace(/\/$/, '')
 
 export const http = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_URL,
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 })

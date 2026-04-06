@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { cacheGet, cacheSet, cacheClear } from '../lib/cache';
 import { sendSuccess, sendServerError, sendError } from '../utils/response';
+import config from '../config';
 import {
   getAuthUrl,
   exchangeCodeForTokens,
@@ -28,7 +29,7 @@ export async function initiateGoogleAuth(req: AuthenticatedRequest, res: Respons
  * GET /api/google/callback
  */
 export async function handleGoogleCallback(req: Request, res: Response): Promise<void> {
-  const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const frontendBase = config.frontendUrl;
   try {
     const { code, state: userId } = req.query as { code?: string; state?: string };
 

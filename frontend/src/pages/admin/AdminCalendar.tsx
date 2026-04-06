@@ -5,7 +5,7 @@ import { format, parse, startOfWeek, getDay } from "date-fns";
 import { enUS } from "date-fns/locale/en-US";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { googleCalendarApi, type CalendarEvent } from "@/lib/api";
+import { API_URL, googleCalendarApi, type CalendarEvent } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -140,8 +140,7 @@ export default function AdminCalendar() {
     if (role) localStorage.setItem("user_role", role);
     const user = sessionStorage.getItem("user") || localStorage.getItem("user");
     if (user) localStorage.setItem("user", user);
-    const apiBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-    window.location.href = `${apiBase}/google/connect?token=${token}`;
+    window.location.href = `${API_URL}/google/connect?token=${token}`;
   };
 
   const handleDisconnect = async () => {

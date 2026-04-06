@@ -87,6 +87,7 @@ app.use(errorHandler);
 // ===========================================
 
 const PORT = config.port;
+const serverBaseUrl = config.backendUrl || `http://localhost:${PORT}`;
 
 app.listen(PORT, () => {
   console.log(`
@@ -94,7 +95,7 @@ app.listen(PORT, () => {
 ║                                                               ║
 ║   🏛️  Office Management System (OMS) API                      ║
 ║                                                               ║
-║   Server running on: http://localhost:${PORT}                 ║
+║   Server running on: ${serverBaseUrl.padEnd(42)} ║
 ║   Environment: ${config.nodeEnv.padEnd(46)}                   ║
 ║                                                               ║
 ║   API Endpoints:                                              ║
