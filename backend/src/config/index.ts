@@ -23,21 +23,27 @@ function parseOrigins(...values: Array<string | undefined>): string[] {
 
 export const config = {
   // Server
-  port: parseInt(process.env.PORT || '5000', 10),
+  port: parseInt(
+    process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.PORT || '5000',
+    10
+  ),
   nodeEnv: normalizeEnvValue(process.env.NODE_ENV || 'development'),
-  backendUrl: normalizeOrigin(process.env.BACKEND_URL || 'https://oms-project-moep.onrender.com'),
+  backendUrl: normalizeOrigin(
+    process.env.BACKEND_URL || 'https://oms-50040756292.development.catalystappsail.in'
+  ),
   
   // JWT
   jwtSecret: process.env.JWT_SECRET || 'fallback-secret-change-in-production',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   
   // CORS
-  frontendUrl: normalizeOrigin(process.env.FRONTEND_URL || 'https://oms-project1-flax.vercel.app'),
+  frontendUrl: normalizeOrigin(
+    process.env.FRONTEND_URL || 'https://oms-project-pycokznq.onslate.in'
+  ),
   allowedOrigins: parseOrigins(
     process.env.FRONTEND_URL,
     process.env.CORS_ORIGINS,
-    'https://oms-project1-flax.vercel.app',
-    'https://oms-project-flax.vercel.app',
+    'https://oms-project-pycokznq.onslate.in',
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',

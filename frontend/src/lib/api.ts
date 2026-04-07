@@ -292,7 +292,10 @@ export type ApiResponse<T> = {
 // API Configuration
 // ===========================================
 
-export const API_URL = (import.meta.env.VITE_API_URL || 'https://oms-project-moep.onrender.com/api').replace(/\/$/, '')
+export const API_URL = (
+  import.meta.env.VITE_API_URL ||
+  'https://oms-50040756292.development.catalystappsail.in/api'
+).replace(/\/$/, '')
 
 export const http = axios.create({
   baseURL: API_URL,
