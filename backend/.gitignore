@@ -28,3 +28,5 @@ prisma/migrations/*_migration_lock.toml
 
 # Coverage
 coverage/
+
+
