@@ -21,6 +21,16 @@ function parseOrigins(...values: Array<string | undefined>): string[] {
   );
 }
 
+/** True when origin matches a *.vercel.app or *.onrender.com wildcard */
+export function isWildcardAllowed(origin: string): boolean {
+  const normalized = normalizeEnvValue(origin).replace(/\/+$/, '');
+  return (
+    /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(normalized) ||
+    /^https:\/\/[a-zA-Z0-9-]+\.onrender\.com$/.test(normalized) ||
+    /^https:\/\/[a-zA-Z0-9-]+\.netlify\.app$/.test(normalized)
+  );
+}
+
 export const config = {
   // Server
   port: parseInt(

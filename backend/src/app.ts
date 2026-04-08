@@ -3,7 +3,7 @@ import cors, { type CorsOptions } from 'cors';
 import dotenv from 'dotenv';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
-import config from './config';
+import config, { isWildcardAllowed } from './config';
 
 // Load environment variables
 dotenv.config();
@@ -30,8 +30,8 @@ const corsOptions: CorsOptions = {
     // Allow requests with no origin (like mobile apps or Postman)
     if (!origin) return callback(null, true);
     
-    // Check if origin is allowed
-    if (isAllowedOrigin(origin) || config.nodeEnv === 'development') {
+    // Check if origin is allowed (explicit list or wildcard deployment domains)
+    if (isAllowedOrigin(origin) || isWildcardAllowed(origin) || config.nodeEnv === 'development') {
       callback(null, true);
     } else {
       console.error(`CORS blocked origin: ${origin}`);

@@ -21,7 +21,8 @@ export class ApiError extends Error {
  * Global error handler middleware
  */
 export function errorHandler(
-  err: Error | ApiError,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  err: any,
   req: Request,
   res: Response,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

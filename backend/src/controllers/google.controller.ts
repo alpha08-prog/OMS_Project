@@ -110,7 +110,7 @@ export async function getCalendarEvents(req: AuthenticatedRequest, res: Response
     ]);
 
     const events = [
-      ...tourPrograms.map((t) => ({
+      ...tourPrograms.map((t: any) => ({
         id: t.id,
         title: t.eventName,
         start: t.dateTime,
@@ -120,7 +120,7 @@ export async function getCalendarEvents(req: AuthenticatedRequest, res: Response
         venue: t.venue,
         googleSynced: !!t.googleCalendarEventId,
       })),
-      ...customEvents.map((e) => ({
+      ...customEvents.map((e: any) => ({
         id: e.id,
         title: e.title,
         start: e.startTime,

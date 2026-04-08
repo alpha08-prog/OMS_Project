@@ -243,7 +243,7 @@ export async function generateTourProgramPDFController(
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN');
 
     generateTourProgramPDF(
-      events.map((e) => ({
+      events.map((e: any) => ({
         eventName: e.eventName,
         organizer: e.organizer,
         eventDate: e.dateTime.toISOString(),

@@ -32,14 +32,23 @@ const trainRequestSelect = {
   },
 } satisfies Prisma.TrainRequestSelect;
 
-const PASSENGER_NAME_PLACEHOLDER = 'Passenger details unavailable';
+/** Legacy placeholder values stored in old records */
+const MISSING_NAME_PLACEHOLDERS = new Set([
+  'passenger details unavailable',
+  'unknown passenger',
+  'unknown',
+  'n/a',
+  'na',
+  '',
+]);
 
 type TrainRequestRecord = Prisma.TrainRequestGetPayload<{
   select: typeof trainRequestSelect;
 }>;
 
 function hasMissingPassengerName(passengerName: string | null | undefined): boolean {
-  return !passengerName || passengerName.trim() === '' || passengerName.trim() === PASSENGER_NAME_PLACEHOLDER;
+  if (!passengerName) return true;
+  return MISSING_NAME_PLACEHOLDERS.has(passengerName.trim().toLowerCase());
 }
 
 function extractPassengerNameFromTask(

@@ -124,7 +124,7 @@ export async function getAdminHistory(
 
       console.log(`History - Found ${grievances.length} grievances matching criteria`);
 
-      grievances.forEach((g) => {
+      grievances.forEach((g: any) => {
         let actionLabel = 'Verified';
         if (g.status === GrievanceStatus.RESOLVED) {
           actionLabel = 'Resolved';
@@ -204,7 +204,7 @@ export async function getAdminHistory(
 
       console.log(`History - Found ${trainRequests.length} train requests matching criteria`);
 
-      trainRequests.forEach((t) => {
+      trainRequests.forEach((t: any) => {
         let trainActionLabel = 'Accepted';
         if (t.status === TrainRequestStatus.REJECTED) trainActionLabel = 'Regret';
         else if (t.status === TrainRequestStatus.RESOLVED) trainActionLabel = 'Resolved';
@@ -263,7 +263,7 @@ export async function getAdminHistory(
 
       console.log(`History - Found ${tourPrograms.length} tour programs matching criteria`);
 
-      tourPrograms.forEach((tp) => {
+      tourPrograms.forEach((tp: any) => {
         history.push({
           id: tp.id,
           type: 'TOUR_PROGRAM',

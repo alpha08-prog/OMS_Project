@@ -153,7 +153,7 @@ export async function getGrievancesByType(
       _count: { id: true },
     });
 
-    const formatted = stats.map((s) => ({
+    const formatted = stats.map((s: any) => ({
       type: s.grievanceType,
       count: s._count.id,
     }));
@@ -182,7 +182,7 @@ export async function getGrievancesByStatus(
       _count: { id: true },
     });
 
-    const formatted = stats.map((s) => ({
+    const formatted = stats.map((s: any) => ({
       status: s.status,
       count: s._count.id,
     }));
@@ -213,7 +213,7 @@ export async function getGrievancesByConstituency(
       take: 10,
     });
 
-    const formatted = stats.map((s) => ({
+    const formatted = stats.map((s: any) => ({
       constituency: s.constituency,
       count: s._count.id,
     }));
@@ -249,7 +249,7 @@ export async function getMonthlyGrievanceTrends(
       ORDER BY month ASC
     `;
 
-    const formatted = trends.map((t) => ({
+    const formatted = trends.map((t: any) => ({
       month: t.month,
       count: Number(t.count),
     }));
@@ -291,7 +291,7 @@ export async function getMonetizationSummary(
       totalValue: result._sum.monetaryValue || 0,
       averageValue: result._avg.monetaryValue || 0,
       totalRequests: result._count.monetaryValue,
-      byStatus: byStatus.map((s) => ({
+      byStatus: byStatus.map((s: any) => ({
         status: s.status,
         totalValue: s._sum.monetaryValue || 0,
       })),
@@ -363,19 +363,19 @@ export async function getRecentActivity(
     ]);
 
     const activity = {
-      grievances: recentGrievances.map((g) => ({
+      grievances: recentGrievances.map((g: any) => ({
         type: 'grievance',
         ...g,
       })),
-      visitors: recentVisitors.map((v) => ({
+      visitors: recentVisitors.map((v: any) => ({
         type: 'visitor',
         ...v,
       })),
-      news: recentNews.map((n) => ({
+      news: recentNews.map((n: any) => ({
         type: 'news',
         ...n,
       })),
-      trainRequests: recentTrainRequests.map((t) => ({
+      trainRequests: recentTrainRequests.map((t: any) => ({
         type: 'train_request',
         ...t,
       })),

@@ -488,7 +488,7 @@ export async function getTaskTracking(
     console.log(`TaskController - getTaskTracking - Tasks by staff:`, tasksByStaff.length);
 
     // Get staff details
-    const staffIds = tasksByStaff.map(t => t.assignedToId).filter(Boolean);
+    const staffIds = tasksByStaff.map((t: any) => t.assignedToId).filter(Boolean);
     let staffMembers: Array<{ id: string; name: string; email: string }> = [];
 
     if (staffIds.length > 0) {
@@ -501,11 +501,11 @@ export async function getTaskTracking(
     console.log(`TaskController - getTaskTracking - Staff members found:`, staffMembers.length);
 
     const staffTaskCounts = tasksByStaff
-      .map(t => ({
+      .map((t: any) => ({
         staff: staffMembers.find(s => s.id === t.assignedToId),
         pendingTasks: t._count.id,
       }))
-      .filter(item => item.staff); // Only include items where staff was found
+      .filter((item: any) => item.staff); // Only include items where staff was found
 
     console.log(`TaskController - getTaskTracking - Staff task counts:`, staffTaskCounts.length);
 
