@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "tsc",
+    "prestart": "tsc",
     "start": "node dist/app.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
