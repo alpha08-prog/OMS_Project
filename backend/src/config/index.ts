@@ -38,12 +38,12 @@ export const config = {
   
   // CORS
   frontendUrl: normalizeOrigin(
-    process.env.FRONTEND_URL || 'https://oms-project-nsfpwwep.onslate.in'
+    process.env.FRONTEND_URL || 'https://oms-project-dev.onslate.in'
   ),
   allowedOrigins: parseOrigins(
     process.env.FRONTEND_URL,
     process.env.CORS_ORIGINS,
-    'https://oms-project-nsfpwwep.onslate.in',
+    'https://oms-project-dev.onslate.in',
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',
