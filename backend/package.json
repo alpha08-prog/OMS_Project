@@ -2,14 +2,14 @@
   "name": "oms-backend",
   "version": "1.0.0",
   "description": "Office Management System Backend API",
-  "main": "dist/app.js",
+  "main": "compiled/app.js",
   "engines": {
     "node": "20.x"
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "tsc",
-    "start": "node dist/app.js",
+    "start": "node compiled/app.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
