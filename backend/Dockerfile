@@ -2,19 +2,16 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install openssl for Prisma compatibility
-RUN apk add --no-cache openssl
-
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
+# Install all dependencies (needed for build + prisma generate)
 RUN npm install
 
 # Copy all files
 COPY . .
 
-# Generate Prisma client
+# Generate Prisma client (Wasm-based, no native binaries needed)
 RUN npx prisma generate
 
 # Build TypeScript code

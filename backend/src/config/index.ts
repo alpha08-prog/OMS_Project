@@ -21,13 +21,15 @@ function parseOrigins(...values: Array<string | undefined>): string[] {
   );
 }
 
-/** True when origin matches a *.vercel.app or *.onrender.com wildcard */
+/** True when origin matches a *.vercel.app, *.onrender.com, or *.catalystappsail.in wildcard */
 export function isWildcardAllowed(origin: string): boolean {
   const normalized = normalizeEnvValue(origin).replace(/\/+$/, '');
   return (
     /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(normalized) ||
     /^https:\/\/[a-zA-Z0-9-]+\.onrender\.com$/.test(normalized) ||
-    /^https:\/\/[a-zA-Z0-9-]+\.netlify\.app$/.test(normalized)
+    /^https:\/\/[a-zA-Z0-9-]+\.netlify\.app$/.test(normalized) ||
+    /^https:\/\/[a-zA-Z0-9-]+\.catalystappsail\.in$/.test(normalized) ||
+    /^https:\/\/[a-zA-Z0-9-]+\.zohocatalyst\.com$/.test(normalized)
   );
 }
 
