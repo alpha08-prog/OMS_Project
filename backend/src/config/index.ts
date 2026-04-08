@@ -41,7 +41,7 @@ export const config = {
   ),
   nodeEnv: normalizeEnvValue(process.env.NODE_ENV || 'development'),
   backendUrl: normalizeOrigin(
-    process.env.BACKEND_URL || 'https://test1-50040756292.development.catalystappsail.in'
+    process.env.BACKEND_URL || 'https://oms-50040756292.development.catalystappsail.in'
   ),
   
   // JWT
