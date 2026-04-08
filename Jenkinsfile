@@ -109,14 +109,14 @@ pipeline {
         // ─────────────────────────────────────────
         stage('Deploy to Catalyst AppSail') {
             when {
-                branch 'main'
+                allOf {
+                    branch 'main'
+                    expression { return env.CATALYST_TOKEN != null && env.CATALYST_TOKEN != '' }
+                }
             }
             steps {
                 echo 'Deploying backend to Zoho Catalyst AppSail...'
                 sh '''
-                    if ! command -v catalyst &> /dev/null; then
-                        npm install -g @zohocorp/catalyst-cli
-                    fi
                     catalyst login --token "$CATALYST_TOKEN"
                     catalyst deploy --only appsail
                 '''
