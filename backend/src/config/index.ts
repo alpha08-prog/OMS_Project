@@ -37,7 +37,7 @@ export function isWildcardAllowed(origin: string): boolean {
 export const config = {
   // Server
   port: parseInt(
-    process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.PORT || '5000',
+    process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.PORT || '9000',
     10
   ),
   nodeEnv: normalizeEnvValue(process.env.NODE_ENV || 'development'),
