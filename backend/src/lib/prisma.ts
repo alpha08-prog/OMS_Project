@@ -1,6 +1,5 @@
 import 'dotenv/config';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 // Prevent multiple instances of Prisma Client in development
 declare global {
@@ -8,77 +7,49 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
-const connectionString = process.env.DATABASE_URL;
-
-const log: Array<Prisma.LogLevel> = process.env.NODE_ENV === 'development'
-  ? ['query', 'error', 'warn']
-  : ['error'];
-
-if (!connectionString) {
-  throw new Error('DATABASE_URL is not set; Prisma adapter cannot initialize.');
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is not set');
 }
 
-const prismaOptions = {
-  log,
-  adapter: new PrismaPg({ connectionString }),
-} as const;
+const prisma = globalThis.prisma || new PrismaClient({
+  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+});
 
-// Prisma Client configuration optimized for Neon (serverless PostgreSQL)
-export const prisma = globalThis.prisma || new PrismaClient(prismaOptions);
-
-// Graceful shutdown
 if (process.env.NODE_ENV !== 'production') {
   globalThis.prisma = prisma;
 }
 
-// Helper function to execute queries with retry logic for connection errors
+// Retry wrapper for transient connection errors (Neon serverless cold starts)
 export async function withRetry<T>(
   operation: () => Promise<T>,
   maxRetries = 3,
-  delay = 1000
+  delayMs = 1000
 ): Promise<T> {
-  let lastError: Error | null = null;
-  
+  let lastError: unknown;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // Ensure connection is active
-      await prisma.$connect();
       return await operation();
     } catch (error: any) {
       lastError = error;
-      
-      // Check if it's a connection error
-      const isConnectionError = 
-        error?.code === 'P1001' || // Can't reach database server
-        error?.code === 'P1008' || // Operations timed out
-        error?.message?.includes('Closed') ||
+      const isTransient =
+        error?.code === 'P1001' ||
+        error?.code === 'P1008' ||
         error?.message?.includes('connection') ||
-        error?.kind === 'Closed';
-      
-      if (isConnectionError && attempt < maxRetries) {
-        console.warn(`Database connection error (attempt ${attempt}/${maxRetries}), retrying...`);
-        // Disconnect and wait before retrying
+        error?.message?.includes('Closed');
+      if (isTransient && attempt < maxRetries) {
         await prisma.$disconnect().catch(() => {});
-        await new Promise(resolve => setTimeout(resolve, delay * attempt));
+        await new Promise((r) => setTimeout(r, delayMs * attempt));
         continue;
       }
-      
       throw error;
     }
   }
-  
-  throw lastError || new Error('Operation failed after retries');
+  throw lastError;
 }
 
-// Handle process termination
-process.on('SIGINT', async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
+// Graceful shutdown
+process.on('SIGINT', async () => { await prisma.$disconnect(); process.exit(0); });
+process.on('SIGTERM', async () => { await prisma.$disconnect(); process.exit(0); });
 
-process.on('SIGTERM', async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
-
+export { prisma };
 export default prisma;
