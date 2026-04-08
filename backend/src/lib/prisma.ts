@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 // Prevent multiple instances of Prisma Client in development
@@ -11,9 +13,16 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set');
 }
 
-const prisma = globalThis.prisma || new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-});
+function createPrismaClient(): PrismaClient {
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const adapter = new PrismaPg(pool);
+  return new PrismaClient({
+    adapter,
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+  });
+}
+
+const prisma = globalThis.prisma || createPrismaClient();
 
 if (process.env.NODE_ENV !== 'production') {
   globalThis.prisma = prisma;
@@ -37,7 +46,6 @@ export async function withRetry<T>(
         error?.message?.includes('connection') ||
         error?.message?.includes('Closed');
       if (isTransient && attempt < maxRetries) {
-        await prisma.$disconnect().catch(() => {});
         await new Promise((r) => setTimeout(r, delayMs * attempt));
         continue;
       }
