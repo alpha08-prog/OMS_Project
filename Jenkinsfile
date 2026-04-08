@@ -115,7 +115,7 @@ pipeline {
                 echo 'Deploying backend to Zoho Catalyst AppSail...'
                 sh '''
                     if ! command -v catalyst &> /dev/null; then
-                        npm install -g @zoho/catalyst-cli
+                        npm install -g @zohocorp/catalyst-cli
                     fi
                     catalyst login --token "$CATALYST_TOKEN"
                     catalyst deploy --only appsail
