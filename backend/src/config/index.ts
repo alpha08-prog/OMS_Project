@@ -29,7 +29,8 @@ export function isWildcardAllowed(origin: string): boolean {
     /^https:\/\/[a-zA-Z0-9-]+\.onrender\.com$/.test(normalized) ||
     /^https:\/\/[a-zA-Z0-9-]+\.netlify\.app$/.test(normalized) ||
     /^https:\/\/[a-zA-Z0-9-]+\.catalystappsail\.in$/.test(normalized) ||
-    /^https:\/\/[a-zA-Z0-9-]+\.zohocatalyst\.com$/.test(normalized)
+    /^https:\/\/[a-zA-Z0-9-]+\.zohocatalyst\.com$/.test(normalized) ||
+    /^https:\/\/[a-zA-Z0-9-]+\.onslate\.in$/.test(normalized)
   );
 }
 
