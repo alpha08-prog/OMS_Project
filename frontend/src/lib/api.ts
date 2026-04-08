@@ -294,7 +294,7 @@ export type ApiResponse<T> = {
 
 export const API_URL = (
   import.meta.env.VITE_API_URL ||
-  'https://oms-50040756292.development.catalystappsail.in/api'
+  'https://test1-50040756292.development.catalystappsail.in/api'
 ).replace(/\/$/, '')
 
 export const http = axios.create({

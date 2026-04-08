@@ -29,7 +29,7 @@ export const config = {
   ),
   nodeEnv: normalizeEnvValue(process.env.NODE_ENV || 'development'),
   backendUrl: normalizeOrigin(
-    process.env.BACKEND_URL || 'https://oms-50040756292.development.catalystappsail.in'
+    process.env.BACKEND_URL || 'https://test1-50040756292.development.catalystappsail.in'
   ),
   
   // JWT
@@ -38,12 +38,12 @@ export const config = {
   
   // CORS
   frontendUrl: normalizeOrigin(
-    process.env.FRONTEND_URL || 'https://oms-project-pycokznq.onslate.in'
+    process.env.FRONTEND_URL || 'https://oms-project-nsfpwwep.onslate.in'
   ),
   allowedOrigins: parseOrigins(
     process.env.FRONTEND_URL,
     process.env.CORS_ORIGINS,
-    'https://oms-project-pycokznq.onslate.in',
+    'https://oms-project-nsfpwwep.onslate.in',
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',
