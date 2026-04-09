@@ -40,6 +40,7 @@ export const config = {
     process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.PORT || '9000',
     10
   ),
+  isCatalystRuntime: Boolean(process.env.X_ZOHO_CATALYST_LISTEN_PORT),
   nodeEnv: normalizeEnvValue(process.env.NODE_ENV || 'development'),
   backendUrl: normalizeOrigin(
     process.env.BACKEND_URL || 'https://omsbackend-50040756292.development.catalystappsail.in'

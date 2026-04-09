@@ -292,10 +292,15 @@ export type ApiResponse<T> = {
 // API Configuration
 // ===========================================
 
-export const API_URL = (
+function normalizeApiUrl(rawUrl: string): string {
+  const trimmedUrl = rawUrl.trim().replace(/\/+$/, '')
+  return trimmedUrl.endsWith('/api') ? trimmedUrl : `${trimmedUrl}/api`
+}
+
+export const API_URL = normalizeApiUrl(
   import.meta.env.VITE_API_URL ||
-  'https://omsbackend-50040756292.development.catalystappsail.in/api'
-).replace(/\/$/, '')
+  'https://omsvackend-50040756292.development.catalystappsail.in'
+)
 
 export const http = axios.create({
   baseURL: API_URL,

@@ -44,8 +44,12 @@ const corsOptions: CorsOptions = {
   optionsSuccessStatus: 204,
 };
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+// Catalyst/AppSail can inject CORS headers from platform whitelisting.
+// When that is enabled, Express must not add the same headers again.
+if (!config.isCatalystRuntime) {
+  app.use(cors(corsOptions));
+  app.options('*', cors(corsOptions));
+}
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
