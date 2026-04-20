@@ -140,7 +140,7 @@ jobs:
     needs: [build-push-backend, build-push-frontend]
     environment:
       name: production
-      url: https://omsbackend-${{ secrets.CATALYST_PROJECT_DOMAIN }}.catalystappsail.com
+      url: https://omsbackend-${{ vars.CATALYST_PROJECT_DOMAIN }}.catalystappsail.com
 
     steps:
       - name: Checkout repository
@@ -186,7 +186,7 @@ jobs:
     needs: [build-push-backend, build-push-frontend]
     environment:
       name: production
-      url: https://omsfrontend-${{ secrets.CATALYST_PROJECT_DOMAIN }}.catalystappsail.com
+      url: https://omsfrontend-${{ vars.CATALYST_PROJECT_DOMAIN }}.catalystappsail.com
 
     steps:
       - name: Checkout repository
