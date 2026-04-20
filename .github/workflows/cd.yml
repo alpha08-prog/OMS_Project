@@ -171,13 +171,12 @@ jobs:
           CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
           BACKEND_IMAGE_URI: ${{ env.BACKEND_IMAGE }}:latest
         run: |
-          catalyst appsail push \
+          docker login ${{ env.REGISTRY }} -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+          docker pull $BACKEND_IMAGE_URI
+          catalyst deploy appsail \
             --project "$CATALYST_PROJECT_ID" \
-            --service omsbackend \
-            --image "$BACKEND_IMAGE_URI" \
-            --registry-type GHCR \
-            --registry-user "${{ github.actor }}" \
-            --registry-token "${{ secrets.GHCR_PAT }}"
+            --name omsbackend \
+            --source "docker://$BACKEND_IMAGE_URI"
 
       - name: Confirm backend deployment
         run: |
@@ -235,13 +234,20 @@ jobs:
       - name: Authenticate Catalyst CLI
         run: catalyst login --token "${{ steps.zoho_token.outputs.access_token }}"
 
-      - name: Deploy static files to Catalyst Slate
+      - name: Deploy static files to Catalyst Web Client
         env:
           CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
         run: |
+          cat <<EOF > catalyst.json
+          {
+            "client": {
+              "source": "frontend/dist"
+            }
+          }
+          EOF
           catalyst deploy \
             --project "$CATALYST_PROJECT_ID" \
-            --only web
+            --only client
 
       - name: Confirm frontend deployment
         run: echo "Frontend deployed to Catalyst Slate (static hosting)."
