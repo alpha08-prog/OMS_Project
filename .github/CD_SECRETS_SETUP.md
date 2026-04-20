@@ -6,13 +6,13 @@ Go to your GitHub repository → **Settings → Secrets and variables → Action
 
 | Secret Name | Where to Get It | Required |
 |---|---|---|
-| `CATALYST_TOKEN` | Zoho Catalyst Dashboard → API Token | ✅ |
-| `CATALYST_PROJECT_ID` | Zoho Catalyst Dashboard → Project Settings | ✅ |
-| `CATALYST_PROJECT_DOMAIN` | Your AppSail URL subdomain prefix | ✅ |
-| `GHCR_PAT` | GitHub → Settings → Developer Settings → Personal Access Tokens (classic) with `read:packages` scope | ✅ |
+| `ZOHO_CLIENT_ID` | Zoho API Console → Self Client → Client ID | ✅ |
+| `ZOHO_CLIENT_SECRET` | Zoho API Console → Self Client → Client Secret | ✅ |
+| `ZOHO_REFRESH_TOKEN` | Exchange auth code via POST (see below) | ✅ |
+| `CATALYST_PROJECT_ID` | Catalyst Dashboard project URL | ✅ |
+| `GHCR_PAT` | GitHub → Dev Settings → PAT → `read:packages` | ✅ |
 
-> **Note:** `GITHUB_TOKEN` is automatically available — no setup needed. It's used to **push** images to GHCR.
-> `GHCR_PAT` is a separate PAT used by **Catalyst** (external system) to **pull** your private images.
+> **Note:** `GITHUB_TOKEN` is automatic. `CATALYST_PROJECT_DOMAIN` goes in **Variables** (not secrets) since it's non-sensitive.
 
 ---
 

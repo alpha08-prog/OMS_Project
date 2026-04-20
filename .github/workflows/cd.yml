@@ -142,7 +142,7 @@ jobs:
       name: production
       url: https://omsbackend-${{ vars.CATALYST_PROJECT_DOMAIN }}.catalystappsail.com
 
-    steps:
+    steps: 
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -156,8 +156,24 @@ jobs:
       - name: Install Zoho Catalyst CLI
         run: npm install -g @zoho-catalyst/cli
 
-      - name: Authenticate with Catalyst
-        run: catalyst login --token "${{ secrets.CATALYST_TOKEN }}"
+      - name: Get Catalyst Access Token (OAuth refresh)
+        id: zoho_token
+        run: |
+          RESPONSE=$(curl -s -X POST "https://accounts.zoho.in/oauth/v2/token" \
+            -d "client_id=${{ secrets.ZOHO_CLIENT_ID }}" \
+            -d "client_secret=${{ secrets.ZOHO_CLIENT_SECRET }}" \
+            -d "refresh_token=${{ secrets.ZOHO_REFRESH_TOKEN }}" \
+            -d "grant_type=refresh_token")
+          ACCESS_TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "Failed to get access token. Response: $RESPONSE"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Authenticate Catalyst CLI
+        run: catalyst login --token "${{ steps.zoho_token.outputs.access_token }}"
 
       - name: Deploy backend AppSail service
         env:
@@ -202,8 +218,24 @@ jobs:
       - name: Install Zoho Catalyst CLI
         run: npm install -g @zoho-catalyst/cli
 
-      - name: Authenticate with Catalyst
-        run: catalyst login --token "${{ secrets.CATALYST_TOKEN }}"
+      - name: Get Catalyst Access Token (OAuth refresh)
+        id: zoho_token
+        run: |
+          RESPONSE=$(curl -s -X POST "https://accounts.zoho.in/oauth/v2/token" \
+            -d "client_id=${{ secrets.ZOHO_CLIENT_ID }}" \
+            -d "client_secret=${{ secrets.ZOHO_CLIENT_SECRET }}" \
+            -d "refresh_token=${{ secrets.ZOHO_REFRESH_TOKEN }}" \
+            -d "grant_type=refresh_token")
+          ACCESS_TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "Failed to get access token. Response: $RESPONSE"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Authenticate Catalyst CLI
+        run: catalyst login --token "${{ steps.zoho_token.outputs.access_token }}"
 
       - name: Deploy frontend AppSail service
         env:
