@@ -1,9 +1,15 @@
 node_modules
 dist
 build
+compiled
 .env
+.env.*
 .git
+.github
 .vscode
 .idea
 *.log
 coverage
+*.zip
+playwright-report
+test-results
