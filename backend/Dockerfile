@@ -11,6 +11,12 @@ RUN npm install
 # Copy all files
 COPY . .
 
+# Prisma v7 reads DATABASE_URL at config-load time during `prisma generate`.
+# We supply a dummy value here — no real DB connection is made during build.
+# The actual DATABASE_URL is injected at runtime via Catalyst AppSail env vars.
+ARG DATABASE_URL="postgresql://build:build@localhost:5432/build"
+ENV DATABASE_URL=${DATABASE_URL}
+
 # Generate Prisma client (Wasm-based, no native binaries needed)
 RUN npx prisma generate
 
