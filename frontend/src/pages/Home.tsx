@@ -9,7 +9,6 @@ import {
   FileText,
   CheckCircle2,
   AlertTriangle,
-  Users,
   Train,
   CalendarDays,
   TrendingUp,
@@ -81,22 +80,6 @@ const Home = () => {
       icon: CalendarDays,
       color: "text-violet-600",
       bg: "bg-violet-50",
-    },
-    {
-      label: "Train EQ Requests",
-      value: loading ? "—" : stats?.trainRequests.total ?? 0,
-      sub: `${loading ? "—" : stats?.trainRequests.pending ?? 0} pending`,
-      icon: Train,
-      color: "text-sky-600",
-      bg: "bg-sky-50",
-    },
-    {
-      label: "Total Visitors",
-      value: loading ? "—" : stats?.visitors.total ?? 0,
-      sub: "logged this period",
-      icon: Users,
-      color: "text-rose-600",
-      bg: "bg-rose-50",
     },
   ];
 

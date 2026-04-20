@@ -169,7 +169,7 @@ export default function Login() {
           <div className={`w-full max-w-lg rounded-2xl bg-white/85 backdrop-blur-md shadow-2xl ring-1 ring-blue-100 p-4 md:p-5 transition-all duration-500 ease-out ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
             <div className="mb-3">
               <p className="text-[13px] md:text-sm text-slate-800/90 leading-snug">
-                <span className="font-semibold">Welcome to the official Inter-Office Management Information System (MIS)</span> of the Office of Shri Prahlad Joshi
+                <span className="font-semibold">Welcome to the official Inter-Office Management Information System (MIS)</span> of the Office of Shri Pralhad Joshi
               </p>
             </div>
             <div className="mb-3">
