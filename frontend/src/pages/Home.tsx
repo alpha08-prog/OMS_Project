@@ -102,7 +102,7 @@ const Home = () => {
           <div className="relative px-8 py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <p className="text-indigo-200 text-sm font-medium mb-1">Good {timeOfDay}</p>
-              <h1 className="text-3xl font-bold tracking-tight">Shri Prahlad Joshi</h1>
+              <h1 className="text-3xl font-bold tracking-tight">Shri Pralhad Joshi</h1>
               <p className="text-indigo-200 mt-1 text-sm">Super Administrator · Office Management System</p>
             </div>
 

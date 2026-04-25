@@ -59,7 +59,7 @@ export async function generateTrainEQPDF(
         journeyClass: trainRequest.journeyClass,
         fromStation: trainRequest.fromStation,
         toStation: trainRequest.toStation,
-        senderName: 'Shri Prahlad Joshi',
+        senderName: 'Shri Pralhad Joshi',
         senderDesignation: 'Hon\'ble Union Minister',
         documentId,
       },
@@ -184,7 +184,7 @@ export async function generateGrievancePDF(
         toOfficial: dept.official,
         toDesignation: dept.designation,
         toDepartment: dept.department,
-        senderName: 'Shri Prahlad Joshi',
+        senderName: 'Shri Pralhad Joshi',
         senderDesignation: 'Hon\'ble Union Minister',
       },
       res
@@ -357,7 +357,7 @@ export async function previewTrainEQ(
   
   <div class="signature">
     <p>With regards,</p>
-    <p><strong>Shri Prahlad Joshi</strong><br>
+    <p><strong>Shri Pralhad Joshi</strong><br>
     Hon'ble Union Minister<br>
     Office of Hon'ble Union Minister</p>
   </div>
@@ -542,7 +542,7 @@ export async function previewGrievance(
   
   <div class="signature">
     <p>With regards,</p>
-    <p><strong>Shri Prahlad Joshi</strong><br>
+    <p><strong>Shri Pralhad Joshi</strong><br>
     Hon'ble Union Minister<br>
     Office of Hon'ble Union Minister</p>
   </div>
