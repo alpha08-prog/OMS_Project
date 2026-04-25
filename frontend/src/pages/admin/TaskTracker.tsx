@@ -266,7 +266,7 @@ export default function AdminTaskTracker() {
             </div>
 
             {/* Summary Stats */}
-            {trackingData && (
+            {trackingData?.summary && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <Card className="rounded-xl bg-indigo-50 border-indigo-200">
                   <CardContent className="p-4 text-center">
@@ -302,7 +302,7 @@ export default function AdminTaskTracker() {
             )}
 
             {/* Staff Workload */}
-            {trackingData && trackingData.staffTaskCounts.length > 0 && (
+            {trackingData?.staffTaskCounts && trackingData.staffTaskCounts.length > 0 && (
               <Card className="rounded-2xl">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -341,46 +341,52 @@ export default function AdminTaskTracker() {
               <CardContent className="flex flex-wrap items-center gap-4 py-4">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Filter:</span>
-                
-                <Select value={filterTaskType} onValueChange={setFilterTaskType}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="Task type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All types</SelectItem>
-                    <SelectItem value="GRIEVANCE">Grievance</SelectItem>
-                    <SelectItem value="TRAIN_REQUEST">Train</SelectItem>
-                    <SelectItem value="TOUR_PROGRAM">Tour</SelectItem>
-                    <SelectItem value="GENERAL">General</SelectItem>
-                  </SelectContent>
-                </Select>
 
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getStatusOptions(filterTaskType).map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                
-                <Select value={filterStaff} onValueChange={setFilterStaff}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Staff Member" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Staff</SelectItem>
-                    {uniqueStaff.map((staff) => (
-                      <SelectItem key={staff.id} value={staff.id}>
-                        {staff.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="w-44">
+                  <Select value={filterTaskType} onValueChange={setFilterTaskType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Task type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All types</SelectItem>
+                      <SelectItem value="GRIEVANCE">Grievance</SelectItem>
+                      <SelectItem value="TRAIN_REQUEST">Train</SelectItem>
+                      <SelectItem value="TOUR_PROGRAM">Tour</SelectItem>
+                      <SelectItem value="GENERAL">General</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="w-40">
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getStatusOptions(filterTaskType).map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="w-48">
+                  <Select value={filterStaff} onValueChange={setFilterStaff}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Staff Member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Staff</SelectItem>
+                      {uniqueStaff.map((staff) => (
+                        <SelectItem key={staff.id} value={staff.id}>
+                          {staff.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 
                 {(filterStatus !== "all" || filterStaff !== "all" || filterTaskType !== "all") && (
                   <Button 

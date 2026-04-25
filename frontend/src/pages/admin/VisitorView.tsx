@@ -217,8 +217,9 @@ export default function VisitorView() {
               
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-muted-foreground" />
+                <div className="w-40">
                 <Select value={filterDesignation} onValueChange={setFilterDesignation}>
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger>
                     <SelectValue placeholder="Designation" />
                   </SelectTrigger>
                   <SelectContent>
@@ -231,6 +232,7 @@ export default function VisitorView() {
                     <SelectItem value="Other">Other</SelectItem>
                   </SelectContent>
                 </Select>
+                </div>
               </div>
               
               <div className="flex items-center gap-2">

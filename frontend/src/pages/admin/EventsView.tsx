@@ -138,10 +138,10 @@ export default function EventsView() {
                 </div>
 
                 {/* Report Status */}
-                <div>
+                <div className="w-44">
                   <p className="text-xs text-muted-foreground mb-1">Report Status</p>
                   <Select value={completionFilter} onValueChange={setCompletionFilter}>
-                    <SelectTrigger className="w-44">
+                    <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

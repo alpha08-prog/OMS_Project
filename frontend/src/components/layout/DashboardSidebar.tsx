@@ -90,7 +90,10 @@ const allMenuItems: MenuItem[] = [
 ];
 
 export function DashboardSidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    // Auto-collapse on mobile screens
+    return typeof window !== 'undefined' && window.innerWidth < 768;
+  });
   const [userRole] = useState<string | null>(() => {
     // Get user role from sessionStorage first (tab-specific), then localStorage
     let role = sessionStorage.getItem('user_role');
@@ -111,6 +114,15 @@ export function DashboardSidebar() {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Auto-collapse on small screens when resizing
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) setCollapsed(true);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Close submenu when route changes
   useEffect(() => {

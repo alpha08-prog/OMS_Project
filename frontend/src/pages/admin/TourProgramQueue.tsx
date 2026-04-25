@@ -202,9 +202,10 @@ export default function TourProgramQueue() {
                 Review and decide on submitted invitations
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="w-[160px]">
               <Select value={decisionFilter} onValueChange={setDecisionFilter}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger>
                   <SelectValue placeholder="Filter" />
                 </SelectTrigger>
                 <SelectContent>
@@ -213,6 +214,7 @@ export default function TourProgramQueue() {
                   <SelectItem value="REGRET">Regret</SelectItem>
                 </SelectContent>
               </Select>
+              </div>
               <Button variant="outline" onClick={fetchPrograms} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh

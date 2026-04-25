@@ -234,8 +234,9 @@ export default function Birthdays() {
                   </Button>
                 </div>
                 
+                <div className="w-[200px]">
                 <Select value={filterMonth} onValueChange={setFilterMonth}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger>
                     <SelectValue placeholder="Filter by Month" />
                   </SelectTrigger>
                   <SelectContent>
@@ -254,7 +255,8 @@ export default function Birthdays() {
                     <SelectItem value="12">December</SelectItem>
                   </SelectContent>
                 </Select>
-                
+                </div>
+
                 {(filterMonth !== "all" || searchQuery) && (
                   <Button 
                     variant="ghost" 

@@ -204,8 +204,9 @@ export default function NewsIntelligenceView() {
             <CardContent className="flex items-center gap-4 py-4">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Filter by priority:</span>
+              <div className="w-40">
               <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -215,6 +216,7 @@ export default function NewsIntelligenceView() {
                   <SelectItem value="NORMAL">Normal</SelectItem>
                 </SelectContent>
               </Select>
+              </div>
             </CardContent>
           </Card>
 

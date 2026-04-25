@@ -293,9 +293,10 @@ export default function TrainEQQueue() {
                 Review and issue emergency quota letters
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="w-[160px]">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger>
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -305,6 +306,7 @@ export default function TrainEQQueue() {
                   <SelectItem value="RESOLVED">Resolved</SelectItem>
                 </SelectContent>
               </Select>
+              </div>
               <Button variant="outline" onClick={fetchRequests} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh

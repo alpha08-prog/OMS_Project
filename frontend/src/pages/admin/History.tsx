@@ -242,7 +242,7 @@ export default function AdminHistory() {
           </div>
 
           {/* Stats Cards */}
-          {stats && (
+          {stats?.grievances && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card className="rounded-2xl shadow-sm border-indigo-100">
                 <CardContent className="p-4">
