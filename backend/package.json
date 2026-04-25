@@ -4,7 +4,7 @@
   "description": "Office Management System Backend API",
   "main": "compiled/app.js",
   "engines": {
-    "node": "20.x"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
