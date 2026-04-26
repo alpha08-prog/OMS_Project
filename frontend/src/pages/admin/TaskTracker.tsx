@@ -239,8 +239,8 @@ export default function AdminTaskTracker() {
           <div className="max-w-7xl mx-auto space-y-6">
 
             {/* Header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
                 <Button variant="ghost" size="icon" onClick={() => navigate('/admin/action-center')}>
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
@@ -253,7 +253,7 @@ export default function AdminTaskTracker() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={() => fetchData()} disabled={loading}>
                   <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                   Refresh
@@ -338,65 +338,66 @@ export default function AdminTaskTracker() {
 
             {/* Filters */}
             <Card className="rounded-2xl border border-indigo-100">
-              <CardContent className="flex flex-wrap items-center gap-4 py-4">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Filter:</span>
+              <CardContent className="px-5 py-5">
+                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-muted-foreground">Filter:</span>
+                  </div>
 
-                <div className="w-44">
-                  <Select value={filterTaskType} onValueChange={setFilterTaskType}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Task type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All types</SelectItem>
-                      <SelectItem value="GRIEVANCE">Grievance</SelectItem>
-                      <SelectItem value="TRAIN_REQUEST">Train</SelectItem>
-                      <SelectItem value="TOUR_PROGRAM">Tour</SelectItem>
-                      <SelectItem value="GENERAL">General</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 min-w-0">
+                    <Select value={filterTaskType} onValueChange={setFilterTaskType}>
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Task type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All types</SelectItem>
+                        <SelectItem value="GRIEVANCE">Grievance</SelectItem>
+                        <SelectItem value="TRAIN_REQUEST">Train</SelectItem>
+                        <SelectItem value="TOUR_PROGRAM">Tour</SelectItem>
+                        <SelectItem value="GENERAL">General</SelectItem>
+                      </SelectContent>
+                    </Select>
 
-                <div className="w-40">
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {getStatusOptions(filterTaskType).map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getStatusOptions(filterTaskType).map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-                <div className="w-48">
-                  <Select value={filterStaff} onValueChange={setFilterStaff}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Staff Member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Staff</SelectItem>
-                      {uniqueStaff.map((staff) => (
-                        <SelectItem key={staff.id} value={staff.id}>
-                          {staff.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <Select value={filterStaff} onValueChange={setFilterStaff}>
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Staff Member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Staff</SelectItem>
+                        {uniqueStaff.map((staff) => (
+                          <SelectItem key={staff.id} value={staff.id}>
+                            {staff.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(filterStatus !== "all" || filterStaff !== "all" || filterTaskType !== "all") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-10 flex-shrink-0"
+                      onClick={() => { setFilterStatus("all"); setFilterStaff("all"); setFilterTaskType("all"); }}
+                    >
+                      Clear Filters
+                    </Button>
+                  )}
                 </div>
-                
-                {(filterStatus !== "all" || filterStaff !== "all" || filterTaskType !== "all") && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => { setFilterStatus("all"); setFilterStaff("all"); setFilterTaskType("all"); }}
-                  >
-                    Clear Filters
-                  </Button>
-                )}
               </CardContent>
             </Card>
 
@@ -424,10 +425,10 @@ export default function AdminTaskTracker() {
                       className="p-4 rounded-xl border bg-white hover:shadow-md transition"
                     >
                       {/* Task Header */}
-                      <div className="flex items-start justify-between gap-4 mb-3">
-                        <div className="flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <p className="font-semibold text-indigo-900">{task.title}</p>
+                            <p className="font-semibold text-indigo-900 break-words">{task.title}</p>
                             {getStatusBadge(task.status)}
                             <Badge variant="outline">{taskTypeLabel(task.taskType)}</Badge>
                           </div>
@@ -435,14 +436,14 @@ export default function AdminTaskTracker() {
                             Assigned to: <span className="font-medium">{task.assignedTo.name}</span>
                           </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2 flex-shrink-0">
                           <Button size="sm" variant="outline" onClick={() => handleViewDetails(task)}>
                             <Eye className="h-4 w-4" />
                           </Button>
                           {task.status !== 'COMPLETED' && (
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
+                            <Button
+                              size="sm"
+                              variant="outline"
                               className="text-green-600"
                               onClick={() => handleMarkResolved(task)}
                             >
@@ -450,8 +451,8 @@ export default function AdminTaskTracker() {
                               Resolve
                             </Button>
                           )}
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="destructive"
                             onClick={() => handleDeleteTask(task.id)}
                           >

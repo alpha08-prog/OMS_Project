@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import mentorImage from '../assets/image.png';
 import leaderImage from '../assets/leader.png';
 import frontend_devImage from '../assets/frontend_dev.png';
-import app_devImage from '../assets/app_dev.png';
+import app_devImage from '../assets/om.jpeg';
 
 
 const teamMembers = [

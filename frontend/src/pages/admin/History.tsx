@@ -221,19 +221,19 @@ export default function AdminHistory() {
       <main className="flex-1 p-6 bg-gradient-to-b from-indigo-50/60 to-white">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <div className="p-2 bg-indigo-100 rounded-lg">
-                  <History className="h-5 w-5 text-indigo-700" />
-                </div>
-                <h1 className="text-2xl font-semibold text-indigo-900">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 rounded-lg flex-shrink-0">
+                <History className="h-5 w-5 text-indigo-700" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold text-indigo-900 leading-tight">
                   Action History
                 </h1>
+                <p className="text-sm text-muted-foreground">
+                  View all administrative actions - approvals, rejections, and verifications
+                </p>
               </div>
-              <p className="text-sm text-muted-foreground ml-12">
-                View all administrative actions - approvals, rejections, and verifications
-              </p>
             </div>
             <Button variant="outline" onClick={() => { fetchHistory(); fetchStats(); }} disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -243,17 +243,17 @@ export default function AdminHistory() {
 
           {/* Stats Cards */}
           {stats?.grievances && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card className="rounded-2xl shadow-sm border-indigo-100">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
                       <p className="text-indigo-600 text-sm font-medium">Grievances</p>
                       <p className="text-2xl font-bold text-indigo-900">{stats.grievances.total}</p>
                     </div>
-                    <div className="flex flex-col items-end text-xs">
-                      <span className="text-emerald-600">✓ {stats.grievances.resolved} resolved</span>
-                      <span className="text-red-600">✗ {stats.grievances.rejected} rejected</span>
+                    <div className="flex flex-col items-end text-xs gap-0.5 flex-shrink-0">
+                      <span className="text-emerald-600 whitespace-nowrap">✓ {stats.grievances.resolved} resolved</span>
+                      <span className="text-red-600 whitespace-nowrap">✗ {stats.grievances.rejected} rejected</span>
                     </div>
                   </div>
                 </CardContent>
@@ -261,16 +261,16 @@ export default function AdminHistory() {
 
               <Card className="rounded-2xl shadow-sm border-purple-100">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
                       <p className="text-purple-600 text-sm font-medium">Train Requests</p>
                       <p className="text-2xl font-bold text-purple-900">{stats.trainRequests.total}</p>
                     </div>
-                    <div className="flex flex-col items-end text-xs">
-                      <span className="text-emerald-600">✓ {stats.trainRequests.approved} accepted</span>
-                      <span className="text-red-600">✗ {stats.trainRequests.rejected} regret</span>
+                    <div className="flex flex-col items-end text-xs gap-0.5 flex-shrink-0">
+                      <span className="text-emerald-600 whitespace-nowrap">✓ {stats.trainRequests.approved} accepted</span>
+                      <span className="text-red-600 whitespace-nowrap">✗ {stats.trainRequests.rejected} regret</span>
                       {typeof stats.trainRequests.resolved === "number" && (
-                        <span className="text-indigo-600">○ {stats.trainRequests.resolved} resolved</span>
+                        <span className="text-indigo-600 whitespace-nowrap">○ {stats.trainRequests.resolved} resolved</span>
                       )}
                     </div>
                   </div>
@@ -279,14 +279,14 @@ export default function AdminHistory() {
 
               <Card className="rounded-2xl shadow-sm border-amber-100">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
                       <p className="text-amber-600 text-sm font-medium">Tour Programs</p>
                       <p className="text-2xl font-bold text-amber-900">{stats.tourPrograms.total}</p>
                     </div>
-                    <div className="flex flex-col items-end text-xs">
-                      <span className="text-emerald-600">✓ {stats.tourPrograms.accepted} accepted</span>
-                      <span className="text-amber-600">⚠ {stats.tourPrograms.regret} regret</span>
+                    <div className="flex flex-col items-end text-xs gap-0.5 flex-shrink-0">
+                      <span className="text-emerald-600 whitespace-nowrap">✓ {stats.tourPrograms.accepted} accepted</span>
+                      <span className="text-amber-600 whitespace-nowrap">⚠ {stats.tourPrograms.regret} regret</span>
                     </div>
                   </div>
                 </CardContent>
@@ -294,12 +294,12 @@ export default function AdminHistory() {
 
               <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-indigo-600 to-indigo-500 text-white">
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
                       <p className="text-indigo-100 text-sm font-medium">Total Actions</p>
                       <p className="text-2xl font-bold">{stats.totalActions}</p>
                     </div>
-                    <div className="p-2 bg-white/20 rounded-lg">
+                    <div className="p-2 bg-white/20 rounded-lg flex-shrink-0">
                       <TrendingUp className="h-6 w-6" />
                     </div>
                   </div>
@@ -310,16 +310,16 @@ export default function AdminHistory() {
 
           {/* Filters */}
           <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="pb-4">
+            <CardHeader className="pb-3">
               <CardTitle className="text-lg text-indigo-900 flex items-center gap-2">
                 <Filter className="h-5 w-5" />
                 Filters
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <div>
-                  <label className="text-sm text-muted-foreground mb-1 block">Type</label>
+            <CardContent className="px-5 pb-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground block">Type</label>
                   <Select
                     value={typeFilter}
                     onValueChange={(v) => {
@@ -328,7 +328,7 @@ export default function AdminHistory() {
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10 w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -340,10 +340,10 @@ export default function AdminHistory() {
                   </Select>
                 </div>
 
-                <div>
-                  <label className="text-sm text-muted-foreground mb-1 block">Action</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground block">Action</label>
                   <Select value={actionFilter} onValueChange={setActionFilter}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10 w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -356,32 +356,35 @@ export default function AdminHistory() {
                   </Select>
                 </div>
 
-                <div>
-                  <label className="text-sm text-muted-foreground mb-1 block">From Date</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground block">From Date</label>
                   <Input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
+                    className="h-10 w-full"
                   />
                 </div>
 
-                <div>
-                  <label className="text-sm text-muted-foreground mb-1 block">To Date</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground block">To Date</label>
                   <Input
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
+                    className="h-10 w-full"
                   />
                 </div>
+              </div>
 
-                <div className="flex items-end gap-2">
-                  <Button onClick={handleFilter} className="bg-indigo-600 hover:bg-indigo-700">
-                    Apply
-                  </Button>
-                  <Button variant="outline" onClick={clearFilters}>
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button onClick={handleFilter} className="h-10 bg-indigo-600 hover:bg-indigo-700">
+                  Apply
+                </Button>
+                <Button variant="outline" className="h-10" onClick={clearFilters}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Reset
+                </Button>
               </div>
             </CardContent>
           </Card>

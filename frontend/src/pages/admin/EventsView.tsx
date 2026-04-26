@@ -106,17 +106,19 @@ export default function EventsView() {
 
           {/* Filters */}
           <Card className="rounded-2xl border border-indigo-100">
-            <CardContent className="py-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <Filter className="h-4 w-4 text-muted-foreground mt-6 flex-shrink-0" />
+            <CardContent className="px-5 py-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">Filter:</span>
+              </div>
 
-                {/* Search */}
-                <div className="flex-1 min-w-[200px]">
-                  <p className="text-xs text-muted-foreground mb-1">Search</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">Search</p>
                   <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      className="pl-8"
+                      className="h-10 pl-8"
                       placeholder="Event name, organizer, venue..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
@@ -125,23 +127,20 @@ export default function EventsView() {
                   </div>
                 </div>
 
-                {/* Date From */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">From Date</p>
-                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">From Date</p>
+                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-10 w-full" />
                 </div>
 
-                {/* Date To */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">To Date</p>
-                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">To Date</p>
+                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-10 w-full" />
                 </div>
 
-                {/* Report Status */}
-                <div className="w-44">
-                  <p className="text-xs text-muted-foreground mb-1">Report Status</p>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">Report Status</p>
                   <Select value={completionFilter} onValueChange={setCompletionFilter}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10 w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -151,14 +150,15 @@ export default function EventsView() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
 
-                <Button onClick={handleSearch} className="bg-indigo-600 hover:bg-indigo-700">
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button onClick={handleSearch} className="h-10 bg-indigo-600 hover:bg-indigo-700">
                   <Search className="h-4 w-4 mr-1" />
                   Search
                 </Button>
-
                 {hasFilters && (
-                  <Button variant="ghost" size="sm" onClick={handleClearFilters}>
+                  <Button variant="ghost" size="sm" className="h-10" onClick={handleClearFilters}>
                     <X className="h-4 w-4 mr-1" />
                     Clear
                   </Button>

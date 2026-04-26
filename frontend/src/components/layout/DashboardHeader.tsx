@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Search, Sun, Cloud, LogOut, FileText, Users, Train, Calendar } from "lucide-react";
-import { Button } from "../../components/ui/button";
+import { Search, Sun, Cloud, LogOut, FileText, Users } from "lucide-react";
 import { Input } from "../../components/ui/input";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
-import { Badge } from "../../components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
-import { grievanceApi, visitorApi, statsApi } from "../../lib/api";
+import { grievanceApi, visitorApi } from "../../lib/api";
 import type { Grievance, Visitor } from "../../lib/api";
 
 type User = {
@@ -40,9 +38,6 @@ export function DashboardHeader() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
   const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
-  const [pendingCount, setPendingCount] = useState(0);
-  const [stats, setStats] = useState<{ grievances: { open: number }; trainRequests: { pending: number }; tourPrograms: { pending: number } } | null>(null);
-
   useEffect(() => {
     // Get user from sessionStorage first (tab-specific), then localStorage
     const userStr = sessionStorage.getItem('user') || localStorage.getItem('user');
@@ -53,28 +48,6 @@ export function DashboardHeader() {
         // ignore parse errors
       }
     }
-  }, []);
-
-  // Fetch pending counts for notification badge (admin/super admin)
-  useEffect(() => {
-    const fetchPending = async () => {
-      try {
-        const data = await statsApi.getSummary();
-        const count =
-          (data?.grievances?.open ?? 0) +
-          (data?.trainRequests?.pending ?? 0) +
-          (data?.tourPrograms?.pending ?? 0);
-        setPendingCount(count);
-        setStats({
-          grievances: { open: data?.grievances?.open ?? 0 },
-          trainRequests: { pending: data?.trainRequests?.pending ?? 0 },
-          tourPrograms: { pending: data?.tourPrograms?.pending ?? 0 },
-        });
-      } catch {
-        setPendingCount(0);
-      }
-    };
-    fetchPending();
   }, []);
 
   const openGrievanceDetail = async (g: Grievance) => {
@@ -284,46 +257,6 @@ export function DashboardHeader() {
               )}
             </PopoverContent>
           </Popover>
-
-          {/* Notifications (pending actions) */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="relative hover:bg-saffron/10"
-              >
-                <Bell className="h-5 w-5 text-indigo-700" />
-                {pendingCount > 0 && (
-                  <Badge
-                    className="
-                      absolute -top-1 -right-1 min-w-[20px] h-5
-                      px-1 flex items-center justify-center
-                      bg-amber-500 text-black font-semibold text-xs
-                    "
-                  >
-                    {pendingCount > 99 ? "99+" : pendingCount}
-                  </Badge>
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Pending actions</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate("/grievances/verify")}>
-                <FileText className="mr-2 h-4 w-4" />
-                <span>{stats?.grievances?.open ?? 0} pending grievances</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/train-eq/queue")}>
-                <Train className="mr-2 h-4 w-4" />
-                <span>{stats?.trainRequests?.pending ?? 0} train EQ requests</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/tour-program/pending")}>
-                <Calendar className="mr-2 h-4 w-4" />
-                <span>{stats?.tourPrograms?.pending ?? 0} tour invitations</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
 
           {/* User Dropdown */}
           <DropdownMenu>

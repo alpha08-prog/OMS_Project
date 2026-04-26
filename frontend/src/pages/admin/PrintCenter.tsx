@@ -256,41 +256,43 @@ export default function PrintCenter() {
 
             {/* Filters */}
             <Card className="rounded-2xl border border-indigo-100">
-              <CardContent className="flex flex-wrap gap-3 py-4">
-                <Button 
-                  variant={filter === "all" ? "default" : "outline"} 
-                  size="sm"
-                  onClick={() => setFilter("all")}
-                >
-                  <Filter className="h-4 w-4 mr-2" />
-                  All ({printableItems.length})
-                </Button>
-                <Button 
-                  variant={filter === "grievance" ? "default" : "outline"} 
-                  size="sm"
-                  onClick={() => setFilter("grievance")}
-                >
-                  <FileText className="h-4 w-4 mr-2" />
-                  Grievance Letters ({printableItems.filter(i => i.type === 'grievance').length})
-                </Button>
-                <Button 
-                  variant={filter === "train" ? "default" : "outline"} 
-                  size="sm"
-                  onClick={() => setFilter("train")}
-                >
-                  <Train className="h-4 w-4 mr-2" />
-                  Train EQ ({printableItems.filter(i => i.type === 'train').length})
-                </Button>
-                {!isStaff && (
+              <CardContent className="px-5 py-5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setTourDialogOpen(true)}
+                    variant={filter === "all" ? "default" : "outline"}
+                    onClick={() => setFilter("all")}
+                    className="h-10 w-full justify-center"
                   >
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Tour Program PDF
+                    <Filter className="h-4 w-4 mr-2" />
+                    All ({printableItems.length})
                   </Button>
-                )}
+                  <Button
+                    variant={filter === "grievance" ? "default" : "outline"}
+                    onClick={() => setFilter("grievance")}
+                    className="h-10 w-full justify-center"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Grievance Letters ({printableItems.filter(i => i.type === 'grievance').length})
+                  </Button>
+                  <Button
+                    variant={filter === "train" ? "default" : "outline"}
+                    onClick={() => setFilter("train")}
+                    className="h-10 w-full justify-center"
+                  >
+                    <Train className="h-4 w-4 mr-2" />
+                    Train EQ ({printableItems.filter(i => i.type === 'train').length})
+                  </Button>
+                  {!isStaff && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setTourDialogOpen(true)}
+                      className="h-10 w-full justify-center"
+                    >
+                      <Calendar className="h-4 w-4 mr-2" />
+                      Tour Program PDF
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -330,7 +332,7 @@ export default function PrintCenter() {
                   filteredItems.map((item) => (
                     <div
                       key={`${item.type}-${item.id}`}
-                      className="flex items-center justify-between rounded-xl border p-4 hover:bg-indigo-50/40 transition relative z-10"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-4 hover:bg-indigo-50/40 transition relative z-10"
                     >
                       {/* Left */}
                       <div className="flex items-start gap-4 flex-1 min-w-0">
@@ -339,10 +341,10 @@ export default function PrintCenter() {
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium text-indigo-900">
+                          <p className="font-medium text-indigo-900 break-words">
                             {item.title}
                           </p>
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-sm text-muted-foreground break-words">
                             {item.subtitle}
                           </p>
                           <p className="text-xs text-muted-foreground">
@@ -352,7 +354,7 @@ export default function PrintCenter() {
                       </div>
 
                       {/* Right */}
-                      <div className="flex items-center gap-3 flex-shrink-0 relative z-20">
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-shrink-0 relative z-20">
                         <Badge className={getItemBadgeColor(item.type)}>
                           {item.type === 'grievance' ? 'Grievance' : item.type === 'train' ? 'Train EQ' : 'Tour'}
                         </Badge>

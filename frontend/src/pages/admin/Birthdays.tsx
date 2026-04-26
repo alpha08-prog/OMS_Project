@@ -175,39 +175,39 @@ export default function Birthdays() {
             )}
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Card className="rounded-xl bg-pink-50 border-pink-200">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="p-3 bg-pink-100 rounded-lg">
+                <CardContent className="p-4 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-3xl font-bold text-pink-900 leading-tight">{birthdays.length}</p>
+                    <p className="text-sm text-pink-700 mt-1">Total Birthdays</p>
+                  </div>
+                  <div className="p-3 bg-pink-100 rounded-lg flex-shrink-0">
                     <Cake className="h-6 w-6 text-pink-600" />
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold text-pink-900">{birthdays.length}</p>
-                    <p className="text-sm text-pink-700">Total Birthdays</p>
-                  </div>
                 </CardContent>
               </Card>
-              
+
               <Card className="rounded-xl bg-rose-50 border-rose-200">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="p-3 bg-rose-100 rounded-lg">
+                <CardContent className="p-4 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-3xl font-bold text-rose-900 leading-tight">{todayBirthdays.length}</p>
+                    <p className="text-sm text-rose-700 mt-1">Today</p>
+                  </div>
+                  <div className="p-3 bg-rose-100 rounded-lg flex-shrink-0">
                     <Gift className="h-6 w-6 text-rose-600" />
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold text-rose-900">{todayBirthdays.length}</p>
-                    <p className="text-sm text-rose-700">Today</p>
-                  </div>
                 </CardContent>
               </Card>
-              
+
               <Card className="rounded-xl bg-amber-50 border-amber-200">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="p-3 bg-amber-100 rounded-lg">
-                    <Calendar className="h-6 w-6 text-amber-600" />
+                <CardContent className="p-4 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-3xl font-bold text-amber-900 leading-tight">{upcomingBirthdays.length}</p>
+                    <p className="text-sm text-amber-700 mt-1">Upcoming (7 days)</p>
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold text-amber-900">{upcomingBirthdays.length}</p>
-                    <p className="text-sm text-amber-700">Upcoming (7 days)</p>
+                  <div className="p-3 bg-amber-100 rounded-lg flex-shrink-0">
+                    <Calendar className="h-6 w-6 text-amber-600" />
                   </div>
                 </CardContent>
               </Card>
@@ -221,51 +221,55 @@ export default function Birthdays() {
 
             {/* Filters */}
             <Card className="rounded-2xl border border-pink-100">
-              <CardContent className="flex flex-wrap gap-4 py-4">
-                <div className="flex gap-2 flex-1 max-w-sm">
-                  <Input
-                    placeholder="Search by name or phone..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  />
-                  <Button variant="outline" onClick={handleSearch}>
-                    Search
-                  </Button>
-                </div>
-                
-                <div className="w-[200px]">
-                <Select value={filterMonth} onValueChange={setFilterMonth}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by Month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Months</SelectItem>
-                    <SelectItem value="1">January</SelectItem>
-                    <SelectItem value="2">February</SelectItem>
-                    <SelectItem value="3">March</SelectItem>
-                    <SelectItem value="4">April</SelectItem>
-                    <SelectItem value="5">May</SelectItem>
-                    <SelectItem value="6">June</SelectItem>
-                    <SelectItem value="7">July</SelectItem>
-                    <SelectItem value="8">August</SelectItem>
-                    <SelectItem value="9">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
-                  </SelectContent>
-                </Select>
-                </div>
+              <CardContent className="px-5 py-5">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="flex gap-2 flex-1 min-w-0">
+                    <Input
+                      placeholder="Search by name or phone..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                      className="h-10 flex-1"
+                    />
+                    <Button variant="outline" onClick={handleSearch} className="h-10 flex-shrink-0">
+                      Search
+                    </Button>
+                  </div>
 
-                {(filterMonth !== "all" || searchQuery) && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => { setFilterMonth("all"); setSearchQuery(""); }}
-                  >
-                    Clear Filters
-                  </Button>
-                )}
+                  <div className="w-full sm:w-[220px] flex-shrink-0">
+                    <Select value={filterMonth} onValueChange={setFilterMonth}>
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Filter by Month" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Months</SelectItem>
+                        <SelectItem value="1">January</SelectItem>
+                        <SelectItem value="2">February</SelectItem>
+                        <SelectItem value="3">March</SelectItem>
+                        <SelectItem value="4">April</SelectItem>
+                        <SelectItem value="5">May</SelectItem>
+                        <SelectItem value="6">June</SelectItem>
+                        <SelectItem value="7">July</SelectItem>
+                        <SelectItem value="8">August</SelectItem>
+                        <SelectItem value="9">September</SelectItem>
+                        <SelectItem value="10">October</SelectItem>
+                        <SelectItem value="11">November</SelectItem>
+                        <SelectItem value="12">December</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(filterMonth !== "all" || searchQuery) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setFilterMonth("all"); setSearchQuery(""); }}
+                      className="h-10 flex-shrink-0"
+                    >
+                      Clear Filters
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -330,15 +334,15 @@ export default function Birthdays() {
                   birthdays.map((b) => (
                     <div
                       key={b.id}
-                      className={`flex items-center justify-between p-4 rounded-xl border bg-white hover:bg-pink-50/40 transition ${
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border bg-white hover:bg-pink-50/40 transition ${
                         isTodayBirthday(b.dob) ? 'border-pink-400 bg-pink-50' : ''
                       }`}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className={`p-2 rounded-lg ${isTodayBirthday(b.dob) ? 'bg-pink-200' : 'bg-pink-100'}`}>
+                      <div className="flex items-start gap-4 min-w-0 flex-1">
+                        <div className={`p-2 rounded-lg flex-shrink-0 ${isTodayBirthday(b.dob) ? 'bg-pink-200' : 'bg-pink-100'}`}>
                           <User className="h-5 w-5 text-pink-600" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <p className="font-medium text-pink-900 flex items-center gap-2">
                             {b.name}
                             {isTodayBirthday(b.dob) && (
@@ -351,7 +355,7 @@ export default function Birthdays() {
                             </p>
                           )}
                           {b.notes && (
-                            <p className="text-sm text-muted-foreground mt-1">{b.notes}</p>
+                            <p className="text-sm text-muted-foreground mt-1 break-words">{b.notes}</p>
                           )}
                           {b.createdBy && (
                             <p className="text-xs text-muted-foreground mt-1">
@@ -361,7 +365,7 @@ export default function Birthdays() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                         <Badge className={getRelationBadgeColor(b.relation)}>{b.relation}</Badge>
                         <Badge variant="outline">
                           🎂 {formatFullDate(b.dob)}
