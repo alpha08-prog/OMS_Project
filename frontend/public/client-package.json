@@ -1,0 +1,21 @@
+{
+  "name": "oms-client",
+  "stack": "react16",
+  "cache_control": [
+    {
+      "url_pattern": "/index.html",
+      "cache_type": "no-cache",
+      "max_age": 0
+    },
+    {
+      "url_pattern": "/",
+      "cache_type": "no-cache",
+      "max_age": 0
+    },
+    {
+      "url_pattern": "/assets/*",
+      "cache_type": "public",
+      "max_age": 31536000
+    }
+  ]
+}
