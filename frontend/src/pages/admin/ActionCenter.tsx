@@ -434,7 +434,7 @@ export default function AdminActionCenter() {
           <div className="max-w-7xl mx-auto space-y-6">
 
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-2xl font-semibold text-indigo-900">
                   Action Center
@@ -443,7 +443,7 @@ export default function AdminActionCenter() {
                   Review, verify and assign tasks to staff
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={() => fetchData()} disabled={loading}>
                   <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                   Refresh
@@ -523,22 +523,22 @@ export default function AdminActionCenter() {
                   ) : (
                     pendingGrievances.slice(0, 5).map((g) => (
                       <div key={g.id} className="p-3 rounded-lg bg-gray-50 hover:bg-indigo-50 transition">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="font-medium text-sm">{g.petitionerName}</p>
-                            <p className="text-xs text-muted-foreground">{g.grievanceType}</p>
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm truncate">{g.petitionerName}</p>
+                            <p className="text-xs text-muted-foreground truncate">{g.grievanceType}</p>
                           </div>
-                          <Badge variant="outline" className="text-xs">{formatDate(g.createdAt)}</Badge>
+                          <Badge variant="outline" className="text-xs flex-shrink-0">{formatDate(g.createdAt)}</Badge>
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{g.description}</p>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => handleViewDetails(g, 'grievance')}>
+                        <div className="flex flex-wrap gap-1">
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => handleViewDetails(g, 'grievance')}>
                             <Eye className="h-3 w-3 mr-1" />
                             View
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleOpenAssign(g, 'grievance')}>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-green-600" onClick={() => handleOpenAssign(g, 'grievance')}>
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            Verify and Assign to Staff
+                            Verify &amp; Assign
                           </Button>
                         </div>
                       </div>
@@ -569,26 +569,26 @@ export default function AdminActionCenter() {
                   ) : (
                     pendingTrainRequests.slice(0, 5).map((t) => (
                       <div key={t.id} className="p-3 rounded-lg bg-gray-50 hover:bg-amber-50 transition">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="font-medium text-sm">{t.passengerName}</p>
-                            <p className="text-xs text-muted-foreground">PNR: {t.pnrNumber}</p>
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm truncate">{t.passengerName}</p>
+                            <p className="text-xs text-muted-foreground truncate">PNR: {t.pnrNumber}</p>
                           </div>
-                          <Badge variant="outline" className="text-xs">{formatDate(t.dateOfJourney)}</Badge>
+                          <Badge variant="outline" className="text-xs flex-shrink-0">{formatDate(t.dateOfJourney)}</Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground mb-2">
+                        <p className="text-xs text-muted-foreground mb-2 break-words">
                           {t.fromStation} → {t.toStation} | Class: {t.journeyClass}
                         </p>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => handleViewDetails(t, 'train')}>
+                        <div className="flex flex-wrap gap-1">
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => handleViewDetails(t, 'train')}>
                             <Eye className="h-3 w-3 mr-1" />
                             View
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleOpenAssign(t, 'train')}>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-green-600" onClick={() => handleOpenAssign(t, 'train')}>
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            Verify and Assign to Staff
+                            Verify &amp; Assign
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleRejectTrainRequest(t.id)}>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-red-600" onClick={() => handleRejectTrainRequest(t.id)}>
                             <XCircle className="h-3 w-3 mr-1" />
                             Reject
                           </Button>
@@ -621,24 +621,24 @@ export default function AdminActionCenter() {
                   ) : (
                     pendingTourPrograms.slice(0, 5).map((tour) => (
                       <div key={tour.id} className="p-3 rounded-lg bg-gray-50 hover:bg-green-50 transition">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="font-medium text-sm">{tour.eventName}</p>
-                            <p className="text-xs text-muted-foreground">{tour.organizer}</p>
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm truncate">{tour.eventName}</p>
+                            <p className="text-xs text-muted-foreground truncate">{tour.organizer}</p>
                           </div>
-                          <Badge variant="outline" className="text-xs">{formatDate(tour.dateTime)}</Badge>
+                          <Badge variant="outline" className="text-xs flex-shrink-0">{formatDate(tour.dateTime)}</Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground mb-2">{tour.venue}</p>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => handleViewDetails(tour, 'tour')}>
+                        <p className="text-xs text-muted-foreground mb-2 truncate">{tour.venue}</p>
+                        <div className="flex flex-wrap gap-1">
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => handleViewDetails(tour, 'tour')}>
                             <Eye className="h-3 w-3 mr-1" />
                             View
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600" onClick={() => handleOpenAssign(tour, 'tour')}>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-green-600" onClick={() => handleOpenAssign(tour, 'tour')}>
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            Verify and Assign to Staff
+                            Verify &amp; Assign
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleTourDecision(tour.id, 'REGRET')}>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-red-600" onClick={() => handleTourDecision(tour.id, 'REGRET')}>
                             <XCircle className="h-3 w-3 mr-1" />
                             Regret
                           </Button>
@@ -753,7 +753,7 @@ export default function AdminActionCenter() {
 
         {/* Details Dialog - Large and Comprehensive */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent className="w-[95vw] max-w-7xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="!max-w-7xl w-[95vw] max-h-[90vh] overflow-y-auto">
             <DialogHeader className="pb-4 border-b">
               <div className="flex items-center justify-between">
                 <div>
@@ -1070,45 +1070,45 @@ export default function AdminActionCenter() {
             resetAssignForm();
           }
         }}>
-          <DialogContent className="w-[90vw] max-w-none max-h-[95vh] overflow-y-auto">
-            <DialogHeader className="pb-4 border-b">
-              <DialogTitle className="text-2xl font-bold text-indigo-900">Verify and Assign to Staff</DialogTitle>
-              <DialogDescription className="text-base">
+          <DialogContent className="!max-w-6xl w-[95vw] max-h-[90vh] overflow-y-auto p-0 !gap-0">
+            <DialogHeader className="px-6 pt-6 pb-3 border-b sticky top-0 z-10 bg-background">
+              <DialogTitle className="text-xl font-bold text-indigo-900">Verify and Assign to Staff</DialogTitle>
+              <DialogDescription className="text-sm">
                 Verify/approve this {selectedType === 'grievance' ? 'grievance' : selectedType === 'train' ? 'train request' : 'tour program'} and create a task assigned to a staff member
               </DialogDescription>
             </DialogHeader>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-6">
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 px-6 py-4">
               {/* Left Column - Reference Information */}
-              <div className="space-y-5">
-                <h4 className="font-semibold text-gray-900 flex items-center gap-2 text-lg">
-                  <FileText className="h-5 w-5" />
+              <div className="space-y-3">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2 text-base">
+                  <FileText className="h-4 w-4" />
                   Reference Information
                 </h4>
-                
+
                 {selectedItem && selectedType === 'grievance' && isGrievance(selectedItem) && (
-                  <div className="bg-indigo-50 rounded-xl p-5 space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-semibold text-indigo-900 text-lg">{selectedItem.petitionerName}</p>
-                        <p className="text-indigo-700">{selectedItem.grievanceType}</p>
+                  <div className="bg-indigo-50 rounded-xl p-4 space-y-3">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-indigo-900">{selectedItem.petitionerName}</p>
+                        <p className="text-sm text-indigo-700">{selectedItem.grievanceType}</p>
                       </div>
-                      <Badge variant="outline" className="text-sm">{selectedItem.status}</Badge>
+                      <Badge variant="outline" className="text-xs flex-shrink-0">{selectedItem.status}</Badge>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white/60 rounded-lg p-3">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Mobile</p>
-                        <p className="font-medium">{selectedItem.mobileNumber}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-white/60 rounded-lg p-2.5">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">Mobile</p>
+                        <p className="font-medium text-sm">{selectedItem.mobileNumber}</p>
                       </div>
-                      <div className="bg-white/60 rounded-lg p-3">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Constituency</p>
-                        <p className="font-medium">{selectedItem.constituency}</p>
+                      <div className="bg-white/60 rounded-lg p-2.5">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">Constituency</p>
+                        <p className="font-medium text-sm">{selectedItem.constituency}</p>
                       </div>
                     </div>
                     {selectedItem.description && (
-                      <div className="bg-white/60 rounded-lg p-3">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Description</p>
-                        <p className="font-medium text-sm leading-relaxed">{selectedItem.description}</p>
+                      <div className="bg-white/60 rounded-lg p-2.5">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">Description</p>
+                        <p className="font-medium text-sm leading-relaxed line-clamp-3">{selectedItem.description}</p>
                       </div>
                     )}
                   </div>
@@ -1174,17 +1174,17 @@ export default function AdminActionCenter() {
               </div>
 
               {/* Right Column - Task Assignment Form */}
-              <div className="space-y-5">
-                <h4 className="font-semibold text-gray-900 flex items-center gap-2 text-lg">
-                  <UserPlus className="h-5 w-5" />
+              <div className="space-y-3">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2 text-base">
+                  <UserPlus className="h-4 w-4" />
                   Task Assignment
                 </h4>
 
-                <div className="space-y-5 bg-gray-50 rounded-xl p-5 border">
+                <div className="space-y-3 bg-gray-50 rounded-xl p-4 border">
                   <div>
                     <Label className="text-sm font-medium">Assign To <span className="text-red-500">*</span></Label>
                     <Select value={assignToId} onValueChange={setAssignToId}>
-                      <SelectTrigger className="mt-2 h-11">
+                      <SelectTrigger className="mt-1.5 h-10">
                         <SelectValue placeholder="Select staff member" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1199,32 +1199,32 @@ export default function AdminActionCenter() {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div>
                     <Label className="text-sm font-medium">Task Title <span className="text-red-500">*</span></Label>
                     <Input
                       value={taskTitle}
                       onChange={(e) => setTaskTitle(e.target.value)}
-                      className="mt-2 h-11"
+                      className="mt-1.5 h-10"
                       placeholder="Enter task title"
                     />
                   </div>
-                  
+
                   <div>
                     <Label className="text-sm font-medium">Description</Label>
                     <Textarea
                       value={taskDescription}
                       onChange={(e) => setTaskDescription(e.target.value)}
-                      className="mt-2 min-h-[350px] resize-none"
+                      className="mt-1.5 min-h-[140px] resize-y"
                       placeholder="Enter task description and instructions for the staff member..."
                     />
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
+
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label className="text-sm font-medium">Priority</Label>
                       <Select value={priority} onValueChange={setPriority}>
-                        <SelectTrigger className="mt-2 h-11">
+                        <SelectTrigger className="mt-1.5 h-10">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1255,14 +1255,14 @@ export default function AdminActionCenter() {
                         </SelectContent>
                       </Select>
                     </div>
-                    
+
                     <div>
                       <Label className="text-sm font-medium">Due Date</Label>
                       <Input
                         type="date"
                         value={dueDate}
                         onChange={(e) => setDueDate(e.target.value)}
-                        className="mt-2 h-11"
+                        className="mt-1.5 h-10"
                         min={new Date().toISOString().split('T')[0]}
                       />
                     </div>
@@ -1270,17 +1270,16 @@ export default function AdminActionCenter() {
                 </div>
               </div>
             </div>
-            
+
             {/* Footer Actions */}
-            <div className="flex gap-3 pt-6 mt-6 border-t">
-              <Button variant="outline" onClick={() => setAssignDialogOpen(false)} size="lg" className="flex-1">
+            <div className="flex gap-3 px-6 py-4 border-t sticky bottom-0 z-10 bg-background">
+              <Button variant="outline" onClick={() => setAssignDialogOpen(false)} className="flex-1 h-10">
                 Cancel
               </Button>
-              <Button 
+              <Button
                 onClick={handleAssignTask}
                 disabled={assigning || !assignToId || !taskTitle}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700"
-                size="lg"
+                className="flex-1 h-10 bg-indigo-600 hover:bg-indigo-700"
               >
                 {assigning ? (
                   <>

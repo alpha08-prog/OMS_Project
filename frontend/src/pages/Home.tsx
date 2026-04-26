@@ -9,15 +9,10 @@ import {
   FileText,
   CheckCircle2,
   AlertTriangle,
-  Train,
   CalendarDays,
-  TrendingUp,
-  Activity,
-  ArrowUpRight,
 } from "lucide-react";
 import { statsApi, type DashboardStats } from "../lib/api";
 import { Card, CardContent } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
 
 type StatItem = {
   label: string;
@@ -99,91 +94,53 @@ const Home = () => {
           <div className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/5" />
           <div className="absolute right-24 -bottom-12 h-40 w-40 rounded-full bg-amber-400/10" />
 
-          <div className="relative px-8 py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="relative px-8 py-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
             <div>
               <p className="text-indigo-200 text-sm font-medium mb-1">Good {timeOfDay}</p>
               <h1 className="text-3xl font-bold tracking-tight">Shri Pralhad Joshi</h1>
               <p className="text-indigo-200 mt-1 text-sm">Super Administrator · Office Management System</p>
             </div>
 
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-8">
               <div className="text-center">
-                <p className="text-3xl font-bold text-amber-300">
+                <p className="text-2xl font-semibold text-white leading-none">
                   {loading ? "—" : stats?.grievances.inProgress ?? 0}
                 </p>
-                <p className="text-xs text-indigo-200 mt-0.5">In Progress</p>
+                <p className="text-xs text-indigo-200 mt-2">In Progress</p>
               </div>
-              <div className="w-px h-12 bg-white/20" />
+              <div className="w-px h-10 bg-white/20" />
               <div className="text-center">
-                <p className="text-3xl font-bold text-amber-300">
+                <p className="text-2xl font-semibold text-white leading-none">
                   {loading ? "—" : (stats?.tourPrograms.pending ?? 0) + (stats?.trainRequests.pending ?? 0)}
                 </p>
-                <p className="text-xs text-indigo-200 mt-0.5">Pending Actions</p>
-              </div>
-              <div className="w-px h-12 bg-white/20" />
-              <div className="text-center">
-                <div className="flex items-center gap-1">
-                  <Activity className="h-4 w-4 text-emerald-300" />
-                  <span className="text-sm font-semibold text-emerald-300">Live</span>
-                </div>
-                <p className="text-xs text-indigo-200 mt-0.5">Dashboard</p>
+                <p className="text-xs text-indigo-200 mt-2">Pending Actions</p>
               </div>
             </div>
           </div>
         </div>
 
         {/* ── Stats Grid ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {statItems.map((s) => (
             <Card
               key={s.label}
               className="rounded-2xl border-0 shadow-sm hover:shadow-md transition-shadow"
             >
-              <CardContent className="p-4 space-y-3">
-                <div className={`inline-flex p-2 rounded-xl ${s.bg}`}>
-                  <s.icon className={`h-4 w-4 ${s.color}`} />
+              <CardContent className="p-5 space-y-4">
+                <div className={`inline-flex p-2.5 rounded-xl ${s.bg}`}>
+                  <s.icon className={`h-5 w-5 ${s.color}`} />
                 </div>
-                <div>
-                  <p className="text-2xl font-bold text-foreground leading-none">{s.value}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
+                <div className="space-y-1">
+                  <p className="text-3xl font-bold text-foreground leading-none">{s.value}</p>
+                  <p className="text-sm font-medium text-foreground">{s.label}</p>
                   {s.sub && (
-                    <p className="text-[10px] text-muted-foreground/70 mt-0.5">{s.sub}</p>
+                    <p className="text-xs text-muted-foreground">{s.sub}</p>
                   )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
-
-        {/* ── Pending Highlights ──────────────────────────────────────────── */}
-        {!loading && stats && (
-          (stats.grievances.open > 0 || stats.tourPrograms.pending > 0 || stats.trainRequests.pending > 0) && (
-            <div className="flex flex-wrap gap-3 items-center">
-              <span className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
-                <TrendingUp className="h-4 w-4" /> Needs attention:
-              </span>
-              {stats.grievances.open > 0 && (
-                <Badge className="bg-indigo-100 text-indigo-700 border border-indigo-200 gap-1 px-3 py-1">
-                  <FileText className="h-3 w-3" />
-                  {stats.grievances.open} open grievance{stats.grievances.open !== 1 ? "s" : ""}
-                  <ArrowUpRight className="h-3 w-3" />
-                </Badge>
-              )}
-              {stats.tourPrograms.pending > 0 && (
-                <Badge className="bg-amber-100 text-amber-700 border border-amber-200 gap-1 px-3 py-1">
-                  <CalendarDays className="h-3 w-3" />
-                  {stats.tourPrograms.pending} tour invitation{stats.tourPrograms.pending !== 1 ? "s" : ""}
-                </Badge>
-              )}
-              {stats.trainRequests.pending > 0 && (
-                <Badge className="bg-sky-100 text-sky-700 border border-sky-200 gap-1 px-3 py-1">
-                  <Train className="h-3 w-3" />
-                  {stats.trainRequests.pending} train EQ request{stats.trainRequests.pending !== 1 ? "s" : ""}
-                </Badge>
-              )}
-            </div>
-          )
-        )}
 
         {/* ── Main Content Grid ────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -155,39 +155,39 @@ export default function NewsIntelligenceView() {
           </div>
 
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card className="rounded-xl bg-red-50 border-red-200">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="p-3 bg-red-100 rounded-lg">
+              <CardContent className="p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-3xl font-bold text-red-900 leading-tight">{criticalCount}</p>
+                  <p className="text-sm text-red-700 mt-1">Critical Alerts</p>
+                </div>
+                <div className="p-3 bg-red-100 rounded-lg flex-shrink-0">
                   <AlertTriangle className="h-6 w-6 text-red-600" />
                 </div>
-                <div>
-                  <p className="text-2xl font-bold text-red-900">{criticalCount}</p>
-                  <p className="text-sm text-red-700">Critical Alerts</p>
-                </div>
               </CardContent>
             </Card>
-            
+
             <Card className="rounded-xl bg-amber-50 border-amber-200">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="p-3 bg-amber-100 rounded-lg">
+              <CardContent className="p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-3xl font-bold text-amber-900 leading-tight">{highCount}</p>
+                  <p className="text-sm text-amber-700 mt-1">High Priority</p>
+                </div>
+                <div className="p-3 bg-amber-100 rounded-lg flex-shrink-0">
                   <AlertTriangle className="h-6 w-6 text-amber-600" />
                 </div>
-                <div>
-                  <p className="text-2xl font-bold text-amber-900">{highCount}</p>
-                  <p className="text-sm text-amber-700">High Priority</p>
-                </div>
               </CardContent>
             </Card>
-            
+
             <Card className="rounded-xl bg-indigo-50 border-indigo-200">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="p-3 bg-indigo-100 rounded-lg">
-                  <Newspaper className="h-6 w-6 text-indigo-600" />
+              <CardContent className="p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-3xl font-bold text-indigo-900 leading-tight">{news.length}</p>
+                  <p className="text-sm text-indigo-700 mt-1">Total Entries</p>
                 </div>
-                <div>
-                  <p className="text-2xl font-bold text-indigo-900">{news.length}</p>
-                  <p className="text-sm text-indigo-700">Total Entries</p>
+                <div className="p-3 bg-indigo-100 rounded-lg flex-shrink-0">
+                  <Newspaper className="h-6 w-6 text-indigo-600" />
                 </div>
               </CardContent>
             </Card>
@@ -201,21 +201,25 @@ export default function NewsIntelligenceView() {
 
           {/* Filters */}
           <Card className="rounded-2xl border border-indigo-100">
-            <CardContent className="flex items-center gap-4 py-4">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Filter by priority:</span>
-              <div className="w-40">
-              <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="CRITICAL">🚨 Critical</SelectItem>
-                  <SelectItem value="HIGH">⚠️ High</SelectItem>
-                  <SelectItem value="NORMAL">Normal</SelectItem>
-                </SelectContent>
-              </Select>
+            <CardContent className="px-5 py-5">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Filter by priority:</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <Select value={filterPriority} onValueChange={setFilterPriority}>
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="CRITICAL">🚨 Critical</SelectItem>
+                      <SelectItem value="HIGH">⚠️ High</SelectItem>
+                      <SelectItem value="NORMAL">Normal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -240,10 +244,10 @@ export default function NewsIntelligenceView() {
                     key={item.id}
                     className={`p-4 rounded-xl border bg-white ${getCardStyle(item.priority)} hover:shadow-md transition`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex gap-4 flex-1">
-                        <div className={`p-2 rounded-lg ${
-                          item.priority === 'CRITICAL' ? 'bg-red-100' : 
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                      <div className="flex gap-4 flex-1 min-w-0">
+                        <div className={`p-2 rounded-lg flex-shrink-0 ${
+                          item.priority === 'CRITICAL' ? 'bg-red-100' :
                           item.priority === 'HIGH' ? 'bg-amber-100' : 'bg-gray-100'
                         }`}>
                           {item.priority === 'CRITICAL' ? (
@@ -255,7 +259,7 @@ export default function NewsIntelligenceView() {
                           )}
                         </div>
 
-                        <div className="flex-1 space-y-2">
+                        <div className="flex-1 min-w-0 space-y-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-indigo-900">{item.headline}</p>
                             {getPriorityBadge(item.priority)}
