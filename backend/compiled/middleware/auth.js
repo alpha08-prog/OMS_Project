@@ -1,15 +1,12 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.superAdminOnly = exports.adminOnly = exports.staffOnly = void 0;
 exports.authenticate = authenticate;
 exports.authorize = authorize;
-const client_1 = require("@prisma/client");
 const jwt_1 = require("../utils/jwt");
 const response_1 = require("../utils/response");
-const prisma_1 = __importDefault(require("../lib/prisma"));
+const catalyst_user_lookup_1 = require("../lib/catalyst-user-lookup");
+const types_1 = require("../types");
 /**
  * Middleware to authenticate JWT token
  * Attaches user info to request object
@@ -34,11 +31,9 @@ async function authenticate(req, res, next) {
             (0, response_1.sendUnauthorized)(res, 'Invalid or expired token');
             return;
         }
-        // Verify user still exists and is active
-        const user = await prisma_1.default.user.findUnique({
-            where: { id: payload.id },
-            select: { id: true, email: true, role: true, name: true, isActive: true },
-        });
+        // Resolve user from Catalyst AppUser (5-min cache hit on the hot path).
+        // No Prisma fallback — Catalyst is the sole source of truth.
+        const { user } = await (0, catalyst_user_lookup_1.findUserForAuth)(payload.id);
         if (!user || !user.isActive) {
             (0, response_1.sendUnauthorized)(res, 'User not found or inactive');
             return;
@@ -81,13 +76,13 @@ function authorize(...allowedRoles) {
 /**
  * Middleware for Staff only access
  */
-exports.staffOnly = authorize(client_1.UserRole.STAFF, client_1.UserRole.ADMIN, client_1.UserRole.SUPER_ADMIN);
+exports.staffOnly = authorize(types_1.UserRole.STAFF, types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN);
 /**
  * Middleware for Admin only access
  */
-exports.adminOnly = authorize(client_1.UserRole.ADMIN, client_1.UserRole.SUPER_ADMIN);
+exports.adminOnly = authorize(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN);
 /**
  * Middleware for Super Admin only access
  */
-exports.superAdminOnly = authorize(client_1.UserRole.SUPER_ADMIN);
+exports.superAdminOnly = authorize(types_1.UserRole.SUPER_ADMIN);
 //# sourceMappingURL=auth.js.map

@@ -2,11 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const express_validator_1 = require("express-validator");
-const auth_controller_1 = require("../controllers/auth.controller");
+const auth_controller_1 = require("../controllers-catalyst/auth.controller");
 const auth_1 = require("../middleware/auth");
 const validate_1 = require("../middleware/validate");
 const router = (0, express_1.Router)();
-// Validation rules
 const registerValidation = [
     (0, express_validator_1.body)('name').trim().notEmpty().withMessage('Name is required'),
     (0, express_validator_1.body)('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
