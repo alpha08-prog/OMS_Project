@@ -1,30 +1,22 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (needed for build + prisma generate)
-RUN npm install
+# Install dependencies
+RUN npm ci --omit=dev || npm install --omit=dev
 
-# Copy all files
+# Copy source
 COPY . .
 
-# Prisma v7 reads DATABASE_URL at config-load time during `prisma generate`.
-# We supply a dummy value here — no real DB connection is made during build.
-# The actual DATABASE_URL is injected at runtime via Catalyst AppSail env vars.
-ARG DATABASE_URL="postgresql://build:build@localhost:5432/build"
-ENV DATABASE_URL=${DATABASE_URL}
+# Build TypeScript
+RUN npm install --no-save typescript @types/node && npm run build
 
-# Generate Prisma client (Wasm-based, no native binaries needed)
-RUN npx prisma generate
+# Drop dev tooling to keep the image lean
+RUN npm prune --omit=dev
 
-# Build TypeScript code
-RUN npm run build
-
-# Expose backend port
 EXPOSE 5000
 
-# Run database migrations and start the server
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+CMD ["npm", "start"]
