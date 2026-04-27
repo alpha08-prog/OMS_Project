@@ -16,6 +16,19 @@ const flag = (key: string, fallback = false): boolean => {
 /** Master switch — when true, all migrated modules use Catalyst. */
 export const USE_CATALYST = flag('USE_CATALYST');
 
+/**
+ * Master switch — when true, controllers prefer ZCQL (push-down filters /
+ * sort / pagination) over the legacy "list everything + filter in JS" path.
+ * Requires the corresponding columns to be indexed in the Catalyst console
+ * for the gain to be real. Default false → safe fallback.
+ */
+export const USE_ZCQL = flag('USE_ZCQL');
+
+/** Returns true if the named module should use the ZCQL fast path. */
+export function useZCQL(): boolean {
+  return USE_ZCQL;
+}
+
 /** Per-module overrides. A module uses Catalyst if either USE_CATALYST or its own flag is true. */
 export const featureFlags = {
   visitor: flag('USE_CATALYST_VISITOR') || USE_CATALYST,

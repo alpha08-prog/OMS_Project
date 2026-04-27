@@ -1,28 +1,88 @@
 /**
- * Dual-source user lookup helper.
+ * User lookup helper — Catalyst-only.
  *
- * During the migration, user identifiers come in two forms:
- *   - Numeric ROWID  (e.g. "37719000000076188") — issued by Catalyst AppUser
- *   - UUID           (e.g. "cc4afe35-c39a-...") — issued by the original Prisma User table
- *
- * Existing rows in Visitor / Grievance / Task / etc. have createdById set to
- * UUIDs from Neon. New rows (after auth migrates) will have numeric ROWIDs.
- * Both must resolve to the same person.
+ * User identifiers come in two forms:
+ *   - Numeric ROWID  (e.g. "37719000000076188") — Catalyst AppUser primary key
+ *   - UUID           (e.g. "cc4afe35-c39a-...") — preserved as legacyId for
+ *     rows that originated in the pre-migration Prisma database
  *
  * Lookup strategy per id:
  *   1. If id is numeric → fetch from Catalyst AppUser by ROWID
  *   2. If id is UUID format → fetch from Catalyst AppUser by legacyId
- *   3. If still not found → fall back to Prisma User table on Neon
+ *   3. Otherwise → unresolved (treated as not authenticated by callers)
+ *
+ * No Prisma / Neon fallback — Catalyst is the sole source of truth.
  */
 import {
   listAllRows,
   getRow,
+  executeZCQL,
+  zcqlEscapeValue,
   CatalystRow,
 } from './catalyst-client';
-import prisma from './prisma';
+import { cacheGet, cacheSet, cacheDelete } from './cache';
+import { useZCQL } from '../config/feature-flags';
 
 const APPUSER_TABLE = 'AppUser';
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+// Auth runs on every API call and previously paid a full AppUser table scan
+// per request when the JWT subject was a UUID (legacy Prisma id). 5 minutes is
+// short enough that role / isActive flips become visible quickly, long enough
+// to absorb the burst of calls a single page load triggers.
+const AUTH_CACHE_TTL_SECONDS = 5 * 60;
+const authCacheKey = (id: string) => `auth:user:${id}`;
+
+/** Invalidate cached auth resolution for a user (call after role/active changes). */
+export function invalidateAuthUser(id: string): void {
+  cacheDelete(authCacheKey(id));
+}
+
+// Cache for full-table user reads. Multiple controllers do `listAllRows(User)`
+// or `listAllRows(AppUser)` on every list/create/update — once cached here,
+// they all share it. 60s is short enough that a newly-created AppUser shows up
+// quickly without forcing a scan on every request.
+//
+// SCOPE RULE — read this before adding a new table:
+//   This cache is *global*, not keyed by req.user. It is ONLY safe for
+//   reference / lookup tables whose contents should be visible to every
+//   authenticated request (User, AppUser). NEVER use it for transactional
+//   tables like Visitor, Grievance, Task — those are role-/user-filtered
+//   and a global cache there would let one staff member see another staff
+//   member's data. For per-user list caching, build a key that includes
+//   user id + role + filters, e.g.
+//     `visitors:${userId}:${role}:${JSON.stringify(filters)}`
+//   so staff-A's cached page is never served to staff-B.
+const TABLE_LIST_TTL_SECONDS = 60;
+const tableListCacheKey = (table: string) => `catalyst:list:${table}`;
+
+// Whitelist of tables that may be cached globally. Throw on misuse so the
+// rule above is enforced at runtime, not just by code review.
+const GLOBAL_CACHE_TABLE_WHITELIST = new Set(['User', 'AppUser']);
+
+/** Cached `listAllRows(table)` — global lookup tables only. */
+export async function getCachedTableList(
+  tableName: string,
+  pageSize?: number
+): Promise<CatalystRow[]> {
+  if (!GLOBAL_CACHE_TABLE_WHITELIST.has(tableName)) {
+    throw new Error(
+      `getCachedTableList('${tableName}') is not allowed — only User/AppUser ` +
+      `may be cached globally. See SCOPE RULE in catalyst-user-lookup.ts.`
+    );
+  }
+  const key = tableListCacheKey(tableName);
+  const cached = cacheGet<CatalystRow[]>(key);
+  if (cached) return cached;
+  const fresh = await listAllRows(tableName, pageSize);
+  cacheSet(key, fresh, TABLE_LIST_TTL_SECONDS);
+  return fresh;
+}
+
+/** Invalidate the cached list for a table (call after insert/update/delete). */
+export function invalidateTableList(tableName: string): void {
+  cacheDelete(tableListCacheKey(tableName));
+}
 
 export interface ResolvedUser {
   id: string;
@@ -59,10 +119,12 @@ export async function lookupUsers(
     else uuids.push(id); // unknown format → try as legacyId
   }
 
-  // Catalyst lookup — fetch all once and partition (cheap for our scale)
+  // Catalyst lookup — fetch all once and partition (cheap for our scale).
+  // Cached: AppUser table is read on nearly every list/create call across
+  // controllers, so caching here saves one Catalyst round-trip per request.
   let allCatalyst: CatalystRow[] = [];
   try {
-    allCatalyst = await listAllRows(APPUSER_TABLE);
+    allCatalyst = await getCachedTableList(APPUSER_TABLE);
   } catch {
     // Table not created yet → fall through to Prisma-only path
   }
@@ -87,19 +149,9 @@ export async function lookupUsers(
     else stillMissing.push(id);
   }
 
-  // Prisma fallback for anything not found in Catalyst
-  if (stillMissing.length > 0) {
-    try {
-      const users = await prisma.user.findMany({
-        where: { id: { in: stillMissing } },
-        select: { id: true, name: true, email: true },
-      });
-      for (const u of users) out.set(u.id, u);
-    } catch {
-      /* Neon may be unreachable — leave the entries unresolved */
-    }
-  }
-
+  // Catalyst is the only source of truth — anything not in AppUser stays
+  // unresolved (caller treats missing as null user, which is correct).
+  void stillMissing;
   return out;
 }
 
@@ -108,6 +160,25 @@ export async function lookupUsers(
  * Used by the auth middleware to validate JWTs.
  */
 export async function findUserForAuth(
+  id: string
+): Promise<{
+  source: 'catalyst' | 'prisma' | null;
+  user: { id: string; email: string; name: string; role: string; isActive: boolean } | null;
+}> {
+  const cached = cacheGet<{
+    source: 'catalyst' | 'prisma' | null;
+    user: { id: string; email: string; name: string; role: string; isActive: boolean } | null;
+  }>(authCacheKey(id));
+  if (cached) return cached;
+
+  const result = await resolveUserForAuth(id);
+  // Only cache positive resolutions — negative ones might just be a transient
+  // Catalyst hiccup, and we don't want to lock a real user out for 5 minutes.
+  if (result.user) cacheSet(authCacheKey(id), result, AUTH_CACHE_TTL_SECONDS);
+  return result;
+}
+
+async function resolveUserForAuth(
   id: string
 ): Promise<{
   source: 'catalyst' | 'prisma' | null;
@@ -134,11 +205,21 @@ export async function findUserForAuth(
     }
   }
 
-  // UUID → Catalyst by legacyId (then Prisma fallback)
+  // UUID → Catalyst by legacyId (then Prisma fallback). With ZCQL on, this is
+  // a direct indexed lookup (~30ms) instead of a full-table scan (~300ms).
   if (UUID_RE.test(id)) {
     try {
-      const all = await listAllRows(APPUSER_TABLE);
-      const row = all.find((r) => r.legacyId === id);
+      let row: CatalystRow | undefined;
+      if (useZCQL()) {
+        const q = zcqlEscapeValue(id);
+        const rows = await executeZCQL<CatalystRow>(
+          `SELECT * FROM ${APPUSER_TABLE} WHERE legacyId = '${q}' LIMIT 1`
+        );
+        row = rows[0];
+      } else {
+        const all = await getCachedTableList(APPUSER_TABLE);
+        row = all.find((r) => r.legacyId === id);
+      }
       if (row) {
         return {
           source: 'catalyst',
@@ -157,18 +238,7 @@ export async function findUserForAuth(
     }
   }
 
-  // Final fallback: Prisma
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id },
-      select: { id: true, email: true, name: true, role: true, isActive: true },
-    });
-    if (user) {
-      return { source: 'prisma', user };
-    }
-  } catch {
-    /* ignore */
-  }
-
+  // Catalyst is the only source — no Prisma fallback. If the user isn't in
+  // AppUser, treat as not authenticated.
   return { source: null, user: null };
 }

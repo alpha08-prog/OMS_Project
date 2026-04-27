@@ -1,33 +1,20 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { body, param } from 'express-validator';
-import * as prismaCtrl from '../controllers/grievance.controller';
-import * as catalystCtrl from '../controllers-catalyst/grievance.controller';
-import { useCatalyst } from '../config/feature-flags';
+import {
+  createGrievance,
+  getGrievances,
+  getGrievanceById,
+  updateGrievance,
+  verifyGrievance,
+  updateGrievanceStatus,
+  deleteGrievance,
+  getVerificationQueue,
+} from '../controllers-catalyst/grievance.controller';
 import { authenticate, adminOnly, staffOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
 
-/**
- * Dispatcher — picks Prisma or Catalyst implementation per request based on
- * USE_CATALYST_GRIEVANCE feature flag. Same pattern as visitor.routes.ts.
- */
-type CtrlMethod = keyof typeof prismaCtrl;
-
-function dispatch(method: CtrlMethod) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const impl = useCatalyst('grievance')
-        ? (catalystCtrl as any)[method]
-        : (prismaCtrl as any)[method];
-      await impl(req, res, next);
-    } catch (err) {
-      next(err);
-    }
-  };
-}
-
-// Validation rules (unchanged from Prisma version)
 const createGrievanceValidation = [
   body('petitionerName').trim().notEmpty().withMessage('Petitioner name is required'),
   body('mobileNumber').matches(/^\d{10}$/).withMessage('Valid 10-digit mobile number is required'),
@@ -52,38 +39,21 @@ const updateStatusValidation = [
     .withMessage('Invalid status'),
 ];
 
-// Catalyst uses numeric ROWIDs, Prisma uses UUIDs.
 const idParamValidation = [
   param('id')
     .matches(/^([0-9a-fA-F-]{36}|[0-9]+)$/)
     .withMessage('Invalid grievance ID'),
 ];
 
-// All routes require authentication
 router.use(authenticate);
 
-// Staff can create grievances
-router.post('/', staffOnly, validate(createGrievanceValidation), dispatch('createGrievance'));
-
-// Get all grievances (with filters and pagination)
-router.get('/', dispatch('getGrievances'));
-
-// Get verification queue (admin only)
-router.get('/queue/verification', adminOnly, dispatch('getVerificationQueue'));
-
-// Get single grievance
-router.get('/:id', validate(idParamValidation), dispatch('getGrievanceById'));
-
-// Update grievance
-router.put('/:id', validate(idParamValidation), dispatch('updateGrievance'));
-
-// Verify grievance (admin only)
-router.patch('/:id/verify', adminOnly, validate(idParamValidation), dispatch('verifyGrievance'));
-
-// Update status (admin only)
-router.patch('/:id/status', adminOnly, validate([...idParamValidation, ...updateStatusValidation]), dispatch('updateGrievanceStatus'));
-
-// Delete grievance (admin only)
-router.delete('/:id', adminOnly, validate(idParamValidation), dispatch('deleteGrievance'));
+router.post('/', staffOnly, validate(createGrievanceValidation), createGrievance);
+router.get('/', getGrievances);
+router.get('/queue/verification', adminOnly, getVerificationQueue);
+router.get('/:id', validate(idParamValidation), getGrievanceById);
+router.put('/:id', validate(idParamValidation), updateGrievance);
+router.patch('/:id/verify', adminOnly, validate(idParamValidation), verifyGrievance);
+router.patch('/:id/status', adminOnly, validate([...idParamValidation, ...updateStatusValidation]), updateGrievanceStatus);
+router.delete('/:id', adminOnly, validate(idParamValidation), deleteGrievance);
 
 export default router;

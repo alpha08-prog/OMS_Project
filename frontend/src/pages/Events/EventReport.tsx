@@ -35,7 +35,7 @@ export default function EventReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await tourProgramApi.getEvents({ limit: "500" });
+      const res = await tourProgramApi.getEvents({ limit: "50" });
       setEvents(res.data ?? []);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load events");

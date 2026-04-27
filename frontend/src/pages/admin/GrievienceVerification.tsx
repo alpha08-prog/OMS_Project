@@ -51,11 +51,11 @@ export default function GrievanceVerification() {
     setError(null);
     try {
       // Use isVerified=false filter so the DB returns only unverified rows (fast index scan)
-      const grievanceParams: Record<string, string> = { isVerified: 'false', limit: '1000' };
+      const grievanceParams: Record<string, string> = { isVerified: 'false', limit: '50' };
       if (statusFilter !== "all") grievanceParams.status = statusFilter;
       const [grievancesRes, tasksRes] = await Promise.all([
         grievanceApi.getAll(grievanceParams), // Get all grievances, not just OPEN
-        taskApi.getAll({ limit: '1000' }) // Get all tasks
+        taskApi.getAll({ limit: '50' }) // Get all tasks
       ]);
       
       console.log('GrievanceVerification - Grievances response:', grievancesRes);

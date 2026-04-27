@@ -325,7 +325,7 @@ export default function StaffTasks() {
                                       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                                         <span>{formatDateTime(history.createdAt)}</span>
                                         <span>•</span>
-                                        <span>{history.createdBy.name}</span>
+                                        <span>{history.createdBy?.name ?? '—'}</span>
                                         {history.status && (
                                           <>
                                             <span>•</span>
@@ -413,7 +413,7 @@ export default function StaffTasks() {
                               </Badge>
                             )}
                             <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                              <span>{entry.createdBy.name}</span>
+                              <span>{entry.createdBy?.name ?? '—'}</span>
                               <span>•</span>
                               <span>{formatDateTime(entry.createdAt)}</span>
                             </div>

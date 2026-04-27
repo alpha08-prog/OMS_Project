@@ -17,14 +17,21 @@
 import { Request, Response } from 'express';
 import {
   insertRow,
-  listAllRows,
   getRow,
   updateRow,
+  executeZCQL,
+  zcqlEscapeValue,
   CatalystRow,
 } from '../lib/catalyst-client';
+import { useZCQL } from '../config/feature-flags';
 import { hashPassword, comparePassword, validatePasswordStrength } from '../utils/password';
 import { generateToken } from '../utils/jwt';
 import { sendSuccess, sendError, sendServerError } from '../utils/response';
+import {
+  getCachedTableList,
+  invalidateTableList,
+  invalidateAuthUser,
+} from '../lib/catalyst-user-lookup';
 import type { AuthenticatedRequest, LoginRequest, RegisterRequest } from '../types';
 
 const APPUSER_TABLE = 'AppUser';
@@ -54,10 +61,30 @@ function jwtIdFor(row: CatalystRow): string {
   return row.legacyId ? String(row.legacyId) : String(row.ROWID);
 }
 
-/** Find user by email (case-insensitive) OR phone. Returns the raw row or null. */
+/**
+ * Find user by email (case-insensitive) OR phone. Returns the raw row or null.
+ *
+ * ZCQL fast path: direct WHERE-indexed lookup, no full table scan. Falls back
+ * to the cached-list scan if USE_ZCQL is off — safe rollback path.
+ *
+ * Login is the slowest hot path because bcrypt costs ~100ms regardless. Killing
+ * the table-scan portion (~200-400ms uncached) takes login from ~500ms to
+ * ~150ms.
+ */
 async function findByIdentifier(identifier: string): Promise<CatalystRow | null> {
-  const all = await listAllRows(APPUSER_TABLE);
   const lower = identifier.toLowerCase();
+
+  if (useZCQL()) {
+    // Emails are stored lowercase by register, so lowercase the input and
+    // compare directly — Catalyst ZCQL doesn't support LOWER().
+    const lowerQ = zcqlEscapeValue(lower);
+    const idQ = zcqlEscapeValue(identifier);
+    const query = `SELECT * FROM ${APPUSER_TABLE} WHERE email = '${lowerQ}' OR phone = '${idQ}' LIMIT 1`;
+    const rows = await executeZCQL<CatalystRow>(query);
+    return rows[0] ?? null;
+  }
+
+  const all = await getCachedTableList(APPUSER_TABLE);
   return (
     all.find(
       (r) =>
@@ -80,8 +107,10 @@ export async function register(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Duplicate-check against email or phone
-    const all = await listAllRows(APPUSER_TABLE);
+    // Duplicate-check against email or phone. Use cached read — cache is
+    // invalidated below right after a successful insert, so a duplicate
+    // submitted seconds later will still be detected.
+    const all = await getCachedTableList(APPUSER_TABLE);
     const lowerEmail = email.toLowerCase();
     const dup = all.find(
       (r) =>
@@ -109,6 +138,7 @@ export async function register(req: Request, res: Response): Promise<void> {
       googleTokenExpiry: null,
       calendarConnected: false,
     });
+    invalidateTableList(APPUSER_TABLE);
 
     const user = shapeUser(row);
     const token = generateToken({
@@ -184,7 +214,7 @@ export async function getMe(req: AuthenticatedRequest, res: Response): Promise<v
     if (/^\d+$/.test(req.user.id)) {
       row = await getRow(APPUSER_TABLE, req.user.id);
     } else {
-      const all = await listAllRows(APPUSER_TABLE);
+      const all = await getCachedTableList(APPUSER_TABLE);
       row = all.find((r) => r.legacyId === req.user!.id) ?? null;
     }
     if (!row) {
@@ -213,7 +243,7 @@ export async function updatePassword(
     if (/^\d+$/.test(req.user.id)) {
       row = await getRow(APPUSER_TABLE, req.user.id);
     } else {
-      const all = await listAllRows(APPUSER_TABLE);
+      const all = await getCachedTableList(APPUSER_TABLE);
       row = all.find((r) => r.legacyId === req.user!.id) ?? null;
     }
     if (!row) {
@@ -238,6 +268,8 @@ export async function updatePassword(
       ROWID: String(row.ROWID),
       password: hashed,
     });
+    invalidateTableList(APPUSER_TABLE);
+    invalidateAuthUser(req.user.id);
 
     sendSuccess(res, null, 'Password updated successfully');
   } catch (error) {
@@ -251,13 +283,15 @@ export async function getAllUsers(
   res: Response
 ): Promise<void> {
   try {
-    const rows = await listAllRows(APPUSER_TABLE);
-    rows.sort((a, b) => {
+    const rows = await getCachedTableList(APPUSER_TABLE);
+    // Copy before sort — getCachedTableList returns a shared array.
+    const sorted = [...rows];
+    sorted.sort((a, b) => {
       const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
       const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
       return tb - ta;
     });
-    const users = rows.map(shapeUser);
+    const users = sorted.map(shapeUser);
     sendSuccess(res, users, 'Users retrieved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to get users', error);
@@ -281,7 +315,7 @@ export async function updateUserRole(
     if (/^\d+$/.test(id)) {
       row = await getRow(APPUSER_TABLE, id);
     } else {
-      const all = await listAllRows(APPUSER_TABLE);
+      const all = await getCachedTableList(APPUSER_TABLE);
       row = all.find((r) => r.legacyId === id) ?? null;
     }
     if (!row) {
@@ -293,6 +327,8 @@ export async function updateUserRole(
       ROWID: String(row.ROWID),
       role,
     });
+    invalidateTableList(APPUSER_TABLE);
+    invalidateAuthUser(id);
     sendSuccess(res, shapeUser(updated), 'User role updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update user role', error);
@@ -315,7 +351,7 @@ export async function deactivateUser(
     if (/^\d+$/.test(id)) {
       row = await getRow(APPUSER_TABLE, id);
     } else {
-      const all = await listAllRows(APPUSER_TABLE);
+      const all = await getCachedTableList(APPUSER_TABLE);
       row = all.find((r) => r.legacyId === id) ?? null;
     }
     if (!row) {
@@ -327,6 +363,8 @@ export async function deactivateUser(
       ROWID: String(row.ROWID),
       isActive: false,
     });
+    invalidateTableList(APPUSER_TABLE);
+    invalidateAuthUser(id);
     sendSuccess(res, null, 'User deactivated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to deactivate user', error);

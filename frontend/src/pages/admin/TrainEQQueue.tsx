@@ -55,7 +55,7 @@ export default function TrainEQQueue() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = { limit: "500" };
+      const params: Record<string, string> = { limit: "50" };
       if (statusFilter !== "ALL") params.status = statusFilter;
       const res = await trainRequestApi.getAll(params);
       setRequests(res.data);
@@ -197,9 +197,9 @@ export default function TrainEQQueue() {
         }
       }
       
-      // Validate assignedToId is a UUID format
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(assignToId)) {
+      // Accept either UUID (legacy Prisma ids) or numeric Catalyst ROWID.
+      const idRegex = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9]+)$/i;
+      if (!idRegex.test(assignToId)) {
         alert('Invalid staff member selected. Please select a valid staff member.');
         setAssigning(false);
         return;

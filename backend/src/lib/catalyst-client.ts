@@ -18,6 +18,17 @@ interface AccessTokenCache {
 
 let tokenCache: AccessTokenCache | null = null;
 
+// Shared keep-alive agent so outbound calls to accounts.zoho.in /
+// api.catalyst.zoho.in reuse TCP+TLS connections instead of paying a fresh
+// handshake (~100-200 ms) per request. Big win because list endpoints fan out
+// into multiple sequential calls per user request.
+const keepAliveAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30_000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+});
+
 function env(key: string, fallback?: string): string {
   const v = process.env[key];
   if (v && v.trim()) return v.trim();
@@ -54,6 +65,7 @@ function fetchAccessToken(): Promise<AccessTokenCache> {
         hostname: accountsHost(),
         path: '/oauth/v2/token',
         method: 'POST',
+        agent: keepAliveAgent,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(body),
@@ -124,7 +136,13 @@ async function apiCall<T = any>(opts: RequestOptions): Promise<T> {
 
   return new Promise<T>((resolve, reject) => {
     const req = https.request(
-      { hostname: apiHost(), path, method: opts.method, headers },
+      {
+        hostname: apiHost(),
+        path,
+        method: opts.method,
+        agent: keepAliveAgent,
+        headers,
+      },
       (res) => {
         let raw = '';
         res.on('data', (c) => (raw += c.toString()));
@@ -251,6 +269,61 @@ export async function listAllRows(
     nextToken = page.moreRecords ? page.nextToken : undefined;
   } while (nextToken);
   return all;
+}
+
+/**
+ * Execute a ZCQL query against the Data Store and return rows.
+ *
+ * ZCQL pushes filter / sort / limit down to the database, so callers don't
+ * need to fetch a full table and filter in JS. There is no parameter binding
+ * — values must be escaped with `zcqlEscapeValue` to prevent injection.
+ *
+ * Response shape: `{ status, data: [{ <TableName>: { col1, col2, ... } }, ...] }`
+ * — Catalyst nests each row under the table name. We flatten it for callers
+ * unless `flatten: false` is passed.
+ */
+export async function executeZCQL<T = CatalystRow>(
+  query: string,
+  options: { flatten?: boolean } = {}
+): Promise<T[]> {
+  const flatten = options.flatten !== false;
+  const result = await apiCall<{ status: string; data: any[] }>({
+    method: 'POST',
+    path: `/query`,
+    body: { query },
+  });
+  const rows = result.data ?? [];
+  if (!flatten) return rows as T[];
+  return rows.map((entry: any) => {
+    if (entry && typeof entry === 'object') {
+      const keys = Object.keys(entry);
+      // Catalyst wraps rows like { TableName: { ... } }. If a single key wraps
+      // an object, unwrap it. Otherwise return as-is (e.g., aggregate queries).
+      if (keys.length === 1 && entry[keys[0]] && typeof entry[keys[0]] === 'object') {
+        return entry[keys[0]] as T;
+      }
+    }
+    return entry as T;
+  });
+}
+
+/**
+ * Escape a string value for safe inline use in a ZCQL query. ZCQL has no
+ * parameter binding, so every user-supplied string must pass through here.
+ * Wrap the result in single quotes when used in WHERE clauses.
+ */
+export function zcqlEscapeValue(value: string): string {
+  return String(value).replace(/'/g, "''");
+}
+
+/**
+ * Catalyst ZCQL rejects LIMIT > 300. Controllers that fetch one extra row
+ * to detect a "has more" page can request at most 299 user rows + 1 probe.
+ * Use this to clamp any user-supplied limit before building a ZCQL query.
+ */
+export const ZCQL_MAX_LIMIT = 299;
+export function zcqlSafeLimit(limit: number): number {
+  return Math.min(Math.max(1, limit), ZCQL_MAX_LIMIT);
 }
 
 /** Get a single row by ROWID. Returns null if not found. */

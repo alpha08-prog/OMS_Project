@@ -21,6 +21,9 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  executeZCQL,
+  zcqlEscapeValue,
+  zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
 import {
@@ -31,6 +34,8 @@ import {
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import { cacheClear } from '../lib/cache';
+import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { useZCQL } from '../config/feature-flags';
 import type { AuthenticatedRequest, GrievanceFilters } from '../types';
 
 const GRIEVANCE_TABLE = 'Grievance';
@@ -145,7 +150,7 @@ async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
   const byId = new Map<string, { id: string; name: string; email: string }>();
   if (ids.size > 0) {
     try {
-      const users = await listAllRows(USER_TABLE);
+      const users = await getCachedTableList(USER_TABLE);
       for (const u of users) {
         const id = String(u.ROWID);
         if (ids.has(id)) byId.set(id, { id, name: u.name, email: u.email });
@@ -213,6 +218,8 @@ export async function createGrievance(
       letterTemplate: letterTemplate ?? null,
       referencedBy: referencedBy ?? null,
       status: 'OPEN',
+      // Schema confirms isVerified / isLocked are Catalyst boolean columns —
+      // send real JS booleans, not strings.
       isVerified: false,
       verifiedAt: null,
       resolvedAt: null,
@@ -230,10 +237,59 @@ export async function createGrievance(
   }
 }
 
+/** Build a ZCQL WHERE clause + ORDER BY for the grievance list. */
+function buildGrievanceZCQL(
+  user: { id: string; role: string } | undefined,
+  filters: GrievanceFilters
+): string {
+  const conditions: string[] = [];
+
+  if (user?.role === 'STAFF') {
+    conditions.push(`createdById = '${zcqlEscapeValue(user.id)}'`);
+  }
+
+  if (filters.status) {
+    conditions.push(`status = '${zcqlEscapeValue(String(filters.status))}'`);
+  }
+  if (filters.isVerified !== undefined) {
+    // Catalyst stores booleans as strings ('true'/'false') — match that.
+    const want = String(filters.isVerified) === 'true' ? 'true' : 'false';
+    conditions.push(`isVerified = '${want}'`);
+  }
+  if (filters.grievanceType) {
+    conditions.push(
+      `grievanceType = '${zcqlEscapeValue(String(filters.grievanceType))}'`
+    );
+  }
+  if (filters.constituency) {
+    const q = zcqlEscapeValue(String(filters.constituency));
+    conditions.push(`constituency LIKE '%${q}%'`);
+  }
+  if (filters.search) {
+    const q = zcqlEscapeValue(String(filters.search));
+    conditions.push(
+      `(petitionerName LIKE '%${q}%' OR mobileNumber LIKE '%${q}%' OR description LIKE '%${q}%')`
+    );
+  }
+  if (filters.startDate) {
+    const start = toCatalystDate(filters.startDate as unknown as string);
+    if (start) conditions.push(`CREATEDTIME >= '${start}'`);
+  }
+  if (filters.endDate) {
+    const end = toCatalystDate(filters.endDate as unknown as string);
+    if (end) conditions.push(`CREATEDTIME <= '${end}'`);
+  }
+
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  return `SELECT * FROM ${GRIEVANCE_TABLE}${where} ORDER BY CREATEDTIME DESC`;
+}
+
 /**
  * GET /api/grievances
  *
- * Pulls all rows then filters/paginates in memory.
+ * Two paths controlled by the USE_ZCQL master flag:
+ *   - true:  ZCQL pushes filter / sort / pagination to Catalyst
+ *   - false: list everything, filter in JS (legacy fallback)
  */
 export async function getGrievances(
   req: AuthenticatedRequest,
@@ -244,7 +300,22 @@ export async function getGrievances(
       req.query as { page?: string; limit?: string }
     );
     const filters = req.query as GrievanceFilters;
+    if (useZCQL()) {
+      const baseQuery = buildGrievanceZCQL(req.user, filters);
+      // Catalyst ZCQL caps LIMIT at 300; +1 for hasMore probe → user limit ≤ 299.
+      const safeLimit = zcqlSafeLimit(limit);
+      const pagedQuery = `${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`;
+      const fetched = await executeZCQL<CatalystRow>(pagedQuery);
+      const hasMore = fetched.length > safeLimit;
+      const pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      const grievances = await attachUsers(pageRows);
+      const total = skip + pageRows.length + (hasMore ? 1 : 0);
+      const meta = calculatePaginationMeta(total, page, safeLimit);
+      sendSuccess(res, grievances, 'Grievances retrieved successfully', 200, meta);
+      return;
+    }
 
+    // ── Fallback path: list everything, filter in JS ────────────────────
     let rows = await listAllRows(GRIEVANCE_TABLE);
 
     // STAFF data isolation

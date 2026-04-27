@@ -20,6 +20,9 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  executeZCQL,
+  zcqlEscapeValue,
+  zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
 import {
@@ -29,6 +32,8 @@ import {
   sendServerError,
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
+import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { useZCQL } from '../config/feature-flags';
 import type { AuthenticatedRequest, VisitorFilters } from '../types';
 
 const VISITOR_TABLE = 'Visitor';
@@ -71,7 +76,7 @@ async function attachCreators(rows: CatalystRow[]): Promise<any[]> {
 
   const byId = new Map<string, { id: string; name: string; email: string }>();
   try {
-    const users = await listAllRows(USER_TABLE, 200);
+    const users = await getCachedTableList(USER_TABLE, 200);
     for (const u of users) {
       const id = String(u.ROWID);
       if (creatorIds.has(id)) {
@@ -119,10 +124,46 @@ export async function createVisitor(
 }
 
 /**
+ * Build a ZCQL WHERE clause + ORDER BY for the visitor list. Returns the
+ * full query so the caller can also append LIMIT/OFFSET.
+ */
+function buildVisitorZCQL(
+  user: { id: string; role: string } | undefined,
+  filters: VisitorFilters
+): string {
+  const conditions: string[] = [];
+
+  if (user?.role === 'STAFF') {
+    conditions.push(`createdById = '${zcqlEscapeValue(user.id)}'`);
+  }
+
+  if (filters.search) {
+    const q = zcqlEscapeValue(String(filters.search));
+    conditions.push(
+      `(name LIKE '%${q}%' OR designation LIKE '%${q}%' OR purpose LIKE '%${q}%')`
+    );
+  }
+
+  if (filters.startDate) {
+    const start = toCatalystDate(filters.startDate as unknown as string);
+    if (start) conditions.push(`visitDate >= '${start}'`);
+  }
+  if (filters.endDate) {
+    const end = toCatalystDate(filters.endDate as unknown as string);
+    if (end) conditions.push(`visitDate <= '${end}'`);
+  }
+
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  return `SELECT * FROM ${VISITOR_TABLE}${where} ORDER BY visitDate DESC`;
+}
+
+/**
  * GET /api/visitors
  *
- * Pulls all rows then filters/paginates in memory. Acceptable while the table
- * is small. When it grows we'll switch to ZCQL once that scope is sorted.
+ * Two execution paths controlled by the USE_ZCQL master flag:
+ *   - true:  push filters down to Catalyst via ZCQL (scales with table size)
+ *   - false (default): list everything and filter in JS (safe fallback while
+ *     ZCQL behavior in this project is being validated)
  */
 export async function getVisitors(
   req: AuthenticatedRequest,
@@ -133,7 +174,23 @@ export async function getVisitors(
       req.query as { page?: string; limit?: string }
     );
     const filters = req.query as VisitorFilters;
+    if (useZCQL()) {
+      const baseQuery = buildVisitorZCQL(req.user, filters);
+      // Catalyst ZCQL caps LIMIT at 300. zcqlSafeLimit clamps user-requested
+      // limit to 299 so we have room for the +1 hasMore probe.
+      const safeLimit = zcqlSafeLimit(limit);
+      const pagedQuery = `${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`;
+      const fetched = await executeZCQL<CatalystRow>(pagedQuery);
+      const hasMore = fetched.length > safeLimit;
+      const pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      const visitors = await attachCreators(pageRows);
+      const total = skip + pageRows.length + (hasMore ? 1 : 0);
+      const meta = calculatePaginationMeta(total, page, safeLimit);
+      sendSuccess(res, visitors, 'Visitors retrieved successfully', 200, meta);
+      return;
+    }
 
+    // ── Fallback path: list everything, filter in JS ────────────────────
     let rows = await listAllRows(VISITOR_TABLE, 1000);
 
     // STAFF data isolation

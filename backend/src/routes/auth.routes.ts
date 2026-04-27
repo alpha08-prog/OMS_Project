@@ -1,28 +1,18 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { body } from 'express-validator';
-import * as prismaCtrl from '../controllers/auth.controller';
-import * as catalystCtrl from '../controllers-catalyst/auth.controller';
-import { useCatalyst } from '../config/feature-flags';
+import {
+  register,
+  login,
+  getMe,
+  updatePassword,
+  getAllUsers,
+  updateUserRole,
+  deactivateUser,
+} from '../controllers-catalyst/auth.controller';
 import { authenticate, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
-
-/** Dispatcher: same pattern as the other migrated modules. */
-type CtrlMethod = keyof typeof prismaCtrl;
-
-function dispatch(method: CtrlMethod) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const impl = useCatalyst('auth')
-        ? (catalystCtrl as any)[method]
-        : (prismaCtrl as any)[method];
-      await impl(req, res, next);
-    } catch (err) {
-      next(err);
-    }
-  };
-}
 
 const registerValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
@@ -46,16 +36,16 @@ const roleValidation = [
 ];
 
 // Public routes
-router.post('/register', validate(registerValidation), dispatch('register'));
-router.post('/login', validate(loginValidation), dispatch('login'));
+router.post('/register', validate(registerValidation), register);
+router.post('/login', validate(loginValidation), login);
 
 // Protected routes
-router.get('/me', authenticate, dispatch('getMe'));
-router.put('/password', authenticate, validate(passwordValidation), dispatch('updatePassword'));
+router.get('/me', authenticate, getMe);
+router.put('/password', authenticate, validate(passwordValidation), updatePassword);
 
 // Admin only routes
-router.get('/users', authenticate, adminOnly, dispatch('getAllUsers'));
-router.patch('/users/:id/role', authenticate, adminOnly, validate(roleValidation), dispatch('updateUserRole'));
-router.patch('/users/:id/deactivate', authenticate, adminOnly, dispatch('deactivateUser'));
+router.get('/users', authenticate, adminOnly, getAllUsers);
+router.patch('/users/:id/role', authenticate, adminOnly, validate(roleValidation), updateUserRole);
+router.patch('/users/:id/deactivate', authenticate, adminOnly, deactivateUser);
 
 export default router;

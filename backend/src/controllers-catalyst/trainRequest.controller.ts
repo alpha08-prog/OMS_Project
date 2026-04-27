@@ -21,9 +21,13 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  executeZCQL,
+  zcqlEscapeValue,
+  zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
-import prisma from '../lib/prisma';
+import { useZCQL } from '../config/feature-flags';
+import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import {
   sendSuccess,
   sendError,
@@ -109,6 +113,7 @@ function shapePassenger(row: CatalystRow) {
   };
 }
 
+/** Look up users from cached Catalyst AppUser. Best-effort. */
 async function lookupUsers(
   ids: Iterable<string>
 ): Promise<Map<string, { id: string; name: string; email: string }>> {
@@ -116,13 +121,19 @@ async function lookupUsers(
   const list = Array.from(ids).filter(Boolean);
   if (list.length === 0) return map;
   try {
-    const users = await prisma.user.findMany({
-      where: { id: { in: list } },
-      select: { id: true, name: true, email: true },
-    });
-    for (const u of users) map.set(u.id, u);
+    const users = await getCachedTableList('AppUser');
+    const wanted = new Set(list.map(String));
+    for (const u of users) {
+      const rowId = String(u.ROWID);
+      const legacyId = u.legacyId ? String(u.legacyId) : null;
+      if (wanted.has(rowId)) {
+        map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
+      } else if (legacyId && wanted.has(legacyId)) {
+        map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
+      }
+    }
   } catch {
-    /* ignore */
+    /* Catalyst unreachable — return empty map */
   }
   return map;
 }
@@ -298,6 +309,35 @@ export async function createTrainRequest(
   }
 }
 
+function buildTrainZCQL(
+  user: { id: string; role: string } | undefined,
+  filters: TrainRequestFilters
+): string {
+  const conditions: string[] = [];
+  if (user?.role === 'STAFF') {
+    conditions.push(`createdById = '${zcqlEscapeValue(user.id)}'`);
+  }
+  if (filters.status) {
+    conditions.push(`status = '${zcqlEscapeValue(String(filters.status))}'`);
+  }
+  if (filters.search) {
+    const q = zcqlEscapeValue(String(filters.search));
+    conditions.push(
+      `(passengerName LIKE '%${q}%' OR pnrNumber LIKE '%${q}%' OR trainName LIKE '%${q}%')`
+    );
+  }
+  if (filters.startDate) {
+    const start = toCatalystDate(filters.startDate as unknown as string);
+    if (start) conditions.push(`dateOfJourney >= '${start}'`);
+  }
+  if (filters.endDate) {
+    const end = toCatalystDate(filters.endDate as unknown as string);
+    if (end) conditions.push(`dateOfJourney <= '${end}'`);
+  }
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  return `SELECT * FROM ${TRAIN_TABLE}${where} ORDER BY CREATEDTIME DESC`;
+}
+
 /**
  * GET /api/train-requests
  */
@@ -311,43 +351,56 @@ export async function getTrainRequests(
     );
     const filters = req.query as TrainRequestFilters;
 
-    let rows = await listAllRows(TRAIN_TABLE);
+    let pageRows: CatalystRow[];
+    let total: number;
 
-    if (req.user?.role === 'STAFF') {
-      rows = rows.filter((r) => r.createdById === req.user!.id);
-    }
-    if (filters.status) rows = rows.filter((r) => r.status === filters.status);
-    if (filters.search) {
-      const q = String(filters.search).toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          (r.passengerName || '').toLowerCase().includes(q) ||
-          (r.pnrNumber || '').includes(q) ||
-          (r.trainName || '').toLowerCase().includes(q)
-      );
-    }
-    if (filters.startDate) {
-      const start = new Date(filters.startDate as unknown as string).getTime();
-      rows = rows.filter(
-        (r) => r.dateOfJourney && new Date(r.dateOfJourney).getTime() >= start
-      );
-    }
-    if (filters.endDate) {
-      const end = new Date(filters.endDate as unknown as string).getTime();
-      rows = rows.filter(
-        (r) => r.dateOfJourney && new Date(r.dateOfJourney).getTime() <= end
-      );
+    if (useZCQL()) {
+      const baseQuery = buildTrainZCQL(req.user, filters);
+      const safeLimit = zcqlSafeLimit(limit);
+      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
+      const hasMore = fetched.length > safeLimit;
+      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      total = skip + pageRows.length + (hasMore ? 1 : 0);
+    } else {
+      let rows = await listAllRows(TRAIN_TABLE);
+
+      if (req.user?.role === 'STAFF') {
+        rows = rows.filter((r) => r.createdById === req.user!.id);
+      }
+      if (filters.status) rows = rows.filter((r) => r.status === filters.status);
+      if (filters.search) {
+        const q = String(filters.search).toLowerCase();
+        rows = rows.filter(
+          (r) =>
+            (r.passengerName || '').toLowerCase().includes(q) ||
+            (r.pnrNumber || '').includes(q) ||
+            (r.trainName || '').toLowerCase().includes(q)
+        );
+      }
+      if (filters.startDate) {
+        const start = new Date(filters.startDate as unknown as string).getTime();
+        rows = rows.filter(
+          (r) => r.dateOfJourney && new Date(r.dateOfJourney).getTime() >= start
+        );
+      }
+      if (filters.endDate) {
+        const end = new Date(filters.endDate as unknown as string).getTime();
+        rows = rows.filter(
+          (r) => r.dateOfJourney && new Date(r.dateOfJourney).getTime() <= end
+        );
+      }
+
+      rows.sort((a, b) => {
+        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
+        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
+        return tb - ta;
+      });
+
+      total = rows.length;
+      pageRows = rows.slice(skip, skip + limit);
     }
 
-    rows.sort((a, b) => {
-      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-      return tb - ta;
-    });
-
-    const total = rows.length;
-    const paged = rows.slice(skip, skip + limit);
-    const data = await hydrate(paged);
+    const data = await hydrate(pageRows);
 
     const meta = calculatePaginationMeta(total, page, limit);
     sendSuccess(res, data, 'Train requests retrieved successfully', 200, meta);

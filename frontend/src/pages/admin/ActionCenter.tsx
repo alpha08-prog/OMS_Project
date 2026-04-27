@@ -117,9 +117,9 @@ export default function AdminActionCenter() {
     try {
       // Fetch all items, not just pending ones - we'll filter client-side
       const [grievancesRes, trainRes, tourRes, staffRes] = await Promise.all([
-        grievanceApi.getAll({ isVerified: 'false', limit: '500' }), // Only unverified — DB filtered
-        trainRequestApi.getAll({ status: 'PENDING', limit: '500' }), // Only pending
-        tourProgramApi.getAll({ decision: 'PENDING', limit: '500' }), // Only pending
+        grievanceApi.getAll({ isVerified: 'false', limit: '50' }), // Only unverified — DB filtered
+        trainRequestApi.getAll({ status: 'PENDING', limit: '50' }), // Only pending
+        tourProgramApi.getAll({ decision: 'PENDING', limit: '50' }), // Only pending
         taskApi.getStaffMembers(),
       ]);
       
@@ -289,9 +289,9 @@ export default function AdminActionCenter() {
         }
       }
       
-      // Validate assignedToId is a UUID format
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(assignToId)) {
+      // Accept either UUID (legacy Prisma ids) or numeric Catalyst ROWID.
+      const idRegex = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9]+)$/i;
+      if (!idRegex.test(assignToId)) {
         alert('Invalid staff member selected. Please select a valid staff member.');
         setAssigning(false);
         return;

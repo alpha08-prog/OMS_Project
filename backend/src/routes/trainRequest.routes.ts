@@ -1,28 +1,21 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { body, param } from 'express-validator';
-import * as prismaCtrl from '../controllers/trainRequest.controller';
-import * as catalystCtrl from '../controllers-catalyst/trainRequest.controller';
-import { useCatalyst } from '../config/feature-flags';
+import {
+  createTrainRequest,
+  getTrainRequests,
+  getTrainRequestById,
+  updateTrainRequest,
+  approveTrainRequest,
+  rejectTrainRequest,
+  resolveTrainRequest,
+  deleteTrainRequest,
+  getPendingQueue,
+  checkPNRStatus,
+} from '../controllers-catalyst/trainRequest.controller';
 import { authenticate, staffOnly, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
-
-/** Dispatcher: same pattern as visitor / grievance / task. */
-type CtrlMethod = keyof typeof prismaCtrl;
-
-function dispatch(method: CtrlMethod) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const impl = useCatalyst('trainRequest')
-        ? (catalystCtrl as any)[method]
-        : (prismaCtrl as any)[method];
-      await impl(req, res, next);
-    } catch (err) {
-      next(err);
-    }
-  };
-}
 
 const createTrainRequestValidation = [
   body('passengerName').trim().notEmpty().withMessage('Passenger name is required'),
@@ -41,7 +34,6 @@ const createTrainRequestValidation = [
     }),
 ];
 
-// Catalyst tasks have numeric ROWIDs; Prisma uses UUIDs. Accept both.
 const idParamValidation = [
   param('id')
     .matches(/^([0-9a-fA-F-]{36}|[0-9]+)$/)
@@ -50,23 +42,22 @@ const idParamValidation = [
 
 const rejectValidation = [body('reason').optional().trim()];
 
-// All routes require authentication
 router.use(authenticate);
 
-router.post('/', staffOnly, validate(createTrainRequestValidation), dispatch('createTrainRequest'));
-router.get('/', dispatch('getTrainRequests'));
-router.get('/queue/pending', adminOnly, dispatch('getPendingQueue'));
-router.get('/pnr/:pnr', dispatch('checkPNRStatus'));
-router.get('/:id', validate(idParamValidation), dispatch('getTrainRequestById'));
-router.put('/:id', validate(idParamValidation), dispatch('updateTrainRequest'));
-router.patch('/:id/approve', adminOnly, validate(idParamValidation), dispatch('approveTrainRequest'));
+router.post('/', staffOnly, validate(createTrainRequestValidation), createTrainRequest);
+router.get('/', getTrainRequests);
+router.get('/queue/pending', adminOnly, getPendingQueue);
+router.get('/pnr/:pnr', checkPNRStatus);
+router.get('/:id', validate(idParamValidation), getTrainRequestById);
+router.put('/:id', validate(idParamValidation), updateTrainRequest);
+router.patch('/:id/approve', adminOnly, validate(idParamValidation), approveTrainRequest);
 router.patch(
   '/:id/reject',
   adminOnly,
   validate([...idParamValidation, ...rejectValidation]),
-  dispatch('rejectTrainRequest')
+  rejectTrainRequest
 );
-router.patch('/:id/resolve', adminOnly, validate(idParamValidation), dispatch('resolveTrainRequest'));
-router.delete('/:id', adminOnly, validate(idParamValidation), dispatch('deleteTrainRequest'));
+router.patch('/:id/resolve', adminOnly, validate(idParamValidation), resolveTrainRequest);
+router.delete('/:id', adminOnly, validate(idParamValidation), deleteTrainRequest);
 
 export default router;

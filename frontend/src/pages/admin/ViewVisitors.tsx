@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,63 +12,60 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-
-type Visitor = {
-  id: number;
-  name: string;
-  phone: string;
-  designation: string;
-  dob?: string;
-  date: string;
-  referencedBy?: string;
-};
-
-const MOCK_VISITORS: Visitor[] = [
-  {
-    id: 1,
-    name: "Suresh Patel",
-    phone: "9876543210",
-    designation: "Party Worker",
-    dob: "1990-03-24",
-    date: "2025-03-24",
-    referencedBy: "Local Leader",
-  },
-  {
-    id: 2,
-    name: "Anita Gupta",
-    phone: "9123456780",
-    designation: "Official",
-    dob: "1985-07-10",
-    date: "2025-03-24",
-    referencedBy: "Office Staff",
-  },
-  {
-    id: 3,
-    name: "Vikram Singh",
-    phone: "9988776655",
-    designation: "Public",
-    date: "2025-03-23",
-  },
-];
+import { visitorApi } from "@/lib/api";
 
 export default function ViewVisitors() {
   const [dateFilter, setDateFilter] = useState("");
-  const [designationFilter, setDesignationFilter] = useState("");
+  const [designationFilter, setDesignationFilter] = useState("all");
   const [search, setSearch] = useState("");
 
+  // Debounce the search input so we don't fire one request per keystroke.
+  // 350ms is a good balance — feels responsive without spamming the backend.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
   useEffect(() => {
-    console.log("ViewVisitors component mounted");
-  }, []);
+    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  const filteredVisitors = MOCK_VISITORS.filter((v) => {
-    return (
-      (!dateFilter || v.date === dateFilter) &&
-      (!designationFilter || (designationFilter === "all" ? true : v.designation === designationFilter)) &&
-      (!search ||
-        v.name.toLowerCase().includes(search.toLowerCase()) ||
-        v.phone.includes(search))
-    );
+  // Server-side filters → part of the query key. Same key = same cache entry,
+  // so navigating away and back is instant within staleTime (30s).
+  const queryParams: Record<string, string> = { limit: "50" };
+  if (debouncedSearch.trim()) queryParams.search = debouncedSearch.trim();
+  if (dateFilter) {
+    queryParams.startDate = dateFilter;
+    queryParams.endDate = dateFilter;
+  }
+
+  const {
+    data: visitors = [],
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["visitors", "list", queryParams],
+    queryFn: async () => {
+      const res = await visitorApi.getAll(queryParams);
+      return res.data;
+    },
+    // keepPreviousData behavior in v5: previous data stays while new data loads
+    placeholderData: (prev) => prev,
   });
+
+  const errorMessage =
+    error instanceof Error ? error.message : error ? String(error) : null;
+
+  // Designation is a client-side filter (the backend doesn't support it),
+  // so we apply it to whatever the query returned.
+  const filteredVisitors = visitors.filter((v) => {
+    if (designationFilter !== "all" && v.designation !== designationFilter) return false;
+    return true;
+  });
+
+  const formatDate = (iso?: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toISOString().slice(0, 10);
+  };
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -77,7 +75,6 @@ export default function ViewVisitors() {
         <div className="w-full min-h-screen bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
           <div className="max-w-7xl mx-auto space-y-6">
 
-            {/* Header */}
             <div>
               <h1 className="text-2xl font-semibold text-indigo-900">
                 View Visitors
@@ -87,7 +84,6 @@ export default function ViewVisitors() {
               </p>
             </div>
 
-            {/* Filters */}
             <Card className="rounded-2xl border border-indigo-100">
               <CardHeader>
                 <CardTitle className="text-lg">Filters</CardTitle>
@@ -114,11 +110,12 @@ export default function ViewVisitors() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="Party Worker">
-                        Party Worker
-                      </SelectItem>
+                      <SelectItem value="Party Worker">Party Worker</SelectItem>
                       <SelectItem value="Official">Official</SelectItem>
                       <SelectItem value="Public">Public</SelectItem>
+                      <SelectItem value="Business">Business</SelectItem>
+                      <SelectItem value="Media">Media</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -134,7 +131,6 @@ export default function ViewVisitors() {
               </CardContent>
             </Card>
 
-            {/* Visitor List */}
             <Card className="rounded-2xl border border-indigo-100">
               <CardHeader>
                 <CardTitle className="text-lg">
@@ -143,7 +139,13 @@ export default function ViewVisitors() {
               </CardHeader>
 
               <CardContent className="space-y-4">
-                {filteredVisitors.length === 0 && (
+                {errorMessage && (
+                  <p className="text-sm text-red-600">{errorMessage}</p>
+                )}
+                {isLoading && (
+                  <p className="text-sm text-muted-foreground">Loading visitors...</p>
+                )}
+                {!isLoading && !errorMessage && filteredVisitors.length === 0 && (
                   <p className="text-sm text-muted-foreground">
                     No visitors found for selected filters.
                   </p>
@@ -155,11 +157,9 @@ export default function ViewVisitors() {
                     className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 rounded-xl border bg-white"
                   >
                     <div>
-                      <p className="font-medium text-indigo-900">
-                        {v.name}
-                      </p>
+                      <p className="font-medium text-indigo-900">{v.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        📞 {v.phone} • {v.designation}
+                        📞 {v.phone || "—"} • {v.designation}
                       </p>
                       {v.referencedBy && (
                         <p className="text-xs text-muted-foreground">
@@ -170,13 +170,9 @@ export default function ViewVisitors() {
 
                     <div className="flex items-center gap-3">
                       {v.dob && (
-                        <Badge variant="outline">
-                          🎂 {v.dob}
-                        </Badge>
+                        <Badge variant="outline">🎂 {formatDate(v.dob)}</Badge>
                       )}
-                      <Badge variant="secondary">
-                        {v.date}
-                      </Badge>
+                      <Badge variant="secondary">{formatDate(v.visitDate)}</Badge>
                     </div>
                   </div>
                 ))}

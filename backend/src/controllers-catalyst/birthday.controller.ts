@@ -20,7 +20,7 @@ import {
   toCatalystDate,
   CatalystRow,
 } from '../lib/catalyst-client';
-import prisma from '../lib/prisma';
+import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import {
   sendSuccess,
   sendError,
@@ -52,6 +52,7 @@ function shapeBirthday(
   };
 }
 
+/** Look up users from cached Catalyst AppUser. Best-effort. */
 async function lookupUsers(
   ids: Iterable<string>
 ): Promise<Map<string, { id: string; name: string; email: string }>> {
@@ -59,13 +60,19 @@ async function lookupUsers(
   const list = Array.from(ids).filter(Boolean);
   if (list.length === 0) return map;
   try {
-    const users = await prisma.user.findMany({
-      where: { id: { in: list } },
-      select: { id: true, name: true, email: true },
-    });
-    for (const u of users) map.set(u.id, u);
+    const users = await getCachedTableList('AppUser');
+    const wanted = new Set(list.map(String));
+    for (const u of users) {
+      const rowId = String(u.ROWID);
+      const legacyId = u.legacyId ? String(u.legacyId) : null;
+      if (wanted.has(rowId)) {
+        map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
+      } else if (legacyId && wanted.has(legacyId)) {
+        map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
+      }
+    }
   } catch {
-    /* ignore */
+    /* Catalyst unreachable — return empty map */
   }
   return map;
 }

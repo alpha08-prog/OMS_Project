@@ -22,9 +22,12 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  executeZCQL,
+  zcqlEscapeValue,
+  zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
-import prisma from '../lib/prisma';
+import { useZCQL } from '../config/feature-flags';
 import {
   sendSuccess,
   sendError,
@@ -33,6 +36,7 @@ import {
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import { cacheClear } from '../lib/cache';
+import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import type {
   AuthenticatedRequest,
   TourProgramFilters,
@@ -95,6 +99,7 @@ function shapeTour(
   };
 }
 
+/** Look up users from cached Catalyst AppUser. Best-effort. */
 async function lookupUsers(
   ids: Iterable<string>
 ): Promise<Map<string, { id: string; name: string; email: string }>> {
@@ -102,13 +107,19 @@ async function lookupUsers(
   const list = Array.from(ids).filter(Boolean);
   if (list.length === 0) return map;
   try {
-    const users = await prisma.user.findMany({
-      where: { id: { in: list } },
-      select: { id: true, name: true, email: true },
-    });
-    for (const u of users) map.set(u.id, u);
+    const users = await getCachedTableList('AppUser');
+    const wanted = new Set(list.map(String));
+    for (const u of users) {
+      const rowId = String(u.ROWID);
+      const legacyId = u.legacyId ? String(u.legacyId) : null;
+      if (wanted.has(rowId)) {
+        map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
+      } else if (legacyId && wanted.has(legacyId)) {
+        map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
+      }
+    }
   } catch {
-    /* ignore — User table still on Neon, may be unreachable temporarily */
+    /* Catalyst unreachable — return empty map */
   }
   return map;
 }
@@ -197,6 +208,29 @@ export async function createTourProgram(
   }
 }
 
+function buildTourZCQL(filters: TourProgramFilters): string {
+  const conditions: string[] = [];
+  if (filters.decision) {
+    conditions.push(`decision = '${zcqlEscapeValue(String(filters.decision))}'`);
+  }
+  if (filters.search) {
+    const q = zcqlEscapeValue(String(filters.search));
+    conditions.push(
+      `(eventName LIKE '%${q}%' OR organizer LIKE '%${q}%' OR venue LIKE '%${q}%')`
+    );
+  }
+  if (filters.startDate) {
+    const start = toCatalystDate(filters.startDate as unknown as string);
+    if (start) conditions.push(`dateTime >= '${start}'`);
+  }
+  if (filters.endDate) {
+    const end = toCatalystDate(filters.endDate as unknown as string);
+    if (end) conditions.push(`dateTime <= '${end}'`);
+  }
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  return `SELECT * FROM ${TOUR_TABLE}${where} ORDER BY dateTime ASC`;
+}
+
 /** GET /api/tour-programs */
 export async function getTourPrograms(
   req: AuthenticatedRequest,
@@ -208,42 +242,54 @@ export async function getTourPrograms(
     );
     const filters = req.query as TourProgramFilters;
 
-    let rows = await listAllRows(TOUR_TABLE);
+    let pageRows: CatalystRow[];
+    let total: number;
 
-    if (filters.decision) {
-      rows = rows.filter((r) => r.decision === filters.decision);
-    }
-    if (filters.search) {
-      const q = String(filters.search).toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          (r.eventName || '').toLowerCase().includes(q) ||
-          (r.organizer || '').toLowerCase().includes(q) ||
-          (r.venue || '').toLowerCase().includes(q)
-      );
-    }
-    if (filters.startDate) {
-      const start = new Date(filters.startDate as unknown as string).getTime();
-      rows = rows.filter(
-        (r) => r.dateTime && new Date(r.dateTime).getTime() >= start
-      );
-    }
-    if (filters.endDate) {
-      const end = new Date(filters.endDate as unknown as string).getTime();
-      rows = rows.filter(
-        (r) => r.dateTime && new Date(r.dateTime).getTime() <= end
-      );
+    if (useZCQL()) {
+      const baseQuery = buildTourZCQL(filters);
+      const safeLimit = zcqlSafeLimit(limit);
+      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
+      const hasMore = fetched.length > safeLimit;
+      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      total = skip + pageRows.length + (hasMore ? 1 : 0);
+    } else {
+      let rows = await listAllRows(TOUR_TABLE);
+      if (filters.decision) {
+        rows = rows.filter((r) => r.decision === filters.decision);
+      }
+      if (filters.search) {
+        const q = String(filters.search).toLowerCase();
+        rows = rows.filter(
+          (r) =>
+            (r.eventName || '').toLowerCase().includes(q) ||
+            (r.organizer || '').toLowerCase().includes(q) ||
+            (r.venue || '').toLowerCase().includes(q)
+        );
+      }
+      if (filters.startDate) {
+        const start = new Date(filters.startDate as unknown as string).getTime();
+        rows = rows.filter(
+          (r) => r.dateTime && new Date(r.dateTime).getTime() >= start
+        );
+      }
+      if (filters.endDate) {
+        const end = new Date(filters.endDate as unknown as string).getTime();
+        rows = rows.filter(
+          (r) => r.dateTime && new Date(r.dateTime).getTime() <= end
+        );
+      }
+
+      rows.sort((a, b) => {
+        const ta = a.dateTime ? new Date(a.dateTime).getTime() : 0;
+        const tb = b.dateTime ? new Date(b.dateTime).getTime() : 0;
+        return ta - tb;
+      });
+
+      total = rows.length;
+      pageRows = rows.slice(skip, skip + limit);
     }
 
-    rows.sort((a, b) => {
-      const ta = a.dateTime ? new Date(a.dateTime).getTime() : 0;
-      const tb = b.dateTime ? new Date(b.dateTime).getTime() : 0;
-      return ta - tb; // upcoming first (asc)
-    });
-
-    const total = rows.length;
-    const paged = rows.slice(skip, skip + limit);
-    const data = await hydrate(paged);
+    const data = await hydrate(pageRows);
 
     const meta = calculatePaginationMeta(total, page, limit);
     sendSuccess(res, data, 'Tour programs retrieved successfully', 200, meta);

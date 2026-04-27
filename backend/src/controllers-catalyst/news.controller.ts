@@ -17,9 +17,13 @@ import {
   getRow,
   updateRow,
   deleteRow,
+  executeZCQL,
+  zcqlEscapeValue,
+  zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
-import prisma from '../lib/prisma';
+import { useZCQL } from '../config/feature-flags';
+import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import {
   sendSuccess,
   sendError,
@@ -62,6 +66,7 @@ function shapeNews(
   };
 }
 
+/** Look up users from cached Catalyst AppUser. Best-effort. */
 async function lookupUsers(
   ids: Iterable<string>
 ): Promise<Map<string, { id: string; name: string; email: string }>> {
@@ -69,13 +74,19 @@ async function lookupUsers(
   const list = Array.from(ids).filter(Boolean);
   if (list.length === 0) return map;
   try {
-    const users = await prisma.user.findMany({
-      where: { id: { in: list } },
-      select: { id: true, name: true, email: true },
-    });
-    for (const u of users) map.set(u.id, u);
+    const users = await getCachedTableList('AppUser');
+    const wanted = new Set(list.map(String));
+    for (const u of users) {
+      const rowId = String(u.ROWID);
+      const legacyId = u.legacyId ? String(u.legacyId) : null;
+      if (wanted.has(rowId)) {
+        map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
+      } else if (legacyId && wanted.has(legacyId)) {
+        map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
+      }
+    }
   } catch {
-    /* ignore */
+    /* Catalyst unreachable — return empty map */
   }
   return map;
 }
@@ -141,6 +152,31 @@ export async function createNews(
   }
 }
 
+function buildNewsZCQL(filters: NewsFilters): string {
+  const conditions: string[] = [];
+  if (filters.priority) {
+    conditions.push(`newsPriority = '${zcqlEscapeValue(String(filters.priority))}'`);
+  }
+  if (filters.category) {
+    conditions.push(`category = '${zcqlEscapeValue(String(filters.category))}'`);
+  }
+  if (filters.region) {
+    const q = zcqlEscapeValue(String(filters.region));
+    conditions.push(`region LIKE '%${q}%'`);
+  }
+  if (filters.search) {
+    const q = zcqlEscapeValue(String(filters.search));
+    conditions.push(
+      `(headline LIKE '%${q}%' OR description LIKE '%${q}%' OR mediaSource LIKE '%${q}%')`
+    );
+  }
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  // ZCQL can't express HIGH > NORMAL > LOW order natively. Order by priority
+  // desc + CREATEDTIME desc — for typical priority value strings this yields
+  // alphabetical (NORMAL > LOW > HIGH); we resort the page in JS afterwards.
+  return `SELECT * FROM ${NEWS_TABLE}${where} ORDER BY CREATEDTIME DESC`;
+}
+
 /** GET /api/news */
 export async function getNews(
   req: AuthenticatedRequest,
@@ -152,41 +188,62 @@ export async function getNews(
     );
     const filters = req.query as NewsFilters;
 
-    let rows = await listAllRows(NEWS_TABLE);
+    let pageRows: CatalystRow[];
+    let total: number;
 
-    if (filters.priority) {
-      rows = rows.filter((r) => r.newsPriority === filters.priority);
-    }
-    if (filters.category) {
-      rows = rows.filter((r) => r.category === filters.category);
-    }
-    if (filters.region) {
-      const q = String(filters.region).toLowerCase();
-      rows = rows.filter((r) => (r.region || '').toLowerCase().includes(q));
-    }
-    if (filters.search) {
-      const q = String(filters.search).toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          (r.headline || '').toLowerCase().includes(q) ||
-          (r.description || '').toLowerCase().includes(q) ||
-          (r.mediaSource || '').toLowerCase().includes(q)
-      );
+    if (useZCQL()) {
+      const baseQuery = buildNewsZCQL(filters);
+      const safeLimit = zcqlSafeLimit(limit);
+      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
+      const hasMore = fetched.length > safeLimit;
+      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      // Re-sort the page in JS to honor priority weight (HIGH > NORMAL > LOW).
+      pageRows.sort((a, b) => {
+        const pa = priorityWeight(a.newsPriority);
+        const pb = priorityWeight(b.newsPriority);
+        if (pa !== pb) return pb - pa;
+        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
+        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
+        return tb - ta;
+      });
+      total = skip + pageRows.length + (hasMore ? 1 : 0);
+    } else {
+      let rows = await listAllRows(NEWS_TABLE);
+
+      if (filters.priority) {
+        rows = rows.filter((r) => r.newsPriority === filters.priority);
+      }
+      if (filters.category) {
+        rows = rows.filter((r) => r.category === filters.category);
+      }
+      if (filters.region) {
+        const q = String(filters.region).toLowerCase();
+        rows = rows.filter((r) => (r.region || '').toLowerCase().includes(q));
+      }
+      if (filters.search) {
+        const q = String(filters.search).toLowerCase();
+        rows = rows.filter(
+          (r) =>
+            (r.headline || '').toLowerCase().includes(q) ||
+            (r.description || '').toLowerCase().includes(q) ||
+            (r.mediaSource || '').toLowerCase().includes(q)
+        );
+      }
+
+      rows.sort((a, b) => {
+        const pa = priorityWeight(a.newsPriority);
+        const pb = priorityWeight(b.newsPriority);
+        if (pa !== pb) return pb - pa;
+        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
+        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
+        return tb - ta;
+      });
+
+      total = rows.length;
+      pageRows = rows.slice(skip, skip + limit);
     }
 
-    rows.sort((a, b) => {
-      // Priority desc, then createdAt desc — matches Prisma behavior
-      const pa = priorityWeight(a.newsPriority);
-      const pb = priorityWeight(b.newsPriority);
-      if (pa !== pb) return pb - pa;
-      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-      return tb - ta;
-    });
-
-    const total = rows.length;
-    const paged = rows.slice(skip, skip + limit);
-    const data = await hydrate(paged);
+    const data = await hydrate(pageRows);
 
     const meta = calculatePaginationMeta(total, page, limit);
     sendSuccess(res, data, 'News retrieved successfully', 200, meta);

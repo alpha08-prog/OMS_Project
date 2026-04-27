@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { Prisma } from '@prisma/client';
 
 /**
  * Custom error class for API errors
@@ -41,31 +40,15 @@ export function errorHandler(
     message = err.message;
   }
 
-  // Handle Prisma errors
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    switch (err.code) {
-      case 'P2002':
-        statusCode = 409;
-        message = 'A record with this value already exists';
-        break;
-      case 'P2025':
-        statusCode = 404;
-        message = 'Record not found';
-        break;
-      case 'P2003':
-        statusCode = 400;
-        message = 'Invalid reference - related record not found';
-        break;
-      default:
-        message = 'Database error';
-    }
+  // Handle Catalyst REST errors (thrown by lib/catalyst-client.ts with
+  // statusCode set on the Error instance).
+  if (typeof err.statusCode === 'number' && err.statusCode >= 400) {
+    statusCode = err.statusCode;
+    if (statusCode === 409) message = 'A record with this value already exists';
+    else if (statusCode === 404) message = 'Record not found';
+    else if (statusCode === 400) message = err.message ?? 'Invalid data provided';
+    else message = 'Database error';
     error = err.message;
-  }
-
-  if (err instanceof Prisma.PrismaClientValidationError) {
-    statusCode = 400;
-    message = 'Invalid data provided';
-    error = 'Validation error in database query';
   }
 
   // Handle validation errors from express-validator

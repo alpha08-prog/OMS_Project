@@ -20,9 +20,13 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  executeZCQL,
+  zcqlEscapeValue,
+  zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
-import prisma from '../lib/prisma';
+import { useZCQL } from '../config/feature-flags';
+import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import {
   sendSuccess,
   sendError,
@@ -96,7 +100,8 @@ function shapeHistory(row: CatalystRow, createdBy?: any) {
   };
 }
 
-/** Look up a set of users by ID (UUIDs from Neon User table). */
+/** Look up users by ID from the cached Catalyst AppUser table.
+ *  Best-effort: returns empty if Catalyst is unreachable. */
 async function lookupUsers(
   ids: Iterable<string>
 ): Promise<Map<string, { id: string; name: string; email: string }>> {
@@ -104,13 +109,19 @@ async function lookupUsers(
   const idArr = Array.from(ids).filter(Boolean);
   if (idArr.length === 0) return map;
   try {
-    const users = await prisma.user.findMany({
-      where: { id: { in: idArr } },
-      select: { id: true, name: true, email: true },
-    });
-    for (const u of users) map.set(u.id, u);
+    const users = await getCachedTableList('AppUser');
+    const wanted = new Set(idArr.map(String));
+    for (const u of users) {
+      const rowId = String(u.ROWID);
+      const legacyId = u.legacyId ? String(u.legacyId) : null;
+      if (wanted.has(rowId)) {
+        map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
+      } else if (legacyId && wanted.has(legacyId)) {
+        map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
+      }
+    }
   } catch {
-    // Best-effort lookup — if Prisma fails, just return the empty map.
+    /* Catalyst unreachable — return empty map */
   }
   return map;
 }
@@ -215,20 +226,26 @@ export async function createTask(
       return;
     }
 
-    // Cross-DB validation: confirm assignedToId is an active STAFF user in Neon.
-    const assignedUser = await prisma.user.findUnique({
-      where: { id: assignedToId },
-      select: { id: true, role: true, isActive: true },
-    });
+    // Validate assignedToId against the cached Catalyst AppUser table
+    // (no Neon round-trip). Look up by both ROWID and legacyId so legacy
+    // UUID-based ids still resolve.
+    const allUsers = await getCachedTableList('AppUser');
+    const assignedUser = allUsers.find(
+      (u) =>
+        String(u.ROWID) === assignedToId ||
+        (u.legacyId && String(u.legacyId) === assignedToId)
+    );
     if (!assignedUser) {
       sendError(res, 'Selected staff member not found', 404);
       return;
     }
-    if (assignedUser.role !== 'STAFF') {
+    if (String(assignedUser.role) !== 'STAFF') {
       sendError(res, 'Can only assign tasks to staff members');
       return;
     }
-    if (!assignedUser.isActive) {
+    const isActive =
+      assignedUser.isActive === true || assignedUser.isActive === 'true';
+    if (!isActive) {
       sendError(res, 'Selected staff member is inactive');
       return;
     }
@@ -267,6 +284,29 @@ export async function createTask(
   }
 }
 
+function buildTaskZCQL(params: {
+  status?: string;
+  taskType?: string;
+  assignedToId?: string;
+  priority?: string;
+  orderBy?: 'created' | 'due';
+}): string {
+  const conditions: string[] = [];
+  if (params.status) conditions.push(`status = '${zcqlEscapeValue(params.status)}'`);
+  if (params.taskType) conditions.push(`taskType = '${zcqlEscapeValue(params.taskType)}'`);
+  if (params.assignedToId)
+    conditions.push(`assignedToId = '${zcqlEscapeValue(params.assignedToId)}'`);
+  if (params.priority) conditions.push(`priorities = '${zcqlEscapeValue(params.priority)}'`);
+
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  // Catalyst ZCQL supports only single-column ORDER BY. We sort by the time
+  // column server-side, then re-sort the page in JS to honor priority weight
+  // (HIGH > NORMAL > LOW) — the page is small (limit ~10), so JS sort is cheap.
+  const orderCol = params.orderBy === 'due' ? 'dueDate' : 'CREATEDTIME';
+  const orderDir = params.orderBy === 'due' ? 'ASC' : 'DESC';
+  return `SELECT * FROM ${TASK_TABLE}${where} ORDER BY ${orderCol} ${orderDir}`;
+}
+
 /**
  * GET /api/tasks — list with filters (admin).
  */
@@ -280,29 +320,47 @@ export async function getTasks(
     );
     const { status, taskType, assignedToId, priority } = req.query as Record<string, string>;
 
-    let rows = await listAllRows(TASK_TABLE);
+    let pageRows: CatalystRow[];
+    let total: number;
 
-    if (status) rows = rows.filter((r) => r.status === status);
-    if (taskType) rows = rows.filter((r) => r.taskType === taskType);
-    if (assignedToId) rows = rows.filter((r) => r.assignedToId === assignedToId);
-    if (priority) rows = rows.filter((r) => r.priorities === priority);
+    if (useZCQL()) {
+      const baseQuery = buildTaskZCQL({ status, taskType, assignedToId, priority, orderBy: 'created' });
+      const safeLimit = zcqlSafeLimit(limit);
+      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
+      const hasMore = fetched.length > safeLimit;
+      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      // Re-sort the page so HIGH priority floats above NORMAL/LOW.
+      pageRows.sort((a, b) => {
+        const pa = a.priorities === 'HIGH' ? 1 : 0;
+        const pb = b.priorities === 'HIGH' ? 1 : 0;
+        if (pa !== pb) return pb - pa;
+        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
+        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
+        return tb - ta;
+      });
+      total = skip + pageRows.length + (hasMore ? 1 : 0);
+    } else {
+      let rows = await listAllRows(TASK_TABLE);
+      if (status) rows = rows.filter((r) => r.status === status);
+      if (taskType) rows = rows.filter((r) => r.taskType === taskType);
+      if (assignedToId) rows = rows.filter((r) => r.assignedToId === assignedToId);
+      if (priority) rows = rows.filter((r) => r.priorities === priority);
 
-    rows.sort((a, b) => {
-      // Priority order: HIGH > NORMAL — same as Prisma `priority desc`
-      const pa = a.priorities === 'HIGH' ? 1 : 0;
-      const pb = b.priorities === 'HIGH' ? 1 : 0;
-      if (pa !== pb) return pb - pa;
-      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-      return tb - ta;
-    });
+      rows.sort((a, b) => {
+        const pa = a.priorities === 'HIGH' ? 1 : 0;
+        const pb = b.priorities === 'HIGH' ? 1 : 0;
+        if (pa !== pb) return pb - pa;
+        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
+        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
+        return tb - ta;
+      });
 
-    const total = rows.length;
-    const paged = rows.slice(skip, skip + limit);
-    const tasks = await attachUsers(paged);
+      total = rows.length;
+      pageRows = rows.slice(skip, skip + limit);
+    }
 
-    // Attach 3 most-recent history entries per task
-    const historyMap = await recentHistoryByTaskId(paged.map((r) => String(r.ROWID)));
+    const tasks = await attachUsers(pageRows);
+    const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
     const meta = calculatePaginationMeta(total, page, limit);
@@ -329,24 +387,49 @@ export async function getMyTasks(
     );
     const { status } = req.query as Record<string, string>;
 
-    let rows = await listAllRows(TASK_TABLE);
-    rows = rows.filter((r) => r.assignedToId === req.user!.id);
-    if (status) rows = rows.filter((r) => r.status === status);
+    let pageRows: CatalystRow[];
+    let total: number;
 
-    rows.sort((a, b) => {
-      const pa = a.priorities === 'HIGH' ? 1 : 0;
-      const pb = b.priorities === 'HIGH' ? 1 : 0;
-      if (pa !== pb) return pb - pa;
-      const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-      const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-      return da - db;
-    });
+    if (useZCQL()) {
+      const baseQuery = buildTaskZCQL({
+        status,
+        assignedToId: req.user.id,
+        orderBy: 'due',
+      });
+      const safeLimit = zcqlSafeLimit(limit);
+      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
+      const hasMore = fetched.length > safeLimit;
+      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      // Re-sort: HIGH priority first, then due date asc.
+      pageRows.sort((a, b) => {
+        const pa = a.priorities === 'HIGH' ? 1 : 0;
+        const pb = b.priorities === 'HIGH' ? 1 : 0;
+        if (pa !== pb) return pb - pa;
+        const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+        const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+        return da - db;
+      });
+      total = skip + pageRows.length + (hasMore ? 1 : 0);
+    } else {
+      let rows = await listAllRows(TASK_TABLE);
+      rows = rows.filter((r) => r.assignedToId === req.user!.id);
+      if (status) rows = rows.filter((r) => r.status === status);
 
-    const total = rows.length;
-    const paged = rows.slice(skip, skip + limit);
-    const tasks = await attachUsers(paged);
+      rows.sort((a, b) => {
+        const pa = a.priorities === 'HIGH' ? 1 : 0;
+        const pb = b.priorities === 'HIGH' ? 1 : 0;
+        if (pa !== pb) return pb - pa;
+        const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+        const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+        return da - db;
+      });
 
-    const historyMap = await recentHistoryByTaskId(paged.map((r) => String(r.ROWID)));
+      total = rows.length;
+      pageRows = rows.slice(skip, skip + limit);
+    }
+
+    const tasks = await attachUsers(pageRows);
+    const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
     const meta = calculatePaginationMeta(total, page, limit);
@@ -612,11 +695,22 @@ export async function getStaffMembers(
   res: Response
 ): Promise<void> {
   try {
-    const staff = await prisma.user.findMany({
-      where: { role: 'STAFF', isActive: true },
-      select: { id: true, name: true, email: true },
-      orderBy: { name: 'asc' },
-    });
+    // Read from cached Catalyst AppUser — no Neon round-trip. Filter to
+    // active STAFF users in JS (cheap on a list of office staff).
+    const allUsers = await getCachedTableList('AppUser');
+    const staff = allUsers
+      .filter((u) => {
+        const isActive = u.isActive === true || u.isActive === 'true';
+        return String(u.role) === 'STAFF' && isActive;
+      })
+      .map((u) => ({
+        // Prefer legacyId for backward compat with old client-side caches;
+        // fall back to ROWID for users created post-migration.
+        id: u.legacyId ? String(u.legacyId) : String(u.ROWID),
+        name: String(u.name),
+        email: String(u.email),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
     sendSuccess(res, staff, 'Staff members retrieved');
   } catch (error) {
     sendServerError(res, 'Failed to get staff members', error);
