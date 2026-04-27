@@ -11,11 +11,20 @@ exports.getCalendarEvents = getCalendarEvents;
 exports.addCustomEvent = addCustomEvent;
 exports.syncAllToursToCalendar = syncAllToursToCalendar;
 exports.deleteCustomEvent = deleteCustomEvent;
-const prisma_1 = __importDefault(require("../lib/prisma"));
+const catalyst_client_1 = require("../lib/catalyst-client");
 const cache_1 = require("../lib/cache");
 const response_1 = require("../utils/response");
 const config_1 = __importDefault(require("../config"));
 const google_service_1 = require("../services/google.service");
+const TOUR_TABLE = 'TourProgram';
+const CUSTOM_EVENT_TABLE = 'CustomCalendarEvent';
+function parseBool(v) {
+    if (typeof v === 'boolean')
+        return v;
+    if (typeof v === 'string')
+        return v.toLowerCase() === 'true';
+    return Boolean(v);
+}
 /**
  * Redirect admin to Google OAuth consent screen
  * GET /api/google/connect
@@ -55,11 +64,8 @@ async function handleGoogleCallback(req, res) {
  */
 async function getCalendarStatus(req, res) {
     try {
-        const user = await prisma_1.default.user.findUnique({
-            where: { id: req.user.id },
-            select: { calendarConnected: true },
-        });
-        (0, response_1.sendSuccess)(res, { connected: user?.calendarConnected ?? false });
+        const connected = await (0, google_service_1.isCalendarConnected)(req.user.id);
+        (0, response_1.sendSuccess)(res, { connected });
     }
     catch (error) {
         (0, response_1.sendServerError)(res, 'Failed to get calendar status', error);
@@ -90,48 +96,45 @@ async function getCalendarEvents(req, res) {
             (0, response_1.sendSuccess)(res, cached);
             return;
         }
-        const [tourPrograms, customEvents] = await Promise.all([
-            prisma_1.default.tourProgram.findMany({
-                where: { decision: 'ACCEPTED' },
-                select: {
-                    id: true,
-                    eventName: true,
-                    organizer: true,
-                    venue: true,
-                    dateTime: true,
-                    description: true,
-                    venueLink: true,
-                    googleCalendarEventId: true,
-                },
-                orderBy: { dateTime: 'asc' },
-            }),
-            prisma_1.default.customCalendarEvent.findMany({
-                where: { createdById: req.user.id },
-                orderBy: { startTime: 'asc' },
-            }),
-        ]);
+        // Custom events table may not exist in Catalyst yet — best-effort lookup.
+        let customEvents = [];
+        try {
+            const all = await (0, catalyst_client_1.listAllRows)(CUSTOM_EVENT_TABLE);
+            customEvents = all.filter((e) => String(e.createdById) === req.user.id);
+        }
+        catch {
+            /* CustomCalendarEvent table not created yet — skip silently */
+        }
+        const tourPrograms = await (0, catalyst_client_1.listAllRows)(TOUR_TABLE);
+        const acceptedTours = tourPrograms
+            .filter((t) => t.decision === 'ACCEPTED')
+            .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
         const events = [
-            ...tourPrograms.map((t) => ({
-                id: t.id,
+            ...acceptedTours.map((t) => ({
+                id: String(t.ROWID),
                 title: t.eventName,
                 start: t.dateTime,
-                end: new Date(new Date(t.dateTime).getTime() + 2 * 60 * 60 * 1000),
+                end: t.dateTime
+                    ? new Date(new Date(t.dateTime).getTime() + 2 * 60 * 60 * 1000).toISOString()
+                    : null,
                 type: 'TOUR',
                 organizer: t.organizer,
                 venue: t.venue,
                 googleSynced: !!t.googleCalendarEventId,
             })),
-            ...customEvents.map((e) => ({
-                id: e.id,
+            ...customEvents
+                .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+                .map((e) => ({
+                id: String(e.ROWID),
                 title: e.title,
                 start: e.startTime,
                 end: e.endTime,
                 type: 'CUSTOM',
-                description: e.description,
+                description: e.description ?? null,
                 googleSynced: false,
             })),
         ];
-        (0, cache_1.cacheSet)(cacheKey, events, 60); // cache for 60 seconds
+        (0, cache_1.cacheSet)(cacheKey, events, 60);
         (0, response_1.sendSuccess)(res, events);
     }
     catch (error) {
@@ -150,60 +153,132 @@ async function addCustomEvent(req, res) {
             return;
         }
         const startTime = new Date(startDateTime);
-        const endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // 1 hour default
-        const event = await prisma_1.default.customCalendarEvent.create({
-            data: {
-                title: title.trim(),
+        const endTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+        let row;
+        try {
+            row = await (0, catalyst_client_1.insertRow)(CUSTOM_EVENT_TABLE, {
+                title: String(title).trim(),
+                startTime: (0, catalyst_client_1.toCatalystDate)(startTime),
+                endTime: (0, catalyst_client_1.toCatalystDate)(endTime),
+                description: description ? String(description).trim() : null,
+                createdById: req.user.id,
+            });
+        }
+        catch (err) {
+            // Catalyst returns 404 INVALID_ID when the table itself is missing.
+            // Treat that as a feature-not-configured scenario rather than a 500.
+            if (err?.statusCode === 404) {
+                (0, response_1.sendError)(res, 'Custom events are not enabled. Create the CustomCalendarEvent table in Catalyst Console to enable.', 501);
+                return;
+            }
+            throw err;
+        }
+        // Best-effort: push to Google Calendar immediately if the user has it
+        // connected. Failure here doesn't fail the request — local creation
+        // already succeeded and the event can still be synced later via Sync All.
+        let googleSynced = false;
+        try {
+            const googleEventId = await (0, google_service_1.createCustomGoogleEvent)(req.user.id, {
+                id: String(row.ROWID),
+                title: String(row.title),
                 startTime,
                 endTime,
-                description: description?.trim() || null,
-                createdById: req.user.id,
-            },
-        });
+                description: row.description ?? null,
+            });
+            if (googleEventId) {
+                await (0, catalyst_client_1.updateRow)(CUSTOM_EVENT_TABLE, {
+                    ROWID: String(row.ROWID),
+                    googleCalendarEventId: googleEventId,
+                });
+                googleSynced = true;
+            }
+        }
+        catch (err) {
+            console.error('Failed to push custom event to Google Calendar:', err);
+        }
         (0, cache_1.cacheClear)('calendar_events_');
-        (0, response_1.sendSuccess)(res, event, 'Event added');
+        (0, response_1.sendSuccess)(res, {
+            id: String(row.ROWID),
+            title: row.title,
+            startTime: row.startTime,
+            endTime: row.endTime,
+            description: row.description ?? null,
+            createdById: row.createdById,
+            googleSynced,
+        }, 'Event added');
     }
     catch (error) {
         (0, response_1.sendServerError)(res, 'Failed to add event', error);
     }
 }
 /**
- * Sync all accepted tours to Google Calendar
+ * Sync all accepted tours and the user's unsynced custom events to Google Calendar.
  * POST /api/google/sync
  */
 async function syncAllToursToCalendar(req, res) {
     try {
-        const tours = await prisma_1.default.tourProgram.findMany({
-            where: {
-                decision: 'ACCEPTED',
-                googleCalendarEventId: null,
-            },
-        });
-        let synced = 0;
+        // ── Tours: sync every ACCEPTED tour that hasn't been pushed yet ──────
+        const allTours = await (0, catalyst_client_1.listAllRows)(TOUR_TABLE);
+        const tours = allTours.filter((t) => t.decision === 'ACCEPTED' && !t.googleCalendarEventId);
+        let toursSynced = 0;
         for (const tour of tours) {
             try {
                 const googleEventId = await (0, google_service_1.createTourCalendarEvent)(req.user.id, {
-                    id: tour.id,
-                    eventName: tour.eventName,
-                    organizer: tour.organizer,
-                    venue: tour.venue,
-                    dateTime: tour.dateTime,
-                    description: tour.description,
-                    venueLink: tour.venueLink,
+                    id: String(tour.ROWID),
+                    eventName: String(tour.eventName),
+                    organizer: String(tour.organizer),
+                    venue: String(tour.venue),
+                    dateTime: new Date(tour.dateTime),
+                    description: tour.description ?? null,
+                    venueLink: tour.venueLink ?? null,
                 });
                 if (googleEventId) {
-                    await prisma_1.default.tourProgram.update({
-                        where: { id: tour.id },
-                        data: { googleCalendarEventId: googleEventId },
+                    await (0, catalyst_client_1.updateRow)(TOUR_TABLE, {
+                        ROWID: String(tour.ROWID),
+                        googleCalendarEventId: googleEventId,
                     });
-                    synced++;
+                    toursSynced++;
                 }
             }
             catch (err) {
-                console.error(`Failed to sync tour ${tour.id}:`, err);
+                console.error(`Failed to sync tour ${tour.ROWID}:`, err);
             }
         }
-        (0, response_1.sendSuccess)(res, { synced, total: tours.length }, `Synced ${synced} events to Google Calendar`);
+        // ── Custom events: sync the user's own unsynced custom events ────────
+        let customEvents = [];
+        try {
+            const all = await (0, catalyst_client_1.listAllRows)(CUSTOM_EVENT_TABLE);
+            customEvents = all.filter((e) => String(e.createdById) === req.user.id &&
+                !e.googleCalendarEventId);
+        }
+        catch {
+            // Table may not exist — skip silently. Tours portion still ran.
+        }
+        let customSynced = 0;
+        for (const event of customEvents) {
+            try {
+                const googleEventId = await (0, google_service_1.createCustomGoogleEvent)(req.user.id, {
+                    id: String(event.ROWID),
+                    title: String(event.title),
+                    startTime: new Date(event.startTime),
+                    endTime: new Date(event.endTime),
+                    description: event.description ?? null,
+                });
+                if (googleEventId) {
+                    await (0, catalyst_client_1.updateRow)(CUSTOM_EVENT_TABLE, {
+                        ROWID: String(event.ROWID),
+                        googleCalendarEventId: googleEventId,
+                    });
+                    customSynced++;
+                }
+            }
+            catch (err) {
+                console.error(`Failed to sync custom event ${event.ROWID}:`, err);
+            }
+        }
+        const total = tours.length + customEvents.length;
+        const synced = toursSynced + customSynced;
+        (0, response_1.sendSuccess)(res, { synced, total, toursSynced, customSynced }, `Synced ${synced} of ${total} events to Google Calendar`);
     }
     catch (error) {
         (0, response_1.sendServerError)(res, 'Failed to sync events', error);
@@ -216,9 +291,18 @@ async function syncAllToursToCalendar(req, res) {
 async function deleteCustomEvent(req, res) {
     try {
         const { id } = req.params;
-        await prisma_1.default.customCalendarEvent.deleteMany({
-            where: { id, createdById: req.user.id },
-        });
+        // Verify ownership before deleting — Catalyst's row delete doesn't filter by
+        // arbitrary columns, so we read the row first and check createdById.
+        try {
+            const all = await (0, catalyst_client_1.listAllRows)(CUSTOM_EVENT_TABLE);
+            const row = all.find((e) => String(e.ROWID) === id);
+            if (row && String(row.createdById) === req.user.id) {
+                await (0, catalyst_client_1.deleteRow)(CUSTOM_EVENT_TABLE, id);
+            }
+        }
+        catch {
+            /* table may not exist — silently no-op, matches Prisma deleteMany semantics */
+        }
         (0, cache_1.cacheClear)('calendar_events_');
         (0, response_1.sendSuccess)(res, null, 'Event deleted');
     }

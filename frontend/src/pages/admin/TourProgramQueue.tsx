@@ -54,7 +54,7 @@ export default function TourProgramQueue() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = { limit: "500" };
+      const params: Record<string, string> = { limit: "50" };
       if (decisionFilter === "ACCEPTED") params.decision = "ACCEPTED";
       else if (decisionFilter === "REGRET") params.decision = "REGRET";
       const res = decisionFilter === "ALL"

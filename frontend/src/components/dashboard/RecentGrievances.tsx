@@ -76,12 +76,12 @@ export function RecentGrievances() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{g.petitionerName}</span>
-                  <Badge className={statusStyles[g.status] || "bg-gray-100"}>
-                    {g.status.replace('_', ' ')}
+                  <Badge className={statusStyles[g.status ?? ''] || "bg-gray-100"}>
+                    {(g.status ?? 'UNKNOWN').replace('_', ' ')}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {g.grievanceType.replace('_', ' ')} • {g.constituency}
+                  {(g.grievanceType ?? '').replace('_', ' ')} • {g.constituency ?? ''}
                   {g.monetaryValue && ` • ${formatCurrency(g.monetaryValue)}`}
                 </p>
               </div>

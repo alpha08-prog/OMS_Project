@@ -11,13 +11,12 @@ import {
   deleteTrainRequest,
   getPendingQueue,
   checkPNRStatus,
-} from '../controllers/trainRequest.controller';
+} from '../controllers-catalyst/trainRequest.controller';
 import { authenticate, staffOnly, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Validation rules
 const createTrainRequestValidation = [
   body('passengerName').trim().notEmpty().withMessage('Passenger name is required'),
   body('pnrNumber').trim().notEmpty().withMessage('PNR number is required'),
@@ -36,44 +35,29 @@ const createTrainRequestValidation = [
 ];
 
 const idParamValidation = [
-  param('id').isUUID().withMessage('Invalid train request ID'),
+  param('id')
+    .matches(/^([0-9a-fA-F-]{36}|[0-9]+)$/)
+    .withMessage('Invalid train request ID'),
 ];
 
-const rejectValidation = [
-  body('reason').optional().trim(),
-];
+const rejectValidation = [body('reason').optional().trim()];
 
-// All routes require authentication
 router.use(authenticate);
 
-// Staff can create train requests
 router.post('/', staffOnly, validate(createTrainRequestValidation), createTrainRequest);
-
-// Get all train requests
 router.get('/', getTrainRequests);
-
-// Get pending queue (admin only)
 router.get('/queue/pending', adminOnly, getPendingQueue);
-
-// Check PNR status (mock)
 router.get('/pnr/:pnr', checkPNRStatus);
-
-// Get single train request
 router.get('/:id', validate(idParamValidation), getTrainRequestById);
-
-// Update train request
 router.put('/:id', validate(idParamValidation), updateTrainRequest);
-
-// Approve train request (admin only)
 router.patch('/:id/approve', adminOnly, validate(idParamValidation), approveTrainRequest);
-
-// Reject train request (admin only)
-router.patch('/:id/reject', adminOnly, validate([...idParamValidation, ...rejectValidation]), rejectTrainRequest);
-
-// Mark approved request as resolved (admin only)
+router.patch(
+  '/:id/reject',
+  adminOnly,
+  validate([...idParamValidation, ...rejectValidation]),
+  rejectTrainRequest
+);
 router.patch('/:id/resolve', adminOnly, validate(idParamValidation), resolveTrainRequest);
-
-// Delete train request (admin only)
 router.delete('/:id', adminOnly, validate(idParamValidation), deleteTrainRequest);
 
 export default router;

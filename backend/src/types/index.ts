@@ -1,6 +1,17 @@
 import { Request, ParamsDictionary } from 'express-serve-static-core';
 import { ParsedQs } from 'qs';
-import { UserRole } from '@prisma/client';
+
+/**
+ * User role — declared locally so the codebase is decoupled from Prisma.
+ * Provides both a runtime const (for `UserRole.STAFF` style usage) and a
+ * type alias (for `role: UserRole` in interfaces / function signatures).
+ */
+export const UserRole = {
+  STAFF: 'STAFF',
+  ADMIN: 'ADMIN',
+  SUPER_ADMIN: 'SUPER_ADMIN',
+} as const;
+export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 // Custom params type that always returns string
 interface StringParams extends ParamsDictionary {

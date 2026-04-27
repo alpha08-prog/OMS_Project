@@ -63,7 +63,7 @@ export default function PrintCenter() {
 
       // Fetch verified/resolved grievances (ready for printing)
       // Get all grievances and filter for verified ones - increase limit to get all
-      const grievanceRes = await grievanceApi.getAll({ limit: '1000' });
+      const grievanceRes = await grievanceApi.getAll({ limit: '50' });
       console.log('PrintCenter - Grievances response:', grievanceRes);
       const grievances = Array.isArray(grievanceRes?.data) ? grievanceRes.data : [];
       grievances.forEach((g: Grievance) => {

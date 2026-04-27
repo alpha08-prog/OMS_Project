@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../types';
 import type { AuthenticatedRequest } from '../types';
 /**
  * Middleware to authenticate JWT token

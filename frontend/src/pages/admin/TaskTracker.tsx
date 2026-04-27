@@ -58,7 +58,7 @@ export default function AdminTaskTracker() {
     try {
       const [tracking, tasksRes] = await Promise.all([
         taskApi.getTracking(),
-        taskApi.getAll({ limit: '1000', page: '1' }), // Get all tasks, not just first 10
+        taskApi.getAll({ limit: '50', page: '1' }), // Get all tasks, not just first 10
       ]);
       
       console.log('TaskTracker - Tracking data:', tracking);
@@ -100,7 +100,7 @@ export default function AdminTaskTracker() {
   const filteredTasks = tasks.filter(task => {
     if (filterTaskType !== "all" && task.taskType !== filterTaskType) return false;
     if (filterStatus !== "all" && task.status !== filterStatus) return false;
-    if (filterStaff !== "all" && task.assignedTo.id !== filterStaff) return false;
+    if (filterStaff !== "all" && task.assignedTo?.id !== filterStaff) return false;
     return true;
   });
 
@@ -225,9 +225,15 @@ export default function AdminTaskTracker() {
     });
   };
 
-  // Get unique staff members from tasks
+  // Get unique staff members from tasks. Defensive: assignedTo may be null
+  // when the task's assignee can no longer be resolved against AppUser
+  // (e.g., user was deleted or has a stale id from before migration).
   const uniqueStaff = Array.from(
-    new Map(tasks.map(t => [t.assignedTo.id, t.assignedTo])).values()
+    new Map(
+      tasks
+        .filter((t) => t.assignedTo && t.assignedTo.id)
+        .map((t) => [t.assignedTo.id, t.assignedTo])
+    ).values()
   );
 
   return (
@@ -433,7 +439,7 @@ export default function AdminTaskTracker() {
                             <Badge variant="outline">{taskTypeLabel(task.taskType)}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            Assigned to: <span className="font-medium">{task.assignedTo.name}</span>
+                            Assigned to: <span className="font-medium">{task.assignedTo?.name ?? '—'}</span>
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2 flex-shrink-0">
@@ -478,7 +484,7 @@ export default function AdminTaskTracker() {
                                       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                                         <span>{formatDateTime(history.createdAt)}</span>
                                         <span>•</span>
-                                        <span>{history.createdBy.name}</span>
+                                        <span>{history.createdBy?.name ?? '—'}</span>
                                         {history.status && (
                                           <>
                                             <span>•</span>
@@ -532,12 +538,12 @@ export default function AdminTaskTracker() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Assigned To</p>
-                    <p className="font-medium">{selectedTask.assignedTo.name}</p>
-                    <p className="text-sm text-muted-foreground">{selectedTask.assignedTo.email}</p>
+                    <p className="font-medium">{selectedTask.assignedTo?.name ?? '—'}</p>
+                    <p className="text-sm text-muted-foreground">{selectedTask.assignedTo?.email ?? ''}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Assigned By</p>
-                    <p className="font-medium">{selectedTask.assignedBy.name}</p>
+                    <p className="font-medium">{selectedTask.assignedBy?.name ?? '—'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Assigned At</p>

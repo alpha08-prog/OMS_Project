@@ -1,8 +1,8 @@
 import { Response, NextFunction } from 'express';
-import { UserRole } from '@prisma/client';
 import { extractToken, verifyToken } from '../utils/jwt';
 import { sendUnauthorized, sendForbidden } from '../utils/response';
-import prisma from '../lib/prisma';
+import { findUserForAuth } from '../lib/catalyst-user-lookup';
+import { UserRole } from '../types';
 import type { AuthenticatedRequest } from '../types';
 
 /**
@@ -38,11 +38,9 @@ export async function authenticate(
       return;
     }
 
-    // Verify user still exists and is active
-    const user = await prisma.user.findUnique({
-      where: { id: payload.id },
-      select: { id: true, email: true, role: true, name: true, isActive: true },
-    });
+    // Resolve user from Catalyst AppUser (5-min cache hit on the hot path).
+    // No Prisma fallback — Catalyst is the sole source of truth.
+    const { user } = await findUserForAuth(payload.id);
 
     if (!user || !user.isActive) {
       sendUnauthorized(res, 'User not found or inactive');
@@ -53,7 +51,7 @@ export async function authenticate(
     req.user = {
       id: user.id,
       email: user.email,
-      role: user.role,
+      role: user.role as UserRole,
       name: user.name,
     };
 

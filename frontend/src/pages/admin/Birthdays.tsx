@@ -35,7 +35,7 @@ export default function Birthdays() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = { limit: '500' };
+      const params: Record<string, string> = { limit: '50' };
       if (filterMonth && filterMonth !== "all") {
         params.month = filterMonth;
       }

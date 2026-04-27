@@ -8,13 +8,12 @@ import {
   deleteVisitor,
   getTodayBirthdays,
   getVisitorsByDate,
-} from '../controllers/visitor.controller';
+} from '../controllers-catalyst/visitor.controller';
 import { authenticate, staffOnly, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Validation rules
 const createVisitorValidation = [
   body('name').trim().notEmpty().withMessage('Visitor name is required'),
   body('designation').trim().notEmpty().withMessage('Designation is required'),
@@ -23,36 +22,25 @@ const createVisitorValidation = [
   body('purpose').trim().notEmpty().withMessage('Purpose of visit is required'),
 ];
 
+// Catalyst row ids are numeric; legacy Prisma ids are UUID. Accept either form.
 const idParamValidation = [
-  param('id').isUUID().withMessage('Invalid visitor ID'),
+  param('id')
+    .matches(/^([0-9a-fA-F-]{36}|[0-9]+)$/)
+    .withMessage('Invalid visitor ID'),
 ];
 
 const dateParamValidation = [
   param('date').isISO8601().withMessage('Invalid date format'),
 ];
 
-// All routes require authentication
 router.use(authenticate);
 
-// Staff can create visitors
 router.post('/', staffOnly, validate(createVisitorValidation), createVisitor);
-
-// Get all visitors
 router.get('/', getVisitors);
-
-// Get today's birthdays
 router.get('/birthdays/today', getTodayBirthdays);
-
-// Get visitors by date
 router.get('/date/:date', validate(dateParamValidation), getVisitorsByDate);
-
-// Get single visitor
 router.get('/:id', validate(idParamValidation), getVisitorById);
-
-// Update visitor
 router.put('/:id', validate(idParamValidation), updateVisitor);
-
-// Delete visitor (admin only)
 router.delete('/:id', adminOnly, validate(idParamValidation), deleteVisitor);
 
 export default router;

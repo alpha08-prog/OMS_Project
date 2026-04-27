@@ -8,13 +8,12 @@ import {
   getAllUsers,
   updateUserRole,
   deactivateUser,
-} from '../controllers/auth.controller';
+} from '../controllers-catalyst/auth.controller';
 import { authenticate, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Validation rules
 const registerValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),

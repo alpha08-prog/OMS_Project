@@ -37,7 +37,7 @@ export default function EventsView() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = { limit: "500" };
+      const params: Record<string, string> = { limit: "50" };
       if (search.trim()) params.search = search.trim();
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;

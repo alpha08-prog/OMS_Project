@@ -314,10 +314,10 @@ export function DashboardHeader() {
               <div className="flex justify-between items-start mb-3">
                 <h3 className="font-semibold text-indigo-900 text-lg">{selectedGrievance.petitionerName}</h3>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
-                  {selectedGrievance.status.replace("_", " ")}
+                  {(selectedGrievance.status ?? 'UNKNOWN').replace("_", " ")}
                 </span>
               </div>
-              <p className="text-sm text-indigo-700 font-medium mb-2">{selectedGrievance.grievanceType.replace("_", " ")}</p>
+              <p className="text-sm text-indigo-700 font-medium mb-2">{(selectedGrievance.grievanceType ?? '').replace("_", " ")}</p>
               <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground">
                 <span>Constituency</span>
                 <span className="font-medium text-foreground">{selectedGrievance.constituency}</span>

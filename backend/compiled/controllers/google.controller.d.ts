@@ -31,7 +31,7 @@ export declare function getCalendarEvents(req: AuthenticatedRequest, res: Respon
  */
 export declare function addCustomEvent(req: AuthenticatedRequest, res: Response): Promise<void>;
 /**
- * Sync all accepted tours to Google Calendar
+ * Sync all accepted tours and the user's unsynced custom events to Google Calendar.
  * POST /api/google/sync
  */
 export declare function syncAllToursToCalendar(req: AuthenticatedRequest, res: Response): Promise<void>;
