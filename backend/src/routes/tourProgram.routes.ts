@@ -1,24 +1,29 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { body, param } from 'express-validator';
-import {
-  createTourProgram,
-  getTourPrograms,
-  getTourProgramById,
-  updateTourProgram,
-  updateDecision,
-  deleteTourProgram,
-  getTodaySchedule,
-  getUpcomingEvents,
-  getPendingDecisions,
-  getEvents,
-  submitEventReport,
-} from '../controllers/tourProgram.controller';
+import * as prismaCtrl from '../controllers/tourProgram.controller';
+import * as catalystCtrl from '../controllers-catalyst/tourProgram.controller';
+import { useCatalyst } from '../config/feature-flags';
 import { authenticate, staffOnly, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Validation rules
+/** Dispatcher: same pattern as visitor / grievance / task / train. */
+type CtrlMethod = keyof typeof prismaCtrl;
+
+function dispatch(method: CtrlMethod) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const impl = useCatalyst('tourProgram')
+        ? (catalystCtrl as any)[method]
+        : (prismaCtrl as any)[method];
+      await impl(req, res, next);
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
 const createTourProgramValidation = [
   body('eventName').trim().notEmpty().withMessage('Event name is required'),
   body('organizer').trim().notEmpty().withMessage('Organizer is required'),
@@ -27,8 +32,11 @@ const createTourProgramValidation = [
   body('venueLink').optional().isURL().withMessage('Venue link must be a valid URL'),
 ];
 
+// Catalyst uses numeric ROWIDs; Prisma uses UUIDs. Accept both.
 const idParamValidation = [
-  param('id').isUUID().withMessage('Invalid tour program ID'),
+  param('id')
+    .matches(/^([0-9a-fA-F-]{36}|[0-9]+)$/)
+    .withMessage('Invalid tour program ID'),
 ];
 
 const decisionValidation = [
@@ -38,40 +46,23 @@ const decisionValidation = [
   body('decisionNote').optional().trim(),
 ];
 
-// All routes require authentication
 router.use(authenticate);
 
-// Staff can create tour programs
-router.post('/', staffOnly, validate(createTourProgramValidation), createTourProgram);
-
-// Get all tour programs
-router.get('/', getTourPrograms);
-
-// Get today's schedule
-router.get('/schedule/today', getTodaySchedule);
-
-// Get upcoming events
-router.get('/upcoming', getUpcomingEvents);
-
-// Get pending decisions (admin only)
-router.get('/pending', adminOnly, getPendingDecisions);
-
-// Get all past events (ACCEPTED + date passed)
-router.get('/events', getEvents);
-
-// Submit post-event report (staff)
-router.patch('/:id/complete', validate(idParamValidation), submitEventReport);
-
-// Get single tour program
-router.get('/:id', validate(idParamValidation), getTourProgramById);
-
-// Update tour program
-router.put('/:id', validate(idParamValidation), updateTourProgram);
-
-// Update decision (admin only)
-router.patch('/:id/decision', adminOnly, validate([...idParamValidation, ...decisionValidation]), updateDecision);
-
-// Delete tour program (admin only)
-router.delete('/:id', adminOnly, validate(idParamValidation), deleteTourProgram);
+router.post('/', staffOnly, validate(createTourProgramValidation), dispatch('createTourProgram'));
+router.get('/', dispatch('getTourPrograms'));
+router.get('/schedule/today', dispatch('getTodaySchedule'));
+router.get('/upcoming', dispatch('getUpcomingEvents'));
+router.get('/pending', adminOnly, dispatch('getPendingDecisions'));
+router.get('/events', dispatch('getEvents'));
+router.patch('/:id/complete', validate(idParamValidation), dispatch('submitEventReport'));
+router.get('/:id', validate(idParamValidation), dispatch('getTourProgramById'));
+router.put('/:id', validate(idParamValidation), dispatch('updateTourProgram'));
+router.patch(
+  '/:id/decision',
+  adminOnly,
+  validate([...idParamValidation, ...decisionValidation]),
+  dispatch('updateDecision')
+);
+router.delete('/:id', adminOnly, validate(idParamValidation), dispatch('deleteTourProgram'));
 
 export default router;

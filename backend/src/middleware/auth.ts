@@ -3,6 +3,8 @@ import { UserRole } from '@prisma/client';
 import { extractToken, verifyToken } from '../utils/jwt';
 import { sendUnauthorized, sendForbidden } from '../utils/response';
 import prisma from '../lib/prisma';
+import { findUserForAuth } from '../lib/catalyst-user-lookup';
+import { useCatalyst } from '../config/feature-flags';
 import type { AuthenticatedRequest } from '../types';
 
 /**
@@ -38,11 +40,22 @@ export async function authenticate(
       return;
     }
 
-    // Verify user still exists and is active
-    const user = await prisma.user.findUnique({
-      where: { id: payload.id },
-      select: { id: true, email: true, role: true, name: true, isActive: true },
-    });
+    // Verify user still exists and is active.
+    // When the auth feature flag is on, we accept users from either Catalyst
+    // AppUser (via ROWID or legacyId) or fall back to Prisma — see
+    // findUserForAuth() for the resolution strategy.
+    let user: { id: string; email: string; role: string; name: string; isActive: boolean } | null = null;
+
+    if (useCatalyst('auth')) {
+      const result = await findUserForAuth(payload.id);
+      user = result.user;
+    } else {
+      const row = await prisma.user.findUnique({
+        where: { id: payload.id },
+        select: { id: true, email: true, role: true, name: true, isActive: true },
+      });
+      user = row;
+    }
 
     if (!user || !user.isActive) {
       sendUnauthorized(res, 'User not found or inactive');
@@ -53,7 +66,7 @@ export async function authenticate(
     req.user = {
       id: user.id,
       email: user.email,
-      role: user.role,
+      role: user.role as UserRole,
       name: user.name,
     };
 
