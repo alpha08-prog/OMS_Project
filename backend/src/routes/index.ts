@@ -11,6 +11,7 @@ import birthdayRoutes from './birthday.routes';
 import historyRoutes from './history.routes';
 import taskRoutes from './task.routes';
 import googleRoutes from './google.routes';
+import uploadRoutes from './upload.routes';
 
 const router = Router();
 
@@ -37,5 +38,6 @@ router.use('/birthdays', birthdayRoutes);
 router.use('/history', historyRoutes);
 router.use('/tasks', taskRoutes);
 router.use('/google', googleRoutes);
+router.use('/uploads', uploadRoutes);
 
 export default router;
