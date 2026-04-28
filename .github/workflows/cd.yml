@@ -226,9 +226,15 @@ jobs:
           # Some CLI versions look in $HOME instead of cwd — write to both.
           cp .catalystrc "$HOME/.catalystrc"
 
+      - name: Authenticate Catalyst CLI
+        # The CLI silently ignores --token on `deploy` — only `login`
+        # persists auth state to disk. The frontend deploy job already
+        # uses this pattern successfully, so mirror it. Without this step
+        # the deploy goes out unauthenticated and Catalyst returns 401.
+        run: catalyst login --token "${{ steps.zoho_token.outputs.access_token }}"
+
       - name: Deploy backend AppSail service
         env:
-          CATALYST_TOKEN: ${{ steps.zoho_token.outputs.access_token }}
           CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
           # Org ID = 60069018829 (visible in Catalyst console → Hello, OMS →
           # Org ID). Not a credential — it's a public account identifier
@@ -248,12 +254,10 @@ jobs:
         # touching omsvackend. We grep stdout/stderr and fail loudly.
         run: |
           set -uo pipefail
-          : "${CATALYST_TOKEN:?Failed to obtain Catalyst access token}"
           : "${CATALYST_PROJECT_ID:?CATALYST_PROJECT_ID secret not set}"
           : "${CATALYST_ORG_ID:?CATALYST_ORG_ID not set}"
 
           OUTPUT=$(catalyst deploy --only appsail \
-            --token "$CATALYST_TOKEN" \
             --project "$CATALYST_PROJECT_ID" \
             --org "$CATALYST_ORG_ID" 2>&1)
           RC=$?
