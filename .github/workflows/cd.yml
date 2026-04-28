@@ -150,6 +150,33 @@ jobs:
       - name: Install Zoho Catalyst CLI
         run: npm install -g zcatalyst-cli
 
+      - name: Debug — what does this Catalyst CLI know?
+        # One-time introspection so we stop guessing at flag names. Captures
+        # CLI version, subcommands, deploy/login flags, expected config-file
+        # locations, and which env vars it reads. Always exits 0 — never
+        # blocks the workflow on its own.
+        continue-on-error: true
+        run: |
+          set +e
+          echo "=== catalyst --version ==="
+          catalyst --version
+          echo "=== catalyst --help ==="
+          catalyst --help
+          echo "=== catalyst deploy --help ==="
+          catalyst deploy --help
+          echo "=== catalyst login --help ==="
+          catalyst login --help
+          echo "=== catalyst projects --help ==="
+          catalyst projects --help
+          echo "=== Files at HOME ==="
+          ls -la "$HOME" 2>&1 | head -40
+          echo "--- catalyst-shaped files in HOME ---"
+          ls -la "$HOME/.catalyst"* "$HOME/.zoho"* 2>&1
+          echo "--- catalyst-shaped files in cwd ---"
+          ls -la ./.catalystrc ./catalyst.json 2>&1
+          echo "=== ENV vars referencing catalyst/zoho ==="
+          env | grep -iE 'catalyst|zoho|zcatalyst' | sed 's/=.*$/=<redacted>/'
+
       - name: Get Catalyst Access Token (OAuth refresh)
         id: zoho_token
         run: |
