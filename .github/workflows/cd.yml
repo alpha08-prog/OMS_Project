@@ -68,9 +68,12 @@ jobs:
         with:
           images: ${{ env.BACKEND_IMAGE }}
           tags: |
-            # Tag with short SHA for traceability (e.g. sha-a1b2c3d)
-            type=sha,prefix=sha-,format=short
-            # Always update the `latest` tag on main
+            # Tag with short SHA for traceability (e.g. sha-a1b2c3d).
+            # priority=300 makes this the value of meta.outputs.version,
+            # so deploy-backend can pin the AppSail deploy to this exact SHA
+            # (avoids the ":latest" no-pull problem on container platforms).
+            type=sha,prefix=sha-,format=short,priority=300
+            # Also update the `latest` tag on main (humans / fallback only).
             type=raw,value=latest,enable=true
 
       - name: Build and push backend image
@@ -131,7 +134,7 @@ jobs:
     needs: [build-push-backend, build-frontend]
     environment:
       name: production
-      url: https://omsbackend-${{ vars.CATALYST_PROJECT_DOMAIN }}.catalystappsail.com
+      url: https://omsvackend-${{ vars.CATALYST_PROJECT_DOMAIN }}.development.catalystappsail.in
 
     steps:
       - name: Checkout repository
@@ -169,19 +172,19 @@ jobs:
       - name: Deploy backend AppSail service
         env:
           CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
-          BACKEND_IMAGE_URI: ${{ env.BACKEND_IMAGE }}:latest
+          BACKEND_IMAGE_URI: ${{ env.BACKEND_IMAGE }}:${{ needs.build-push-backend.outputs.image_tag }}
         run: |
           docker login ${{ env.REGISTRY }} -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
           docker pull $BACKEND_IMAGE_URI
           catalyst deploy appsail \
             --project "$CATALYST_PROJECT_ID" \
-            --name omsbackend \
+            --name omsvackend \
             --source "docker://$BACKEND_IMAGE_URI"
 
       - name: Confirm backend deployment
         run: |
-          echo "Backend deployed to Catalyst AppSail."
-          echo "Image: ${{ env.BACKEND_IMAGE }}:latest"
+          echo "Backend deployed to Catalyst AppSail (service: omsvackend)."
+          echo "Image: ${{ env.BACKEND_IMAGE }}:${{ needs.build-push-backend.outputs.image_tag }}"
 
   # ───────────────────────────────────────────────────────────
   # Job 4: Deploy Frontend to Zoho Catalyst Slate (static hosting)
