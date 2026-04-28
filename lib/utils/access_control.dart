@@ -23,7 +23,7 @@ class AccessControl {
         return true;
 
       case Roles.superAdmin:
-        return action == ActionPermission.view;
+        return true; // Super Admin has all permissions
 
       default:
         return action == ActionPermission.view;

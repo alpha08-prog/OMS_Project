@@ -1,8 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import 'train_request_add_page.dart';
 
 class TrainRequestListPage extends StatefulWidget {
   final String role;
@@ -15,16 +20,33 @@ class TrainRequestListPage extends StatefulWidget {
 class _TrainRequestListPageState extends State<TrainRequestListPage> {
   static const Color primaryBlue = Color(0xFF0A2E5C);
   static const Color bgLight = Color(0xFFF4F6FB);
+  static const Color successGreen = Color(0xFF10B981);
+  static const Color warningOrange = Color(0xFFF59E0B);
 
   bool loading = true;
   String? error;
+  String selectedStatus = "All";
+  String _searchQuery = "";
+  final _searchController = TextEditingController();
 
   List<Map<String, dynamic>> requests = [];
+
+  // Stats
+  int _totalCount = 0;
+  int _pendingCount = 0;
+  int _approvedCount = 0;
+  int _rejectedCount = 0;
 
   @override
   void initState() {
     super.initState();
     fetchRequests();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> fetchRequests() async {
@@ -34,17 +56,54 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     });
 
     try {
-      final res = await HttpService.get("/api/train-requests");
+      // Build query params
+      final Map<String, String> queryParams = {};
+      if (selectedStatus != "All") {
+        queryParams['status'] = selectedStatus.toUpperCase();
+      }
+      if (_searchQuery.isNotEmpty) {
+        queryParams['search'] = _searchQuery;
+      }
+
+      String queryString = "";
+      if (queryParams.isNotEmpty) {
+        queryString = "?" +
+            queryParams.entries
+                .map((e) => "${e.key}=${Uri.encodeComponent(e.value)}")
+                .join("&");
+      }
+
+      final res = await HttpService.get("/api/train-requests$queryString");
 
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
+
+        final items = list
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+
+        // Calculate stats
+        int pending = 0, approved = 0, rejected = 0, resolved = 0;
+        for (var r in items) {
+          final status = (r["status"] ?? "PENDING").toString().toUpperCase();
+          if (status.contains("PENDING")) {
+            pending++;
+          } else if (status.contains("RESOLVED")) {
+            resolved++;
+          } else if (status.contains("APPROVED")) {
+            approved++;
+          } else if (status.contains("REJECT")) {
+            rejected++;
+          }
+        }
 
         setState(() {
-          requests = list
-              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-              .toList();
+          requests = items;
+          _totalCount = items.length;
+          _pendingCount = pending;
+          _approvedCount = approved;
+          _rejectedCount = rejected;
           loading = false;
         });
       } else {
@@ -71,33 +130,30 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       return;
     }
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) => _CreateTrainRequestSheet(
-        onCreated: () async {
-          Navigator.pop(context);
-          await fetchRequests();
-        },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TrainRequestAddPage(
+          onCreated: () async {
+            await fetchRequests();
+          },
+        ),
       ),
     );
   }
 
-  int? _getId(Map<String, dynamic> item) {
+  String? _getId(Map<String, dynamic> item) {
     final id = item["id"];
-    if (id is int) return id;
-    if (id is String) return int.tryParse(id);
+    if (id is int) return id.toString();
+    if (id is String) return id;
     return null;
   }
 
-  Future<void> _approve(int id) async {
-    if (widget.role != Roles.admin) {
+  Future<void> _approve(String id) async {
+    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
+    if (!isAdmin) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Only ADMIN can approve.")),
+        const SnackBar(content: Text("Only Admin can approve.")),
       );
       return;
     }
@@ -106,7 +162,7 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       final res = await HttpService.patch("/api/train-requests/$id/approve", {});
       if (res.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Approved ✅")),
+          const SnackBar(content: Text("Approved")),
         );
         fetchRequests();
       } else {
@@ -116,15 +172,16 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       }
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error / No internet")),
+        const SnackBar(content: Text("Server error")),
       );
     }
   }
 
-  Future<void> _reject(int id) async {
-    if (widget.role != Roles.admin) {
+  Future<void> _reject(String id) async {
+    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
+    if (!isAdmin) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Only ADMIN can reject.")),
+        const SnackBar(content: Text("Only Admin can reject.")),
       );
       return;
     }
@@ -133,7 +190,7 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       final res = await HttpService.patch("/api/train-requests/$id/reject", {});
       if (res.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Rejected ✅")),
+          const SnackBar(content: Text("Rejected")),
         );
         fetchRequests();
       } else {
@@ -143,15 +200,66 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       }
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error / No internet")),
+        const SnackBar(content: Text("Server error")),
       );
     }
   }
 
-  Future<void> _delete(int id) async {
-    if (widget.role != Roles.admin) {
+  Future<void> _resolve(String id) async {
+    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
+    if (!isAdmin) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.blue),
+            SizedBox(width: 8),
+            Text("Resolve Request"),
+          ],
+        ),
+        content: const Text("Mark this approved request as resolved?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Resolve", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final res = await HttpService.patch("/api/train-requests/$id/resolve", {});
+      if (res.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Request resolved")),
+        );
+        fetchRequests();
+      } else {
+        String msg = "Failed";
+        try { msg = jsonDecode(res.body)["message"] ?? msg; } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Only ADMIN can delete.")),
+        const SnackBar(content: Text("Server error")),
+      );
+    }
+  }
+
+  Future<void> _delete(String id) async {
+    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
+    if (!isAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Only Admin can delete.")),
       );
       return;
     }
@@ -159,7 +267,14 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Delete Request"),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.red),
+            SizedBox(width: 8),
+            Text("Delete Request"),
+          ],
+        ),
         content: const Text("Are you sure you want to delete this request?"),
         actions: [
           TextButton(
@@ -181,7 +296,7 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       final res = await HttpService.delete("/api/train-requests/$id");
       if (res.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Deleted ✅")),
+          const SnackBar(content: Text("Deleted")),
         );
         fetchRequests();
       } else {
@@ -191,20 +306,474 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       }
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error / No internet")),
+        const SnackBar(content: Text("Server error")),
       );
     }
+  }
+
+  Future<void> _downloadPdf(String id, String pnr) async {
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text("Downloading PDF..."),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final response = await HttpService.downloadFile("/api/pdf/train-eq/$id");
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      if (response.statusCode == 200) {
+        // Get downloads directory
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName = "TrainEQ_$pnr.pdf";
+        final filePath = "${directory.path}/$fileName";
+
+        // Write file
+        final file = File(filePath);
+        await file.writeAsBytes(response.bodyBytes);
+
+        // Open file
+        final result = await OpenFilex.open(filePath);
+
+        if (result.type != ResultType.done) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Could not open file: ${result.message}")),
+            );
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("PDF saved: $fileName"),
+                backgroundColor: successGreen,
+              ),
+            );
+          }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Download failed (${response.statusCode})")),
+          );
+        }
+      }
+    } catch (e) {
+      // Close loading dialog if still open
+      if (mounted) Navigator.of(context).pop();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e")),
+        );
+      }
+    }
+  }
+
+  void _showDetails(Map<String, dynamic> r) {
+    final pnr = r["pnrNumber"] ?? r["pnr"] ?? "-";
+    final trainName = r["trainName"] ?? "-";
+    final trainNumber = r["trainNumber"] ?? "-";
+    final from = r["fromStation"] ?? r["from"] ?? "-";
+    final to = r["toStation"] ?? r["to"] ?? "-";
+    final journeyClass = r["journeyClass"] ?? "-";
+    final bookingType = r["bookingType"] ?? "-";
+    final status = r["status"] ?? "PENDING";
+    final passengers = r["passengers"] as List? ?? [];
+    final dateOfJourney = r["dateOfJourney"];
+    final createdBy = r["createdBy"];
+    final createdByName = createdBy?["name"] ?? "-";
+    final contactNumber = r["contactNumber"] ?? "-";
+    final referencedBy = r["referencedBy"] ?? "-";
+
+    String formattedDate = "-";
+    if (dateOfJourney != null) {
+      try {
+        final date = DateTime.parse(dateOfJourney);
+        formattedDate = DateFormat('dd MMM yyyy').format(date);
+      } catch (_) {}
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        expand: false,
+        builder: (ctx, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: primaryBlue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.train, color: primaryBlue, size: 28),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "PNR: $pnr",
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "$trainNumber - $trainName",
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _statusChip(status),
+                ],
+              ),
+
+              // Download PDF Button - only for APPROVED requests (Admin only)
+              if (status.toString().toUpperCase() == "APPROVED" &&
+                  (widget.role == Roles.admin || widget.role == Roles.superAdmin)) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      final id = r["id"]?.toString();
+                      if (id != null) {
+                        Navigator.pop(ctx); // Close bottom sheet
+                        _downloadPdf(id, pnr.toString());
+                      }
+                    },
+                    icon: const Icon(Icons.download, size: 20),
+                    label: const Text("Download EQ Letter (PDF)"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: successGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 20),
+
+              // Route Card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: bgLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "FROM",
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            from.toString(),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Icon(Icons.arrow_forward, color: primaryBlue),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            "TO",
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            to.toString(),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Details Grid
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  children: [
+                    _detailRow(Icons.calendar_today, "Journey Date", formattedDate),
+                    _detailRow(Icons.airline_seat_recline_normal, "Class", journeyClass),
+                    _detailRow(Icons.bookmark, "Booking Type", bookingType.toString().replaceAll('_', ' ')),
+                    _detailRow(Icons.phone, "Contact", contactNumber),
+                    _detailRow(Icons.person_outline, "Referenced By", referencedBy),
+                    _detailRow(Icons.person, "Created By", createdByName),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Passengers Section
+              Row(
+                children: [
+                  Text(
+                    "PASSENGERS",
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: primaryBlue,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      "${passengers.length}",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              if (passengers.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: bgLight,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      "No passengers",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                )
+              else
+                ...passengers.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final p = entry.value;
+                  return _buildPassengerCard(idx, p);
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPassengerCard(int index, dynamic p) {
+    final name = p["name"] ?? "Unknown";
+    final age = p["age"] ?? "-";
+    final gender = p["gender"] ?? "-";
+    final berthPref = p["berthPreference"] ?? "";
+    final bookingStatus = p["bookingStatus"] ?? "";
+    final currentStatus = p["currentStatus"] ?? "";
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bgLight,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: primaryBlue,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Text(
+                "${index + 1}",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.toString(),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Age: $age  |  $gender${berthPref.toString().isNotEmpty ? '  |  $berthPref' : ''}",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (currentStatus.toString().isNotEmpty || bookingStatus.toString().isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: _getStatusColor(currentStatus.toString().isEmpty ? bookingStatus.toString() : currentStatus.toString()),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                currentStatus.toString().isNotEmpty ? currentStatus.toString() : bookingStatus.toString(),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    final s = status.toUpperCase();
+    if (s.contains("CNF") || s.contains("CONFIRM")) return successGreen;
+    if (s.contains("RAC")) return warningOrange;
+    if (s.contains("WL") || s.contains("WAIT")) return Colors.red.shade400;
+    return Colors.grey;
+  }
+
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.grey.shade500),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final canCreate = AccessControl.can(widget.role, ActionPermission.create);
-    final isAdmin = widget.role == Roles.admin;
+    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
 
     return Scaffold(
       backgroundColor: bgLight,
       appBar: AppBar(
-        title: const Text("Train Requests"),
+        elevation: 0,
+        title: const Text("Train EQ Requests", style: TextStyle(fontWeight: FontWeight.w600)),
         backgroundColor: primaryBlue,
         actions: [
           IconButton(
@@ -214,156 +783,463 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
         ],
       ),
       floatingActionButton: canCreate
-          ? FloatingActionButton(
+          ? FloatingActionButton.extended(
               backgroundColor: primaryBlue,
               onPressed: _openCreate,
-              child: const Icon(Icons.add, color: Colors.white),
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text("New Request", style: TextStyle(color: Colors.white)),
             )
           : null,
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : error != null
-              ? Center(child: Text(error!))
-              : requests.isEmpty
-                  ? const Center(child: Text("No requests found"))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: requests.length,
-                      itemBuilder: (context, index) {
-                        final r = requests[index];
+      body: Column(
+        children: [
+          // Stats Card
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [primaryBlue, primaryBlue.withOpacity(0.8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: primaryBlue.withOpacity(0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _statItem("Total", _totalCount, Icons.train),
+                _statItem("Pending", _pendingCount, Icons.pending, Colors.orangeAccent),
+                _statItem("Approved", _approvedCount, Icons.check_circle, Colors.lightGreenAccent),
+                _statItem("Rejected", _rejectedCount, Icons.cancel, Colors.redAccent),
+              ],
+            ),
+          ),
 
-                        final int? id = _getId(r);
+          // Search
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: "Search by PNR, name, station...",
+                prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = "");
+                          fetchRequests();
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              onSubmitted: (v) {
+                setState(() => _searchQuery = v);
+                fetchRequests();
+              },
+            ),
+          ),
 
-                        final pnr = r["pnr"] ?? r["pnrNumber"] ?? "-";
-                        final from = r["from"] ?? "-";
-                        final to = r["to"] ?? "-";
-                        final status = (r["status"] ?? "PENDING").toString();
+          const SizedBox(height: 12),
 
-                        final isPending =
-                            status.toUpperCase().contains("PENDING");
+          // Status Filter Chips
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                _filterChip("All"),
+                _filterChip("Pending"),
+                _filterChip("Approved"),
+                _filterChip("Resolved"),
+                _filterChip("Rejected"),
+              ],
+            ),
+          ),
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 22,
-                                    backgroundColor:
-                                        primaryBlue.withOpacity(0.1),
-                                    child: const Icon(Icons.train,
-                                        color: primaryBlue),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          "PNR: $pnr",
-                                          style: const TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          "Route: $from → $to",
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  _statusChip(status),
-                                ],
-                              ),
+          const SizedBox(height: 12),
 
-                              // ✅ Admin actions (approve/reject/delete)
-                              if (isAdmin && isPending && id != null) ...[
-                                const SizedBox(height: 14),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: OutlinedButton(
-                                        onPressed: () => _reject(id),
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: Colors.red,
-                                          side: const BorderSide(
-                                              color: Colors.red),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                        ),
-                                        child: const Text("Reject"),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: ElevatedButton(
-                                        onPressed: () => _approve(id),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.green,
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                        ),
-                                        child: const Text("Approve"),
-                                      ),
-                                    ),
-                                  ],
+          // List
+          Expanded(
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.error_outline, size: 48, color: Colors.grey.shade400),
+                            const SizedBox(height: 16),
+                            Text(error!, style: TextStyle(color: Colors.grey.shade600)),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: fetchRequests,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text("Retry"),
+                            ),
+                          ],
+                        ),
+                      )
+                    : requests.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.train_outlined, size: 64, color: Colors.grey.shade300),
+                                const SizedBox(height: 16),
+                                Text(
+                                  "No requests found",
+                                  style: TextStyle(fontSize: 16, color: Colors.grey.shade500),
                                 ),
                               ],
-
-                              if (isAdmin && id != null) ...[
-                                const SizedBox(height: 10),
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 44,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => _delete(id),
-                                    icon: const Icon(Icons.delete,
-                                        color: Colors.red),
-                                    label: const Text(
-                                      "Delete Request",
-                                      style: TextStyle(color: Colors.red),
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      side:
-                                          const BorderSide(color: Colors.red),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              ],
-                            ],
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: fetchRequests,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                              itemCount: requests.length,
+                              itemBuilder: (context, index) {
+                                final r = requests[index];
+                                return _buildRequestCard(r, isAdmin);
+                              },
+                            ),
                           ),
-                        );
-                      },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statItem(String label, int count, IconData icon, [Color? iconColor]) {
+    return Column(
+      children: [
+        Icon(icon, color: iconColor ?? Colors.white70, size: 22),
+        const SizedBox(height: 4),
+        Text(
+          count.toString(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 11,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _filterChip(String status) {
+    final isSelected = selectedStatus == status;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() => selectedStatus = status);
+          fetchRequests();
+        },
+        child: Container(
+          height: 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected ? primaryBlue : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            status,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRequestCard(Map<String, dynamic> r, bool isAdmin) {
+    final String? id = _getId(r);
+    final pnr = r["pnrNumber"] ?? r["pnr"] ?? "-";
+    final trainName = r["trainName"] ?? "";
+    final trainNumber = r["trainNumber"] ?? "";
+    final from = r["fromStation"] ?? r["from"] ?? "-";
+    final to = r["toStation"] ?? r["to"] ?? "-";
+    final status = (r["status"] ?? "PENDING").toString();
+    final passengers = r["passengers"] as List? ?? [];
+    final passengerCount = passengers.isNotEmpty
+        ? passengers.length
+        : (r["_count"]?["passengers"] ?? 0);
+    final dateOfJourney = r["dateOfJourney"];
+    final journeyClass = r["journeyClass"] ?? "";
+
+    String formattedDate = "";
+    if (dateOfJourney != null) {
+      try {
+        final date = DateTime.parse(dateOfJourney);
+        formattedDate = DateFormat('dd MMM').format(date);
+      } catch (_) {}
+    }
+
+    final isPending = status.toUpperCase().contains("PENDING");
+
+    // Get passenger names preview
+    String passengerPreview = "";
+    if (passengers.isNotEmpty) {
+      final names = passengers.take(2).map((p) => p["name"]?.toString() ?? "").where((n) => n.isNotEmpty).toList();
+      if (names.isNotEmpty) {
+        passengerPreview = names.join(", ");
+        if (passengers.length > 2) {
+          passengerPreview += " +${passengers.length - 2}";
+        }
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () => _showDetails(r),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: primaryBlue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    child: const Icon(Icons.train, color: primaryBlue, size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                "PNR: $pnr",
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            _statusChip(status),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        if (trainNumber.isNotEmpty || trainName.isNotEmpty)
+                          Text(
+                            "$trainNumber${trainName.isNotEmpty ? ' - $trainName' : ''}",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              // Route
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: bgLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        from.toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                    ),
+                    Icon(Icons.arrow_forward, size: 16, color: primaryBlue),
+                    Expanded(
+                      child: Text(
+                        to.toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Info row
+              Row(
+                children: [
+                  Icon(Icons.people, size: 14, color: Colors.grey.shade600),
+                  const SizedBox(width: 4),
+                  Text(
+                    "$passengerCount",
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                  ),
+                  if (journeyClass.isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    Icon(Icons.airline_seat_recline_normal, size: 14, color: Colors.grey.shade600),
+                    const SizedBox(width: 4),
+                    Text(
+                      journeyClass,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                  if (formattedDate.isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade600),
+                    const SizedBox(width: 4),
+                    Text(
+                      formattedDate,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                  const Spacer(),
+                  Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+                ],
+              ),
+
+              // Passenger names preview
+              if (passengerPreview.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  passengerPreview,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade500,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
+              // Admin actions - Approve/Reject for PENDING
+              if (isAdmin && isPending && id != null) ...[
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _reject(id),
+                        icon: const Icon(Icons.close, size: 16),
+                        label: const Text("Reject"),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _approve(id),
+                        icon: const Icon(Icons.check, size: 16),
+                        label: const Text("Approve"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: successGreen,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              // Admin actions - Resolve for APPROVED
+              if (isAdmin && status.toString().toUpperCase() == "APPROVED" && id != null) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _resolve(id);
+                    },
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: const Text("Mark as Resolved"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -375,17 +1251,20 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
 
     if (s.contains("PENDING")) {
       bg = Colors.orange.shade50;
-      text = Colors.orange;
+      text = Colors.orange.shade700;
     } else if (s.contains("APPROVED")) {
       bg = Colors.green.shade50;
-      text = Colors.green;
+      text = Colors.green.shade700;
+    } else if (s.contains("RESOLVED")) {
+      bg = Colors.blue.shade50;
+      text = Colors.blue.shade700;
     } else if (s.contains("REJECT")) {
       bg = Colors.red.shade50;
-      text = Colors.red;
+      text = Colors.red.shade700;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(20),
@@ -393,155 +1272,9 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       child: Text(
         status,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.bold,
           color: text,
-        ),
-      ),
-    );
-  }
-}
-
-// ================= CREATE TRAIN REQUEST SHEET =================
-
-class _CreateTrainRequestSheet extends StatefulWidget {
-  final Future<void> Function() onCreated;
-  const _CreateTrainRequestSheet({required this.onCreated});
-
-  @override
-  State<_CreateTrainRequestSheet> createState() =>
-      __CreateTrainRequestSheetState();
-}
-
-class __CreateTrainRequestSheetState extends State<_CreateTrainRequestSheet> {
-  final _formKey = GlobalKey<FormState>();
-
-  final pnrController = TextEditingController();
-  final fromController = TextEditingController();
-  final toController = TextEditingController();
-  final noteController = TextEditingController();
-
-  bool submitting = false;
-
-  @override
-  void dispose() {
-    pnrController.dispose();
-    fromController.dispose();
-    toController.dispose();
-    noteController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => submitting = true);
-
-    try {
-      final res = await HttpService.post("/api/train-requests", {
-        "pnr": pnrController.text.trim(),
-        "from": fromController.text.trim(),
-        "to": toController.text.trim(),
-        "note": noteController.text.trim(),
-      });
-
-      if (res.statusCode == 201 || res.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Request created ✅")),
-        );
-        await widget.onCreated();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed (${res.statusCode})")),
-        );
-      }
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error / No internet")),
-      );
-    } finally {
-      if (mounted) setState(() => submitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-
-    return Padding(
-      padding: EdgeInsets.only(left: 16, right: 16, bottom: bottom + 16, top: 16),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "Create Train Request",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: pnrController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "PNR Number",
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().length < 10) ? "Enter valid PNR" : null,
-            ),
-            const SizedBox(height: 12),
-
-            TextFormField(
-              controller: fromController,
-              decoration: const InputDecoration(
-                labelText: "From (Station Code)",
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? "Enter from" : null,
-            ),
-            const SizedBox(height: 12),
-
-            TextFormField(
-              controller: toController,
-              decoration: const InputDecoration(
-                labelText: "To (Station Code)",
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? "Enter to" : null,
-            ),
-            const SizedBox(height: 12),
-
-            TextFormField(
-              controller: noteController,
-              decoration: const InputDecoration(
-                labelText: "Note (optional)",
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: submitting ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0A2E5C),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: submitting
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Save"),
-              ),
-            ),
-          ],
         ),
       ),
     );

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../../services/http_service.dart';
 import 'login_screen.dart';
 import 'otp_screen.dart';
 
@@ -57,14 +57,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _submitting = true);
 
     try {
-      final registerResponse = await http.post(
-        Uri.parse('http://13.60.214.88:5000/api/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      final registerResponse = await HttpService.post(
+        "/api/auth/register",
+        {
           "username": _nameController.text.trim(),
           "email": _emailController.text.trim(),
           "password": _passwordController.text.trim(),
-        }),
+        },
       );
 
       setState(() => _submitting = false);

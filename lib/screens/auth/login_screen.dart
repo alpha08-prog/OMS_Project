@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/gestures.dart';
@@ -7,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/http_service.dart';
-
 import '../home/home_screen.dart';
 import 'register_screen.dart';
 
@@ -25,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _submitting = false;
   bool _hidePassword = true;
+  bool _rememberMe = true;
 
   @override
   void dispose() {
@@ -45,18 +44,29 @@ class _LoginScreenState extends State<LoginScreen> {
         "password": _passwordController.text.trim(),
       });
 
-      final data = jsonDecode(res.body);
+      final Map<String, dynamic> json = jsonDecode(res.body);
 
-      if (res.statusCode == 200) {
-        final token = data["token"];
-        final user = data["user"];
+      print("LOGIN RESPONSE CODE: ${res.statusCode}");
+      print("LOGIN RESPONSE BODY: ${res.body}");
+
+      // ✅ Success Case
+      if (res.statusCode == 200 && json["success"] == true) {
+        final data = json["data"]; // ✅ IMPORTANT (backend wraps inside data)
+
+        final token = data?["token"];
+        final user = data?["user"];
+
+        if (token == null || user == null) {
+          _showSnack("Invalid server response (token/user missing)");
+          return;
+        }
 
         final String userName =
             user["name"] ?? _emailController.text.split('@')[0];
 
         final String role = user["role"] ?? "STAFF";
 
-        // ✅ Save session (persistent login)
+        // Save session (persistent if Remember Me is checked)
         await AuthService.saveUserSession(
           token: token,
           userId: user["id"],
@@ -64,6 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
           email: user["email"] ?? _emailController.text.trim(),
           role: role,
         );
+        await AuthService.setRememberMe(_rememberMe);
 
         if (!mounted) return;
 
@@ -72,15 +83,17 @@ class _LoginScreenState extends State<LoginScreen> {
           MaterialPageRoute(
             builder: (_) => HomeScreen(
               userName: userName,
-              role: role, // ✅ FIXED: pass role also
+              role: role,
             ),
           ),
         );
       } else {
-        final msg = data["message"] ?? "Invalid credentials";
+        // ✅ Error Case (backend message)
+        final msg = json["message"] ?? "Invalid credentials";
         _showSnack(msg);
       }
     } catch (e) {
+      print("LOGIN ERROR: $e");
       _showSnack("Server error / No internet connection");
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -214,10 +227,11 @@ class _LoginScreenState extends State<LoginScreen> {
               label: "Email Address",
               icon: Icons.email_outlined,
               type: TextInputType.emailAddress,
-              validator: (v) => (v == null || !v.contains("@"))
-                  ? "Enter valid email"
+              validator: (v) => (v == null || v.isEmpty)
+                  ? "Email required"
                   : null,
             ),
+
             const SizedBox(height: 16),
 
             _inputBox(
@@ -229,7 +243,33 @@ class _LoginScreenState extends State<LoginScreen> {
                   ? "Minimum 6 characters"
                   : null,
             ),
-            const SizedBox(height: 26),
+
+            const SizedBox(height: 12),
+
+            // Remember Me checkbox
+            Row(
+              children: [
+                SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: Checkbox(
+                    value: _rememberMe,
+                    onChanged: (v) => setState(() => _rememberMe = v ?? true),
+                    activeColor: const Color(0xFF2563EB),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() => _rememberMe = !_rememberMe),
+                  child: Text(
+                    "Remember Me",
+                    style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
 
             SizedBox(
               width: double.infinity,

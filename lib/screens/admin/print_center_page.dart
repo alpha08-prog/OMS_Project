@@ -1,0 +1,389 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart';
+
+import '../../services/http_service.dart';
+import '../../theme/app_theme.dart';
+
+class PrintCenterPage extends StatefulWidget {
+  const PrintCenterPage({super.key});
+
+  @override
+  State<PrintCenterPage> createState() => _PrintCenterPageState();
+}
+
+class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  bool _loadingGrievances = true;
+  bool _loadingTrainRequests = true;
+  bool _loadingTourPrograms = false;
+
+  List<Map<String, dynamic>> _verifiedGrievances = [];
+  List<Map<String, dynamic>> _approvedTrainRequests = [];
+
+  DateTime? _tourStartDate;
+  DateTime? _tourEndDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _fetchGrievances();
+    _fetchTrainRequests();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchGrievances() async {
+    setState(() => _loadingGrievances = true);
+    try {
+      final res = await HttpService.get("/api/grievances?status=VERIFIED&limit=100");
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
+        _verifiedGrievances = list.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loadingGrievances = false);
+  }
+
+  Future<void> _fetchTrainRequests() async {
+    setState(() => _loadingTrainRequests = true);
+    try {
+      final res = await HttpService.get("/api/train-requests?status=APPROVED&limit=100");
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
+        _approvedTrainRequests = list.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loadingTrainRequests = false);
+  }
+
+  Future<void> _downloadPDF(String endpoint, String filename) async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Downloading PDF...")),
+      );
+
+      final res = await HttpService.downloadFile(endpoint);
+
+      if (res.statusCode == 200) {
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/$filename');
+        await file.writeAsBytes(res.bodyBytes);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("PDF saved: $filename"),
+              action: SnackBarAction(
+                label: "Open",
+                onPressed: () => OpenFilex.open(file.path),
+              ),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Download failed (${res.statusCode})")),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e")),
+        );
+      }
+    }
+  }
+
+  Future<void> _previewHTML(String endpoint, String title) async {
+    try {
+      final res = await HttpService.get(endpoint);
+      if (res.statusCode == 200) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => Dialog(
+            child: Column(
+              children: [
+                AppBar(
+                  title: Text(title),
+                  automaticallyImplyLeading: false,
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(res.body, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _downloadTourProgramPDF() async {
+    String query = "";
+    if (_tourStartDate != null && _tourEndDate != null) {
+      query = "?startDate=${_tourStartDate!.toIso8601String()}&endDate=${_tourEndDate!.toIso8601String()}";
+    }
+    await _downloadPDF("/api/pdf/tour-program$query", "tour_program_schedule.pdf");
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        title: const Text("Print Center"),
+        backgroundColor: AppTheme.primaryIndigo,
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(text: "Grievances"),
+            Tab(text: "Train EQ"),
+            Tab(text: "Tour Program"),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildGrievanceTab(),
+          _buildTrainTab(),
+          _buildTourTab(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGrievanceTab() {
+    if (_loadingGrievances) return const Center(child: CircularProgressIndicator());
+    if (_verifiedGrievances.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.print_disabled, size: 64, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text("No verified grievances to print", style: TextStyle(color: Colors.grey.shade500)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _verifiedGrievances.length,
+      itemBuilder: (_, i) {
+        final g = _verifiedGrievances[i];
+        return _printCard(
+          title: g["petitionerName"] ?? "-",
+          subtitle: "${g['grievanceType']?.toString().replaceAll('_', ' ') ?? '-'} | ${g['constituency'] ?? '-'}",
+          icon: Icons.assignment,
+          iconColor: Colors.indigo,
+          onDownload: () => _downloadPDF("/api/pdf/grievance/${g['id']}", "grievance_${g['id'].toString().substring(0, 8)}.pdf"),
+          onPreview: () => _previewHTML("/api/pdf/grievance/${g['id']}/preview", "Grievance Letter"),
+        );
+      },
+    );
+  }
+
+  Widget _buildTrainTab() {
+    if (_loadingTrainRequests) return const Center(child: CircularProgressIndicator());
+    if (_approvedTrainRequests.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.print_disabled, size: 64, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text("No approved requests to print", style: TextStyle(color: Colors.grey.shade500)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _approvedTrainRequests.length,
+      itemBuilder: (_, i) {
+        final r = _approvedTrainRequests[i];
+        String dateStr = "";
+        try { dateStr = DateFormat('dd MMM yyyy').format(DateTime.parse(r["dateOfJourney"])); } catch (_) {}
+
+        return _printCard(
+          title: "PNR: ${r['pnrNumber'] ?? '-'}",
+          subtitle: "${r['trainName'] ?? ''} | $dateStr | ${r['fromStation']} -> ${r['toStation']}",
+          icon: Icons.train,
+          iconColor: Colors.blue,
+          onDownload: () => _downloadPDF("/api/pdf/train-eq/${r['id']}", "train_eq_${r['id'].toString().substring(0, 8)}.pdf"),
+          onPreview: () => _previewHTML("/api/pdf/train-eq/${r['id']}/preview", "Train EQ Letter"),
+        );
+      },
+    );
+  }
+
+  Widget _buildTourTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: AppTheme.shadowSm,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Tour Program Schedule PDF",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text("Generate a PDF of accepted tour programs for a date range",
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dateButton("Start Date", _tourStartDate, () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (picked != null) setState(() => _tourStartDate = picked);
+                      }),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _dateButton("End Date", _tourEndDate, () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now().add(const Duration(days: 7)),
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (picked != null) setState(() => _tourEndDate = picked);
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: _downloadTourProgramPDF,
+                    icon: const Icon(Icons.download),
+                    label: const Text("Download PDF"),
+                    style: AppTheme.primaryButton(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dateButton(String label, DateTime? date, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today, size: 16, color: Colors.grey.shade600),
+            const SizedBox(width: 8),
+            Text(
+              date != null ? DateFormat('dd MMM yyyy').format(date) : label,
+              style: TextStyle(fontSize: 13, color: date != null ? Colors.black : Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _printCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconColor,
+    required VoidCallback onDownload,
+    required VoidCallback onPreview,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: AppTheme.shadowSm,
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: iconColor.withOpacity(0.1),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onPreview,
+            icon: Icon(Icons.visibility, color: Colors.grey.shade600),
+            tooltip: "Preview",
+          ),
+          IconButton(
+            onPressed: onDownload,
+            icon: const Icon(Icons.download, color: AppTheme.primaryIndigo),
+            tooltip: "Download PDF",
+          ),
+        ],
+      ),
+    );
+  }
+}

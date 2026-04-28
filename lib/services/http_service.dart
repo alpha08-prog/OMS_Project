@@ -4,7 +4,8 @@ import 'auth_service.dart';
 
 class HttpService {
   // ✅ Change here for Production
-  static const String baseUrl = "http://13.60.214.88:5000";
+  static const String baseUrl =
+      "https://omsvackend-50040756292.development.catalystappsail.in";
 
   static Future<Map<String, String>> _headers() async {
     final token = await AuthService.getToken();
@@ -42,5 +43,14 @@ class HttpService {
     final headers = await _headers();
     final url = Uri.parse("$baseUrl$endpoint");
     return await http.delete(url, headers: headers);
+  }
+
+  /// Download file as bytes (for PDF downloads)
+  static Future<http.Response> downloadFile(String endpoint) async {
+    final token = await AuthService.getToken();
+    final url = Uri.parse("$baseUrl$endpoint");
+    return await http.get(url, headers: {
+      if (token != null && token.isNotEmpty) "Authorization": "Bearer $token",
+    });
   }
 }

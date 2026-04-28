@@ -1,12 +1,24 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import 'package:anki_clone/screens/birthday_page.dart';
-import 'package:anki_clone/screens/grievance/grievance_list_page.dart';
-import 'package:anki_clone/screens/visitors/visitor_list_page.dart';
-import 'package:anki_clone/screens/train/train_request_list_page.dart';
-import 'package:anki_clone/screens/tour/tour_program_list_page.dart'; // ✅ NEW
+import 'package:anki_clone/screens/history/history_page.dart';
+import 'package:anki_clone/screens/tasks/task_list_page.dart';
+import 'package:anki_clone/screens/tasks/staff_tasks_page.dart';
+import 'package:anki_clone/screens/admin/verification_queue_page.dart';
+import 'package:anki_clone/screens/admin/train_queue_page.dart';
+import 'package:anki_clone/screens/admin/tour_queue_page.dart';
+import 'package:anki_clone/screens/admin/print_center_page.dart';
+import 'package:anki_clone/screens/admin/user_management_page.dart';
+import 'package:anki_clone/screens/profile/change_password_page.dart';
+import 'package:anki_clone/screens/staff/staff_history_page.dart';
+
+import 'package:anki_clone/screens/admin/action_center_page.dart';
+import 'package:anki_clone/screens/about/about_page.dart';
+import 'package:anki_clone/screens/calendar/calendar_page.dart';
+import 'package:anki_clone/screens/tour/events_page.dart';
 
 import '../../data/top_stories.dart';
 import '../../data/news_data.dart';
@@ -17,8 +29,10 @@ import '../../services/auth_service.dart';
 import '../../services/http_service.dart';
 
 import '../../utils/access_control.dart';
+import '../../utils/app_navigator.dart';
 
 import '../auth/login_screen.dart';
+import '../../main.dart' show themeService;
 
 class HomeScreen extends StatefulWidget {
   final String userName;
@@ -44,13 +58,193 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loadingStats = true;
 
   int totalGrievances = 0;
+  int openGrievances = 0;
+  int inProgressGrievances = 0;
+  int resolvedGrievances = 0;
   int visitorsToday = 0;
   int alerts = 0;
+  int totalTourPrograms = 0;
+  int totalTrainRequests = 0;
+
+  // Admin pending counts
+  int pendingVerifications = 0;
+  int pendingTrainRequests = 0;
+  int pendingTourDecisions = 0;
+  int todayBirthdays = 0;
+
+  // Dashboard widget data
+  List<dynamic> todaySchedule = [];
+  List<dynamic> criticalNews = [];
+  List<dynamic> recentGrievances = [];
+  List<dynamic> recentItems = [];
+
+  // Admin dashboard data
+  bool _loadingAdminDashboard = false;
+  List<Map<String, dynamic>> _pendingApprovals = [];
+  List<Map<String, dynamic>> _todayBirthdaysList = [];
+
+  // Super Admin extra data
+  List<Map<String, dynamic>> _newsItems = [];
 
   @override
   void initState() {
     super.initState();
     _fetchDashboardStats();
+    _fetchDashboardWidgets();
+    if (widget.role == Roles.admin) {
+      _fetchAdminDashboard();
+    }
+    if (widget.role == Roles.superAdmin) {
+      _fetchSuperAdminExtras();
+    }
+  }
+
+  Future<void> _fetchSuperAdminExtras() async {
+    try {
+      final futures = await Future.wait([
+        HttpService.get("/api/birthdays/today"),
+        HttpService.get("/api/news?limit=20"),
+      ]);
+
+      if (!mounted) return;
+
+      List<Map<String, dynamic>> birthdays = [];
+      List<Map<String, dynamic>> news = [];
+
+      if (futures[0].statusCode == 200) {
+        final d = jsonDecode(futures[0].body);
+        final list = d is List ? d : (d["data"] ?? []);
+        birthdays = (list as List)
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+
+      if (futures[1].statusCode == 200) {
+        final d = jsonDecode(futures[1].body);
+        final list = d is List ? d : (d["data"] ?? []);
+        news = (list as List)
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+
+      setState(() {
+        _todayBirthdaysList = birthdays;
+        todayBirthdays = birthdays.length;
+        _newsItems = news;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _fetchAdminDashboard() async {
+    setState(() => _loadingAdminDashboard = true);
+    try {
+      final futures = await Future.wait([
+        HttpService.get("/api/grievances/queue/verification"),
+        HttpService.get("/api/train-requests/queue/pending"),
+        HttpService.get("/api/tour-programs/pending"),
+        HttpService.get("/api/birthdays/today"),
+      ]);
+
+      List<Map<String, dynamic>> grievances = [];
+      List<Map<String, dynamic>> trains = [];
+      List<Map<String, dynamic>> tours = [];
+      List<Map<String, dynamic>> birthdays = [];
+
+      if (futures[0].statusCode == 200) {
+        final d = jsonDecode(futures[0].body);
+        final list = d is List ? d : (d["data"] ?? []);
+        grievances = (list as List)
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      if (futures[1].statusCode == 200) {
+        final d = jsonDecode(futures[1].body);
+        final list = d is List ? d : (d["data"] ?? []);
+        trains = (list as List)
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      if (futures[2].statusCode == 200) {
+        final d = jsonDecode(futures[2].body);
+        final list = d is List ? d : (d["data"] ?? []);
+        tours = (list as List)
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      if (futures[3].statusCode == 200) {
+        final d = jsonDecode(futures[3].body);
+        final list = d is List ? d : (d["data"] ?? []);
+        birthdays = (list as List)
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+
+      // Build combined Pending Approvals list
+      final combined = <Map<String, dynamic>>[];
+      for (final g in grievances) {
+        combined.add({
+          "_kind": "grievance",
+          "title": "Grievance — ${(g["grievanceType"] ?? "").toString()}",
+          "subtitle":
+              "${g["petitionerName"] ?? "-"} · ${_shortDate(g["createdAt"]?.toString())}",
+          "createdAt": g["createdAt"],
+          "raw": g,
+        });
+      }
+      for (final t in trains) {
+        combined.add({
+          "_kind": "train",
+          "title": "Train EQ — ${t["passengerName"] ?? "-"}",
+          "subtitle":
+              "PNR: ${t["pnrNumber"] ?? "-"} · ${_shortDate(t["createdAt"]?.toString())}",
+          "createdAt": t["createdAt"],
+          "raw": t,
+        });
+      }
+      for (final tp in tours) {
+        combined.add({
+          "_kind": "tour",
+          "title": "Tour — ${tp["eventName"] ?? "-"}",
+          "subtitle":
+              "${tp["organizer"] ?? "-"} · ${_shortDate(tp["dateTime"]?.toString())}",
+          "createdAt": tp["createdAt"],
+          "raw": tp,
+        });
+      }
+
+      // Sort by createdAt desc (newest first)
+      combined.sort((a, b) {
+        final ad = DateTime.tryParse(a["createdAt"]?.toString() ?? "") ??
+            DateTime(2000);
+        final bd = DateTime.tryParse(b["createdAt"]?.toString() ?? "") ??
+            DateTime(2000);
+        return bd.compareTo(ad);
+      });
+
+      if (mounted) {
+        setState(() {
+          _pendingApprovals = combined;
+          _todayBirthdaysList = birthdays;
+          pendingVerifications = grievances.length;
+          pendingTrainRequests = trains.length;
+          pendingTourDecisions = tours.length;
+          todayBirthdays = birthdays.length;
+          _loadingAdminDashboard = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingAdminDashboard = false);
+    }
+  }
+
+  String _shortDate(String? iso) {
+    if (iso == null || iso.isEmpty) return "-";
+    try {
+      final d = DateTime.parse(iso);
+      return DateFormat('M/d/yyyy').format(d);
+    } catch (_) {
+      return "-";
+    }
   }
 
   Future<void> _fetchDashboardStats() async {
@@ -60,18 +254,36 @@ class _HomeScreenState extends State<HomeScreen> {
       final res = await HttpService.get("/api/stats/summary");
 
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final body = jsonDecode(res.body);
+        final data = (body is Map && body["data"] != null) ? body["data"] : body;
 
         setState(() {
           totalGrievances = (data["grievances"]?["total"] ?? 0) as int;
-          visitorsToday = (data["visitorsToday"] ?? 0) as int;
-          alerts = (data["alerts"] ?? 0) as int;
+          openGrievances = (data["grievances"]?["open"] ?? 0) as int;
+          inProgressGrievances =
+              (data["grievances"]?["inProgress"] ?? 0) as int;
+          resolvedGrievances = (data["grievances"]?["resolved"] ?? 0) as int;
+          visitorsToday = (data["visitorsToday"] ??
+              data["visitors"]?["today"] ??
+              0) as int;
+          alerts = (data["alerts"] ?? data["news"]?["critical"] ?? 0) as int;
+          pendingTrainRequests =
+              (data["trainRequests"]?["pending"] ?? 0) as int;
+          pendingTourDecisions =
+              (data["tourPrograms"]?["pending"] ?? 0) as int;
+          totalTourPrograms = (data["tourPrograms"]?["total"] ?? 0) as int;
+          totalTrainRequests = (data["trainRequests"]?["total"] ?? 0) as int;
+          todayBirthdays = (data["birthdays"]?["today"] ??
+              data["birthdaysToday"] ??
+              0) as int;
+          pendingVerifications =
+              (data["grievances"]?["pendingVerification"] ??
+                  openGrievances) as int;
           _loadingStats = false;
         });
       } else if (res.statusCode == 401) {
         await _logout(force: true);
       } else if (res.statusCode == 403) {
-        // ✅ stats is Admin only, show 0 for others
         setState(() {
           totalGrievances = 0;
           visitorsToday = 0;
@@ -84,6 +296,30 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       setState(() => _loadingStats = false);
     }
+  }
+
+  Future<void> _fetchDashboardWidgets() async {
+    try {
+      final futures = await Future.wait([
+        HttpService.get("/api/tour-programs/schedule/today"),
+        HttpService.get("/api/news/alerts/critical"),
+        HttpService.get("/api/grievances?limit=5"),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          if (futures[0].statusCode == 200) {
+            todaySchedule = jsonDecode(futures[0].body)["data"] ?? [];
+          }
+          if (futures[1].statusCode == 200) {
+            criticalNews = jsonDecode(futures[1].body)["data"] ?? [];
+          }
+          if (futures[2].statusCode == 200) {
+            recentGrievances = jsonDecode(futures[2].body)["data"] ?? [];
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _logout({bool force = false}) async {
@@ -111,12 +347,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isSuperAdmin = widget.role == Roles.superAdmin;
+
     return Scaffold(
-      backgroundColor: bgLight,
+      backgroundColor: isSuperAdmin ? const Color(0xFFF6F7FB) : bgLight,
       drawer: _buildDrawer(context),
 
       // ================= APP BAR =================
-      appBar: AppBar(
+      appBar: isSuperAdmin ? _buildSuperAdminAppBar(context) : AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
         flexibleSpace: Container(
@@ -174,52 +412,175 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // ================= BODY =================
       body: RefreshIndicator(
-        onRefresh: _fetchDashboardStats,
+        onRefresh: () async {
+          await _fetchDashboardStats();
+          await _fetchDashboardWidgets();
+          if (widget.role == Roles.admin) {
+            await _fetchAdminDashboard();
+          }
+          if (widget.role == Roles.superAdmin) {
+            await _fetchSuperAdminExtras();
+          }
+        },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, isSuperAdmin ? 24 : 120),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _loadingStats ? _statsLoadingRow() : _statsRow(),
-              const SizedBox(height: 24),
+              // SUPER ADMIN: dashboard ONLY (full layout matching mockup)
+              if (isSuperAdmin) ...[
+                _buildSuperAdminHero(),
+                const SizedBox(height: 16),
+                _loadingStats ? _statsLoadingRow() : _buildSuperAdminStats(),
+                const SizedBox(height: 20),
+                _buildSaTourProgramCard(),
+                const SizedBox(height: 16),
+                _buildSaGrievanceStatusCard(),
+                const SizedBox(height: 16),
+                _buildSaRecentGrievancesCard(),
+                const SizedBox(height: 16),
+                _buildSaTodaysBirthdaysCard(),
+                const SizedBox(height: 16),
+                _buildSaNewsIntelligenceCard(),
+                const SizedBox(height: 24),
+              ],
 
-              _sectionTitle("Popular Stories"),
-              const SizedBox(height: 12),
+              // ADMIN: New dashboard layout (welcome + 4 cards + pending approvals + birthdays)
+              if (widget.role == Roles.admin) ...[
+                _buildAdminWelcomeBanner(),
+                const SizedBox(height: 16),
+                _buildAdminActionCards(),
+                const SizedBox(height: 20),
+                _buildAdminPendingApprovals(),
+                const SizedBox(height: 16),
+                _buildAdminBirthdaysCard(),
+                const SizedBox(height: 20),
+              ],
 
-              SizedBox(
-                height: 185,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: topStories.length,
-                  itemBuilder: (context, index) =>
-                      StoryCard(story: topStories[index]),
+              // STAFF: Quick entry actions + recent items
+              if (widget.role == Roles.staff) ...[
+                _loadingStats ? _statsLoadingRow() : _statsRow(),
+                const SizedBox(height: 20),
+                _sectionTitle("Quick Actions"),
+                const SizedBox(height: 12),
+                _buildQuickActions(),
+                const SizedBox(height: 20),
+                if (recentGrievances.isNotEmpty) ...[
+                  _sectionTitle("Recently Entered"),
+                  const SizedBox(height: 12),
+                  _buildRecentItems(),
+                  const SizedBox(height: 20),
+                ],
+              ],
+
+              // Dashboard Widgets - Today's Schedule (hidden for admin & super admin)
+              if (!isSuperAdmin && widget.role != Roles.admin && todaySchedule.isNotEmpty) ...[
+                _sectionTitle("Today's Schedule"),
+                const SizedBox(height: 12),
+                _buildTodayScheduleWidget(),
+                const SizedBox(height: 20),
+              ],
+
+              // Dashboard Widgets - News Alerts (hidden for admin & super admin)
+              if (!isSuperAdmin && widget.role != Roles.admin && criticalNews.isNotEmpty) ...[
+                _sectionTitle("News Alerts"),
+                const SizedBox(height: 12),
+                _buildNewsAlertsWidget(),
+                const SizedBox(height: 20),
+              ],
+
+              // Birthday widget (admin and super admin have their own cards)
+              if (!isSuperAdmin && widget.role != Roles.admin && todayBirthdays > 0) ...[
+                _buildBirthdayWidget(),
+                const SizedBox(height: 20),
+              ],
+
+              // Popular Stories (hidden for admin & super admin)
+              if (!isSuperAdmin && widget.role != Roles.admin) ...[
+                _sectionTitle("Popular Stories"),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 185,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: topStories.length,
+                    itemBuilder: (context, index) =>
+                        StoryCard(story: topStories[index]),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 22),
+                Divider(color: Colors.grey.shade300),
+                const SizedBox(height: 18),
+              ],
 
-              const SizedBox(height: 22),
-              Divider(color: Colors.grey.shade300),
-              const SizedBox(height: 18),
-
-              _sectionTitle("News Updates"),
-              const SizedBox(height: 12),
-
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: newsList.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) =>
-                    NewsCard(news: newsList[index]),
-              ),
+              // News Updates (hidden for admin & super admin)
+              if (!isSuperAdmin && widget.role != Roles.admin) ...[
+                _sectionTitle("News Updates"),
+                const SizedBox(height: 12),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: newsList.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) =>
+                      NewsCard(news: newsList[index]),
+                ),
+              ],
             ],
           ),
         ),
       ),
 
-      bottomNavigationBar: _buildBottomBar(context),
+      bottomNavigationBar: isSuperAdmin ? null : _buildBottomBar(context),
     );
   }
+
+  // ================= SUPER ADMIN APP BAR =================
+  PreferredSizeWidget _buildSuperAdminAppBar(BuildContext context) {
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? "Good Morning"
+        : hour < 17
+            ? "Good Afternoon"
+            : "Good Evening";
+    final dateStr = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
+
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      iconTheme: const IconThemeData(color: Color(0xFF4338CA)),
+      leading: Builder(
+        builder: (context) => IconButton(
+          icon: const Icon(Icons.menu_rounded, color: Color(0xFF4338CA)),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+        ),
+      ),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "$greeting, Super Administrator",
+            style: const TextStyle(
+              color: Color(0xFF4338CA),
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+          ),
+          Text(
+            dateStr,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   // ================= STATS LOADING =================
   Widget _statsLoadingRow() {
@@ -337,6 +698,1169 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ================= SUPER ADMIN HERO BANNER =================
+  Widget _buildSuperAdminHero() {
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? "Good Morning"
+        : hour < 17
+            ? "Good Afternoon"
+            : "Good Evening";
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF4338CA), Color(0xFF6366F1)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4338CA).withOpacity(0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  greeting,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.userName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Super Administrator · Office Management System",
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _heroBadge(
+              count: inProgressGrievances,
+              label: "In Progress",
+              color: const Color(0xFFFCD34D)),
+          const SizedBox(width: 8),
+          _heroBadge(
+              count: pendingVerifications +
+                  pendingTrainRequests +
+                  pendingTourDecisions,
+              label: "Pending",
+              color: const Color(0xFFFB7185)),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroBadge({
+    required int count,
+    required String label,
+    required Color color,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.15),
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2),
+          ),
+          child: Text(
+            "$count",
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ================= SUPER ADMIN 4-STAT CARDS =================
+  Widget _buildSuperAdminStats() {
+    final cards = <Widget>[
+      _superStatCard(
+        icon: Icons.description_outlined,
+        value: "$totalGrievances",
+        label: "Total Grievances",
+        sub: pendingVerifications == 0
+            ? "all reviewed"
+            : "$pendingVerifications pending",
+        color: const Color(0xFF6366F1),
+        bgColor: const Color(0xFFEEF2FF),
+      ),
+      _superStatCard(
+        icon: Icons.check_circle_outline,
+        value: "$resolvedGrievances",
+        label: "Resolved",
+        sub: "grievances closed",
+        color: const Color(0xFF16A34A),
+        bgColor: const Color(0xFFDCFCE7),
+      ),
+      _superStatCard(
+        icon: Icons.warning_amber_rounded,
+        value: "$alerts",
+        label: "Critical Alerts",
+        sub: "new items flagged",
+        color: const Color(0xFFD97706),
+        bgColor: const Color(0xFFFEF3C7),
+      ),
+      _superStatCard(
+        icon: Icons.calendar_month_outlined,
+        value: "$totalTourPrograms",
+        label: "Tour Programs",
+        sub: pendingTourDecisions == 0
+            ? "all reviewed"
+            : "$pendingTourDecisions upcoming",
+        color: const Color(0xFF9333EA),
+        bgColor: const Color(0xFFF3E8FF),
+      ),
+    ];
+
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      childAspectRatio: 1.4,
+      children: cards,
+    );
+  }
+
+  Widget _superStatCard({
+    required IconData icon,
+    required String value,
+    required String label,
+    required String sub,
+    required Color color,
+    required Color bgColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (sub.isNotEmpty)
+            Text(
+              sub,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ================= SA TODAY'S TOUR PROGRAM =================
+  Widget _buildSaTourProgramCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _saCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Today's Tour Program",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (todaySchedule.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                "No tour programs scheduled for today",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+            )
+          else
+            ...todaySchedule.take(5).map((event) {
+              final time = event["dateTime"] != null
+                  ? DateFormat('hh:mm a')
+                      .format(DateTime.parse(event["dateTime"]).toLocal())
+                  : "";
+              final status =
+                  (event["status"] ?? "ACCEPTED").toString().toUpperCase();
+              final venue = event["venue"]?.toString() ?? "";
+              final organizer = event["organizer"]?.toString() ?? "";
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3E8FF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.event,
+                          color: Color(0xFF9333EA), size: 16),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            event["eventName"]?.toString() ?? "-",
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF0F172A),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            [
+                              if (time.isNotEmpty) time,
+                              if (venue.isNotEmpty) venue,
+                              if (organizer.isNotEmpty) organizer,
+                            ].join(" · "),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    _saStatusPill(status),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  // ================= SA GRIEVANCE STATUS DONUT =================
+  Widget _buildSaGrievanceStatusCard() {
+    final total = totalGrievances;
+    final resolved = resolvedGrievances;
+    final inProgress = inProgressGrievances;
+    final open = openGrievances;
+    final divisor = total == 0 ? 1 : total;
+    final resolvedPct = ((resolved / divisor) * 100).round();
+    final inProgressPct = ((inProgress / divisor) * 100).round();
+    final openPct = ((open / divisor) * 100).round();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _saCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Grievance Status",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              SizedBox(
+                width: 110,
+                height: 110,
+                child: CustomPaint(
+                  painter: _DonutPainter(
+                    resolved: resolved.toDouble(),
+                    inProgress: inProgress.toDouble(),
+                    open: open.toDouble(),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          "$total",
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        Text(
+                          "Total",
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _saLegendRow("Resolved", resolvedPct,
+                        const Color(0xFF16A34A)),
+                    const SizedBox(height: 8),
+                    _saLegendRow("In Progress", inProgressPct,
+                        const Color(0xFFD97706)),
+                    const SizedBox(height: 8),
+                    _saLegendRow(
+                        "Open", openPct, const Color(0xFFEF4444)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _saLegendRow(String label, int pct, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF334155),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Text(
+          "$pct%",
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ================= SA RECENT GRIEVANCES =================
+  Widget _buildSaRecentGrievancesCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _saCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Recent Grievances",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (recentGrievances.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                "No grievances recorded yet",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+            )
+          else
+            ...recentGrievances.take(5).map((g) {
+              final status = (g["status"] ?? "OPEN").toString();
+              final petitioner = g["petitionerName"]?.toString() ?? "-";
+              final type = g["grievanceType"]?.toString() ?? "";
+              final ward = g["ward"]?.toString() ?? "";
+              final amount = g["amount"];
+              final amountStr = amount != null
+                  ? "₹${NumberFormat('#,##0').format(num.tryParse(amount.toString()) ?? 0)}"
+                  : "";
+              final dateStr = _shortDate(g["createdAt"]?.toString());
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.description_outlined,
+                          color: Color(0xFF6366F1), size: 16),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  petitioner,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              _saStatusPill(status),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            [
+                              if (type.isNotEmpty) type,
+                              if (ward.isNotEmpty) ward,
+                              if (amountStr.isNotEmpty) amountStr,
+                            ].join(" · "),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      dateStr,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  // ================= SA TODAY'S BIRTHDAYS (PINK) =================
+  Widget _buildSaTodaysBirthdaysCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF2F8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFCE7F3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFCE7F3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.cake,
+                    color: Color(0xFFEC4899), size: 16),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                "Today's Birthdays",
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_todayBirthdaysList.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text(
+                  "No birthdays today",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ),
+            )
+          else
+            ..._todayBirthdaysList.map(
+              (b) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.person,
+                        size: 14, color: Color(0xFFEC4899)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "${b["name"] ?? "-"}${b["relation"] != null ? " · ${b["relation"]}" : ""}",
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF0F172A),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ================= SA NEWS & INTELLIGENCE =================
+  Widget _buildSaNewsIntelligenceCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _saCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "News & Intelligence",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_newsItems.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                "No news posted yet",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+            )
+          else
+            ..._newsItems.take(5).map(_buildSaNewsRow),
+          if (_newsItems.length > 5) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: InkWell(
+                onTap: () => AppNavigator.toNewsList(
+                  context,
+                  role: widget.role,
+                ),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "Show All (${_newsItems.length})",
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF6366F1),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.arrow_forward,
+                        size: 14,
+                        color: Color(0xFF6366F1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSaNewsRow(Map<String, dynamic> n) {
+    final headline = n["headline"]?.toString() ?? n["title"]?.toString() ?? "-";
+    final source = n["mediaSource"]?.toString() ?? n["source"]?.toString() ?? "";
+    final dateStr = _shortDate(n["createdAt"]?.toString() ??
+        n["publishedAt"]?.toString() ??
+        n["date"]?.toString());
+    final isAlert =
+        (n["priority"]?.toString().toUpperCase() == "CRITICAL") ||
+            (n["isCritical"] == true);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isAlert ? const Color(0xFFFEF2F2) : const Color(0xFFFAFAFA),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isAlert
+                ? const Color(0xFFFEE2E2)
+                : const Color(0xFFE5E7EB),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              isAlert
+                  ? Icons.warning_amber_rounded
+                  : Icons.article_outlined,
+              size: 16,
+              color: isAlert
+                  ? const Color(0xFFEF4444)
+                  : const Color(0xFF6366F1),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    headline,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F172A),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (source.isNotEmpty || dateStr != "-") ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      [if (source.isNotEmpty) source, if (dateStr != "-") dateStr]
+                          .join(" · "),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= SA SHARED HELPERS =================
+  BoxDecoration _saCardDecoration() {
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.04),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    );
+  }
+
+  Widget _saStatusPill(String status) {
+    Color color;
+    switch (status.toUpperCase()) {
+      case "RESOLVED":
+      case "ACCEPTED":
+      case "APPROVED":
+        color = const Color(0xFF16A34A);
+        break;
+      case "REJECTED":
+        color = const Color(0xFFEF4444);
+        break;
+      case "IN_PROGRESS":
+      case "PENDING":
+        color = const Color(0xFFD97706);
+        break;
+      case "OPEN":
+        color = const Color(0xFFEF4444);
+        break;
+      default:
+        color = const Color(0xFF6366F1);
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        status.replaceAll("_", " "),
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+          color: color,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+
+  // ================= TODAY'S SCHEDULE WIDGET =================
+  Widget _buildTodayScheduleWidget() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        children: todaySchedule.take(5).map((event) {
+          final time = event["dateTime"] != null
+              ? DateFormat('hh:mm a').format(DateTime.parse(event["dateTime"]).toLocal())
+              : "";
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 4, height: 36,
+                  decoration: BoxDecoration(color: Colors.purple, borderRadius: BorderRadius.circular(2)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(event["eventName"] ?? "", style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      Text("$time - ${event["venue"] ?? ""}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ================= NEWS ALERTS WIDGET =================
+  Widget _buildNewsAlertsWidget() {
+    return Column(
+      children: criticalNews.take(3).map((news) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF2F2),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFEE2E2)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(news["headline"] ?? "", style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    Text(news["mediaSource"] ?? "", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ================= RECENT GRIEVANCES WIDGET =================
+  Widget _buildRecentGrievancesWidget() {
+    return Column(
+      children: recentGrievances.take(5).map((g) {
+        final status = g["status"] ?? "OPEN";
+        final statusColor = status == "RESOLVED" ? const Color(0xFF16A34A)
+            : status == "REJECTED" ? const Color(0xFFEF4444)
+            : status == "IN_PROGRESS" ? Colors.orange
+            : Colors.blue;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+          ),
+          child: Row(
+            children: [
+              Container(width: 4, height: 40, decoration: BoxDecoration(color: statusColor, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(g["petitionerName"] ?? "", style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    Text("${g["grievanceType"] ?? ""} - ${g["constituency"] ?? ""}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: Text(status, style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ================= RECENT ITEMS (Staff) =================
+  Widget _buildRecentItems() {
+    return Column(
+      children: recentGrievances.take(3).map((g) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(radius: 16, backgroundColor: Colors.indigo.withOpacity(0.1), child: const Icon(Icons.receipt_long, size: 16, color: Colors.indigo)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(g["petitionerName"] ?? "", style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    Text(g["grievanceType"] ?? "", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ================= BIRTHDAY WIDGET =================
+  Widget _buildBirthdayWidget() {
+    return InkWell(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BirthdayPage(role: widget.role))),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [Color(0xFFFDF2F8), Color(0xFFFCE7F3)]),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFFBCFE8)),
+        ),
+        child: Row(
+          children: [
+            const CircleAvatar(radius: 20, backgroundColor: Color(0xFFEC4899), child: Icon(Icons.cake, color: Colors.white, size: 20)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Birthdays Today", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text("$todayBirthdays people have birthdays today", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= PENDING ACTIONS (Admin) =================
+  Widget _buildPendingActionsGrid() {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 2.2,
+      children: [
+        _pendingActionCard(
+          icon: Icons.verified_user,
+          label: "Verify Grievances",
+          count: pendingVerifications,
+          color: Colors.orange,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VerificationQueuePage())),
+        ),
+        _pendingActionCard(
+          icon: Icons.train,
+          label: "Train Approvals",
+          count: pendingTrainRequests,
+          color: Colors.blue,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TrainQueuePage())),
+        ),
+        _pendingActionCard(
+          icon: Icons.event,
+          label: "Tour Decisions",
+          count: pendingTourDecisions,
+          color: Colors.purple,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TourQueuePage())),
+        ),
+        _pendingActionCard(
+          icon: Icons.print,
+          label: "Print Center",
+          count: 0,
+          color: Colors.teal,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrintCenterPage())),
+        ),
+      ],
+    );
+  }
+
+  Widget _pendingActionCard({
+    required IconData icon,
+    required String label,
+    required int count,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: color.withOpacity(0.1),
+              child: Icon(icon, color: color, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  if (count > 0)
+                    Text("$count pending",
+                        style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= QUICK ACTIONS (Staff) =================
+  Widget _buildQuickActions() {
+    return SizedBox(
+      height: 90,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _quickActionCard(
+              Icons.receipt_long,
+              widget.role == Roles.staff ? "New\nGrievance" : "Verify\nGrievance",
+              Colors.indigo, () {
+            AppNavigator.toGrievanceEntry(context, role: widget.role);
+          }),
+          _quickActionCard(Icons.train, "Train\nRequest", Colors.blue, () {
+            AppNavigator.toTrainRequestEntry(context, role: widget.role);
+          }),
+          _quickActionCard(Icons.people, "Visitor\nEntry", Colors.teal, () {
+            AppNavigator.toVisitorEntry(context, role: widget.role);
+          }),
+          _quickActionCard(
+              Icons.event,
+              widget.role == Roles.staff ? "Add\nInvitation" : "Tour\nProgram",
+              Colors.purple, () {
+            AppNavigator.toTourProgramEntry(context, role: widget.role);
+          }),
+          _quickActionCard(
+              Icons.newspaper,
+              widget.role == Roles.staff ? "Add\nNews" : "News\nEntry",
+              Colors.orange, () {
+            AppNavigator.toNewsEntry(context, role: widget.role);
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickActionCard(IconData icon, String label, Color color, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 80,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(height: 6),
+              Text(label, textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ================= SECTION TITLE =================
   Widget _sectionTitle(String title) {
     return Text(
@@ -346,6 +1870,416 @@ class _HomeScreenState extends State<HomeScreen> {
         fontWeight: FontWeight.bold,
         letterSpacing: 0.8,
         color: Colors.black87,
+      ),
+    );
+  }
+
+  // ================= ADMIN DASHBOARD WIDGETS =================
+
+  Widget _buildAdminWelcomeBanner() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Welcome, ${widget.userName}",
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E1B4B),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Verification & Letter Management",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE0E7FF),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              "ADMIN ACCESS",
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF4338CA),
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminActionCards() {
+    final cards = [
+      _AdminCardData(
+        icon: Icons.verified_user_outlined,
+        title: "Verify Grievances",
+        subtitle: pendingVerifications == 1
+            ? "1 pending verification"
+            : "$pendingVerifications pending verification",
+        buttonLabel: "Open Queue",
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const VerificationQueuePage())),
+      ),
+      _AdminCardData(
+        icon: Icons.print_outlined,
+        title: "Print Letters",
+        subtitle: "Generate and print official letters",
+        buttonLabel: "Print Center",
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const PrintCenterPage())),
+      ),
+      _AdminCardData(
+        icon: Icons.train_outlined,
+        title: "Train EQ Letters",
+        subtitle: pendingTrainRequests == 1
+            ? "1 pending approval"
+            : "$pendingTrainRequests pending approval",
+        buttonLabel: "View Requests",
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const TrainQueuePage())),
+      ),
+      _AdminCardData(
+        icon: Icons.event_note_outlined,
+        title: "Tour Decisions",
+        subtitle: pendingTourDecisions == 1
+            ? "1 pending decisions"
+            : "$pendingTourDecisions pending decisions",
+        buttonLabel: "Review",
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const TourQueuePage())),
+      ),
+    ];
+
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 0.95,
+      children: cards.map(_buildAdminActionCard).toList(),
+    );
+  }
+
+  Widget _buildAdminActionCard(_AdminCardData c) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF2FF),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child:
+                Icon(c.icon, color: const Color(0xFF4338CA), size: 20),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            c.title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            c.subtitle,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade600,
+              height: 1.3,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: c.onTap,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primarySaffron,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                textStyle: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              child: Text(c.buttonLabel),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminPendingApprovals() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                "Pending Approvals",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E1B4B),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  "${_pendingApprovals.length} Pending",
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red.shade700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_loadingAdminDashboard)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 30),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_pendingApprovals.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.check_circle_outline,
+                        size: 40, color: Colors.green.shade400),
+                    const SizedBox(height: 8),
+                    Text(
+                      "All caught up — no pending approvals",
+                      style: TextStyle(
+                          color: Colors.grey.shade600, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._pendingApprovals.take(20).map(_buildPendingApprovalRow),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingApprovalRow(Map<String, dynamic> item) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item["title"] ?? "-",
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0F172A),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  item["subtitle"] ?? "",
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            onPressed: () => _onApprovalRowTap(item),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF4338CA),
+              side: BorderSide(color: const Color(0xFF4338CA).withOpacity(0.4)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              textStyle: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            child: const Text("Review"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onApprovalRowTap(Map<String, dynamic> item) {
+    final kind = item["_kind"];
+    if (kind == "grievance") {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const VerificationQueuePage(),
+      ));
+    } else if (kind == "train") {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const TrainQueuePage(),
+      ));
+    } else if (kind == "tour") {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const TourQueuePage(),
+      ));
+    }
+  }
+
+  Widget _buildAdminBirthdaysCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF2F8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFCE7F3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFCE7F3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.cake,
+                    color: Color(0xFFEC4899), size: 18),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                "Today's Birthdays",
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E1B4B),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_todayBirthdaysList.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  "No birthdays today",
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            )
+          else
+            ..._todayBirthdaysList.map((b) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person, size: 14, color: Color(0xFFEC4899)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "${b["name"] ?? "-"}${b["relation"] != null ? " · ${b["relation"]}" : ""}",
+                          style: const TextStyle(
+                              fontSize: 13, color: Color(0xFF0F172A)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+        ],
       ),
     );
   }
@@ -368,22 +2302,14 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _bottomButton(Icons.receipt_long, "Public\nGrievance", () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GrievanceListPage(role: widget.role),
-              ),
-            );
+          _bottomButton(
+              Icons.receipt_long,
+              widget.role == Roles.staff ? "Grievance" : "Verify", () {
+            AppNavigator.toGrievanceEntry(context, role: widget.role);
           }),
 
           _bottomButton(Icons.people_alt, "Visitors", () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => VisitorListPage(role: widget.role),
-              ),
-            );
+            AppNavigator.toVisitorEntry(context, role: widget.role);
           }),
 
           _bottomButton(Icons.cake, "Birthdays", () {
@@ -396,21 +2322,15 @@ class _HomeScreenState extends State<HomeScreen> {
           }),
 
           _bottomButton(Icons.train, "Train\nRequests", () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => TrainRequestListPage(role: widget.role),
-              ),
-            );
+            AppNavigator.toTrainRequestEntry(context, role: widget.role);
           }),
 
-          _bottomButton(Icons.event, "Tour\nPrograms", () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => TourProgramListPage(role: widget.role),
-              ),
-            );
+          _bottomButton(
+              Icons.event,
+              widget.role == Roles.staff
+                  ? "Add\nInvitation"
+                  : "Tour\nPrograms", () {
+            AppNavigator.toTourProgramEntry(context, role: widget.role);
           }),
         ],
       ),
@@ -475,66 +2395,17 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 30),
 
-            _drawerItem(Icons.receipt_long, "Public Grievance", onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => GrievanceListPage(role: widget.role),
-                ),
-              );
-            }),
-
-            _drawerItem(Icons.people_alt, "Visitors", onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => VisitorListPage(role: widget.role),
-                ),
-              );
-            }),
-
-            _drawerItem(Icons.cake, "Birthdays", onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => BirthdayPage(role: widget.role),
-                ),
-              );
-            }),
-
-            _drawerItem(Icons.train, "Train Requests", onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => TrainRequestListPage(role: widget.role),
-                ),
-              );
-            }),
-
-            _drawerItem(Icons.event, "Tour Programs", onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => TourProgramListPage(role: widget.role),
-                ),
-              );
-            }),
-
-            _drawerItem(Icons.newspaper, "News & Intelligence"),
-            _drawerItem(Icons.photo_camera, "Photo Booth"),
-
-            const Spacer(),
-            const Divider(color: Colors.white30),
-
-            _drawerItem(
-              Icons.logout,
-              "Logout",
-              onTap: () async => _logout(),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: widget.role == Roles.superAdmin
+                    ? _buildSuperAdminDrawerItems(context)
+                    : widget.role == Roles.admin
+                        ? _buildAdminDrawerItems(context)
+                        : widget.role == Roles.staff
+                            ? _buildStaffDrawerItems(context)
+                            : _buildDefaultDrawerItems(context),
+            ),
             ),
           ],
         ),
@@ -542,10 +2413,342 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Super-admin drawer — dashboard-only access.
+  List<Widget> _buildSuperAdminDrawerItems(BuildContext context) {
+    return [
+      _drawerItem(Icons.dashboard, "Dashboard", onTap: () {
+        Navigator.pop(context);
+      }),
+      const Divider(color: Colors.white30, indent: 16, endIndent: 16),
+      _drawerItem(Icons.logout, "Logout", onTap: () async => _logout()),
+    ];
+  }
+
+  // Curated staff drawer — only the items shown in the spec.
+  List<Widget> _buildStaffDrawerItems(BuildContext context) {
+    return [
+      _drawerItem(Icons.dashboard, "Dashboard", onTap: () {
+        Navigator.pop(context);
+      }),
+      _drawerItem(Icons.assignment_outlined, "My Tasks", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const StaffTasksPage(),
+        ));
+      }),
+      _drawerItem(Icons.history, "My History", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const StaffHistoryPage(),
+        ));
+      }),
+      _drawerItem(
+        Icons.description_outlined,
+        "Grievance",
+        trailing: Icons.chevron_right,
+        onTap: () {
+          Navigator.pop(context);
+          AppNavigator.toGrievanceEntry(context, role: widget.role);
+        },
+      ),
+      _drawerItem(Icons.people_alt_outlined, "Log Visitor", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toVisitorLog(context);
+      }),
+      _drawerItem(Icons.cake_outlined, "Add Birthday", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => BirthdayPage(role: widget.role),
+        ));
+      }),
+      _drawerItem(Icons.train, "Train EQ Request", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toTrainRequestAdd(context, role: widget.role);
+      }),
+      _drawerItem(Icons.calendar_today_outlined, "Add Invitation", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toInvitationAdd(context);
+      }),
+      _drawerItem(Icons.star_outline, "Event Reports", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toEventReports(context);
+      }),
+      _drawerItem(Icons.newspaper, "Add News", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toNewsAdd(context);
+      }),
+      _drawerItem(Icons.print, "Print Center", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const PrintCenterPage(),
+        ));
+      }),
+      _drawerItem(Icons.groups_outlined, "About Team", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const AboutPage(),
+        ));
+      }),
+      const Divider(color: Colors.white30, indent: 16, endIndent: 16),
+      _drawerItem(Icons.logout, "Logout", onTap: () async => _logout()),
+    ];
+  }
+
+  // Curated admin drawer — only the items shown in the spec.
+  List<Widget> _buildAdminDrawerItems(BuildContext context) {
+    return [
+      _drawerItem(Icons.dashboard, "Dashboard", onTap: () {
+        Navigator.pop(context);
+      }),
+      _drawerItem(Icons.flash_on, "Action Center", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ActionCenterPage(role: widget.role),
+        ));
+      }),
+      _drawerItem(Icons.trending_up, "Task Tracker", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => TaskListPage(role: widget.role),
+        ));
+      }),
+      _drawerItem(Icons.verified_user, "Verify Grievances", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const VerificationQueuePage(),
+        ));
+      }),
+      _drawerItem(Icons.train, "Train EQ Queue", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const TrainQueuePage(),
+        ));
+      }),
+      _drawerItem(Icons.event_available, "Tour Invitations", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const TourQueuePage(),
+        ));
+      }),
+      _drawerItem(Icons.star_outline, "Events", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => EventsPage(role: widget.role),
+        ));
+      }),
+      _drawerItem(Icons.calendar_month, "Calendar", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => CalendarPage(role: widget.role),
+        ));
+      }),
+      _drawerItem(Icons.people_alt_outlined, "View Visitors", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toVisitorList(context, role: widget.role);
+      }),
+      _drawerItem(Icons.newspaper, "News Feed", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toNewsList(context, role: widget.role);
+      }),
+      _drawerItem(Icons.print, "Print Center", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const PrintCenterPage(),
+        ));
+      }),
+      _drawerItem(Icons.history_toggle_off, "Action History", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toActionHistory(context);
+      }),
+      const Divider(color: Colors.white30, indent: 16, endIndent: 16),
+      _drawerItem(Icons.logout, "Logout", onTap: () async => _logout()),
+    ];
+  }
+
+  // Default drawer for staff and super-admin (unchanged behaviour).
+  List<Widget> _buildDefaultDrawerItems(BuildContext context) {
+    return [
+      _drawerItem(
+          Icons.receipt_long,
+          widget.role == Roles.staff ? "Grievance" : "Verify Grievance",
+          onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toGrievanceEntry(context, role: widget.role);
+      }),
+      _drawerItem(Icons.people_alt, "Visitors", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toVisitorEntry(context, role: widget.role);
+      }),
+      _drawerItem(Icons.cake, "Birthdays", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => BirthdayPage(role: widget.role),
+        ));
+      }),
+      _drawerItem(Icons.train, "Train Requests", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toTrainRequestEntry(context, role: widget.role);
+      }),
+      _drawerItem(
+          Icons.event,
+          widget.role == Roles.staff ? "Add Invitation" : "Tour Programs",
+          onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toTourProgramEntry(context, role: widget.role);
+      }),
+      _drawerItem(
+          Icons.newspaper,
+          widget.role == Roles.staff ? "Add News" : "News & Intelligence",
+          onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toNewsEntry(context, role: widget.role);
+      }),
+      _drawerItem(Icons.calendar_month, "Calendar", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => CalendarPage(role: widget.role),
+        ));
+      }),
+      _drawerItem(Icons.event_note, "Past Events", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => EventsPage(role: widget.role),
+        ));
+      }),
+
+      // Super-admin — gets the full admin toolset
+      if (widget.role == Roles.superAdmin) ...[
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Divider(color: Colors.white24),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text("ADMIN",
+              style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1)),
+        ),
+        const SizedBox(height: 4),
+        _drawerItem(Icons.dashboard_customize, "Action Center", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ActionCenterPage(role: widget.role),
+          ));
+        }),
+        _drawerItem(Icons.verified_user, "Verify Grievance", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const VerificationQueuePage(),
+          ));
+        }),
+        _drawerItem(Icons.train, "Train EQ Queue", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const TrainQueuePage(),
+          ));
+        }),
+        _drawerItem(Icons.event_available, "Tour Decisions", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const TourQueuePage(),
+          ));
+        }),
+        _drawerItem(Icons.task_alt, "Task Tracker", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => TaskListPage(role: widget.role),
+          ));
+        }),
+        _drawerItem(Icons.history_toggle_off, "Action History", onTap: () {
+          Navigator.pop(context);
+          AppNavigator.toActionHistory(context);
+        }),
+        _drawerItem(Icons.cake_outlined, "View Birthdays", onTap: () {
+          Navigator.pop(context);
+          AppNavigator.toBirthdayView(context);
+        }),
+        _drawerItem(Icons.print, "Print Center", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const PrintCenterPage(),
+          ));
+        }),
+        _drawerItem(Icons.people_outline, "User Management", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const UserManagementPage(),
+          ));
+        }),
+      ],
+
+      // Staff-only sections
+      if (widget.role == Roles.staff) ...[
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Divider(color: Colors.white24),
+        ),
+        _drawerItem(Icons.task, "My Tasks", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const StaffTasksPage(),
+          ));
+        }),
+        _drawerItem(Icons.history_edu, "My Submissions", onTap: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const StaffHistoryPage(),
+          ));
+        }),
+        _drawerItem(Icons.fact_check, "Event Reports", onTap: () {
+          Navigator.pop(context);
+          AppNavigator.toEventReports(context);
+        }),
+      ],
+
+      // Common sections
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Divider(color: Colors.white24),
+      ),
+      _drawerItem(Icons.history, "Activity History", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => HistoryPage(role: widget.role),
+        ));
+      }),
+      _drawerItem(Icons.lock_reset, "Change Password", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const ChangePasswordPage(),
+        ));
+      }),
+      _drawerItem(
+        themeService.isDark ? Icons.light_mode : Icons.dark_mode,
+        themeService.isDark ? "Light Mode" : "Dark Mode",
+        onTap: () {
+          themeService.toggleTheme();
+          Navigator.pop(context);
+        },
+      ),
+      _drawerItem(Icons.info_outline, "About Us", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const AboutPage(),
+        ));
+      }),
+      const Divider(color: Colors.white30),
+      _drawerItem(Icons.logout, "Logout", onTap: () async => _logout()),
+    ];
+  }
+
   Widget _drawerItem(
     IconData icon,
     String title, {
     VoidCallback? onTap,
+    IconData? trailing,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -563,18 +2766,92 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Icon(icon, color: Colors.white, size: 22),
               const SizedBox(width: 16),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+              if (trailing != null)
+                Icon(trailing, color: Colors.white70, size: 18),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+class _AdminCardData {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String buttonLabel;
+  final VoidCallback onTap;
+  const _AdminCardData({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.buttonLabel,
+    required this.onTap,
+  });
+}
+
+class _DonutPainter extends CustomPainter {
+  final double resolved;
+  final double inProgress;
+  final double open;
+
+  _DonutPainter({
+    required this.resolved,
+    required this.inProgress,
+    required this.open,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = resolved + inProgress + open;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width / 2) - 8;
+    final stroke = 14.0;
+
+    final bgPaint = Paint()
+      ..color = const Color(0xFFF1F5F9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    canvas.drawCircle(center, radius, bgPaint);
+
+    if (total == 0) return;
+
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    const startBase = -1.5708; // -90° in radians
+    double start = startBase;
+
+    void drawArc(double value, Color color) {
+      if (value <= 0) return;
+      final sweep = (value / total) * 6.2831853; // 2π
+      final paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.butt;
+      canvas.drawArc(rect, start, sweep, false, paint);
+      start += sweep;
+    }
+
+    drawArc(resolved, const Color(0xFF16A34A));
+    drawArc(inProgress, const Color(0xFFD97706));
+    drawArc(open, const Color(0xFFEF4444));
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter old) {
+    return old.resolved != resolved ||
+        old.inProgress != inProgress ||
+        old.open != open;
   }
 }

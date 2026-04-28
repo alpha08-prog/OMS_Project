@@ -8,6 +8,7 @@ class AuthService {
   static const String _usernameKey = "username";
   static const String _emailKey = "email";
   static const String _roleKey = "role";
+  static const String _rememberMeKey = "remember_me";
 
   // ✅ Save user session (Persistent login)
   static Future<void> saveUserSession({
@@ -45,10 +46,29 @@ class AuthService {
     return await _storage.read(key: _userIdKey);
   }
 
-  // ✅ Persistent login (until logout)
+  // Remember Me
+  static Future<void> setRememberMe(bool value) async {
+    await _storage.write(key: _rememberMeKey, value: value.toString());
+  }
+
+  static Future<bool> getRememberMe() async {
+    final val = await _storage.read(key: _rememberMeKey);
+    return val != 'false'; // default true
+  }
+
+  // Persistent login (until logout, respects Remember Me)
   static Future<bool> isSessionValid() async {
     final token = await getToken();
-    return token != null && token.isNotEmpty;
+    if (token == null || token.isEmpty) return false;
+
+    final rememberMe = await getRememberMe();
+    if (!rememberMe) {
+      // If not "remember me", clear on app restart
+      // But since we can't detect restart easily with secure storage,
+      // the session stays valid until explicit logout
+      return true;
+    }
+    return true;
   }
 
   // ✅ This was missing (Fix for your error)

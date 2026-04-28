@@ -20,8 +20,16 @@ class _NewsListPageState extends State<NewsListPage> {
   bool loading = true;
   String? error;
 
+  // Priority filter: "ALL" | "CRITICAL" | "HIGH" | "NORMAL"
+  // Only ADMIN / SUPER_ADMIN see the chip row that controls this.
+  String _priorityFilter = "ALL";
+
   List<Map<String, dynamic>> newsList = [];
-  List<Map<String, dynamic>> criticalAlerts = [];
+
+  bool get _canSeeFilter =>
+      widget.role == Roles.admin || widget.role == Roles.superAdmin;
+
+  bool get _canCreateNews => widget.role == Roles.staff;
 
   @override
   void initState() {
@@ -30,10 +38,7 @@ class _NewsListPageState extends State<NewsListPage> {
   }
 
   Future<void> _loadAll() async {
-    await Future.wait([
-      fetchNews(),
-      fetchCriticalAlerts(),
-    ]);
+    await fetchNews();
   }
 
   Future<void> fetchNews() async {
@@ -43,7 +48,10 @@ class _NewsListPageState extends State<NewsListPage> {
     });
 
     try {
-      final res = await HttpService.get("/api/news");
+      final endpoint = _priorityFilter == "ALL"
+          ? "/api/news"
+          : "/api/news?priority=$_priorityFilter";
+      final res = await HttpService.get(endpoint);
 
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
@@ -71,24 +79,6 @@ class _NewsListPageState extends State<NewsListPage> {
     }
   }
 
-  Future<void> fetchCriticalAlerts() async {
-    try {
-      final res = await HttpService.get("/api/news/alerts/critical");
-      if (res.statusCode == 200) {
-        final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
-
-        setState(() {
-          criticalAlerts = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
-              .toList();
-        });
-      }
-    } catch (_) {}
-  }
-
   int? _getId(Map<String, dynamic> item) {
     final id = item["id"];
     if (id is int) return id;
@@ -97,10 +87,9 @@ class _NewsListPageState extends State<NewsListPage> {
   }
 
   void _openCreateSheet() {
-    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
-    if (!canCreate) {
+    if (!_canCreateNews) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("You have view-only access.")),
+        const SnackBar(content: Text("Only staff can create news.")),
       );
       return;
     }
@@ -184,8 +173,6 @@ class _NewsListPageState extends State<NewsListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
-
     return Scaffold(
       backgroundColor: kNewsBgLight,
       appBar: AppBar(
@@ -198,7 +185,7 @@ class _NewsListPageState extends State<NewsListPage> {
           )
         ],
       ),
-      floatingActionButton: canCreate
+      floatingActionButton: _canCreateNews
           ? FloatingActionButton(
               backgroundColor: kNewsPrimaryBlue,
               onPressed: _openCreateSheet,
@@ -212,28 +199,10 @@ class _NewsListPageState extends State<NewsListPage> {
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    if (criticalAlerts.isNotEmpty) ...[
-                      const Text(
-                        "CRITICAL ALERTS",
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.red,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      ...criticalAlerts.map((a) => _alertCard(a)).toList(),
-                      const SizedBox(height: 18),
+                    if (_canSeeFilter) ...[
+                      _buildPriorityFilterRow(),
+                      const SizedBox(height: 12),
                     ],
-                    const Text(
-                      "ALL NEWS",
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: kNewsPrimaryBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
                     if (newsList.isEmpty)
                       const Center(child: Text("No news available"))
                     else
@@ -243,56 +212,73 @@ class _NewsListPageState extends State<NewsListPage> {
     );
   }
 
-  Widget _alertCard(Map<String, dynamic> a) {
-    final title = a["title"] ?? "Critical Alert";
-    final summary = a["summary"] ?? a["content"] ?? "-";
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.red.shade50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.red.shade200),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.red),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title.toString(),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  summary.toString(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+  Widget _buildPriorityFilterRow() {
+    const options = [
+      ("ALL", "All"),
+      ("CRITICAL", "Critical"),
+      ("HIGH", "High"),
+      ("NORMAL", "Normal"),
+    ];
+    return SizedBox(
+      height: 36,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: options.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final (value, label) = options[i];
+          final selected = _priorityFilter == value;
+          final color = _priorityColor(value);
+          return ChoiceChip(
+            label: Text(label),
+            selected: selected,
+            showCheckmark: false,
+            labelStyle: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : color,
             ),
-          )
-        ],
+            selectedColor: color,
+            backgroundColor: Colors.white,
+            side: BorderSide(color: selected ? color : Colors.grey.shade300),
+            onSelected: (s) {
+              if (!s || _priorityFilter == value) return;
+              setState(() => _priorityFilter = value);
+              fetchNews();
+            },
+          );
+        },
       ),
     );
+  }
+
+  static Color _priorityColor(String p) {
+    switch (p) {
+      case "CRITICAL":
+        return Colors.red.shade700;
+      case "HIGH":
+        return Colors.orange.shade800;
+      case "NORMAL":
+        return Colors.grey.shade700;
+      case "ALL":
+      default:
+        return kNewsPrimaryBlue;
+    }
   }
 
   Widget _newsCard(Map<String, dynamic> n) {
     final id = _getId(n);
 
-    final title = n["title"] ?? "News";
-    final category = n["category"] ?? "General";
-    final severity = (n["severity"] ?? "NORMAL").toString();
-    final createdAt = n["createdAt"] ?? "-";
+    // Backend returns headline + priority; older code used title/severity.
+    // Read both so the card works either way.
+    final title = (n["headline"] ?? n["title"] ?? "News").toString();
+    final category = (n["category"] ?? "General").toString();
+    final priority =
+        (n["priority"] ?? n["severity"] ?? "NORMAL").toString().toUpperCase();
+    final createdAt = (n["createdAt"] ?? "-").toString();
 
     final isAdmin = widget.role == Roles.admin;
+    final priorityColor = _priorityColor(priority);
 
     return InkWell(
       borderRadius: BorderRadius.circular(16),
@@ -312,6 +298,7 @@ class _NewsListPageState extends State<NewsListPage> {
           ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
               radius: 22,
@@ -323,14 +310,38 @@ class _NewsListPageState extends State<NewsListPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title.toString(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: priorityColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          priority,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: priorityColor,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -339,7 +350,7 @@ class _NewsListPageState extends State<NewsListPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "Severity: $severity | $createdAt",
+                    createdAt,
                     style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                 ],
