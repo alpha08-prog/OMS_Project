@@ -166,9 +166,41 @@ jobs:
           echo "::add-mask::$ACCESS_TOKEN"
           echo "access_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
 
-      - name: Deploy backend AppSail service
+      - name: Write Catalyst CLI project config (.catalystrc)
         env:
           CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
+        # The Catalyst CLI reads project/env metadata from .catalystrc in
+        # the working dir (or a parent). In CI there is no such file, so
+        # `--project` alone is not enough — the CLI errors "Org and Project
+        # Id cannot be empty". We synthesize a minimal .catalystrc that
+        # mirrors the developer's local one (project Project01, env
+        # Development). Domain ID 50040756292 and env ID 60069018829 are
+        # project identifiers (visible in the live AppSail URL), not
+        # credentials.
+        run: |
+          set -euo pipefail
+          : "${CATALYST_PROJECT_ID:?CATALYST_PROJECT_ID secret not set}"
+          cat > .catalystrc <<EOF
+          {
+            "defaults": { "project": 1, "env": 1 },
+            "actives": { "project": 1, "env": 1 },
+            "projects": [{
+              "idx": 1,
+              "id": "${CATALYST_PROJECT_ID}",
+              "name": "Project01",
+              "domain": { "id": "50040756292", "name": "project01-60069018829.development" },
+              "timezone": "Asia/Kolkata",
+              "env": [
+                { "idx": 1, "id": "60069018829", "name": "Development", "type": 3 }
+              ]
+            }]
+          }
+          EOF
+          # Some CLI versions look in $HOME instead of cwd — write to both.
+          cp .catalystrc "$HOME/.catalystrc"
+
+      - name: Deploy backend AppSail service
+        env:
           CATALYST_TOKEN: ${{ steps.zoho_token.outputs.access_token }}
         # AppSail is source-based: catalyst.json declares "source": "backend",
         # so the CLI uploads the backend/ folder and Catalyst rebuilds the
@@ -180,11 +212,9 @@ jobs:
         # touching omsvackend. We grep stdout/stderr and fail loudly.
         run: |
           set -uo pipefail
-          : "${CATALYST_PROJECT_ID:?CATALYST_PROJECT_ID secret not set}"
           : "${CATALYST_TOKEN:?Failed to obtain Catalyst access token}"
 
           OUTPUT=$(catalyst deploy --only appsail \
-            --project "$CATALYST_PROJECT_ID" \
             --token "$CATALYST_TOKEN" 2>&1)
           RC=$?
           echo "$OUTPUT"
