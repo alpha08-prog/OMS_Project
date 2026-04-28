@@ -1,5 +1,6 @@
 {
   "name": "oms-client",
+  "version": "1.0.0",
   "stack": "react16",
   "cache_control": [
     {
