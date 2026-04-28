@@ -1097,6 +1097,51 @@ export const googleCalendarApi = {
   },
 }
 
+// Attachments / file uploads (Stratus-backed)
+export type AttachmentContextType = 'GRIEVANCE' | 'TOUR' | 'NEWS' | 'PHOTO_BOOTH'
+
+export type Attachment = {
+  id: string
+  contextType: string
+  contextId: string | null
+  filename: string
+  mimeType: string
+  size: number
+  uploaderId: string | null
+  createdAt: string | null
+  url: string  // backend route — calling it 302-redirects to a fresh signed Stratus URL
+}
+
+export const uploadsApi = {
+  /**
+   * Upload a file. Returns the saved Attachment metadata (id + backend URL).
+   * Pass `contextId` once the parent entity exists so the upload is linked.
+   * Caller is responsible for catching errors (size > 10MB, unsupported MIME).
+   */
+  upload: async (
+    file: File,
+    contextType: AttachmentContextType,
+    contextId?: string
+  ): Promise<Attachment> => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('contextType', contextType)
+    if (contextId) form.append('contextId', contextId)
+    const res = await http.post<ApiResponse<Attachment>>('/uploads', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data.data
+  },
+
+  /** Returns the full URL to use as a link/img src — hits the auth-gated backend route. */
+  getUrl: (id: string) => `${API_URL}/uploads/${id}`,
+
+  delete: async (id: string) => {
+    const res = await http.delete<ApiResponse<{ id: string }>>(`/uploads/${id}`)
+    return res.data
+  },
+}
+
 // Legacy API export for backward compatibility
 export const api = {
   signup: async (data: SignupRequest) => authApi.register(data),

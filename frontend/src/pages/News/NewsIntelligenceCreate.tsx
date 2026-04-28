@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Upload } from "lucide-react";
-import { newsApi, type NewsPriority } from "@/lib/api";
+import { newsApi, uploadsApi, type NewsPriority } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 export default function NewsIntelligenceCreate() {
@@ -22,7 +22,7 @@ export default function NewsIntelligenceCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
 
   const [formData, setFormData] = useState({
     headline: "",
@@ -73,7 +73,7 @@ export default function NewsIntelligenceCreate() {
     }
 
     try {
-      await newsApi.create({
+      const created = await newsApi.create({
         headline: formData.headline,
         category: formData.category,
         region: formData.region,
@@ -83,6 +83,17 @@ export default function NewsIntelligenceCreate() {
         referencedBy: formData.referencedBy || undefined,
         imageUrl: formData.imageUrl || undefined,
       });
+
+      if (file && created?.id) {
+        try {
+          await uploadsApi.upload(file, 'NEWS', created.id);
+        } catch (uploadErr) {
+          const m = uploadErr instanceof Error ? uploadErr.message : 'Unknown error';
+          setError(`News saved, but image upload failed: ${m}`);
+          setLoading(false);
+          return;
+        }
+      }
 
       setSuccess(true);
       setTimeout(() => {
@@ -98,7 +109,7 @@ export default function NewsIntelligenceCreate() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFileName(e.target.files[0].name);
+      setFile(e.target.files[0]);
     }
   };
 
@@ -325,7 +336,7 @@ export default function NewsIntelligenceCreate() {
                         >
                           <Upload className="h-6 w-6 text-indigo-500" />
                           <p className="text-sm font-medium text-indigo-900">
-                            {fileName ? fileName : "Click to upload a file"}
+                            {file ? file.name : "Click to upload a file"}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             PNG, JPG, PDF up to 10MB

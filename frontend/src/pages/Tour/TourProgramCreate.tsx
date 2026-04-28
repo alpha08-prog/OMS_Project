@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { FileDown, Info, Upload } from "lucide-react";
-import { tourProgramApi } from "@/lib/api";
+import { tourProgramApi, uploadsApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 export default function TourProgramCreate() {
@@ -14,7 +14,7 @@ export default function TourProgramCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
 
   const [formData, setFormData] = useState({
     eventName: "",
@@ -72,7 +72,7 @@ export default function TourProgramCreate() {
     try {
       // Staff submits - decision will default to PENDING
       // Admin will later approve/reject
-      await tourProgramApi.create({
+      const created = await tourProgramApi.create({
         eventName: formData.eventName,
         organizer: formData.organizer,
         organizerPhone: formData.organizerPhone.trim() || undefined,
@@ -82,6 +82,17 @@ export default function TourProgramCreate() {
         description: formData.description || undefined,
         referencedBy: formData.referencedBy || undefined,
       });
+
+      if (file && created?.id) {
+        try {
+          await uploadsApi.upload(file, 'TOUR', created.id);
+        } catch (uploadErr) {
+          const m = uploadErr instanceof Error ? uploadErr.message : 'Unknown error';
+          setError(`Tour program saved, but file upload failed: ${m}`);
+          setLoading(false);
+          return;
+        }
+      }
 
       setSuccess(true);
       setTimeout(() => {
@@ -96,7 +107,7 @@ export default function TourProgramCreate() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFileName(e.target.files[0].name);
+      setFile(e.target.files[0]);
     }
   };
 
@@ -275,7 +286,7 @@ export default function TourProgramCreate() {
                         >
                           <Upload className="h-6 w-6 text-indigo-500" />
                           <p className="text-sm font-medium text-indigo-900">
-                            {fileName ? fileName : "Upload invitation card or letter"}
+                            {file ? file.name : "Upload invitation card or letter"}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             PNG, JPG, PDF up to 10MB

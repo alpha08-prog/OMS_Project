@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Upload } from "lucide-react";
-import { grievanceApi, type GrievanceType, type ActionRequired } from "@/lib/api";
+import { grievanceApi, uploadsApi, type GrievanceType, type ActionRequired } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 export default function OfficeGrievanceCreate() {
@@ -21,7 +21,7 @@ export default function OfficeGrievanceCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -79,7 +79,7 @@ export default function OfficeGrievanceCreate() {
     }
 
     try {
-      await grievanceApi.create({
+      const created = await grievanceApi.create({
         petitionerName: formData.petitionerName,
         mobileNumber: formData.mobileNumber,
         constituency: formData.constituency,
@@ -90,6 +90,17 @@ export default function OfficeGrievanceCreate() {
         letterTemplate: formData.letterTemplate || undefined,
         referencedBy: formData.referencedBy || undefined,
       });
+
+      if (file && created?.id) {
+        try {
+          await uploadsApi.upload(file, 'GRIEVANCE', created.id);
+        } catch (uploadErr) {
+          const m = uploadErr instanceof Error ? uploadErr.message : 'Unknown error';
+          setError(`Grievance saved, but file upload failed: ${m}`);
+          setLoading(false);
+          return;
+        }
+      }
 
       setSuccess(true);
       setTimeout(() => {
@@ -105,7 +116,7 @@ export default function OfficeGrievanceCreate() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFileName(e.target.files[0].name);
+      setFile(e.target.files[0]);
     }
   };
 
@@ -279,7 +290,7 @@ export default function OfficeGrievanceCreate() {
                         >
                           <Upload className="h-6 w-6 text-indigo-500" />
                           <p className="text-sm font-medium text-indigo-900">
-                            {fileName ? fileName : "Upload physical grievance copy"}
+                            {file ? file.name : "Upload physical grievance copy"}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             Scan or photo (PNG, JPG, PDF up to 10MB)
