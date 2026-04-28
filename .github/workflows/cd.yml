@@ -150,6 +150,27 @@ jobs:
       - name: Install Zoho Catalyst CLI
         run: npm install -g zcatalyst-cli
 
+      - name: Build backend TypeScript (refresh compiled/ before upload)
+        # The Catalyst CLI uploads everything in `backend/` (the source
+        # declared in catalyst.json). `npm start` runs `node compiled/app.js`,
+        # so compiled/ must exist at upload time and contain the built JS.
+        # compiled/ is gitignored, and Catalyst CLI versions can honor
+        # .gitignore on upload. Two-step defense:
+        #   1. Build (so compiled/ is fresh and present on the runner).
+        #   2. Strip `compiled/` from backend/.gitignore in this runner so
+        #      the upload includes it. Not committed back; runner-only.
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          ls compiled | head
+          # Defensive: remove gitignore rules that would exclude compiled/
+          # from a CLI upload that respects .gitignore.
+          sed -i.bak '/^compiled\/\?$/d;/^dist\/\?$/d' .gitignore || true
+          echo "--- backend/.gitignore after stripping ---"
+          cat .gitignore
+
       - name: Debug — what does this Catalyst CLI know?
         # One-time introspection so we stop guessing at flag names. Captures
         # CLI version, subcommands, deploy/login flags, expected config-file
