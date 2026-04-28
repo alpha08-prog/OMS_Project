@@ -111,28 +111,30 @@ export async function getAdminHistory(
 
     const items: HistoryItem[] = [];
 
-    // ── Grievances ────────────────────────────────────────────────────────
-    let grievances: CatalystRow[] = [];
-    if (shouldFetchGrievances) {
-      if (useZCQL()) {
-        const conditions: string[] = [];
-        if (action === 'RESOLVED') conditions.push(`status = 'RESOLVED'`);
-        else if (action === 'REJECTED') conditions.push(`status = 'REJECTED'`);
-        else if (action === 'VERIFIED') conditions.push(`isVerified = true`);
-        else if (action === 'IN_PROGRESS') conditions.push(`status = 'IN_PROGRESS'`);
-        else conditions.push(`status != 'OPEN'`);
+    // Fetch all three tables concurrently so total wait ≈ slowest call,
+    // not sum of all three (was sequential awaits).
+    const [grievances, trainRequests, tours] = await Promise.all([
+      (async (): Promise<CatalystRow[]> => {
+        if (!shouldFetchGrievances) return [];
+        if (useZCQL()) {
+          const conditions: string[] = [];
+          if (action === 'RESOLVED') conditions.push(`status = 'RESOLVED'`);
+          else if (action === 'REJECTED') conditions.push(`status = 'REJECTED'`);
+          else if (action === 'VERIFIED') conditions.push(`isVerified = true`);
+          else if (action === 'IN_PROGRESS') conditions.push(`status = 'IN_PROGRESS'`);
+          else conditions.push(`status != 'OPEN'`);
 
-        if (startCat) conditions.push(`MODIFIEDTIME >= '${startCat}'`);
-        if (endCat) conditions.push(`MODIFIEDTIME <= '${endCat}'`);
+          if (startCat) conditions.push(`MODIFIEDTIME >= '${startCat}'`);
+          if (endCat) conditions.push(`MODIFIEDTIME <= '${endCat}'`);
 
-        const where = ` WHERE ${conditions.join(' AND ')}`;
-        const safeLimit = zcqlSafeLimit(limit + skip + 50);
-        grievances = await executeZCQL<CatalystRow>(
-          `SELECT * FROM ${GRIEVANCE_TABLE}${where} ORDER BY MODIFIEDTIME DESC LIMIT ${safeLimit}`
-        );
-      } else {
+          const where = ` WHERE ${conditions.join(' AND ')}`;
+          const safeLimit = zcqlSafeLimit(limit + skip + 50);
+          return executeZCQL<CatalystRow>(
+            `SELECT * FROM ${GRIEVANCE_TABLE}${where} ORDER BY MODIFIEDTIME DESC LIMIT ${safeLimit}`
+          );
+        }
         const all = await listAllRows(GRIEVANCE_TABLE);
-        grievances = all.filter((g) => {
+        let filtered = all.filter((g) => {
           if (action === 'RESOLVED') return g.status === 'RESOLVED';
           if (action === 'REJECTED') return g.status === 'REJECTED';
           if (action === 'VERIFIED') return parseBool(g.isVerified);
@@ -140,93 +142,92 @@ export async function getAdminHistory(
           return g.status !== 'OPEN' || parseBool(g.isVerified);
         });
         if (startCat || endCat) {
-          grievances = grievances.filter((g) => {
+          filtered = filtered.filter((g) => {
             const t = g.MODIFIEDTIME ? new Date(g.MODIFIEDTIME).getTime() : 0;
             if (startCat && t < new Date(startCat).getTime()) return false;
             if (endCat && t > new Date(endCat).getTime()) return false;
             return true;
           });
         }
-      }
-    }
+        return filtered;
+      })(),
 
-    // ── Train Requests ────────────────────────────────────────────────────
-    let trainRequests: CatalystRow[] = [];
-    if (shouldFetchTrainRequests) {
-      if (useZCQL()) {
-        const conditions: string[] = [];
-        if (action === 'APPROVED' || action === 'ACCEPTED') {
-          conditions.push(`status = 'APPROVED'`);
-        } else if (action === 'REJECTED' || action === 'REGRET') {
-          conditions.push(`status = 'REJECTED'`);
-        } else if (action === 'RESOLVED') {
-          conditions.push(`status = 'RESOLVED'`);
-        } else {
-          conditions.push(
-            `(status = 'APPROVED' OR status = 'REJECTED' OR status = 'RESOLVED')`
+      (async (): Promise<CatalystRow[]> => {
+        if (!shouldFetchTrainRequests) return [];
+        if (useZCQL()) {
+          const conditions: string[] = [];
+          if (action === 'APPROVED' || action === 'ACCEPTED') {
+            conditions.push(`status = 'APPROVED'`);
+          } else if (action === 'REJECTED' || action === 'REGRET') {
+            conditions.push(`status = 'REJECTED'`);
+          } else if (action === 'RESOLVED') {
+            conditions.push(`status = 'RESOLVED'`);
+          } else {
+            conditions.push(
+              `(status = 'APPROVED' OR status = 'REJECTED' OR status = 'RESOLVED')`
+            );
+          }
+          if (startCat) conditions.push(`MODIFIEDTIME >= '${startCat}'`);
+          if (endCat) conditions.push(`MODIFIEDTIME <= '${endCat}'`);
+
+          const where = ` WHERE ${conditions.join(' AND ')}`;
+          const safeLimit = zcqlSafeLimit(limit + skip + 50);
+          return executeZCQL<CatalystRow>(
+            `SELECT * FROM ${TRAIN_TABLE}${where} ORDER BY MODIFIEDTIME DESC LIMIT ${safeLimit}`
           );
         }
-        if (startCat) conditions.push(`MODIFIEDTIME >= '${startCat}'`);
-        if (endCat) conditions.push(`MODIFIEDTIME <= '${endCat}'`);
-
-        const where = ` WHERE ${conditions.join(' AND ')}`;
-        const safeLimit = zcqlSafeLimit(limit + skip + 50);
-        trainRequests = await executeZCQL<CatalystRow>(
-          `SELECT * FROM ${TRAIN_TABLE}${where} ORDER BY MODIFIEDTIME DESC LIMIT ${safeLimit}`
-        );
-      } else {
         const all = await listAllRows(TRAIN_TABLE);
         const decided = new Set(['APPROVED', 'REJECTED', 'RESOLVED']);
-        trainRequests = all.filter((t) => {
+        let filtered = all.filter((t) => {
           if (action === 'APPROVED' || action === 'ACCEPTED') return t.status === 'APPROVED';
           if (action === 'REJECTED' || action === 'REGRET') return t.status === 'REJECTED';
           if (action === 'RESOLVED') return t.status === 'RESOLVED';
           return decided.has(String(t.status));
         });
         if (startCat || endCat) {
-          trainRequests = trainRequests.filter((t) => {
+          filtered = filtered.filter((t) => {
             const ts = t.MODIFIEDTIME ? new Date(t.MODIFIEDTIME).getTime() : 0;
             if (startCat && ts < new Date(startCat).getTime()) return false;
             if (endCat && ts > new Date(endCat).getTime()) return false;
             return true;
           });
         }
-      }
-    }
+        return filtered;
+      })(),
 
-    // ── Tour Programs ─────────────────────────────────────────────────────
-    let tours: CatalystRow[] = [];
-    if (shouldFetchTourPrograms) {
-      if (useZCQL()) {
-        const conditions: string[] = [];
-        if (action === 'ACCEPTED') conditions.push(`decision = 'ACCEPTED'`);
-        else if (action === 'REGRET') conditions.push(`decision = 'REGRET'`);
-        else conditions.push(`(decision = 'ACCEPTED' OR decision = 'REGRET')`);
-        if (startCat) conditions.push(`MODIFIEDTIME >= '${startCat}'`);
-        if (endCat) conditions.push(`MODIFIEDTIME <= '${endCat}'`);
+      (async (): Promise<CatalystRow[]> => {
+        if (!shouldFetchTourPrograms) return [];
+        if (useZCQL()) {
+          const conditions: string[] = [];
+          if (action === 'ACCEPTED') conditions.push(`decision = 'ACCEPTED'`);
+          else if (action === 'REGRET') conditions.push(`decision = 'REGRET'`);
+          else conditions.push(`(decision = 'ACCEPTED' OR decision = 'REGRET')`);
+          if (startCat) conditions.push(`MODIFIEDTIME >= '${startCat}'`);
+          if (endCat) conditions.push(`MODIFIEDTIME <= '${endCat}'`);
 
-        const where = ` WHERE ${conditions.join(' AND ')}`;
-        const safeLimit = zcqlSafeLimit(limit + skip + 50);
-        tours = await executeZCQL<CatalystRow>(
-          `SELECT * FROM ${TOUR_TABLE}${where} ORDER BY MODIFIEDTIME DESC LIMIT ${safeLimit}`
-        );
-      } else {
+          const where = ` WHERE ${conditions.join(' AND ')}`;
+          const safeLimit = zcqlSafeLimit(limit + skip + 50);
+          return executeZCQL<CatalystRow>(
+            `SELECT * FROM ${TOUR_TABLE}${where} ORDER BY MODIFIEDTIME DESC LIMIT ${safeLimit}`
+          );
+        }
         const all = await listAllRows(TOUR_TABLE);
-        tours = all.filter((tp) => {
+        let filtered = all.filter((tp) => {
           if (action === 'ACCEPTED') return tp.decision === 'ACCEPTED';
           if (action === 'REGRET') return tp.decision === 'REGRET';
           return tp.decision === 'ACCEPTED' || tp.decision === 'REGRET';
         });
         if (startCat || endCat) {
-          tours = tours.filter((tp) => {
+          filtered = filtered.filter((tp) => {
             const ts = tp.MODIFIEDTIME ? new Date(tp.MODIFIEDTIME).getTime() : 0;
             if (startCat && ts < new Date(startCat).getTime()) return false;
             if (endCat && ts > new Date(endCat).getTime()) return false;
             return true;
           });
         }
-      }
-    }
+        return filtered;
+      })(),
+    ]);
 
     // ── User join: collect all ids referenced, fetch once from cache ──────
     const userIds = new Set<string>();

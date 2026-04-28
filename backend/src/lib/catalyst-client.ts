@@ -36,18 +36,37 @@ function env(key: string, fallback?: string): string {
   throw new Error(`Missing required env var: ${key}`);
 }
 
+// Catalyst AppSail reserves env-var names starting with CATALYST_ and X_ZOHO_,
+// so user-set OAuth credentials must use a non-reserved prefix in prod.
+// Reads OMS_-prefixed names first, falls back to legacy CATALYST_/X_ZOHO_ names
+// (so local .env keeps working unchanged).
+function envEither(newKey: string, oldKey: string, fallback?: string): string {
+  const v = process.env[newKey] ?? process.env[oldKey];
+  if (v && v.trim()) return v.trim();
+  if (fallback !== undefined) return fallback;
+  throw new Error(`Missing required env var: ${newKey} (or legacy ${oldKey})`);
+}
+
 function accountsHost(): string {
-  const url = env('X_ZOHO_CATALYST_ACCOUNTS_URL', 'https://accounts.zoho.in');
+  const url = envEither(
+    'OMS_ZOHO_ACCOUNTS_URL',
+    'X_ZOHO_CATALYST_ACCOUNTS_URL',
+    'https://accounts.zoho.in'
+  );
   return new URL(url).host;
 }
 
 function apiHost(): string {
-  const url = env('X_ZOHO_CATALYST_CONSOLE_URL', 'https://api.catalyst.zoho.in');
+  const url = envEither(
+    'OMS_ZOHO_CONSOLE_URL',
+    'X_ZOHO_CATALYST_CONSOLE_URL',
+    'https://api.catalyst.zoho.in'
+  );
   return new URL(url).host;
 }
 
 function projectId(): string {
-  return env('CATALYST_PROJECT_ID');
+  return envEither('OMS_CATALYST_PROJECT_ID', 'CATALYST_PROJECT_ID');
 }
 
 /** Fetch a fresh access token via the refresh-token grant. */
@@ -55,9 +74,9 @@ function fetchAccessToken(): Promise<AccessTokenCache> {
   return new Promise((resolve, reject) => {
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
-      client_id: env('CATALYST_CLIENT_ID'),
-      client_secret: env('CATALYST_CLIENT_SECRET'),
-      refresh_token: env('CATALYST_REFRESH_TOKEN'),
+      client_id: envEither('OMS_CATALYST_CLIENT_ID', 'CATALYST_CLIENT_ID'),
+      client_secret: envEither('OMS_CATALYST_CLIENT_SECRET', 'CATALYST_CLIENT_SECRET'),
+      refresh_token: envEither('OMS_CATALYST_REFRESH_TOKEN', 'CATALYST_REFRESH_TOKEN'),
     }).toString();
 
     const req = https.request(
@@ -127,7 +146,11 @@ async function apiCall<T = any>(opts: RequestOptions): Promise<T> {
 
   const headers: Record<string, string> = {
     Authorization: `Zoho-oauthtoken ${token}`,
-    'X-Catalyst-Environment': env('CATALYST_ENVIRONMENT', 'Development'),
+    'X-Catalyst-Environment': envEither(
+      'OMS_CATALYST_ENVIRONMENT',
+      'CATALYST_ENVIRONMENT',
+      'Development'
+    ),
   };
   if (bodyString) {
     headers['Content-Type'] = 'application/json';
