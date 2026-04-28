@@ -166,25 +166,60 @@ jobs:
           echo "::add-mask::$ACCESS_TOKEN"
           echo "access_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
 
-      - name: Authenticate Catalyst CLI
-        run: catalyst login --token "${{ steps.zoho_token.outputs.access_token }}"
-
       - name: Deploy backend AppSail service
         env:
           CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
-          BACKEND_IMAGE_URI: ${{ env.BACKEND_IMAGE }}:${{ needs.build-push-backend.outputs.image_tag }}
+          CATALYST_TOKEN: ${{ steps.zoho_token.outputs.access_token }}
+        # AppSail is source-based: catalyst.json declares "source": "backend",
+        # so the CLI uploads the backend/ folder and Catalyst rebuilds the
+        # container. The GHCR image from build-push-backend is unused for
+        # this deploy path; it stays as a backup artifact.
+        #
+        # The CLI prints "✖ Error" but exits 0 on auth/config failures,
+        # which is why every previous CD run looked green while never
+        # touching omsvackend. We grep stdout/stderr and fail loudly.
         run: |
-          docker login ${{ env.REGISTRY }} -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-          docker pull $BACKEND_IMAGE_URI
-          catalyst deploy appsail \
-            --project "$CATALYST_PROJECT_ID" \
-            --name omsvackend \
-            --source "docker://$BACKEND_IMAGE_URI"
+          set -uo pipefail
+          : "${CATALYST_PROJECT_ID:?CATALYST_PROJECT_ID secret not set}"
+          : "${CATALYST_TOKEN:?Failed to obtain Catalyst access token}"
 
-      - name: Confirm backend deployment
+          OUTPUT=$(catalyst deploy --only appsail \
+            --project "$CATALYST_PROJECT_ID" \
+            --token "$CATALYST_TOKEN" 2>&1)
+          RC=$?
+          echo "$OUTPUT"
+
+          if echo "$OUTPUT" | grep -qE "✖|Error:|cannot be empty|haven't logged in|invalid"; then
+            echo "::error::Catalyst CLI reported errors above; deploy did NOT succeed (exit was $RC)"
+            exit 1
+          fi
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::catalyst deploy exited $RC"
+            exit "$RC"
+          fi
+
+      - name: Verify backend is healthy after deploy
+        # Polls /api/health until the container responds 200 with success:true,
+        # or fails the workflow after ~5 minutes. Without this, a silent
+        # deploy failure leaves the old container serving traffic and the
+        # green checkmark hides it.
         run: |
-          echo "Backend deployed to Catalyst AppSail (service: omsvackend)."
-          echo "Image: ${{ env.BACKEND_IMAGE }}:${{ needs.build-push-backend.outputs.image_tag }}"
+          set -euo pipefail
+          URL="https://omsvackend-${{ vars.CATALYST_PROJECT_DOMAIN }}.development.catalystappsail.in/api/health"
+          echo "Polling $URL ..."
+          for i in $(seq 1 30); do
+            if BODY=$(curl -fsS --max-time 30 "$URL" 2>&1); then
+              echo "$BODY"
+              if echo "$BODY" | grep -q '"success":true'; then
+                echo "Backend healthy after deploy (attempt $i)."
+                exit 0
+              fi
+            fi
+            echo "Attempt $i/30: not ready yet, sleeping 10s..."
+            sleep 10
+          done
+          echo "::error::Backend never reported healthy within 5 minutes — check AppSail console for build/start errors"
+          exit 1
 
   # ───────────────────────────────────────────────────────────
   # Job 4: Deploy Frontend to Zoho Catalyst Slate (static hosting)
