@@ -226,15 +226,9 @@ jobs:
           # Some CLI versions look in $HOME instead of cwd — write to both.
           cp .catalystrc "$HOME/.catalystrc"
 
-      - name: Authenticate Catalyst CLI
-        # The CLI silently ignores --token on `deploy` — only `login`
-        # persists auth state to disk. The frontend deploy job already
-        # uses this pattern successfully, so mirror it. Without this step
-        # the deploy goes out unauthenticated and Catalyst returns 401.
-        run: catalyst login --token "${{ steps.zoho_token.outputs.access_token }}"
-
       - name: Deploy backend AppSail service
         env:
+          CATALYST_TOKEN: ${{ steps.zoho_token.outputs.access_token }}
           CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
           # Org ID = 60069018829 (visible in Catalyst console → Hello, OMS →
           # Org ID). Not a credential — it's a public account identifier
@@ -244,6 +238,16 @@ jobs:
           # read, so whichever convention this CLI version uses, it picks up.
           ZCATALYST_ORG_ID: "60069018829"
           ZCATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
+        # The CLI told us directly:
+        #   "The command login provided is not supported in CI enviroment.
+        #    Please use the catalyst login command to log in, or provide
+        #    auth token via --token param"
+        # GH Actions sets CI=true, which makes the CLI refuse `login`. The
+        # CI-supported path is to pass --token on `deploy` itself; the
+        # earlier "Org and Project Id" error was a separate config-context
+        # problem (now fixed by .catalystrc + --project + --org), not a
+        # signal that --token was being ignored.
+        #
         # AppSail is source-based: catalyst.json declares "source": "backend",
         # so the CLI uploads the backend/ folder and Catalyst rebuilds the
         # container. The GHCR image from build-push-backend is unused for
@@ -254,10 +258,12 @@ jobs:
         # touching omsvackend. We grep stdout/stderr and fail loudly.
         run: |
           set -uo pipefail
+          : "${CATALYST_TOKEN:?Failed to obtain Catalyst access token}"
           : "${CATALYST_PROJECT_ID:?CATALYST_PROJECT_ID secret not set}"
           : "${CATALYST_ORG_ID:?CATALYST_ORG_ID not set}"
 
           OUTPUT=$(catalyst deploy --only appsail \
+            --token "$CATALYST_TOKEN" \
             --project "$CATALYST_PROJECT_ID" \
             --org "$CATALYST_ORG_ID" 2>&1)
           RC=$?
@@ -343,23 +349,73 @@ jobs:
           echo "::add-mask::$ACCESS_TOKEN"
           echo "access_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
 
-      - name: Authenticate Catalyst CLI
-        run: catalyst login --token "${{ steps.zoho_token.outputs.access_token }}"
+      - name: Write Catalyst CLI project config (.catalystrc)
+        env:
+          CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
+        # Same reason as the backend job: the CLI needs project/env context
+        # in .catalystrc; --project alone is not enough.
+        run: |
+          set -euo pipefail
+          : "${CATALYST_PROJECT_ID:?CATALYST_PROJECT_ID secret not set}"
+          cat > .catalystrc <<EOF
+          {
+            "defaults": { "project": 1, "env": 1 },
+            "actives": { "project": 1, "env": 1 },
+            "projects": [{
+              "idx": 1,
+              "id": "${CATALYST_PROJECT_ID}",
+              "name": "Project01",
+              "domain": { "id": "50040756292", "name": "project01-60069018829.development" },
+              "timezone": "Asia/Kolkata",
+              "env": [
+                { "idx": 1, "id": "60069018829", "name": "Development", "type": 3 }
+              ]
+            }]
+          }
+          EOF
+          cp .catalystrc "$HOME/.catalystrc"
 
       - name: Deploy static files to Catalyst Web Client
         env:
+          CATALYST_TOKEN: ${{ steps.zoho_token.outputs.access_token }}
           CATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
+          CATALYST_ORG_ID: "60069018829"
+          ZCATALYST_ORG_ID: "60069018829"
+          ZCATALYST_PROJECT_ID: ${{ secrets.CATALYST_PROJECT_ID }}
+        # Same fix as the backend deploy: pass --token directly on `deploy`
+        # (the only CI-supported auth path) and fail loudly if the CLI exits
+        # 0 with a ✖/Error message. Previously this job has been silently
+        # green while never actually updating the live Slate site, which is
+        # why the frontend has been serving stale data.
         run: |
-          cat <<EOF > catalyst.json
+          set -uo pipefail
+          : "${CATALYST_TOKEN:?Failed to obtain Catalyst access token}"
+          : "${CATALYST_PROJECT_ID:?CATALYST_PROJECT_ID secret not set}"
+
+          # The repo's catalyst.json declares appsail; for client deploy
+          # we need a sibling client entry. Append rather than overwrite.
+          cat > catalyst.json <<EOF
           {
-            "client": {
-              "source": "frontend/dist"
-            }
+            "appsail": [{ "source": "backend", "name": "omsvackend" }],
+            "client": { "source": "frontend/dist" }
           }
           EOF
-          catalyst deploy \
+
+          OUTPUT=$(catalyst deploy --only client \
+            --token "$CATALYST_TOKEN" \
             --project "$CATALYST_PROJECT_ID" \
-            --only client
+            --org "$CATALYST_ORG_ID" 2>&1)
+          RC=$?
+          echo "$OUTPUT"
+
+          if echo "$OUTPUT" | grep -qE "✖|Error:|cannot be empty|haven't logged in|invalid"; then
+            echo "::error::Catalyst CLI reported errors above; client deploy did NOT succeed (exit was $RC)"
+            exit 1
+          fi
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::catalyst deploy exited $RC"
+            exit "$RC"
+          fi
 
       - name: Confirm frontend deployment
         run: echo "Frontend deployed to Catalyst Slate (static hosting)."
