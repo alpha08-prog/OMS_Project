@@ -262,10 +262,11 @@ jobs:
           : "${CATALYST_PROJECT_ID:?CATALYST_PROJECT_ID secret not set}"
           : "${CATALYST_ORG_ID:?CATALYST_ORG_ID not set}"
 
-          OUTPUT=$(catalyst deploy --only appsail \
+          OUTPUT=$(catalyst deploy --only appsail:omsvackend \
             --token "$CATALYST_TOKEN" \
             --project "$CATALYST_PROJECT_ID" \
-            --org "$CATALYST_ORG_ID" 2>&1)
+            --org "$CATALYST_ORG_ID" \
+            --dc in 2>&1)
           RC=$?
           echo "$OUTPUT"
 
@@ -404,7 +405,8 @@ jobs:
           OUTPUT=$(catalyst deploy --only client \
             --token "$CATALYST_TOKEN" \
             --project "$CATALYST_PROJECT_ID" \
-            --org "$CATALYST_ORG_ID" 2>&1)
+            --org "$CATALYST_ORG_ID" \
+            --dc in 2>&1)
           RC=$?
           echo "$OUTPUT"
 
