@@ -346,18 +346,17 @@ export default function StaffTasks() {
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <Button 
-                            size="sm" 
-                            onClick={() => handleOpenUpdate(task)}
-                            disabled={task.status === 'COMPLETED'}
-                          >
-                            Update Progress
-                            <ArrowRight className="h-4 w-4 ml-1" />
-                          </Button>
-                          {task.status === 'ASSIGNED' && (
-                            <Button 
-                              size="sm" 
-                              variant="outline"
+                          {/*
+                            Action button is mutually exclusive based on status:
+                            - ASSIGNED  -> Start Task (Update Progress is intentionally
+                              hidden until the task is actually started, so progress
+                              entries always belong to a started task).
+                            - IN_PROGRESS / ON_HOLD -> Update Progress.
+                            - COMPLETED -> neither (no further action available).
+                          */}
+                          {task.status === 'ASSIGNED' ? (
+                            <Button
+                              size="sm"
                               onClick={() => {
                                 setSelectedTask(task);
                                 handleUpdateProgress('IN_PROGRESS');
@@ -365,6 +364,14 @@ export default function StaffTasks() {
                             >
                               <PlayCircle className="h-4 w-4 mr-1" />
                               Start Task
+                            </Button>
+                          ) : task.status !== 'COMPLETED' && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleOpenUpdate(task)}
+                            >
+                              Update Progress
+                              <ArrowRight className="h-4 w-4 ml-1" />
                             </Button>
                           )}
                         </div>

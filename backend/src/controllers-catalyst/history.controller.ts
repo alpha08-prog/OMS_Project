@@ -122,12 +122,13 @@ export async function getAdminHistory(
           else if (action === 'REJECTED') conditions.push(`status = 'REJECTED'`);
           else if (action === 'VERIFIED') conditions.push(`isVerified = true`);
           else if (action === 'IN_PROGRESS') conditions.push(`status = 'IN_PROGRESS'`);
-          else conditions.push(`status != 'OPEN'`);
+          // No `else` -- when no action filter is set, return ALL grievances
+          // (including OPEN ones) so the listing matches the summary card count.
 
           if (startCat) conditions.push(`MODIFIEDTIME >= '${startCat}'`);
           if (endCat) conditions.push(`MODIFIEDTIME <= '${endCat}'`);
 
-          const where = ` WHERE ${conditions.join(' AND ')}`;
+          const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
           const safeLimit = zcqlSafeLimit(limit + skip + 50);
           return executeZCQL<CatalystRow>(
             `SELECT * FROM ${GRIEVANCE_TABLE}${where} ORDER BY MODIFIEDTIME DESC LIMIT ${safeLimit}`
@@ -139,7 +140,8 @@ export async function getAdminHistory(
           if (action === 'REJECTED') return g.status === 'REJECTED';
           if (action === 'VERIFIED') return parseBool(g.isVerified);
           if (action === 'IN_PROGRESS') return g.status === 'IN_PROGRESS';
-          return g.status !== 'OPEN' || parseBool(g.isVerified);
+          // No filter -> include everything (matches the ZCQL branch above).
+          return true;
         });
         if (startCat || endCat) {
           filtered = filtered.filter((g) => {

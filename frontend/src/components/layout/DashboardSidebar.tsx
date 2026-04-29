@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   Star,
+  UserCircle,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -86,6 +87,7 @@ const allMenuItems: MenuItem[] = [
   { icon: History, label: "Action History", route: "/admin/history", roles: ['SUPER_ADMIN'] },
 
   // Common
+  { icon: UserCircle, label: "My Profile", route: "/profile", roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
   { icon: Users, label: "About Team", route: "/about" },
 ];
 
