@@ -424,6 +424,14 @@ export const authApi = {
     return res.data.data
   },
 
+  // Admin-only: create a new user account with a chosen role and password.
+  // Admin shares the password with the new user via a secure channel; the
+  // user can rotate it from /profile after first login.
+  createUser: async (data: { name: string; email: string; phone?: string; password: string; role: UserRole }) => {
+    const res = await http.post<ApiResponse<User>>('/auth/users', data)
+    return res.data.data
+  },
+
   deactivateUser: async (userId: string) => {
     const res = await http.patch<ApiResponse<null>>(`/auth/users/${userId}/deactivate`)
     return res.data

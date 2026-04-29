@@ -168,7 +168,12 @@ export async function register(req: Request, res: Response): Promise<void> {
     }
 
     const hashedPassword = await hashPassword(password);
-    const finalRole = role && VALID_ROLES.has(role) ? role : 'STAFF';
+    // Public /auth/register always creates a STAFF account regardless of
+    // any role value in the body, so an outsider can't self-promote to
+    // ADMIN by tampering with the request. Admins use POST /auth/users
+    // (admin-gated) to create users with elevated roles.
+    void role;
+    const finalRole = 'STAFF';
 
     const row = await insertRow(APPUSER_TABLE, {
       name,
@@ -365,6 +370,74 @@ export async function getAllUsers(
     sendSuccess(res, users, 'Users retrieved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to get users', error);
+  }
+}
+
+/**
+ * POST /api/auth/users — admin only
+ * Create a real user account with a chosen role and an initial password.
+ * The admin types the password directly so they can hand it to the new
+ * user via a secure channel; the user will rotate it via /profile.
+ */
+export async function createUser(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { name, email, phone, password, role } = req.body as {
+      name?: string;
+      email?: string;
+      phone?: string;
+      password?: string;
+      role?: string;
+    };
+
+    if (!name || !email || !password || !role) {
+      sendError(res, 'name, email, password, and role are required', 400);
+      return;
+    }
+    if (!VALID_ROLES.has(role)) {
+      sendError(res, `Invalid role: ${role}. Must be STAFF, ADMIN, or SUPER_ADMIN.`, 400);
+      return;
+    }
+
+    const passwordValidation = validatePasswordStrength(password);
+    if (!passwordValidation.isValid) {
+      sendError(res, passwordValidation.errors.join('. '), 400);
+      return;
+    }
+
+    const lowerEmail = email.toLowerCase();
+    const all = await getCachedTableList(APPUSER_TABLE);
+    const dup = all.find(
+      (r) =>
+        (r.email || '').toString().toLowerCase() === lowerEmail ||
+        (phone && (r.phone || '').toString() === phone)
+    );
+    if (dup) {
+      sendError(res, 'A user with this email or phone already exists', 409);
+      return;
+    }
+
+    const hashedPassword = await hashPassword(password);
+    const row = await insertRow(APPUSER_TABLE, {
+      name: name.trim(),
+      email: lowerEmail,
+      phone: phone || null,
+      password: hashedPassword,
+      role,
+      isActive: true,
+      legacyId: null,
+      googleAccessToken: null,
+      googleRefreshToken: null,
+      googleTokenExpiry: null,
+      calendarConnected: false,
+    });
+    invalidateTableList(APPUSER_TABLE);
+
+    sendSuccess(res, shapeUser(row), 'User created successfully', 201);
+  } catch (error) {
+    sendServerError(res, 'Failed to create user', error);
   }
 }
 

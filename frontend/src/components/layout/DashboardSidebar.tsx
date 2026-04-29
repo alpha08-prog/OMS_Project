@@ -21,6 +21,7 @@ import {
   Search,
   Star,
   UserCircle,
+  UserPlus,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -71,6 +72,16 @@ const allMenuItems: MenuItem[] = [
   { icon: Star, label: "Events", route: "/admin/events", roles: ['ADMIN'] },
   { icon: Calendar, label: "Calendar", route: "/admin/calendar", roles: ['ADMIN'] },
   { icon: Users, label: "View Visitors", route: "/admin/visitors", roles: ["ADMIN"] },
+  {
+    icon: UserPlus,
+    label: "Manage Users",
+    route: "/admin/users",
+    roles: ['ADMIN', 'SUPER_ADMIN'],
+    submenu: [
+      { label: "All Users", route: "/admin/users", icon: Users },
+      { label: "Create User", route: "/admin/users/create", icon: UserPlus },
+    ],
+  },
 
 
   { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['ADMIN'] },
