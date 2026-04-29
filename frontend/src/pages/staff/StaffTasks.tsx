@@ -93,7 +93,7 @@ export default function StaffTasks() {
 
   const handleUpdateProgress = async (newStatus?: TaskStatus) => {
     if (!selectedTask) return;
-    
+
     setUpdating(true);
     try {
       const data: { status?: TaskStatus; progressNotes?: string } = {};
@@ -103,13 +103,30 @@ export default function StaffTasks() {
       if (newStatus) {
         data.status = newStatus;
       }
-      
+
       await taskApi.updateProgress(selectedTask.id, data);
       setUpdateDialogOpen(false);
       setProgressNotes("");
       fetchTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update task");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  // Start Task is a one-shot status flip with no dialog, so it doesn't go
+  // through the selectedTask + handleUpdateProgress pipeline (that pipeline
+  // reads selectedTask via closure, which would be stale on the first
+  // click because React batches setState -- the user would have to click
+  // 2-3 times before it took effect). Hit the API directly with task.id.
+  const handleStartTask = async (task: TaskAssignment) => {
+    setUpdating(true);
+    try {
+      await taskApi.updateProgress(task.id, { status: 'IN_PROGRESS' });
+      await fetchTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start task');
     } finally {
       setUpdating(false);
     }
@@ -382,13 +399,11 @@ export default function StaffTasks() {
                           {task.status === 'ASSIGNED' ? (
                             <Button
                               size="sm"
-                              onClick={() => {
-                                setSelectedTask(task);
-                                handleUpdateProgress('IN_PROGRESS');
-                              }}
+                              disabled={updating}
+                              onClick={() => handleStartTask(task)}
                             >
                               <PlayCircle className="h-4 w-4 mr-1" />
-                              Start Task
+                              {updating ? 'Starting…' : 'Start Task'}
                             </Button>
                           ) : task.status !== 'COMPLETED' && (
                             <Button
