@@ -44,8 +44,8 @@ function parseBool(v: unknown, fallback = false): boolean {
 }
 
 /** Reshape an AppUser row into the public-facing user shape. */
-function shapeUser(row: CatalystRow) {
-  return {
+function shapeUser(row: CatalystRow, opts: { includePasswordPolicy?: boolean } = {}) {
+  const base = {
     id: row.legacyId ? String(row.legacyId) : String(row.ROWID),
     name: String(row.name),
     email: String(row.email),
@@ -53,6 +53,51 @@ function shapeUser(row: CatalystRow) {
     role: String(row.role),
     isActive: parseBool(row.isActive, true),
     createdAt: row.CREATEDTIME,
+  };
+  if (opts.includePasswordPolicy) {
+    return { ...base, passwordPolicy: getPasswordPolicy(row) };
+  }
+  return base;
+}
+
+// Self-service password changes are capped per calendar month so a leaked
+// session can't be used to grind through a small dictionary; the legitimate
+// owner can always reach an admin to reset on their behalf.
+const MONTHLY_PASSWORD_CHANGE_LIMIT = 2;
+
+/** "YYYY-MM" key for the calendar month a Date falls in (UTC). */
+function currentMonthKey(d: Date = new Date()): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+/** ISO timestamp for 00:00 UTC on the first of next month. */
+function nextMonthFirstDayISO(d: Date = new Date()): string {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString();
+}
+
+/**
+ * Project the AppUser row onto a stable password-policy view.
+ * If the stored window-month is stale (a previous month), `used` is reported
+ * as 0 -- the actual reset is committed only when the user next changes
+ * their password.
+ */
+function getPasswordPolicy(row: CatalystRow): {
+  used: number;
+  allowed: number;
+  windowMonth: string;
+  resetsAt: string;
+} {
+  const currentMonth = currentMonthKey();
+  const storedWindow = String(row.passwordChangeWindowMonth ?? '');
+  const storedCount = Number(row.passwordChangeCount ?? 0);
+  const used = storedWindow === currentMonth ? Math.max(0, storedCount) : 0;
+  return {
+    used,
+    allowed: MONTHLY_PASSWORD_CHANGE_LIMIT,
+    windowMonth: currentMonth,
+    resetsAt: nextMonthFirstDayISO(),
   };
 }
 
@@ -221,7 +266,7 @@ export async function getMe(req: AuthenticatedRequest, res: Response): Promise<v
       sendError(res, 'User not found', 404);
       return;
     }
-    sendSuccess(res, shapeUser(row), 'User profile retrieved');
+    sendSuccess(res, shapeUser(row, { includePasswordPolicy: true }), 'User profile retrieved');
   } catch (error) {
     sendServerError(res, 'Failed to get user profile', error);
   }
@@ -263,15 +308,40 @@ export async function updatePassword(
       return;
     }
 
+    // Enforce the per-month rate limit AFTER verifying the current password
+    // so a brute-forcer can't probe the limit; checks happen before the
+    // password actually changes so the count stays consistent on failure.
+    const policy = getPasswordPolicy(row);
+    if (policy.used >= policy.allowed) {
+      const resetDate = new Date(policy.resetsAt).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+      sendError(
+        res,
+        `Password change limit reached. You can change your password ${policy.allowed} times per month. Try again on or after ${resetDate}, or contact your administrator.`,
+        429
+      );
+      return;
+    }
+
     const hashed = await hashPassword(newPassword);
+    const newCount = policy.used + 1;
     await updateRow(APPUSER_TABLE, {
       ROWID: String(row.ROWID),
       password: hashed,
+      passwordChangeCount: newCount,
+      passwordChangeWindowMonth: policy.windowMonth,
     });
     invalidateTableList(APPUSER_TABLE);
     invalidateAuthUser(req.user.id);
 
-    sendSuccess(res, null, 'Password updated successfully');
+    sendSuccess(
+      res,
+      { passwordPolicy: { ...policy, used: newCount } },
+      'Password updated successfully'
+    );
   } catch (error) {
     sendServerError(res, 'Failed to update password', error);
   }
@@ -291,7 +361,7 @@ export async function getAllUsers(
       const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
       return tb - ta;
     });
-    const users = sorted.map(shapeUser);
+    const users = sorted.map((r) => shapeUser(r));
     sendSuccess(res, users, 'Users retrieved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to get users', error);
