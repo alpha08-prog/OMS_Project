@@ -69,9 +69,14 @@ export default function StaffTasks() {
     fetchTasks();
     // Poll every 20 s so a staff member sees admin reassignments / status
     // changes from a co-assignee without needing to click Refresh.
+    // Pause while the Update Progress dialog is open -- the user is
+    // focused on a single task there, and a background re-render of the
+    // underlying list adds latency to their click handlers (one source
+    // of the [Violation] 'click' handler took N ms console warnings).
+    if (updateDialogOpen) return;
     const id = setInterval(fetchTasks, 20_000);
     return () => clearInterval(id);
-  }, [fetchTasks]);
+  }, [fetchTasks, updateDialogOpen]);
 
   const handleOpenUpdate = async (task: TaskAssignment) => {
     setSelectedTask(task);

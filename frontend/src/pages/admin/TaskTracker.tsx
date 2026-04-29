@@ -95,10 +95,14 @@ export default function AdminTaskTracker() {
 
   useEffect(() => {
     fetchData();
-    // Poll every 20s so admin sees staff progress updates without manual refresh.
+    // Poll every 20s so admin sees staff progress updates without manual
+    // refresh. Pause while the task-details dialog is open -- a background
+    // refetch during interaction is a known source of click-handler perf
+    // violations (re-render right when the user clicks).
+    if (detailsOpen) return;
     const id = setInterval(fetchData, 20_000);
     return () => clearInterval(id);
-  }, []);
+  }, [detailsOpen]);
 
   const filteredTasks = tasks.filter(task => {
     if (filterTaskType !== "all" && task.taskType !== filterTaskType) return false;

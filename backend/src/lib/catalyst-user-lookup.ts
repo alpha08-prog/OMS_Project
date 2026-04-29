@@ -26,6 +26,27 @@ import { useZCQL } from '../config/feature-flags';
 const APPUSER_TABLE = 'AppUser';
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
+/**
+ * Seed/test accounts that exist in the AppUser table for development &
+ * automated testing but should never surface in any UI list or label.
+ * Login still works for these accounts (auth lookup is by exact email),
+ * they just don't appear in dropdowns, user lists, or assigned-by chips.
+ *
+ * If we ever onboard a real "office admin" using oms.gov.in, they should
+ * use a different local-part to stay out of this list.
+ */
+export const HIDDEN_TEST_EMAILS: ReadonlySet<string> = new Set([
+  'staff@oms.gov.in',
+  'admin@oms.gov.in',
+  'superadmin@oms.gov.in',
+]);
+
+/** Return true if the row's email is one of the dev/test accounts. */
+export function isHiddenTestUser(row: CatalystRow | { email?: unknown }): boolean {
+  const email = String((row as { email?: unknown }).email ?? '').trim().toLowerCase();
+  return HIDDEN_TEST_EMAILS.has(email);
+}
+
 // Auth runs on every API call and previously paid a full AppUser table scan
 // per request when the JWT subject was a UUID (legacy Prisma id). 5 minutes is
 // short enough that role / isActive flips become visible quickly, long enough

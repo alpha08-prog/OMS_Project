@@ -27,7 +27,7 @@ import {
   CatalystRow,
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
-import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { getCachedTableList, isHiddenTestUser } from '../lib/catalyst-user-lookup';
 import {
   sendSuccess,
   sendError,
@@ -130,10 +130,16 @@ async function lookupUsers(
     for (const u of users) {
       const rowId = String(u.ROWID);
       const legacyId = u.legacyId ? String(u.legacyId) : null;
+      // Mask dev/test accounts so legacy task rows that reference them
+      // (e.g. an old admin@oms.gov.in seed assigning a task) don't leak
+      // the test name/email into the UI. Same shape, different content.
+      const hidden = isHiddenTestUser(u);
+      const name = hidden ? 'System Admin' : String(u.name);
+      const email = hidden ? '' : String(u.email);
       if (wanted.has(rowId)) {
-        map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
+        map.set(rowId, { id: rowId, name, email });
       } else if (legacyId && wanted.has(legacyId)) {
-        map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
+        map.set(legacyId, { id: legacyId, name, email });
       }
     }
   } catch {
@@ -966,7 +972,12 @@ export async function getStaffMembers(
     const staff = allUsers
       .filter((u) => {
         const isActive = u.isActive === true || u.isActive === 'true';
-        return String(u.role) === 'STAFF' && isActive;
+        // Hide dev/test accounts (staff@oms.gov.in etc) from the
+        // assignment dropdown -- they remain logged-in-able but never
+        // show up as a candidate assignee.
+        return (
+          String(u.role) === 'STAFF' && isActive && !isHiddenTestUser(u)
+        );
       })
       .map((u) => ({
         // Prefer legacyId for backward compat with old client-side caches;

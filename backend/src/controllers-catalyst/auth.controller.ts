@@ -31,6 +31,7 @@ import {
   getCachedTableList,
   invalidateTableList,
   invalidateAuthUser,
+  isHiddenTestUser,
 } from '../lib/catalyst-user-lookup';
 import type { AuthenticatedRequest, LoginRequest, RegisterRequest } from '../types';
 
@@ -360,7 +361,9 @@ export async function getAllUsers(
   try {
     const rows = await getCachedTableList(APPUSER_TABLE);
     // Copy before sort — getCachedTableList returns a shared array.
-    const sorted = [...rows];
+    // Filter dev/test accounts so the UI never lists them, even though
+    // they remain functional for login.
+    const sorted = rows.filter((r) => !isHiddenTestUser(r)).slice();
     sorted.sort((a, b) => {
       const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
       const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
