@@ -95,6 +95,9 @@ export default function AdminTaskTracker() {
 
   useEffect(() => {
     fetchData();
+    // Poll every 20s so admin sees staff progress updates without manual refresh.
+    const id = setInterval(fetchData, 20_000);
+    return () => clearInterval(id);
   }, []);
 
   const filteredTasks = tasks.filter(task => {

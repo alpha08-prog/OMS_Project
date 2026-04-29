@@ -13,6 +13,7 @@
  *   - TaskHistory is its own Catalyst table; we write to it on progress updates.
  */
 import { Response } from 'express';
+import { randomUUID } from 'crypto';
 import {
   insertRow,
   listAllRows,
@@ -56,12 +57,21 @@ function parseInteger(v: unknown): number {
   return isNaN(n) ? 0 : Math.trunc(n);
 }
 
+/** Compact per-assignee summary shown to staff so they can see who else
+ *  is on the same task without learning anything beyond name + status. */
+type CoAssigneeSummary = {
+  id: string;
+  name: string;
+  status: string;
+};
+
 /** Reshape a Catalyst Task row → JSON the frontend expects (priority, not priorities). */
 function shapeTask(
   row: CatalystRow,
   assignedTo?: { id: string; name: string; email: string } | null,
   assignedBy?: { id: string; name: string; email: string } | null,
-  recentHistory?: any[]
+  recentHistory?: any[],
+  coAssignees?: CoAssigneeSummary[]
 ) {
   return {
     id: String(row.ROWID),
@@ -85,6 +95,12 @@ function shapeTask(
     assignedTo: assignedTo ?? null,
     assignedBy: assignedBy ?? null,
     progressHistory: recentHistory ?? [],
+    // groupId stamps rows that belong to the same multi-assign action.
+    // Empty/null when the task was assigned to a single staff member.
+    groupId: row.groupId ? String(row.groupId) : null,
+    // Other staff working on the same group (excludes self when called from
+    // /my-tasks). Empty array for solo assignments.
+    coAssignees: coAssignees ?? [],
   };
 }
 
@@ -143,6 +159,85 @@ async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
       users.get(String(r.assignedById)) ?? null
     )
   );
+}
+
+/**
+ * For each task in `rows`, look up its sibling rows (same groupId) and
+ * attach a compact `coAssignees` summary -- so staff can see who else is
+ * working on the same task. The viewer's own row is filtered out by ROWID.
+ *
+ * Batched -- one extra ZCQL fetch for ALL siblings of ALL groups, then one
+ * batch user lookup that combines main-row + sibling-row user IDs. No N+1.
+ */
+async function attachUsersWithCoAssignees(
+  rows: CatalystRow[]
+): Promise<any[]> {
+  const safe = rows.filter((r): r is CatalystRow => Boolean(r));
+  if (safe.length === 0) return [];
+
+  // 1. Find all groupIds present on the main rows.
+  const groupIds = Array.from(
+    new Set(safe.map((r) => (r.groupId ? String(r.groupId) : '')).filter(Boolean))
+  );
+
+  // 2. One ZCQL fetch for all sibling rows across all groups.
+  let siblings: CatalystRow[] = [];
+  if (groupIds.length > 0) {
+    const inClause = groupIds.map((g) => `'${zcqlEscapeValue(g)}'`).join(',');
+    try {
+      siblings = await executeZCQL<CatalystRow>(
+        `SELECT * FROM ${TASK_TABLE} WHERE groupId IN (${inClause})`
+      );
+    } catch {
+      siblings = [];
+    }
+  }
+
+  // 3. Bucket siblings by groupId.
+  const siblingsByGroup = new Map<string, CatalystRow[]>();
+  for (const s of siblings) {
+    const gid = String(s.groupId ?? '');
+    if (!gid) continue;
+    if (!siblingsByGroup.has(gid)) siblingsByGroup.set(gid, []);
+    siblingsByGroup.get(gid)!.push(s);
+  }
+
+  // 4. One user-lookup batch covering main rows AND sibling rows.
+  const ids = new Set<string>();
+  for (const r of safe) {
+    if (r.assignedToId) ids.add(String(r.assignedToId));
+    if (r.assignedById) ids.add(String(r.assignedById));
+  }
+  for (const s of siblings) {
+    if (s.assignedToId) ids.add(String(s.assignedToId));
+  }
+  const users = await lookupUsers(ids);
+
+  // 5. Hydrate each main row with its co-assignees (excluding itself).
+  return safe.map((r) => {
+    const gid = r.groupId ? String(r.groupId) : '';
+    let coAssignees: CoAssigneeSummary[] = [];
+    if (gid) {
+      const sibs = siblingsByGroup.get(gid) ?? [];
+      coAssignees = sibs
+        .filter((s) => String(s.ROWID) !== String(r.ROWID))
+        .map((s) => {
+          const u = users.get(String(s.assignedToId));
+          return {
+            id: u?.id ?? String(s.assignedToId ?? ''),
+            name: u?.name ?? '—',
+            status: String(s.status ?? 'ASSIGNED'),
+          };
+        });
+    }
+    return shapeTask(
+      r,
+      users.get(String(r.assignedToId)) ?? null,
+      users.get(String(r.assignedById)) ?? null,
+      undefined,
+      coAssignees
+    );
+  });
 }
 
 /** For a list of task ROWIDs, return up to N most-recent history entries each. */
@@ -210,6 +305,7 @@ export async function createTask(
       referenceId,
       referenceType,
       assignedToId,
+      assignedToIds,
       dueDate,
     } = req.body;
 
@@ -217,37 +313,51 @@ export async function createTask(
       sendError(res, 'Task title is required');
       return;
     }
-    if (!assignedToId) {
-      sendError(res, 'Staff member must be selected');
-      return;
-    }
     if (!VALID_TASK_TYPES.has(taskType)) {
       sendError(res, `Invalid taskType: ${taskType}`);
       return;
     }
 
-    // Validate assignedToId against the cached Catalyst AppUser table
-    // (no Neon round-trip). Look up by both ROWID and legacyId so legacy
-    // UUID-based ids still resolve.
+    // Accept either:
+    //   - assignedToIds: string[]  (new multi-assign payload)
+    //   - assignedToId: string     (legacy single-assign payload)
+    // and normalise to a deduped array.
+    const idsRaw: string[] = Array.isArray(assignedToIds)
+      ? assignedToIds.map(String)
+      : assignedToId
+        ? [String(assignedToId)]
+        : [];
+    const ids = Array.from(new Set(idsRaw.filter(Boolean)));
+    if (ids.length === 0) {
+      sendError(res, 'At least one staff member must be selected');
+      return;
+    }
+
+    // Validate every assignee against the cached AppUser table. We collect
+    // the resolved user rows here too so we can echo a useful error and
+    // (later) hand back the user objects to the client without a re-fetch.
     const allUsers = await getCachedTableList('AppUser');
-    const assignedUser = allUsers.find(
-      (u) =>
-        String(u.ROWID) === assignedToId ||
-        (u.legacyId && String(u.legacyId) === assignedToId)
-    );
-    if (!assignedUser) {
-      sendError(res, 'Selected staff member not found', 404);
-      return;
-    }
-    if (String(assignedUser.role) !== 'STAFF') {
-      sendError(res, 'Can only assign tasks to staff members');
-      return;
-    }
-    const isActive =
-      assignedUser.isActive === true || assignedUser.isActive === 'true';
-    if (!isActive) {
-      sendError(res, 'Selected staff member is inactive');
-      return;
+    const validated: CatalystRow[] = [];
+    for (const id of ids) {
+      const u = allUsers.find(
+        (u) =>
+          String(u.ROWID) === id ||
+          (u.legacyId && String(u.legacyId) === id)
+      );
+      if (!u) {
+        sendError(res, `Staff member ${id} not found`, 404);
+        return;
+      }
+      if (String(u.role).toUpperCase() !== 'STAFF') {
+        sendError(res, `Can only assign tasks to staff members (${u.name})`);
+        return;
+      }
+      const active = u.isActive === true || u.isActive === 'true';
+      if (!active) {
+        sendError(res, `Staff member ${u.name} is inactive`);
+        return;
+      }
+      validated.push(u);
     }
 
     let parsedDue: string | null = null;
@@ -260,12 +370,17 @@ export async function createTask(
       parsedDue = toCatalystDate(d);
     }
 
-    const row = await insertRow(TASK_TABLE, {
+    // Stamp every row from a multi-assign with the same UUID so the admin
+    // UI can collapse them into a single consolidated card. Solo
+    // assignments stay groupId=null to keep the legacy data model intact.
+    const groupId = ids.length > 1 ? randomUUID() : null;
+
+    const baseRow = {
       title: title.trim(),
       description: description?.trim() || null,
       taskType,
       status: 'ASSIGNED',
-      priorities: priority || 'NORMAL', // Note: Catalyst column is `priorities`
+      priorities: priority || 'NORMAL', // Catalyst column is `priorities`
       referenceId: referenceId || null,
       referenceType: referenceType || null,
       progressNotes: null,
@@ -273,12 +388,20 @@ export async function createTask(
       dueDate: parsedDue,
       startedAt: null,
       completedAt: null,
-      assignedToId,
       assignedById: req.user.id,
-    });
+      groupId,
+    };
 
-    const [shaped] = await attachUsers([row]);
-    sendSuccess(res, shaped, 'Task assigned successfully', 201);
+    const rows = await Promise.all(
+      ids.map((id) => insertRow(TASK_TABLE, { ...baseRow, assignedToId: id }))
+    );
+
+    const shaped = await attachUsers(rows);
+    const message =
+      ids.length === 1
+        ? 'Task assigned successfully'
+        : `Task assigned to ${ids.length} staff members successfully`;
+    sendSuccess(res, shaped, message, 201);
   } catch (error: any) {
     sendServerError(res, error?.message || 'Failed to create task', error);
   }
@@ -305,6 +428,145 @@ function buildTaskZCQL(params: {
   const orderCol = params.orderBy === 'due' ? 'dueDate' : 'CREATEDTIME';
   const orderDir = params.orderBy === 'due' ? 'ASC' : 'DESC';
   return `SELECT * FROM ${TASK_TABLE}${where} ORDER BY ${orderCol} ${orderDir}`;
+}
+
+/**
+ * GET /api/tasks/groups — admin-only grouped view.
+ *
+ * Tasks that share a `groupId` (i.e. were assigned to multiple staff in one
+ * action) collapse into a single TaskGroup so the admin sees one card with
+ * a list of assignees rather than N near-duplicate rows.
+ *
+ * Solo (legacy) tasks without a groupId are returned as 1-element groups
+ * keyed off their ROWID so the response shape is uniform.
+ *
+ * Pagination here is GROUP-LEVEL: limit=10 returns up to 10 task groups,
+ * each potentially containing N assignees. We don't paginate inside a
+ * group because tasks-per-group is bounded by your team size (15-ish).
+ */
+export async function getTaskGroups(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { page, limit, skip } = parsePagination(
+      req.query as { page?: string; limit?: string }
+    );
+    const { status, taskType, priority } = req.query as Record<string, string>;
+
+    let allRows: CatalystRow[];
+    if (useZCQL()) {
+      const baseQuery = buildTaskZCQL({ status, taskType, priority, orderBy: 'created' });
+      // No safeLimit cap here -- we need every row to group correctly. The
+      // cardinality is bounded by total active tasks, which is small.
+      allRows = await executeZCQL<CatalystRow>(baseQuery);
+    } else {
+      let rows = await listAllRows(TASK_TABLE);
+      if (status) rows = rows.filter((r) => r.status === status);
+      if (taskType) rows = rows.filter((r) => r.taskType === taskType);
+      if (priority) rows = rows.filter((r) => r.priorities === priority);
+      allRows = rows;
+    }
+
+    // Bucket by groupId. Solo rows become their own group keyed by ROWID
+    // so callers always iterate uniformly.
+    const buckets = new Map<string, CatalystRow[]>();
+    for (const r of allRows) {
+      const key = r.groupId ? `g:${String(r.groupId)}` : `solo:${String(r.ROWID)}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key)!.push(r);
+    }
+
+    // Sort groups by most-recent activity in the group (max MODIFIEDTIME),
+    // HIGH priority floats to the top.
+    const groups = Array.from(buckets.entries()).map(([key, rows]) => {
+      const repr = rows[0];
+      const latestModified = rows.reduce((acc, r) => {
+        const t = r.MODIFIEDTIME ? new Date(r.MODIFIEDTIME).getTime() : 0;
+        return t > acc ? t : acc;
+      }, 0);
+      const isHigh = repr.priorities === 'HIGH';
+      return { key, rows, latestModified, isHigh };
+    });
+    groups.sort((a, b) => {
+      if (a.isHigh !== b.isHigh) return a.isHigh ? -1 : 1;
+      return b.latestModified - a.latestModified;
+    });
+
+    const total = groups.length;
+    const pageGroups = groups.slice(skip, skip + limit);
+
+    // Batch-resolve every user referenced across the page (assignees +
+    // assigners). One AppUser cache hit, no N+1.
+    const userIds = new Set<string>();
+    for (const { rows } of pageGroups) {
+      for (const r of rows) {
+        if (r.assignedToId) userIds.add(String(r.assignedToId));
+        if (r.assignedById) userIds.add(String(r.assignedById));
+      }
+    }
+    const users = await lookupUsers(userIds);
+
+    const shapedGroups = pageGroups.map(({ rows }) => {
+      const repr = rows[0];
+      const isMultiAssign = rows.length > 1 || Boolean(repr.groupId);
+      const groupId = repr.groupId
+        ? String(repr.groupId)
+        : `solo:${String(repr.ROWID)}`;
+
+      let completed = 0;
+      let inProgress = 0;
+      let onHold = 0;
+      const assignees = rows.map((r) => {
+        const s = String(r.status ?? 'ASSIGNED');
+        if (s === 'COMPLETED') completed++;
+        else if (s === 'IN_PROGRESS') inProgress++;
+        else if (s === 'ON_HOLD') onHold++;
+        return {
+          taskId: String(r.ROWID),
+          user: users.get(String(r.assignedToId)) ?? null,
+          status: s,
+          priority: r.priorities ?? 'NORMAL',
+          progressPercent: parseInteger(r.progressPercent),
+          progressNotes: r.progressNotes ?? null,
+          startedAt: r.startedAt ?? null,
+          completedAt: r.completedAt ?? null,
+          updatedAt: r.MODIFIEDTIME,
+        };
+      });
+
+      // Earliest CREATEDTIME in the group is when the assignment happened.
+      const earliest = rows.reduce((acc, r) => {
+        const t = r.CREATEDTIME ? new Date(r.CREATEDTIME).getTime() : Infinity;
+        return t < acc ? t : acc;
+      }, Infinity);
+
+      return {
+        groupId,
+        isMultiAssign,
+        title: repr.title,
+        description: repr.description ?? null,
+        taskType: repr.taskType,
+        priority: repr.priorities ?? 'NORMAL',
+        referenceId: repr.referenceId ?? null,
+        referenceType: repr.referenceType ?? null,
+        dueDate: repr.dueDate ?? null,
+        assignedById: repr.assignedById,
+        assignedBy: users.get(String(repr.assignedById)) ?? null,
+        createdAt: earliest === Infinity ? repr.CREATEDTIME : new Date(earliest).toISOString(),
+        assignees,
+        totalAssignees: rows.length,
+        completedCount: completed,
+        inProgressCount: inProgress,
+        onHoldCount: onHold,
+      };
+    });
+
+    const meta = calculatePaginationMeta(total, page, limit);
+    sendSuccess(res, shapedGroups, 'Task groups retrieved successfully', 200, meta);
+  } catch (error) {
+    sendServerError(res, 'Failed to get task groups', error);
+  }
 }
 
 /**
@@ -428,7 +690,10 @@ export async function getMyTasks(
       pageRows = rows.slice(skip, skip + limit);
     }
 
-    const tasks = await attachUsers(pageRows);
+    // Use the co-assignee-aware variant so each task carries a list of
+    // other staff working on the same multi-assigned task. This is the
+    // "+N others assigned" badge data the staff dashboard renders.
+    const tasks = await attachUsersWithCoAssignees(pageRows);
     const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 

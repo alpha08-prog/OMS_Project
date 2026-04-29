@@ -67,6 +67,10 @@ export default function StaffTasks() {
 
   useEffect(() => {
     fetchTasks();
+    // Poll every 20 s so a staff member sees admin reassignments / status
+    // changes from a co-assignee without needing to click Refresh.
+    const id = setInterval(fetchTasks, 20_000);
+    return () => clearInterval(id);
   }, [fetchTasks]);
 
   const handleOpenUpdate = async (task: TaskAssignment) => {
@@ -289,10 +293,31 @@ export default function StaffTasks() {
                             {getStatusBadge(task.status)}
                             {getPriorityBadge(task.priority)}
                             <Badge variant="outline">{task.taskType}</Badge>
+                            {task.coAssignees && task.coAssignees.length > 0 && (
+                              <Badge
+                                variant="outline"
+                                className="border-indigo-200 bg-indigo-50 text-indigo-800"
+                                title={`Also assigned: ${task.coAssignees.map((c) => `${c.name} (${c.status.replace('_', ' ').toLowerCase()})`).join(', ')}`}
+                              >
+                                You + {task.coAssignees.length} other{task.coAssignees.length === 1 ? '' : 's'}
+                              </Badge>
+                            )}
                           </div>
-                          
+
                           {task.description && (
                             <p className="text-sm text-muted-foreground">{task.description}</p>
+                          )}
+
+                          {task.coAssignees && task.coAssignees.length > 0 && (
+                            <div className="text-xs text-muted-foreground">
+                              <span className="font-medium">Also working on this:</span>{' '}
+                              {task.coAssignees.map((c, i) => (
+                                <span key={c.id}>
+                                  {i > 0 ? ', ' : ''}
+                                  {c.name} <span className="text-indigo-600">({c.status.replace('_', ' ').toLowerCase()})</span>
+                                </span>
+                              ))}
+                            </div>
                           )}
                           
                           <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
