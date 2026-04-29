@@ -424,6 +424,14 @@ export const authApi = {
     return res.data.data
   },
 
+  // Admin-only: create a new user account with a chosen role and password.
+  // Admin shares the password with the new user via a secure channel; the
+  // user can rotate it from /profile after first login.
+  createUser: async (data: { name: string; email: string; phone?: string; password: string; role: UserRole }) => {
+    const res = await http.post<ApiResponse<User>>('/auth/users', data)
+    return res.data.data
+  },
+
   deactivateUser: async (userId: string) => {
     const res = await http.patch<ApiResponse<null>>(`/auth/users/${userId}/deactivate`)
     return res.data
@@ -951,6 +959,15 @@ export const pdfApi = {
 export type TaskStatus = 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD'
 export type TaskType = 'GRIEVANCE' | 'TRAIN_REQUEST' | 'TOUR_PROGRAM' | 'GENERAL'
 
+// Other staff working on the same multi-assigned task. Empty array for
+// solo assignments. Surfaced in /my-tasks so the staff dashboard can
+// render a "+N others assigned" badge without leaking emails.
+export type CoAssignee = {
+  id: string
+  name: string
+  status: TaskStatus
+}
+
 export type TaskAssignment = {
   id: string
   title: string
@@ -970,6 +987,40 @@ export type TaskAssignment = {
   assignedTo: { id: string; name: string; email: string }
   assignedBy: { id: string; name: string; email: string }
   progressHistory?: TaskProgressHistory[]
+  groupId?: string | null
+  coAssignees?: CoAssignee[]
+}
+
+// Admin-side consolidated card shape: one entry per (multi-assigned) task,
+// even though the backend stores N rows in the Task table.
+export type TaskGroup = {
+  groupId: string         // real groupId, or "solo:<rowid>" for legacy tasks
+  isMultiAssign: boolean
+  title: string
+  description: string | null
+  taskType: TaskType
+  priority: string
+  referenceId: string | null
+  referenceType: string | null
+  dueDate: string | null
+  assignedById: string
+  assignedBy: { id: string; name: string; email: string } | null
+  createdAt: string
+  assignees: Array<{
+    taskId: string
+    user: { id: string; name: string; email: string } | null
+    status: TaskStatus
+    priority: string
+    progressPercent: number
+    progressNotes: string | null
+    startedAt: string | null
+    completedAt: string | null
+    updatedAt: string
+  }>
+  totalAssignees: number
+  completedCount: number
+  inProgressCount: number
+  onHoldCount: number
 }
 
 export type TaskProgressHistory = {
@@ -988,7 +1039,10 @@ export type CreateTaskRequest = {
   priority?: string
   referenceId?: string
   referenceType?: string
-  assignedToId: string
+  // One of these is required. Prefer assignedToIds for new code; assignedToId
+  // is kept for back-compat with legacy single-assign call sites.
+  assignedToId?: string
+  assignedToIds?: string[]
   dueDate?: string
 }
 
@@ -1008,9 +1062,20 @@ export type TaskTrackingData = {
 }
 
 export const taskApi = {
+  // Returns a single TaskAssignment for back-compat single-assign calls,
+  // or a TaskAssignment[] when multi-assign was used. Callers can normalise
+  // via Array.isArray().
   create: async (data: CreateTaskRequest) => {
-    const res = await http.post<ApiResponse<TaskAssignment>>('/tasks', data)
+    const res = await http.post<ApiResponse<TaskAssignment | TaskAssignment[]>>('/tasks', data)
     return res.data.data
+  },
+
+  // Admin-only consolidated view: tasks with the same groupId collapse into
+  // one TaskGroup with an assignees[] list (so 1 task assigned to 5 staff
+  // shows as 1 card, not 5 rows).
+  getGroups: async (params?: Record<string, string>) => {
+    const res = await http.get<ApiResponse<TaskGroup[]>>('/tasks/groups', { params })
+    return res.data
   },
 
   getAll: async (params?: Record<string, string>) => {

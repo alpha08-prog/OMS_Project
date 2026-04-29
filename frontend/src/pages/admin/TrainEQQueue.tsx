@@ -215,7 +215,7 @@ export default function TrainEQQueue() {
         priority,
       });
       
-      const createdTask = await taskApi.create({
+      const result = await taskApi.create({
         title: taskTitle.trim(),
         description: taskDescription?.trim() || undefined,
         taskType: 'TRAIN_REQUEST',
@@ -225,12 +225,17 @@ export default function TrainEQQueue() {
         assignedToId: assignToId,
         dueDate: finalDueDate,
       });
-      
+      // taskApi.create now returns TaskAssignment | TaskAssignment[] depending
+      // on whether single (this caller) or multi-assign was used. This caller
+      // sends a single assignedToId so the result is a single object, but
+      // normalise defensively.
+      const createdTask = Array.isArray(result) ? result[0] : result;
+
       console.log('Task created successfully:', createdTask);
-      
+
       // Approve the train request after assigning to staff
       await trainRequestApi.approve(selectedRequest.id);
-      
+
       // Show success message
       const staffName = createdTask.assignedTo?.name || 'Staff member';
       alert(`✅ Verified and assigned to staff!\n\nAssigned to: ${staffName}\nTask: ${createdTask.title}\nTrain request approved.`);

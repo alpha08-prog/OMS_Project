@@ -67,7 +67,16 @@ export default function StaffTasks() {
 
   useEffect(() => {
     fetchTasks();
-  }, [fetchTasks]);
+    // Poll every 20 s so a staff member sees admin reassignments / status
+    // changes from a co-assignee without needing to click Refresh.
+    // Pause while the Update Progress dialog is open -- the user is
+    // focused on a single task there, and a background re-render of the
+    // underlying list adds latency to their click handlers (one source
+    // of the [Violation] 'click' handler took N ms console warnings).
+    if (updateDialogOpen) return;
+    const id = setInterval(fetchTasks, 20_000);
+    return () => clearInterval(id);
+  }, [fetchTasks, updateDialogOpen]);
 
   const handleOpenUpdate = async (task: TaskAssignment) => {
     setSelectedTask(task);
@@ -89,7 +98,7 @@ export default function StaffTasks() {
 
   const handleUpdateProgress = async (newStatus?: TaskStatus) => {
     if (!selectedTask) return;
-    
+
     setUpdating(true);
     try {
       const data: { status?: TaskStatus; progressNotes?: string } = {};
@@ -99,13 +108,30 @@ export default function StaffTasks() {
       if (newStatus) {
         data.status = newStatus;
       }
-      
+
       await taskApi.updateProgress(selectedTask.id, data);
       setUpdateDialogOpen(false);
       setProgressNotes("");
       fetchTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update task");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  // Start Task is a one-shot status flip with no dialog, so it doesn't go
+  // through the selectedTask + handleUpdateProgress pipeline (that pipeline
+  // reads selectedTask via closure, which would be stale on the first
+  // click because React batches setState -- the user would have to click
+  // 2-3 times before it took effect). Hit the API directly with task.id.
+  const handleStartTask = async (task: TaskAssignment) => {
+    setUpdating(true);
+    try {
+      await taskApi.updateProgress(task.id, { status: 'IN_PROGRESS' });
+      await fetchTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start task');
     } finally {
       setUpdating(false);
     }
@@ -289,10 +315,31 @@ export default function StaffTasks() {
                             {getStatusBadge(task.status)}
                             {getPriorityBadge(task.priority)}
                             <Badge variant="outline">{task.taskType}</Badge>
+                            {task.coAssignees && task.coAssignees.length > 0 && (
+                              <Badge
+                                variant="outline"
+                                className="border-indigo-200 bg-indigo-50 text-indigo-800"
+                                title={`Also assigned: ${task.coAssignees.map((c) => `${c.name} (${c.status.replace('_', ' ').toLowerCase()})`).join(', ')}`}
+                              >
+                                You + {task.coAssignees.length} other{task.coAssignees.length === 1 ? '' : 's'}
+                              </Badge>
+                            )}
                           </div>
-                          
+
                           {task.description && (
                             <p className="text-sm text-muted-foreground">{task.description}</p>
+                          )}
+
+                          {task.coAssignees && task.coAssignees.length > 0 && (
+                            <div className="text-xs text-muted-foreground">
+                              <span className="font-medium">Also working on this:</span>{' '}
+                              {task.coAssignees.map((c, i) => (
+                                <span key={c.id}>
+                                  {i > 0 ? ', ' : ''}
+                                  {c.name} <span className="text-indigo-600">({c.status.replace('_', ' ').toLowerCase()})</span>
+                                </span>
+                              ))}
+                            </div>
                           )}
                           
                           <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
@@ -357,13 +404,11 @@ export default function StaffTasks() {
                           {task.status === 'ASSIGNED' ? (
                             <Button
                               size="sm"
-                              onClick={() => {
-                                setSelectedTask(task);
-                                handleUpdateProgress('IN_PROGRESS');
-                              }}
+                              disabled={updating}
+                              onClick={() => handleStartTask(task)}
                             >
                               <PlayCircle className="h-4 w-4 mr-1" />
-                              Start Task
+                              {updating ? 'Starting…' : 'Start Task'}
                             </Button>
                           ) : task.status !== 'COMPLETED' && (
                             <Button

@@ -3,6 +3,7 @@ import { body, param } from 'express-validator';
 import {
   createTask,
   getTasks,
+  getTaskGroups,
   getMyTasks,
   getTaskById,
   updateTaskProgress,
@@ -25,7 +26,27 @@ const createTaskValidation = [
   body('taskType')
     .isIn(['GRIEVANCE', 'TRAIN_REQUEST', 'TOUR_PROGRAM', 'GENERAL'])
     .withMessage('Valid task type is required'),
-  body('assignedToId').matches(ID_PATTERN).withMessage('Valid staff ID is required'),
+  // Either single (legacy) or multi (preferred) — controller normalises.
+  body('assignedToId')
+    .optional()
+    .matches(ID_PATTERN)
+    .withMessage('Valid staff ID is required'),
+  body('assignedToIds')
+    .optional()
+    .isArray({ min: 1 })
+    .withMessage('assignedToIds must be a non-empty array'),
+  body('assignedToIds.*')
+    .optional()
+    .matches(ID_PATTERN)
+    .withMessage('Each assignedToIds entry must be a valid staff ID'),
+  body().custom((body) => {
+    const hasSingle = !!body.assignedToId;
+    const hasMulti = Array.isArray(body.assignedToIds) && body.assignedToIds.length > 0;
+    if (!hasSingle && !hasMulti) {
+      throw new Error('Either assignedToId or assignedToIds must be provided');
+    }
+    return true;
+  }),
   body('referenceId').optional().matches(ID_PATTERN).withMessage('Invalid reference ID'),
   body('dueDate').optional().isISO8601().withMessage('Due date must be valid'),
 ];
@@ -77,6 +98,9 @@ router.patch(
 router.delete('/:id', adminOnly, validate(idParamValidation), deleteTask);
 
 // Admin-only — full task list (staff use /my-tasks for their own tasks).
+// /groups returns the same data collapsed by groupId so the admin sees one
+// card per multi-assigned task instead of N near-duplicate rows.
+router.get('/groups', adminOnly, getTaskGroups);
 router.get('/', adminOnly, getTasks);
 router.get('/:id', validate(idParamValidation), getTaskById);
 

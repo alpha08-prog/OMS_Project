@@ -8,6 +8,7 @@ import {
   getAllUsers,
   updateUserRole,
   deactivateUser,
+  createUser,
 } from '../controllers-catalyst/auth.controller';
 import { authenticate, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -44,7 +45,16 @@ router.get('/me', authenticate, getMe);
 router.put('/password', authenticate, validate(passwordValidation), updatePassword);
 
 // Admin only routes
+const createUserValidation = [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('phone').optional({ nullable: true, checkFalsy: true }).matches(/^\d{10}$/).withMessage('Phone must be 10 digits'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('role').isIn(['STAFF', 'ADMIN', 'SUPER_ADMIN']).withMessage('Invalid role'),
+];
+
 router.get('/users', authenticate, adminOnly, getAllUsers);
+router.post('/users', authenticate, adminOnly, validate(createUserValidation), createUser);
 router.patch('/users/:id/role', authenticate, adminOnly, validate(roleValidation), updateUserRole);
 router.patch('/users/:id/deactivate', authenticate, adminOnly, deactivateUser);
 

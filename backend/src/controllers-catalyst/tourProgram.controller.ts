@@ -208,8 +208,14 @@ export async function createTourProgram(
   }
 }
 
-function buildTourZCQL(filters: TourProgramFilters): string {
+function buildTourZCQL(filters: TourProgramFilters, staffId?: string): string {
   const conditions: string[] = [];
+  // Staff can only see their own tour programs. Admins/super-admins see all.
+  // Aligns with the data-isolation already enforced for grievances, visitors,
+  // and train requests.
+  if (staffId) {
+    conditions.push(`createdById = '${zcqlEscapeValue(staffId)}'`);
+  }
   if (filters.decision) {
     conditions.push(`decision = '${zcqlEscapeValue(String(filters.decision))}'`);
   }
@@ -245,8 +251,11 @@ export async function getTourPrograms(
     let pageRows: CatalystRow[];
     let total: number;
 
+    // Scope to creator for STAFF role; admins see everything.
+    const staffId = req.user?.role === 'STAFF' ? req.user.id : undefined;
+
     if (useZCQL()) {
-      const baseQuery = buildTourZCQL(filters);
+      const baseQuery = buildTourZCQL(filters, staffId);
       const safeLimit = zcqlSafeLimit(limit);
       const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
       const hasMore = fetched.length > safeLimit;
@@ -254,6 +263,9 @@ export async function getTourPrograms(
       total = skip + pageRows.length + (hasMore ? 1 : 0);
     } else {
       let rows = await listAllRows(TOUR_TABLE);
+      if (staffId) {
+        rows = rows.filter((r) => String(r.createdById) === staffId);
+      }
       if (filters.decision) {
         rows = rows.filter((r) => r.decision === filters.decision);
       }

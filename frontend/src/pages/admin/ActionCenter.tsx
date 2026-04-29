@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { StaffMultiSelect } from "@/components/StaffMultiSelect";
 import { 
   grievanceApi, 
   trainRequestApi, 
@@ -103,8 +104,10 @@ export default function AdminActionCenter() {
   const [selectedItem, setSelectedItem] = useState<SelectedActionItem | null>(null);
   const [selectedType, setSelectedType] = useState<ActionType>('grievance');
   
-  // Assignment form
-  const [assignToId, setAssignToId] = useState("");
+  // Assignment form -- now supports multi-staff. Each id picks one staff
+  // to receive a copy of the task; backend stamps them all with one
+  // groupId so the admin's TaskTracker can collapse them into one card.
+  const [assignToIds, setAssignToIds] = useState<string[]>([]);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -257,16 +260,16 @@ export default function AdminActionCenter() {
   };
 
   const handleAssignTask = async () => {
-    if (!assignToId || !taskTitle) {
-      alert('Please select a staff member and enter task title');
+    if (assignToIds.length === 0 || !taskTitle) {
+      alert('Please select at least one staff member and enter task title');
       return;
     }
-    
+
     setAssigning(true);
     try {
       let taskType: 'GRIEVANCE' | 'TRAIN_REQUEST' | 'TOUR_PROGRAM' = 'GRIEVANCE';
       let referenceType = 'GRIEVANCE';
-      
+
       if (selectedType === 'train') {
         taskType = 'TRAIN_REQUEST';
         referenceType = 'TRAIN_REQUEST';
@@ -274,12 +277,11 @@ export default function AdminActionCenter() {
         taskType = 'TOUR_PROGRAM';
         referenceType = 'TOUR_PROGRAM';
       }
-      
+
       // Format dueDate - convert YYYY-MM-DD to ISO8601 format
       let finalDueDate: string | undefined = undefined;
       if (dueDate && dueDate.trim()) {
         try {
-          // HTML date input gives YYYY-MM-DD format
           const dateObj = new Date(dueDate + 'T00:00:00');
           if (!isNaN(dateObj.getTime())) {
             finalDueDate = dateObj.toISOString();
@@ -288,46 +290,38 @@ export default function AdminActionCenter() {
           console.error('Date parsing error:', e);
         }
       }
-      
+
       // Accept either UUID (legacy Prisma ids) or numeric Catalyst ROWID.
       const idRegex = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9]+)$/i;
-      if (!idRegex.test(assignToId)) {
-        alert('Invalid staff member selected. Please select a valid staff member.');
+      const invalid = assignToIds.find((id) => !idRegex.test(id));
+      if (invalid) {
+        alert(`Invalid staff member id: ${invalid}`);
         setAssigning(false);
         return;
       }
-      
-      // Ensure selectedItem exists
+
       if (!selectedItem || !selectedItem.id) {
         alert('No item selected for task assignment. Please try again.');
         setAssigning(false);
         return;
       }
-      
-      // Debug log
-      console.log('Creating task with:', {
-        title: taskTitle.trim(),
-        taskType,
-        assignedToId: assignToId,
-        dueDate: finalDueDate,
-        referenceId: selectedItem.id,
-        referenceType,
-        priority,
-      });
-      
-      const createdTask = await taskApi.create({
+
+      const createdTaskOrTasks = await taskApi.create({
         title: taskTitle.trim(),
         description: taskDescription?.trim() || undefined,
         taskType,
         priority: priority || 'NORMAL',
         referenceId: selectedItem.id,
         referenceType,
-        assignedToId: assignToId,
+        assignedToIds: assignToIds,
         dueDate: finalDueDate,
       });
-      
-      console.log('Task created successfully:', createdTask);
-      
+      // Backend returns one task for single-assign and an array for multi.
+      // Normalise so downstream code doesn't have to branch.
+      const createdTasks = Array.isArray(createdTaskOrTasks)
+        ? createdTaskOrTasks
+        : [createdTaskOrTasks];
+
       // After assigning, also verify/approve/accept the item
       if (selectedType === 'grievance') {
         await grievanceApi.verify(selectedItem.id);
@@ -336,10 +330,14 @@ export default function AdminActionCenter() {
       } else if (selectedType === 'tour') {
         await tourProgramApi.updateDecision(selectedItem.id, 'ACCEPTED');
       }
-      
+
       // Show success message with details
-      const staffName = createdTask.assignedTo?.name || 'Staff member';
-      alert(`✅ Verified and assigned to staff!\n\nAssigned to: ${staffName}\nTask: ${createdTask.title}`);
+      const staffNames = createdTasks
+        .map((t) => t.assignedTo?.name)
+        .filter(Boolean)
+        .join(', ') || 'Staff';
+      const verb = createdTasks.length === 1 ? 'Assigned to' : `Assigned to ${createdTasks.length} staff:`;
+      alert(`✅ Verified and assigned!\n\n${verb} ${staffNames}\nTask: ${taskTitle.trim()}`);
       
       // Close dialogs and reset form
       setDetailsOpen(false);
@@ -395,7 +393,7 @@ export default function AdminActionCenter() {
   };
 
   const resetAssignForm = () => {
-    setAssignToId("");
+    setAssignToIds([]);
     setTaskTitle("");
     setTaskDescription("");
     setDueDate("");
@@ -669,27 +667,22 @@ export default function AdminActionCenter() {
               
               <div className="space-y-4 py-2">
                 <div className="space-y-2">
-                  <Label htmlFor="staff">Assign To</Label>
-                  <Select value={assignToId} onValueChange={setAssignToId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select staff member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {staffMembers.map((staff) => (
-                        <SelectItem key={staff.id} value={staff.id}>
-                          {staff.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>
+                    Assign To <span className="text-xs text-muted-foreground">(pick one or more — each gets their own copy)</span>
+                  </Label>
+                  <StaffMultiSelect
+                    staff={staffMembers}
+                    selectedIds={assignToIds}
+                    onChange={setAssignToIds}
+                  />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="title">Task Title</Label>
-                  <Input 
-                    id="title" 
-                    value={taskTitle} 
-                    onChange={(e) => setTaskTitle(e.target.value)} 
+                  <Input
+                    id="title"
+                    value={taskTitle}
+                    onChange={(e) => setTaskTitle(e.target.value)}
                     placeholder="Enter task title"
                   />
                 </div>
@@ -1182,22 +1175,19 @@ export default function AdminActionCenter() {
 
                 <div className="space-y-3 bg-gray-50 rounded-xl p-4 border">
                   <div>
-                    <Label className="text-sm font-medium">Assign To <span className="text-red-500">*</span></Label>
-                    <Select value={assignToId} onValueChange={setAssignToId}>
-                      <SelectTrigger className="mt-1.5 h-10">
-                        <SelectValue placeholder="Select staff member" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {staffMembers.map((staff) => (
-                          <SelectItem key={staff.id} value={staff.id} className="py-2">
-                            <div>
-                              <p className="font-medium">{staff.name}</p>
-                              <p className="text-xs text-muted-foreground">{staff.email}</p>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-sm font-medium">
+                      Assign To <span className="text-red-500">*</span>
+                      <span className="ml-2 text-xs text-muted-foreground font-normal">
+                        (pick one or more — each gets their own copy)
+                      </span>
+                    </Label>
+                    <div className="mt-1.5">
+                      <StaffMultiSelect
+                        staff={staffMembers}
+                        selectedIds={assignToIds}
+                        onChange={setAssignToIds}
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -1278,7 +1268,7 @@ export default function AdminActionCenter() {
               </Button>
               <Button
                 onClick={handleAssignTask}
-                disabled={assigning || !assignToId || !taskTitle}
+                disabled={assigning || assignToIds.length === 0 || !taskTitle}
                 className="flex-1 h-10 bg-indigo-600 hover:bg-indigo-700"
               >
                 {assigning ? (
