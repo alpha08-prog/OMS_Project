@@ -14,7 +14,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import { authApi, type User } from "@/lib/api";
+import { authApi, type User, type PasswordPolicy } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 type FormState = {
@@ -85,11 +85,21 @@ export default function Profile() {
     setPwSuccess(false);
   };
 
+  const policy: PasswordPolicy | undefined = user?.passwordPolicy;
+  const remaining = policy ? Math.max(0, policy.allowed - policy.used) : null;
+  const limitReached = policy ? policy.used >= policy.allowed : false;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwError(null);
     setPwSuccess(false);
 
+    if (limitReached) {
+      // Defensive: the submit button is already disabled; this guards a
+      // direct programmatic call.
+      setPwError("Monthly password change limit reached.");
+      return;
+    }
     if (!form.current) {
       setPwError("Please enter your current password");
       return;
@@ -109,7 +119,14 @@ export default function Profile() {
 
     setSubmitting(true);
     try {
-      await authApi.updatePassword(form.current, form.next);
+      const res = await authApi.updatePassword(form.current, form.next);
+      // Backend returns the updated policy in the response data; reflect it
+      // immediately so the counter and the disabled state update without a
+      // refetch.
+      const updatedPolicy = res?.data?.passwordPolicy;
+      if (updatedPolicy && user) {
+        setUser({ ...user, passwordPolicy: updatedPolicy });
+      }
       setPwSuccess(true);
       setForm(EMPTY_FORM);
     } catch (err) {
@@ -229,6 +246,34 @@ export default function Profile() {
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {/* Monthly limit banner: shows usage + reset date. Color-coded:
+                      neutral while changes remain, amber on the last allowed change,
+                      red once the limit is reached. */}
+                  {policy && (
+                    <div
+                      className={
+                        "flex items-start gap-2 px-4 py-3 rounded-lg text-sm border " +
+                        (limitReached
+                          ? "bg-red-50 border-red-200 text-red-800"
+                          : remaining === 1
+                            ? "bg-amber-50 border-amber-200 text-amber-800"
+                            : "bg-indigo-50/60 border-indigo-100 text-indigo-800")
+                      }
+                    >
+                      <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium">
+                          {policy.used} of {policy.allowed} password changes used this month
+                        </p>
+                        <p className="text-xs opacity-80 mt-0.5">
+                          {limitReached
+                            ? `Monthly limit reached. Resets on ${new Date(policy.resetsAt).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}, or contact your administrator.`
+                            : `Resets on ${new Date(policy.resetsAt).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}.`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {pwError && (
                     <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
                       {pwError}
@@ -249,6 +294,7 @@ export default function Profile() {
                         autoComplete="current-password"
                         value={form.current}
                         onChange={(e) => onChange("current", e.target.value)}
+                        disabled={limitReached}
                       />
                       <button
                         type="button"
@@ -271,6 +317,7 @@ export default function Profile() {
                           autoComplete="new-password"
                           value={form.next}
                           onChange={(e) => onChange("next", e.target.value)}
+                          disabled={limitReached}
                         />
                         <button
                           type="button"
@@ -293,6 +340,7 @@ export default function Profile() {
                         autoComplete="new-password"
                         value={form.confirm}
                         onChange={(e) => onChange("confirm", e.target.value)}
+                        disabled={limitReached}
                         className="mt-1"
                       />
                     </div>
@@ -311,7 +359,11 @@ export default function Profile() {
                     >
                       Reset
                     </Button>
-                    <Button type="submit" disabled={submitting} className="bg-indigo-600 hover:bg-indigo-700">
+                    <Button
+                      type="submit"
+                      disabled={submitting || limitReached}
+                      className="bg-indigo-600 hover:bg-indigo-700"
+                    >
                       {submitting ? "Updating…" : "Update Password"}
                     </Button>
                   </div>

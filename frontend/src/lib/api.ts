@@ -6,12 +6,21 @@ import axios, { type AxiosError, type AxiosResponse } from 'axios'
 
 export type UserRole = 'STAFF' | 'ADMIN' | 'SUPER_ADMIN'
 
+export type PasswordPolicy = {
+  used: number
+  allowed: number
+  windowMonth: string  // "YYYY-MM"
+  resetsAt: string     // ISO timestamp for first day of next month, UTC
+}
+
 export type User = {
   id: string
   name: string
   email: string
   phone?: string
   role: UserRole
+  // Present on /auth/me and /auth/password responses; absent elsewhere.
+  passwordPolicy?: PasswordPolicy
 }
 
 // Auth Types
@@ -398,7 +407,10 @@ export const authApi = {
   },
 
   updatePassword: async (currentPassword: string, newPassword: string) => {
-    const res = await http.put<ApiResponse<null>>('/auth/password', { currentPassword, newPassword })
+    const res = await http.put<ApiResponse<{ passwordPolicy: PasswordPolicy } | null>>(
+      '/auth/password',
+      { currentPassword, newPassword }
+    )
     return res.data
   },
 
