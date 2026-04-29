@@ -189,10 +189,20 @@ export default function GrievanceCreate() {
                           <Label>
                             Mobile Number <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            placeholder="10-digit mobile number" 
+                          <Input
+                            placeholder="10-digit mobile number"
+                            inputMode="numeric"
                             value={formData.mobileNumber}
-                            onChange={(e) => handleChange("mobileNumber", e.target.value)}
+                            onChange={(e) =>
+                              handleChange(
+                                "mobileNumber",
+                                // Strip every non-digit as the user types and
+                                // hard-cap at 10 digits, so pasting "+91 98765..."
+                                // or accidentally typing a letter is silently
+                                // sanitised instead of rejected at submit.
+                                e.target.value.replace(/\D/g, "").slice(0, 10)
+                              )
+                            }
                             maxLength={10}
                           />
                         </div>
