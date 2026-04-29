@@ -35,6 +35,7 @@ const AboutUs = lazy(() => import("./pages/AboutUs"));
 const EventReport = lazy(() => import("./pages/Events/EventReport"));
 const EventsView = lazy(() => import("./pages/admin/EventsView"));
 const AdminCalendar = lazy(() => import("./pages/admin/AdminCalendar"));
+const Profile = lazy(() => import("./pages/Profile"));
 
 function PageFallback() {
   return (
@@ -296,6 +297,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
               <PhotoBooth />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
+              <Profile />
             </ProtectedRoute>
           }
         />
