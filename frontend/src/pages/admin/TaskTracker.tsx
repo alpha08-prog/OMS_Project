@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { 
-  ClipboardList, 
+import {
+  ClipboardList,
   Users,
   CheckCircle2,
   Clock,
@@ -15,11 +15,14 @@ import {
   Trash2,
   TrendingUp,
   User,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { taskApi, type TaskAssignment, type TaskStatus, type TaskTrackingData, type TaskType } from "@/lib/api";
 import {
   Dialog,
@@ -47,6 +50,27 @@ export default function AdminTaskTracker() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterStaff, setFilterStaff] = useState<string>("all");
   const [filterTaskType, setFilterTaskType] = useState<string>("all");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+
+  // Per-card collapse state for the task list, mirroring StaffTasks.tsx —
+  // tasks default to collapsed (header + badges only) so the admin view
+  // isn't a wall of activity timelines.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Staff Workload: cap rendered cards to keep the section compact when many
+  // staff have open tasks. The backend already filters to staff with at least
+  // one pending task; this caps the worst case (all 11 staff active).
+  const STAFF_WORKLOAD_DEFAULT_LIMIT = 8;
+  const [showAllStaff, setShowAllStaff] = useState(false);
 
   // Reset status filter when task type changes
   useEffect(() => {
@@ -56,9 +80,12 @@ export default function AdminTaskTracker() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const params: Record<string, string> = { limit: '50', page: '1' };
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
       const [tracking, tasksRes] = await Promise.all([
         taskApi.getTracking(),
-        taskApi.getAll({ limit: '50', page: '1' }), // Get all tasks, not just first 10
+        taskApi.getAll(params),
       ]);
       
       console.log('TaskTracker - Tracking data:', tracking);
@@ -102,7 +129,7 @@ export default function AdminTaskTracker() {
     if (detailsOpen) return;
     const id = setInterval(fetchData, 20_000);
     return () => clearInterval(id);
-  }, [detailsOpen]);
+  }, [detailsOpen, startDate, endDate]);
 
   const filteredTasks = tasks.filter(task => {
     if (filterTaskType !== "all" && task.taskType !== filterTaskType) return false;
@@ -279,75 +306,123 @@ export default function AdminTaskTracker() {
             </div>
 
             {/* Summary Stats */}
-            {trackingData?.summary && (
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <Card className="rounded-xl bg-indigo-50 border-indigo-200">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-3xl font-bold text-indigo-900">{trackingData.summary.total}</p>
-                    <p className="text-sm text-indigo-700">Total Tasks</p>
-                  </CardContent>
-                </Card>
-                <Card className="rounded-xl bg-blue-50 border-blue-200">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-3xl font-bold text-blue-900">{trackingData.summary.assigned}</p>
-                    <p className="text-sm text-blue-700">Assigned</p>
-                  </CardContent>
-                </Card>
-                <Card className="rounded-xl bg-amber-50 border-amber-200">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-3xl font-bold text-amber-900">{trackingData.summary.inProgress}</p>
-                    <p className="text-sm text-amber-700">In Progress</p>
-                  </CardContent>
-                </Card>
-                <Card className="rounded-xl bg-green-50 border-green-200">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-3xl font-bold text-green-900">{trackingData.summary.completed}</p>
-                    <p className="text-sm text-green-700">Completed</p>
-                  </CardContent>
-                </Card>
-                <Card className="rounded-xl bg-gray-50 border-gray-200">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-3xl font-bold text-gray-900">{trackingData.summary.onHold}</p>
-                    <p className="text-sm text-gray-700">On Hold</p>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+            {trackingData?.summary && (() => {
+              const s = trackingData.summary;
+              // Backend computes total = all rows but only buckets four known
+              // statuses, so legacy rows with null/unrecognised status fall
+              // out of the breakdown. Show the gap as an "Other" card so the
+              // top numbers actually add up to total.
+              const otherCount = Math.max(
+                0,
+                s.total - s.assigned - s.inProgress - s.completed - s.onHold
+              );
+              const showOther = otherCount > 0;
+              return (
+                <div className={`grid grid-cols-2 ${showOther ? 'md:grid-cols-6' : 'md:grid-cols-5'} gap-4`}>
+                  <Card className="rounded-xl bg-indigo-50 border-indigo-200">
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-indigo-900">{s.total}</p>
+                      <p className="text-sm text-indigo-700">Total Tasks</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-xl bg-blue-50 border-blue-200">
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-blue-900">{s.assigned}</p>
+                      <p className="text-sm text-blue-700">Assigned</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-xl bg-amber-50 border-amber-200">
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-amber-900">{s.inProgress}</p>
+                      <p className="text-sm text-amber-700">In Progress</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-xl bg-green-50 border-green-200">
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-green-900">{s.completed}</p>
+                      <p className="text-sm text-green-700">Completed</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-xl bg-gray-50 border-gray-200">
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-gray-900">{s.onHold}</p>
+                      <p className="text-sm text-gray-700">On Hold</p>
+                    </CardContent>
+                  </Card>
+                  {showOther && (
+                    <Card className="rounded-xl bg-rose-50 border-rose-200" title="Tasks whose status is null or outside the four known buckets — usually legacy rows.">
+                      <CardContent className="p-4 text-center">
+                        <p className="text-3xl font-bold text-rose-900">{otherCount}</p>
+                        <p className="text-sm text-rose-700">Other</p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Staff Workload */}
-            {trackingData?.staffTaskCounts && trackingData.staffTaskCounts.length > 0 && (
-              <Card className="rounded-2xl">
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Users className="h-5 w-5 text-indigo-600" />
-                    Staff Workload
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {trackingData.staffTaskCounts.map((item) => (
-                      <div 
-                        key={item.staff?.id} 
-                        className="p-4 rounded-xl bg-gray-50 hover:bg-indigo-50 cursor-pointer transition"
-                        onClick={() => setFilterStaff(item.staff?.id || 'all')}
+            {trackingData?.staffTaskCounts && trackingData.staffTaskCounts.length > 0 && (() => {
+              // Sort heaviest workload first; cap to N to keep this section
+              // compact even if all 11 staff have open tasks. Backend already
+              // excludes staff with zero pending — so what we render here is
+              // always "people with open work".
+              const sorted = [...trackingData.staffTaskCounts].sort(
+                (a, b) => b.pendingTasks - a.pendingTasks
+              );
+              const visible = showAllStaff ? sorted : sorted.slice(0, STAFF_WORKLOAD_DEFAULT_LIMIT);
+              const hidden = sorted.length - visible.length;
+              return (
+                <Card className="rounded-2xl">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Users className="h-5 w-5 text-indigo-600" />
+                      Staff Workload
+                      <span className="text-sm font-normal text-muted-foreground">
+                        ({sorted.length})
+                      </span>
+                    </CardTitle>
+                    {sorted.length > STAFF_WORKLOAD_DEFAULT_LIMIT && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowAllStaff((v) => !v)}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-indigo-100 rounded-full">
-                            <User className="h-5 w-5 text-indigo-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{item.staff?.name}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {item.pendingTasks} pending tasks
-                            </p>
+                        {showAllStaff ? 'Show top 8' : `Show all (${sorted.length})`}
+                      </Button>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {visible.map((item) => (
+                        <div
+                          key={item.staff?.id}
+                          className="p-4 rounded-xl bg-gray-50 hover:bg-indigo-50 cursor-pointer transition"
+                          onClick={() => setFilterStaff(item.staff?.id || 'all')}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-100 rounded-full">
+                              <User className="h-5 w-5 text-indigo-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{item.staff?.name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {item.pendingTasks} pending {item.pendingTasks === 1 ? 'task' : 'tasks'}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                      ))}
+                    </div>
+                    {hidden > 0 && (
+                      <p className="text-xs text-muted-foreground mt-3">
+                        +{hidden} more — click "Show all" to expand.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {/* Filters */}
             <Card className="rounded-2xl border border-indigo-100">
@@ -411,6 +486,15 @@ export default function AdminTaskTracker() {
                     </Button>
                   )}
                 </div>
+
+                <div className="mt-4 pt-4 border-t">
+                  <DateRangeFilter
+                    startDate={startDate}
+                    endDate={endDate}
+                    onStartDateChange={setStartDate}
+                    onEndDateChange={setEndDate}
+                  />
+                </div>
               </CardContent>
             </Card>
 
@@ -432,22 +516,38 @@ export default function AdminTaskTracker() {
                     <p className="text-muted-foreground">No tasks found</p>
                   </div>
                 ) : (
-                  filteredTasks.map((task) => (
+                  filteredTasks.map((task) => {
+                    const isExpanded = expandedIds.has(task.id);
+                    return (
                     <div
                       key={task.id}
                       className="p-4 rounded-xl border bg-white hover:shadow-md transition"
                     >
                       {/* Task Header */}
                       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <p className="font-semibold text-indigo-900 break-words">{task.title}</p>
-                            {getStatusBadge(task.status)}
-                            <Badge variant="outline">{taskTypeLabel(task.taskType)}</Badge>
+                        <div className="min-w-0 flex-1 flex items-start gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(task.id)}
+                            aria-label={isExpanded ? 'Collapse task' : 'Expand task'}
+                            className="mt-0.5 p-0.5 rounded hover:bg-indigo-50 text-indigo-700 shrink-0"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <p className="font-semibold text-indigo-900 break-words">{task.title}</p>
+                              {getStatusBadge(task.status)}
+                              <Badge variant="outline">{taskTypeLabel(task.taskType)}</Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Assigned to: <span className="font-medium">{task.assignedTo?.name ?? '—'}</span>
+                            </p>
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            Assigned to: <span className="font-medium">{task.assignedTo?.name ?? '—'}</span>
-                          </p>
                         </div>
                         <div className="flex flex-wrap gap-2 flex-shrink-0">
                           <Button size="sm" variant="outline" onClick={() => handleViewDetails(task)}>
@@ -474,43 +574,46 @@ export default function AdminTaskTracker() {
                         </div>
                       </div>
 
-                      {/* Recent Activity Timeline */}
-                          <div className="mt-4 pt-3 border-t">
-                            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
-                              <Clock className="h-3 w-3" />
-                              Recent Activity
-                            </p>
-                            
-                            {task.progressHistory && task.progressHistory.length > 0 ? (
-                              <div className="space-y-3 pl-1">
-                                {task.progressHistory.map((history) => (
-                                  <div key={history.id} className="relative pl-4 border-l border-indigo-100">
-                                    <div className="absolute -left-[2.5px] top-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                                    <div className="flex flex-col gap-0.5">
-                                      <span className="text-sm text-gray-700">{history.note}</span>
-                                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                        <span>{formatDateTime(history.createdAt)}</span>
-                                        <span>•</span>
-                                        <span>{history.createdBy?.name ?? '—'}</span>
-                                        {history.status && (
-                                          <>
-                                            <span>•</span>
-                                            <span className="font-medium text-indigo-600">
-                                              {history.status.replace('_', ' ')}
-                                            </span>
-                                          </>
-                                        )}
-                                      </div>
+                      {/* Recent Activity Timeline — collapsed by default */}
+                      {isExpanded && (
+                        <div className="mt-4 pt-3 border-t">
+                          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                            <Clock className="h-3 w-3" />
+                            Recent Activity
+                          </p>
+
+                          {task.progressHistory && task.progressHistory.length > 0 ? (
+                            <div className="space-y-3 pl-1">
+                              {task.progressHistory.map((history) => (
+                                <div key={history.id} className="relative pl-4 border-l border-indigo-100">
+                                  <div className="absolute -left-[2.5px] top-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-sm text-gray-700">{history.note}</span>
+                                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                      <span>{formatDateTime(history.createdAt)}</span>
+                                      <span>•</span>
+                                      <span>{history.createdBy?.name ?? '—'}</span>
+                                      {history.status && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="font-medium text-indigo-600">
+                                            {history.status.replace('_', ' ')}
+                                          </span>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-muted-foreground italic pl-1">No activity yet</p>
-                            )}
-                          </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground italic pl-1">No activity yet</p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </CardContent>
             </Card>

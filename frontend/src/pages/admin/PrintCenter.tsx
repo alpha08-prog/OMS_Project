@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { grievanceApi, trainRequestApi, pdfApi, http, type Grievance, type TrainRequest } from "@/lib/api";
 import {
   Dialog,
@@ -39,6 +40,8 @@ export default function PrintCenter() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   const [tourDateRange, setTourDateRange] = useState({ start: '', end: '' });
   const [tourDialogOpen, setTourDialogOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -63,7 +66,10 @@ export default function PrintCenter() {
 
       // Fetch verified/resolved grievances (ready for printing)
       // Get all grievances and filter for verified ones - increase limit to get all
-      const grievanceRes = await grievanceApi.getAll({ limit: '50' });
+      const grievanceParams: Record<string, string> = { limit: '50' };
+      if (startDate) grievanceParams.startDate = startDate;
+      if (endDate) grievanceParams.endDate = endDate;
+      const grievanceRes = await grievanceApi.getAll(grievanceParams);
       console.log('PrintCenter - Grievances response:', grievanceRes);
       const grievances = Array.isArray(grievanceRes?.data) ? grievanceRes.data : [];
       grievances.forEach((g: Grievance) => {
@@ -82,7 +88,10 @@ export default function PrintCenter() {
       });
 
       // Fetch approved train requests
-      const trainRes = await trainRequestApi.getAll({ status: 'APPROVED' });
+      const trainParams: Record<string, string> = { status: 'APPROVED' };
+      if (startDate) trainParams.startDate = startDate;
+      if (endDate) trainParams.endDate = endDate;
+      const trainRes = await trainRequestApi.getAll(trainParams);
       console.log('PrintCenter - Train requests response:', trainRes);
       const trainRequests = Array.isArray(trainRes?.data) ? trainRes.data : [];
       trainRequests.forEach((t: TrainRequest) => {
@@ -114,7 +123,8 @@ export default function PrintCenter() {
 
   useEffect(() => {
     fetchPrintableItems();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate]);
 
   const filteredItems = printableItems.filter(item => {
     if (filter === "all") return true;
@@ -256,7 +266,13 @@ export default function PrintCenter() {
 
             {/* Filters */}
             <Card className="rounded-2xl border border-indigo-100">
-              <CardContent className="px-5 py-5">
+              <CardContent className="px-5 py-5 space-y-4">
+                <DateRangeFilter
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                />
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   <Button
                     variant={filter === "all" ? "default" : "outline"}

@@ -20,10 +20,12 @@ import {
   executeZCQL,
   zcqlEscapeValue,
   zcqlSafeLimit,
+  toCatalystDate,
   CatalystRow,
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { emitNotifications } from './notification.controller';
 import {
   sendSuccess,
   sendError,
@@ -145,6 +147,26 @@ export async function createNews(
       createdById: req.user.id,
     });
 
+    // Critical news fans out to every authenticated user. Best-effort.
+    if (prio === 'CRITICAL') {
+      try {
+        const users = await getCachedTableList('AppUser');
+        const ids = users.map((u: any) => String(u.ROWID)).filter(Boolean);
+        if (ids.length > 0) {
+          await emitNotifications(ids, {
+            type: 'NEWS_CRITICAL',
+            title: `🚨 Critical news: ${headline}`,
+            body: description ? String(description).slice(0, 200) : '',
+            link: '/admin/news',
+            referenceId: String(row.ROWID),
+            referenceType: 'NEWS',
+          });
+        }
+      } catch (notifErr) {
+        console.error('[news] critical-news notification fan-out failed:', notifErr);
+      }
+    }
+
     const [shaped] = await hydrate([row]);
     sendSuccess(res, shaped, 'News intelligence created successfully', 201);
   } catch (error) {
@@ -169,6 +191,14 @@ function buildNewsZCQL(filters: NewsFilters): string {
     conditions.push(
       `(headline LIKE '%${q}%' OR description LIKE '%${q}%' OR mediaSource LIKE '%${q}%')`
     );
+  }
+  if (filters.startDate) {
+    const start = toCatalystDate(String(filters.startDate));
+    if (start) conditions.push(`CREATEDTIME >= '${start}'`);
+  }
+  if (filters.endDate) {
+    const end = toCatalystDate(String(filters.endDate));
+    if (end) conditions.push(`CREATEDTIME <= '${end}'`);
   }
   const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
   // ZCQL can't express HIGH > NORMAL > LOW order natively. Order by priority
@@ -227,6 +257,18 @@ export async function getNews(
             (r.headline || '').toLowerCase().includes(q) ||
             (r.description || '').toLowerCase().includes(q) ||
             (r.mediaSource || '').toLowerCase().includes(q)
+        );
+      }
+      if (filters.startDate) {
+        const start = new Date(String(filters.startDate)).getTime();
+        rows = rows.filter(
+          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
+        );
+      }
+      if (filters.endDate) {
+        const end = new Date(String(filters.endDate)).getTime();
+        rows = rows.filter(
+          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
         );
       }
 

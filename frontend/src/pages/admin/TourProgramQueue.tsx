@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { AttachmentsList } from "@/components/common/AttachmentsList";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { tourProgramApi, taskApi, type TourProgram } from "@/lib/api";
 import {
   Dialog,
@@ -46,9 +48,11 @@ export default function TourProgramQueue() {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState("NORMAL");
+  const [priority, setPriority] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [decisionFilter, setDecisionFilter] = useState<string>("ALL");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   const fetchPrograms = async () => {
     setLoading(true);
@@ -57,8 +61,10 @@ export default function TourProgramQueue() {
       const params: Record<string, string> = { limit: "50" };
       if (decisionFilter === "ACCEPTED") params.decision = "ACCEPTED";
       else if (decisionFilter === "REGRET") params.decision = "REGRET";
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
       const res = decisionFilter === "ALL"
-        ? await tourProgramApi.getPending()
+        ? await tourProgramApi.getPending(params)
         : await tourProgramApi.getAll(params);
       setPrograms(res.data);
     } catch (err: unknown) {
@@ -84,7 +90,7 @@ export default function TourProgramQueue() {
 
   useEffect(() => {
     fetchPrograms();
-  }, [decisionFilter]);
+  }, [decisionFilter, startDate, endDate]);
 
   const handleDecision = async (id: string, decision: 'ACCEPTED' | 'REGRET') => {
     setActionLoading(id);
@@ -127,7 +133,7 @@ export default function TourProgramQueue() {
     setTaskTitle("");
     setTaskDescription("");
     setDueDate("");
-    setPriority("NORMAL");
+    setPriority("");
   };
 
   const handleAssignTask = async () => {
@@ -135,18 +141,27 @@ export default function TourProgramQueue() {
       alert("Please select a staff member and enter task title");
       return;
     }
+    if (!priority) {
+      alert("Please select a priority");
+      return;
+    }
+    if (!dueDate?.trim()) {
+      alert("Please select a due date");
+      return;
+    }
+    const dateObj = new Date(dueDate + "T00:00:00");
+    if (isNaN(dateObj.getTime())) {
+      alert("Please select a valid due date");
+      return;
+    }
     setAssigning(true);
     try {
-      let finalDueDate: string | undefined;
-      if (dueDate?.trim()) {
-        const dateObj = new Date(dueDate + "T00:00:00");
-        if (!isNaN(dateObj.getTime())) finalDueDate = dateObj.toISOString();
-      }
+      const finalDueDate = dateObj.toISOString();
       await taskApi.create({
         title: taskTitle.trim(),
         description: taskDescription?.trim() || undefined,
         taskType: "TOUR_PROGRAM",
-        priority: priority || "NORMAL",
+        priority: priority,
         referenceId: selectedProgram.id,
         referenceType: "TOUR_PROGRAM",
         assignedToId: assignToId,
@@ -202,7 +217,13 @@ export default function TourProgramQueue() {
                 Review and decide on submitted invitations
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-end gap-2 shrink-0">
+              <DateRangeFilter
+                startDate={startDate}
+                endDate={endDate}
+                onStartDateChange={setStartDate}
+                onEndDateChange={setEndDate}
+              />
               <div className="w-[160px]">
               <Select value={decisionFilter} onValueChange={setDecisionFilter}>
                 <SelectTrigger>
@@ -390,7 +411,15 @@ export default function TourProgramQueue() {
                     <p className="mt-1 p-3 bg-gray-50 rounded-lg">{selectedProgram.description}</p>
                   </div>
                 )}
-                
+
+                <div className="pt-2 border-t">
+                  <AttachmentsList
+                    contextType="TOUR"
+                    contextId={selectedProgram.id}
+                    emptyMessage="No supporting files were uploaded with this tour program."
+                  />
+                </div>
+
                 <div>
                   <Label htmlFor="decisionNote">Decision Note (Optional)</Label>
                   <Textarea
@@ -488,10 +517,10 @@ export default function TourProgramQueue() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Priority</Label>
+                  <Label>Priority <span className="text-red-500">*</span></Label>
                   <Select value={priority} onValueChange={setPriority}>
                     <SelectTrigger className="mt-2">
-                      <SelectValue />
+                      <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="LOW">Low</SelectItem>
@@ -502,13 +531,14 @@ export default function TourProgramQueue() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Due Date</Label>
+                  <Label>Due Date <span className="text-red-500">*</span></Label>
                   <Input
                     type="date"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
                     className="mt-2"
                     min={new Date().toISOString().split("T")[0]}
+                    required
                   />
                 </div>
               </div>
@@ -520,7 +550,7 @@ export default function TourProgramQueue() {
               <Button
                 className="bg-green-600 hover:bg-green-700"
                 onClick={handleAssignTask}
-                disabled={assigning || !assignToId || !taskTitle}
+                disabled={assigning || !assignToId || !taskTitle || !priority || !dueDate}
               >
                 {assigning ? (
                   <>

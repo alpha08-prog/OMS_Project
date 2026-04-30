@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { FileDown, Info, Upload } from "lucide-react";
-import { tourProgramApi, uploadsApi } from "@/lib/api";
+import { tourProgramApi, pdfApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 export default function TourProgramCreate() {
@@ -14,7 +14,26 @@ export default function TourProgramCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  // Downloads the upcoming-week tour schedule PDF (every accepted tour event
+  // from today through +7 days). Backend default window matches this — the
+  // generated PDF won't include the entry currently being typed because that
+  // entry isn't saved/accepted yet.
+  const handleExportPdf = async () => {
+    setError(null);
+    setExporting(true);
+    try {
+      await pdfApi.downloadTourProgram();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to export tour program PDF';
+      setError(msg.includes('404') ? 'No accepted events found for the next 7 days.' : msg);
+    } finally {
+      setExporting(false);
+    }
+  };
+  // File-upload UI is gated as "Coming soon" — see Invitation Document
+  // section. Restore [file, setFile] tuple here to re-enable.
 
   const [formData, setFormData] = useState({
     eventName: "",
@@ -83,16 +102,9 @@ export default function TourProgramCreate() {
         referencedBy: formData.referencedBy || undefined,
       });
 
-      if (file && created?.id) {
-        try {
-          await uploadsApi.upload(file, 'TOUR', created.id);
-        } catch (uploadErr) {
-          const m = uploadErr instanceof Error ? uploadErr.message : 'Unknown error';
-          setError(`Tour program saved, but file upload failed: ${m}`);
-          setLoading(false);
-          return;
-        }
-      }
+      // File upload is gated behind a "Coming soon" placeholder until
+      // Stratus is restored. Created without an attachment.
+      void created;
 
       setSuccess(true);
       setTimeout(() => {
@@ -102,12 +114,6 @@ export default function TourProgramCreate() {
       setError(err instanceof Error ? err.message : "Failed to create tour program");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
     }
   };
 
@@ -273,25 +279,17 @@ export default function TourProgramCreate() {
                       <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
                         Invitation Document
                       </h3>
-                      <div>
-                        <input 
-                          id="file-upload" 
-                          type="file" 
-                          className="hidden" 
-                          onChange={handleFileUpload}
-                        />
-                        <label 
-                          htmlFor="file-upload" 
-                          className="cursor-pointer border border-dashed border-indigo-200 hover:border-indigo-400 bg-white hover:bg-indigo-50 transition-colors rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center"
-                        >
-                          <Upload className="h-6 w-6 text-indigo-500" />
-                          <p className="text-sm font-medium text-indigo-900">
-                            {file ? file.name : "Upload invitation card or letter"}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            PNG, JPG, PDF up to 10MB
-                          </p>
-                        </label>
+                      <div
+                        className="border border-dashed border-slate-300 bg-slate-50/70 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center cursor-not-allowed select-none"
+                        aria-disabled="true"
+                      >
+                        <Upload className="h-6 w-6 text-slate-400" />
+                        <p className="text-sm font-medium text-slate-600">
+                          File uploads — Coming soon
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          You can submit without an attachment for now.
+                        </p>
                       </div>
                     </section>
 
@@ -329,9 +327,12 @@ export default function TourProgramCreate() {
                         type="button"
                         variant="outline"
                         className="w-full flex items-center gap-2"
+                        onClick={handleExportPdf}
+                        disabled={exporting}
+                        title="Downloads the schedule of every accepted tour event in the next 7 days. The entry you're typing right now isn't included until it's saved and accepted."
                       >
                         <FileDown className="h-4 w-4" />
-                        Export Tour Program PDF
+                        {exporting ? 'Generating PDF...' : 'Export Tour Program PDF'}
                       </Button>
 
                       <Button 

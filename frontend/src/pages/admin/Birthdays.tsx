@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { birthdayApi, type Birthday } from "@/lib/api";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { RefreshCw, Cake, Gift, Calendar, Phone, User, Trash2 } from "lucide-react";
 import {
   Dialog,
@@ -25,6 +26,8 @@ export default function Birthdays() {
   // Filters
   const [filterMonth, setFilterMonth] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -42,6 +45,8 @@ export default function Birthdays() {
       if (searchQuery) {
         params.search = searchQuery;
       }
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
       
       const [allRes, todayRes, upcomingRes] = await Promise.all([
         birthdayApi.getAll(params),
@@ -67,7 +72,7 @@ export default function Birthdays() {
     } finally {
       setLoading(false);
     }
-  }, [filterMonth, searchQuery]);
+  }, [filterMonth, searchQuery, startDate, endDate]);
 
   useEffect(() => {
     fetchBirthdays();
@@ -269,6 +274,16 @@ export default function Birthdays() {
                       Clear Filters
                     </Button>
                   )}
+                </div>
+
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-xs text-muted-foreground mb-2">Filter by date added</p>
+                  <DateRangeFilter
+                    startDate={startDate}
+                    endDate={endDate}
+                    onStartDateChange={setStartDate}
+                    onEndDateChange={setEndDate}
+                  />
                 </div>
               </CardContent>
             </Card>

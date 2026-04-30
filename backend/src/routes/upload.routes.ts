@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth';
 import { uploadSingle } from '../middleware/upload';
 import {
   uploadFile,
+  listAttachments,
   downloadFile,
   deleteFile,
 } from '../controllers-catalyst/upload.controller';
@@ -38,6 +39,7 @@ router.post(
   uploadFile
 );
 
+router.get('/', listAttachments);
 router.get('/:id', downloadFile);
 router.delete('/:id', deleteFile);
 

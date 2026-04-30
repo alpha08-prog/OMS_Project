@@ -15,6 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { AttachmentsList } from "@/components/common/AttachmentsList";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { newsApi, type NewsIntelligence, type NewsPriority } from "@/lib/api";
 import {
   Dialog,
@@ -38,6 +40,8 @@ export default function NewsIntelligenceView() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedNews, setSelectedNews] = useState<NewsIntelligence | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   const fetchNews = useCallback(async () => {
     setLoading(true);
@@ -47,6 +51,8 @@ export default function NewsIntelligenceView() {
       if (filterPriority !== "all") {
         params.priority = filterPriority;
       }
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
       const res = await newsApi.getAll(params);
       console.log('NewsIntelligenceView - News response:', res);
       const newsArray = Array.isArray(res?.data) ? res.data : [];
@@ -61,7 +67,7 @@ export default function NewsIntelligenceView() {
     } finally {
       setLoading(false);
     }
-  }, [filterPriority]);
+  }, [filterPriority, startDate, endDate]);
 
   useEffect(() => {
     fetchNews();
@@ -202,24 +208,30 @@ export default function NewsIntelligenceView() {
           {/* Filters */}
           <Card className="rounded-2xl border border-indigo-100">
             <CardContent className="px-5 py-5">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Filter by priority:</span>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+                <div className="flex items-center gap-2 lg:flex-1 lg:min-w-0">
+                  <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Priority:</span>
+                  <div className="flex-1 min-w-0">
+                    <Select value={filterPriority} onValueChange={setFilterPriority}>
+                      <SelectTrigger className="h-9 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="CRITICAL">🚨 Critical</SelectItem>
+                        <SelectItem value="HIGH">⚠️ High</SelectItem>
+                        <SelectItem value="NORMAL">Normal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <Select value={filterPriority} onValueChange={setFilterPriority}>
-                    <SelectTrigger className="h-10 w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="CRITICAL">🚨 Critical</SelectItem>
-                      <SelectItem value="HIGH">⚠️ High</SelectItem>
-                      <SelectItem value="NORMAL">Normal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <DateRangeFilter
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                />
               </div>
             </CardContent>
           </Card>
@@ -384,9 +396,9 @@ export default function NewsIntelligenceView() {
                 {selectedNews.imageUrl && (
                   <div>
                     <p className="text-sm text-muted-foreground">Evidence Image</p>
-                    <a 
-                      href={selectedNews.imageUrl} 
-                      target="_blank" 
+                    <a
+                      href={selectedNews.imageUrl}
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-indigo-600 hover:underline mt-1"
                     >
@@ -395,7 +407,15 @@ export default function NewsIntelligenceView() {
                     </a>
                   </div>
                 )}
-                
+
+                <div className="pt-2 border-t">
+                  <AttachmentsList
+                    contextType="NEWS"
+                    contextId={selectedNews.id}
+                    emptyMessage="No supporting files were uploaded with this news entry."
+                  />
+                </div>
+
                 <div className="flex justify-end gap-2 pt-4 border-t">
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Close

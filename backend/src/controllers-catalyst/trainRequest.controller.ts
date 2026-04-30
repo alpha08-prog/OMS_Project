@@ -268,6 +268,10 @@ export async function createTrainRequest(
       return;
     }
 
+    // Train EQ entries are now self-service: staff submission auto-approves
+    // so the staff member can print the letter immediately. Admin sees
+    // entries in a read-only list — no separate approval step.
+    const nowIso = new Date().toISOString();
     const row = await insertRow(TRAIN_TABLE, {
       pnrNumber,
       passengerName,
@@ -283,12 +287,12 @@ export async function createTrainRequest(
       referencedBy: referencedBy ?? null,
       contactNumber: contactNumber ?? null,
       remarks: remarks ?? null,
-      status: 'PENDING',
-      approvedAt: null,
+      status: 'APPROVED',
+      approvedAt: toCatalystDate(nowIso),
       rejectionReason: null,
       signatureData: null,
       createdById: req.user.id,
-      approvedById: null,
+      approvedById: req.user.id,
     });
 
     if (Array.isArray(passengers) && passengers.length > 0) {

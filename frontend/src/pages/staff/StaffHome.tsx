@@ -5,6 +5,9 @@ import {
   Users,
   Calendar,
   Newspaper,
+  XCircle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +24,8 @@ type RecentEntry = {
 export default function StaffHome() {
   const navigate = useNavigate();
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
+  const [rejectedGrievances, setRejectedGrievances] = useState<Grievance[]>([]);
+  const [rejectedExpanded, setRejectedExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Staff Member");
 
@@ -74,6 +79,17 @@ export default function StaffHome() {
         // Sort by date and take top 5
         entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setRecentEntries(entries.slice(0, 5));
+
+        // Pull rejected grievances so the staff sees them on the dashboard.
+        // Staff scope: the /grievances list endpoint already returns only the
+        // current user's records when role is STAFF.
+        try {
+          const rejectedRes = await grievanceApi.getAll({ status: 'REJECTED', limit: '5' });
+          setRejectedGrievances(rejectedRes.data ?? []);
+        } catch (rejErr) {
+          console.error('Failed to fetch rejected grievances:', rejErr);
+          setRejectedGrievances([]);
+        }
       } catch (error) {
         console.error('Failed to fetch recent entries:', error);
       } finally {
@@ -213,6 +229,70 @@ export default function StaffHome() {
                 )}
               </CardContent>
             </Card>
+
+            {/* REJECTED GRIEVANCES — only renders when the user has any.
+                Collapsible so it stays out of the way once acknowledged. */}
+            {!loading && rejectedGrievances.length > 0 && (
+              <Card className="rounded-2xl shadow-sm border border-red-200 bg-red-50/40">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <button
+                    type="button"
+                    onClick={() => setRejectedExpanded((v) => !v)}
+                    aria-expanded={rejectedExpanded}
+                    aria-label={rejectedExpanded ? 'Collapse rejected grievances' : 'Expand rejected grievances'}
+                    className="flex items-center gap-2 text-left flex-1 min-w-0 hover:opacity-80 transition"
+                  >
+                    {rejectedExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-red-700 shrink-0" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-red-700 shrink-0" />
+                    )}
+                    <CardTitle className="text-lg flex items-center gap-2 text-red-900">
+                      <XCircle className="h-5 w-5 text-red-600" />
+                      Rejected Grievances
+                      <span className="text-sm font-normal text-red-700">
+                        ({rejectedGrievances.length})
+                      </span>
+                    </CardTitle>
+                  </button>
+                  <Button
+                    variant="link"
+                    className="text-red-700"
+                    onClick={() => navigate('/grievances/view?status=REJECTED')}
+                  >
+                    View all
+                  </Button>
+                </CardHeader>
+                {rejectedExpanded && (
+                  <CardContent className="space-y-2">
+                    {rejectedGrievances.map((g) => (
+                      <div
+                        key={g.id}
+                        className="flex items-start justify-between gap-3 p-3 rounded-lg bg-white border border-red-100 hover:border-red-300 cursor-pointer transition"
+                        onClick={() => navigate(`/grievances/view?search=${encodeURIComponent(g.petitionerName)}`)}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm text-red-900 truncate">
+                            {g.petitionerName} <span className="text-red-700/70">— {g.grievanceType}</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Submitted {new Date(g.createdAt).toLocaleDateString('en-IN', {
+                              day: 'numeric', month: 'short', year: 'numeric',
+                            })}
+                          </p>
+                        </div>
+                        <span className="text-[10px] uppercase tracking-wide font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                          Rejected
+                        </span>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground pt-1">
+                      Check the bell <span aria-hidden>🔔</span> in the top bar for the rejection reason.
+                    </p>
+                  </CardContent>
+                )}
+              </Card>
+            )}
 
           </div>
         </div>

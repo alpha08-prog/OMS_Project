@@ -20,6 +20,7 @@ import {
 } from "../../components/ui/dialog";
 import { grievanceApi, visitorApi } from "../../lib/api";
 import type { Grievance, Visitor } from "../../lib/api";
+import { NotificationBell } from "../common/NotificationBell";
 
 type User = {
   name: string;
@@ -257,6 +258,9 @@ export function DashboardHeader() {
               )}
             </PopoverContent>
           </Popover>
+
+          {/* Notification Bell */}
+          <NotificationBell />
 
           {/* User Dropdown */}
           <DropdownMenu>

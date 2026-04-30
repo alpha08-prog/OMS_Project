@@ -242,7 +242,27 @@ export default function AdminHistory() {
           </div>
 
           {/* Stats Cards */}
-          {stats?.grievances && (
+          {stats?.grievances && (() => {
+            // The big number on each card is the total record count. The
+            // breakdown only itemises the action states each module supports.
+            // Compute the leftover (records that haven't been actioned yet)
+            // so the math always adds up to the total.
+            const grievPending = Math.max(
+              0,
+              stats.grievances.total - stats.grievances.resolved - stats.grievances.rejected
+            );
+            const trainPending = Math.max(
+              0,
+              stats.trainRequests.total
+                - stats.trainRequests.approved
+                - stats.trainRequests.rejected
+                - (stats.trainRequests.resolved ?? 0)
+            );
+            const tourPending = Math.max(
+              0,
+              stats.tourPrograms.total - stats.tourPrograms.accepted - stats.tourPrograms.regret
+            );
+            return (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card className="rounded-2xl shadow-sm border-indigo-100">
                 <CardContent className="p-4">
@@ -254,6 +274,9 @@ export default function AdminHistory() {
                     <div className="flex flex-col items-end text-xs gap-0.5 flex-shrink-0">
                       <span className="text-emerald-600 whitespace-nowrap">✓ {stats.grievances.resolved} resolved</span>
                       <span className="text-red-600 whitespace-nowrap">✗ {stats.grievances.rejected} rejected</span>
+                      {grievPending > 0 && (
+                        <span className="text-amber-600 whitespace-nowrap">⏳ {grievPending} pending</span>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -272,6 +295,9 @@ export default function AdminHistory() {
                       {typeof stats.trainRequests.resolved === "number" && (
                         <span className="text-indigo-600 whitespace-nowrap">○ {stats.trainRequests.resolved} resolved</span>
                       )}
+                      {trainPending > 0 && (
+                        <span className="text-amber-600 whitespace-nowrap">⏳ {trainPending} pending</span>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -287,17 +313,23 @@ export default function AdminHistory() {
                     <div className="flex flex-col items-end text-xs gap-0.5 flex-shrink-0">
                       <span className="text-emerald-600 whitespace-nowrap">✓ {stats.tourPrograms.accepted} accepted</span>
                       <span className="text-amber-600 whitespace-nowrap">⚠ {stats.tourPrograms.regret} regret</span>
+                      {tourPending > 0 && (
+                        <span className="text-slate-500 whitespace-nowrap">⏳ {tourPending} pending</span>
+                      )}
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-indigo-600 to-indigo-500 text-white">
+              <Card className="rounded-2xl shadow-sm bg-gradient-to-br from-indigo-600 to-indigo-500 text-white" title="Sum of all admin actions taken so far (resolves, rejects, accepts, regrets) across grievances, train requests, and tour programs. Pending items aren't counted.">
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-indigo-100 text-sm font-medium">Total Actions</p>
                       <p className="text-2xl font-bold">{stats.totalActions}</p>
+                      <p className="text-[11px] text-indigo-100/80 mt-1">
+                        Actions taken (excludes pending)
+                      </p>
                     </div>
                     <div className="p-2 bg-white/20 rounded-lg flex-shrink-0">
                       <TrendingUp className="h-6 w-6" />
@@ -306,7 +338,8 @@ export default function AdminHistory() {
                 </CardContent>
               </Card>
             </div>
-          )}
+            );
+          })()}
 
           {/* Filters */}
           <Card className="rounded-2xl shadow-sm">

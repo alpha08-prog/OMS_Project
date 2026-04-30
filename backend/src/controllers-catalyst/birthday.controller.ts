@@ -136,9 +136,22 @@ export async function getBirthdays(
     const { page, limit, skip } = parsePagination(
       req.query as { page?: string; limit?: string }
     );
-    const { search, relation, month } = req.query as Record<string, string>;
+    const { search, relation, month, startDate, endDate } = req.query as Record<string, string>;
 
     let rows = await listAllRows(BIRTHDAY_TABLE);
+
+    if (startDate) {
+      const start = new Date(startDate).getTime();
+      rows = rows.filter(
+        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
+      );
+    }
+    if (endDate) {
+      const end = new Date(endDate).getTime();
+      rows = rows.filter(
+        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
+      );
+    }
 
     if (search) {
       const q = String(search).toLowerCase();

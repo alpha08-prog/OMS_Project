@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { 
-  ClipboardList, 
-  Clock, 
-  CheckCircle2, 
+import {
+  ClipboardList,
+  Clock,
+  CheckCircle2,
   AlertCircle,
   PlayCircle,
   PauseCircle,
   RefreshCw,
   Calendar,
-  ArrowRight
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { taskApi, type TaskAssignment, type TaskStatus, type TaskProgressHistory } from "@/lib/api";
 import {
   Dialog,
@@ -41,7 +44,21 @@ export default function StaffTasks() {
   const [selectedTask, setSelectedTask] = useState<TaskAssignment | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  // Per-card collapse state. Tasks default to collapsed (just title + badges
+  // + dates) so the list isn't visually overwhelming. Click to expand.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   // Update form state
   const [progressNotes, setProgressNotes] = useState("");
   const [taskHistory, setTaskHistory] = useState<TaskProgressHistory[]>([]);
@@ -56,6 +73,8 @@ export default function StaffTasks() {
       if (filterStatus !== "all") {
         params.status = filterStatus;
       }
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
       const res = await taskApi.getMyTasks(params);
       setTasks(res.data);
     } catch (err) {
@@ -63,7 +82,7 @@ export default function StaffTasks() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus]);
+  }, [filterStatus, startDate, endDate]);
 
   useEffect(() => {
     fetchTasks();
@@ -185,6 +204,20 @@ export default function StaffTasks() {
   const inProgressCount = tasks.filter(t => t.status === 'IN_PROGRESS').length;
   const completedCount = tasks.filter(t => t.status === 'COMPLETED').length;
 
+  // Sort tasks for display: active (non-completed) first, completed pushed to
+  // the bottom. Within each group, newest assignment first so a fresh task
+  // shows up at the top of the list.
+  const sortedTasks = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      const aDone = a.status === 'COMPLETED' ? 1 : 0;
+      const bDone = b.status === 'COMPLETED' ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      const aAt = new Date(a.assignedAt).getTime();
+      const bAt = new Date(b.assignedAt).getTime();
+      return bAt - aAt;
+    });
+  }, [tasks]);
+
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
@@ -268,20 +301,28 @@ export default function StaffTasks() {
 
             {/* Filter */}
             <Card className="rounded-2xl border border-indigo-100">
-              <CardContent className="flex items-center gap-4 py-4">
-                <span className="text-sm text-muted-foreground">Filter by status:</span>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Tasks</SelectItem>
-                    <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                    <SelectItem value="COMPLETED">Completed</SelectItem>
-                    <SelectItem value="ON_HOLD">On Hold</SelectItem>
-                  </SelectContent>
-                </Select>
+              <CardContent className="flex flex-wrap items-end gap-4 py-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Filter by status:</span>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Tasks</SelectItem>
+                      <SelectItem value="ASSIGNED">Assigned</SelectItem>
+                      <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                      <SelectItem value="COMPLETED">Completed</SelectItem>
+                      <SelectItem value="ON_HOLD">On Hold</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <DateRangeFilter
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                />
               </CardContent>
             </Card>
 
@@ -300,7 +341,9 @@ export default function StaffTasks() {
                     <p className="text-muted-foreground">No tasks assigned to you</p>
                   </div>
                 ) : (
-                  tasks.map((task) => (
+                  sortedTasks.map((task) => {
+                    const isExpanded = expandedIds.has(task.id);
+                    return (
                     <div
                       key={task.id}
                       className={`p-4 rounded-xl border bg-white hover:shadow-md transition ${
@@ -309,40 +352,38 @@ export default function StaffTasks() {
                       }`}
                     >
                       <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 space-y-3">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold text-indigo-900">{task.title}</p>
-                            {getStatusBadge(task.status)}
-                            {getPriorityBadge(task.priority)}
-                            <Badge variant="outline">{task.taskType}</Badge>
-                            {task.coAssignees && task.coAssignees.length > 0 && (
-                              <Badge
-                                variant="outline"
-                                className="border-indigo-200 bg-indigo-50 text-indigo-800"
-                                title={`Also assigned: ${task.coAssignees.map((c) => `${c.name} (${c.status.replace('_', ' ').toLowerCase()})`).join(', ')}`}
-                              >
-                                You + {task.coAssignees.length} other{task.coAssignees.length === 1 ? '' : 's'}
-                              </Badge>
-                            )}
+                        <div className="flex-1 space-y-3 min-w-0">
+                          <div className="flex items-start gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(task.id)}
+                              aria-label={isExpanded ? "Collapse task" : "Expand task"}
+                              className="mt-0.5 p-0.5 rounded hover:bg-indigo-50 text-indigo-700 shrink-0"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </button>
+                            <div className="flex items-center gap-2 flex-wrap min-w-0">
+                              <p className="font-semibold text-indigo-900">{task.title}</p>
+                              {getStatusBadge(task.status)}
+                              {getPriorityBadge(task.priority)}
+                              <Badge variant="outline">{task.taskType}</Badge>
+                              {task.coAssignees && task.coAssignees.length > 0 && (
+                                <Badge
+                                  variant="outline"
+                                  className="border-indigo-200 bg-indigo-50 text-indigo-800"
+                                  title={`Also assigned: ${task.coAssignees.map((c) => `${c.name} (${c.status.replace('_', ' ').toLowerCase()})`).join(', ')}`}
+                                >
+                                  You + {task.coAssignees.length} other{task.coAssignees.length === 1 ? '' : 's'}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
 
-                          {task.description && (
-                            <p className="text-sm text-muted-foreground">{task.description}</p>
-                          )}
-
-                          {task.coAssignees && task.coAssignees.length > 0 && (
-                            <div className="text-xs text-muted-foreground">
-                              <span className="font-medium">Also working on this:</span>{' '}
-                              {task.coAssignees.map((c, i) => (
-                                <span key={c.id}>
-                                  {i > 0 ? ', ' : ''}
-                                  {c.name} <span className="text-indigo-600">({c.status.replace('_', ' ').toLowerCase()})</span>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          
-                          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground pl-6">
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3.5 w-3.5" />
                               Assigned: {formatDate(task.assignedAt)}
@@ -354,42 +395,62 @@ export default function StaffTasks() {
                               </span>
                             )}
                           </div>
-                          
-                          {/* Recent Activity Timeline */}
-                          <div className="mt-4 pt-3 border-t">
-                            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
-                              <Clock className="h-3 w-3" />
-                              Recent Activity
-                            </p>
-                            
-                            {task.progressHistory && task.progressHistory.length > 0 ? (
-                              <div className="space-y-3 pl-1">
-                                {task.progressHistory.map((history) => (
-                                  <div key={history.id} className="relative pl-4 border-l border-indigo-100">
-                                    <div className="absolute -left-[2.5px] top-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                                    <div className="flex flex-col gap-0.5">
-                                      <span className="text-sm text-gray-700">{history.note}</span>
-                                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                        <span>{formatDateTime(history.createdAt)}</span>
-                                        <span>•</span>
-                                        <span>{history.createdBy?.name ?? '—'}</span>
-                                        {history.status && (
-                                          <>
+
+                          {isExpanded && (
+                            <div className="space-y-3 pl-6">
+                              {task.description && (
+                                <p className="text-sm text-muted-foreground">{task.description}</p>
+                              )}
+
+                              {task.coAssignees && task.coAssignees.length > 0 && (
+                                <div className="text-xs text-muted-foreground">
+                                  <span className="font-medium">Also working on this:</span>{' '}
+                                  {task.coAssignees.map((c, i) => (
+                                    <span key={c.id}>
+                                      {i > 0 ? ', ' : ''}
+                                      {c.name} <span className="text-indigo-600">({c.status.replace('_', ' ').toLowerCase()})</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Recent Activity Timeline */}
+                              <div className="mt-4 pt-3 border-t">
+                                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                                  <Clock className="h-3 w-3" />
+                                  Recent Activity
+                                </p>
+
+                                {task.progressHistory && task.progressHistory.length > 0 ? (
+                                  <div className="space-y-3 pl-1">
+                                    {task.progressHistory.map((history) => (
+                                      <div key={history.id} className="relative pl-4 border-l border-indigo-100">
+                                        <div className="absolute -left-[2.5px] top-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-sm text-gray-700">{history.note}</span>
+                                          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                            <span>{formatDateTime(history.createdAt)}</span>
                                             <span>•</span>
-                                            <span className="font-medium text-indigo-600">
-                                              {history.status.replace('_', ' ')}
-                                            </span>
-                                          </>
-                                        )}
+                                            <span>{history.createdBy?.name ?? '—'}</span>
+                                            {history.status && (
+                                              <>
+                                                <span>•</span>
+                                                <span className="font-medium text-indigo-600">
+                                                  {history.status.replace('_', ' ')}
+                                                </span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
                                       </div>
-                                    </div>
+                                    ))}
                                   </div>
-                                ))}
+                                ) : (
+                                  <p className="text-xs text-muted-foreground italic pl-1">No activity yet</p>
+                                )}
                               </div>
-                            ) : (
-                              <p className="text-xs text-muted-foreground italic pl-1">No activity yet</p>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex flex-col gap-2">
@@ -422,7 +483,8 @@ export default function StaffTasks() {
                         </div>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </CardContent>
             </Card>
