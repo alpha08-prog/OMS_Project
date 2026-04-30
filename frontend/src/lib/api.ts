@@ -877,6 +877,15 @@ export const pdfApi = {
     return res.data
   },
 
+  // Preview Train EQ Letter (HTML). Backend route is staffOnly, so we
+  // can't `window.open(...)` the URL directly — that fires off a no-auth
+  // GET. Fetch via the authed axios client, then materialise an HTML blob
+  // and open the blob URL in a new tab.
+  previewTrainEQ: async (id: string) => {
+    const res = await http.get(`/pdf/train-eq/${id}/preview`, { responseType: 'text' })
+    return res.data as string
+  },
+
   // Download Tour Program PDF (opens in new tab)
   downloadTourProgram: async (startDate?: string, endDate?: string) => {
     try {

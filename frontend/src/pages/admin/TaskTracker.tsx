@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ClipboardList,
@@ -78,8 +78,15 @@ export default function AdminTaskTracker() {
     setFilterStatus("all");
   }, [filterTaskType]);
 
-  const fetchData = async () => {
-    setLoading(true);
+  // Track which fetches are the *initial* one. Background polls (every 20s)
+  // must not toggle `loading` — doing so unmounts the list, the empty-state
+  // placeholder shows for one tick, then the list re-mounts. The user sees
+  // that as a flicker once per minute. Only the very first fetch flips the
+  // loading flag; subsequent polls swap data silently.
+  const initialFetchDone = useRef(false);
+
+  const fetchData = async ({ background = false }: { background?: boolean } = {}) => {
+    if (!background) setLoading(true);
     try {
       const params: Record<string, string> = { limit: '50', page: '1' };
       if (startDate) params.startDate = startDate;
@@ -88,17 +95,10 @@ export default function AdminTaskTracker() {
         taskApi.getTracking(),
         taskApi.getAll(params),
       ]);
-      
-      console.log('TaskTracker - Tracking data:', tracking);
-      console.log('TaskTracker - Tracking data type:', typeof tracking);
-      console.log('TaskTracker - Tracking data keys:', tracking ? Object.keys(tracking) : 'null');
-      console.log('TaskTracker - Tasks response:', tasksRes);
-      console.log('TaskTracker - Tasks response type:', typeof tasksRes);
-      console.log('TaskTracker - Tasks response keys:', tasksRes ? Object.keys(tasksRes) : 'null');
-      
+
       // getTracking() returns TaskTrackingData (res.data.data)
       setTrackingData(tracking ?? null);
-      
+
       // getAll() returns res.data which is ApiResponse<TaskAssignment[]>
       // So it has { success, message, data: TaskAssignment[], meta }
       let tasksArray: TaskAssignment[] = [];
@@ -106,29 +106,31 @@ export default function AdminTaskTracker() {
         if (Array.isArray(tasksRes.data)) tasksArray = tasksRes.data;
       }
       setTasks(tasksArray);
-      console.log('TaskTracker - Tasks array length:', tasksArray.length);
-      console.log('TaskTracker - Tasks array:', tasksArray);
     } catch (error: unknown) {
       console.error('Failed to fetch data:', error);
-      const e = error as Record<string, unknown> | null;
-      const msg = e && typeof e === 'object' && typeof e.message === 'string' ? e.message : undefined;
-      console.error('Error details:', msg);
-      // Set empty arrays on error to prevent undefined errors
-      setTrackingData(null);
-      setTasks([]);
+      // On a background-poll failure, keep the existing data on screen
+      // — flashing it to "empty" would be more disruptive than stale data.
+      if (!background) {
+        setTrackingData(null);
+        setTasks([]);
+      }
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+        initialFetchDone.current = true;
+      }
     }
   };
 
   useEffect(() => {
-    fetchData();
+    // First fetch shows the loading state; subsequent polls are silent.
+    fetchData({ background: initialFetchDone.current });
     // Poll every 20s so admin sees staff progress updates without manual
     // refresh. Pause while the task-details dialog is open -- a background
     // refetch during interaction is a known source of click-handler perf
     // violations (re-render right when the user clicks).
     if (detailsOpen) return;
-    const id = setInterval(fetchData, 20_000);
+    const id = setInterval(() => fetchData({ background: true }), 20_000);
     return () => clearInterval(id);
   }, [detailsOpen, startDate, endDate]);
 

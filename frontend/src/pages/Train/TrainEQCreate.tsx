@@ -371,8 +371,29 @@ export default function TrainEQCreate() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      window.open(`/api/pdf/train-eq/${createdId}/preview`, "_blank");
+                    onClick={async () => {
+                      if (!createdId) return;
+                      try {
+                        // Backend's preview route is staffOnly; bare window.open
+                        // sends no Authorization header, so we fetch the HTML
+                        // via the authed axios client and pop it into a new
+                        // tab as a blob.
+                        const html = await pdfApi.previewTrainEQ(createdId);
+                        const blob = new Blob([html], { type: "text/html" });
+                        const url = URL.createObjectURL(blob);
+                        const win = window.open(url, "_blank");
+                        // Revoke the blob URL once the new tab has had a moment
+                        // to load it; otherwise the URL leaks for the session.
+                        if (win) {
+                          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                        } else {
+                          URL.revokeObjectURL(url);
+                          alert("Pop-up blocked — allow pop-ups for this site to preview.");
+                        }
+                      } catch (err) {
+                        console.error("Train EQ preview failed:", err);
+                        alert(err instanceof Error ? err.message : "Failed to load preview");
+                      }
                     }}
                   >
                     <Eye className="h-4 w-4 mr-1" />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ClipboardList,
@@ -66,8 +66,12 @@ export default function StaffTasks() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  const fetchTasks = useCallback(async () => {
-    setLoading(true);
+  // First fetch toggles the loading skeleton; the 20s polls don't, so the
+  // task list doesn't flash to "Loading…" once a minute.
+  const initialFetchDone = useRef(false);
+
+  const fetchTasks = useCallback(async (opts: { background?: boolean } = {}) => {
+    if (!opts.background) setLoading(true);
     setError(null);
     try {
       const params: Record<string, string> = {};
@@ -79,14 +83,20 @@ export default function StaffTasks() {
       const res = await taskApi.getMyTasks(params);
       setTasks(res.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load tasks");
+      // Background polling errors stay quiet — keep last-known data on screen.
+      if (!opts.background) {
+        setError(err instanceof Error ? err.message : "Failed to load tasks");
+      }
     } finally {
-      setLoading(false);
+      if (!opts.background) {
+        setLoading(false);
+        initialFetchDone.current = true;
+      }
     }
   }, [filterStatus, startDate, endDate]);
 
   useEffect(() => {
-    fetchTasks();
+    fetchTasks({ background: initialFetchDone.current });
     // Poll every 20 s so a staff member sees admin reassignments / status
     // changes from a co-assignee without needing to click Refresh.
     // Pause while the Update Progress dialog is open -- the user is
@@ -94,7 +104,7 @@ export default function StaffTasks() {
     // underlying list adds latency to their click handlers (one source
     // of the [Violation] 'click' handler took N ms console warnings).
     if (updateDialogOpen) return;
-    const id = setInterval(fetchTasks, 20_000);
+    const id = setInterval(() => fetchTasks({ background: true }), 20_000);
     return () => clearInterval(id);
   }, [fetchTasks, updateDialogOpen]);
 
@@ -240,7 +250,7 @@ export default function StaffTasks() {
                   View and update your assigned tasks
                 </p>
               </div>
-              <Button variant="outline" onClick={fetchTasks} disabled={loading}>
+              <Button variant="outline" onClick={() => fetchTasks()} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
