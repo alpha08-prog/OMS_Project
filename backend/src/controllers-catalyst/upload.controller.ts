@@ -17,7 +17,14 @@ import {
   getSignedDownloadUrl,
   buildObjectKey,
 } from '../lib/stratus';
-import { getRow, insertRow, deleteRow, CatalystRow } from '../lib/catalyst-client';
+import {
+  getRow,
+  insertRow,
+  deleteRow,
+  executeZCQL,
+  zcqlEscapeValue,
+  CatalystRow,
+} from '../lib/catalyst-client';
 import {
   sendSuccess,
   sendError,
@@ -60,13 +67,99 @@ export async function uploadFile(
   req: RequestWithFile,
   res: Response
 ): Promise<void> {
-  try {
-    if (!req.file) {
-      sendError(res, 'No file provided. Use form field "file".', 400);
-      return;
-    }
+  if (!req.file) {
+    sendError(res, 'No file provided. Use form field "file".', 400);
+    return;
+  }
 
-    const contextTypeRaw = String(req.body?.contextType ?? '').toUpperCase().trim();
+  const contextTypeRaw = String(req.body?.contextType ?? '').toUpperCase().trim();
+  if (!ALLOWED_CONTEXTS.has(contextTypeRaw)) {
+    sendError(
+      res,
+      `Invalid contextType. Must be one of: ${Array.from(ALLOWED_CONTEXTS).join(', ')}`,
+      400
+    );
+    return;
+  }
+
+  const contextIdRaw = req.body?.contextId;
+  const contextId = contextIdRaw ? String(contextIdRaw).trim() : null;
+
+  const stratusKey = buildObjectKey(contextTypeRaw, contextId, req.file.originalname);
+
+  // Step 1: Stratus put. If this fails, surface a Stratus-specific message
+  // so the operator can tell whether it's bucket auth, network, or quota.
+  try {
+    await uploadObject(req as unknown as Request, stratusKey, req.file.buffer, req.file.mimetype);
+  } catch (err: any) {
+    // Pull as many fields off the SDK error as exist — different versions of
+    // zcatalyst-sdk-node attach the response differently (statusCode, status,
+    // response.statusCode, etc.). Logging the lot makes diagnosis much faster
+    // when the only thing that comes through to the client is an HTML body.
+    console.error('[upload] Stratus put failed:', {
+      bucket: process.env.OMS_STRATUS_BUCKET ?? 'oms-attachments',
+      key: stratusKey,
+      mime: req.file.mimetype,
+      size: req.file.size,
+      message: err?.message,
+      name: err?.name,
+      code: err?.code,
+      statusCode: err?.statusCode ?? err?.status ?? err?.response?.statusCode,
+      responseHeaders: err?.response?.headers,
+      responseBody:
+        typeof err?.response?.body === 'string'
+          ? err.response.body.slice(0, 500)
+          : err?.response?.body,
+      stack: err?.stack,
+    });
+    const detail = err?.message ? String(err.message).slice(0, 300) : 'unknown error';
+    sendError(res, `Stratus upload failed: ${detail}`, 502);
+    return;
+  }
+
+  // Step 2: write the Attachment row. If this fails after the object is
+  // already in Stratus, the bucket has an orphan we'll log and clean up
+  // separately — but we still tell the client what happened.
+  let row;
+  try {
+    row = await insertRow(ATTACHMENT_TABLE, {
+      contextType: contextTypeRaw,
+      contextId,
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      stratusKey,
+      uploaderId: req.user?.id ?? null,
+    });
+  } catch (err: any) {
+    console.error('[upload] Attachment insert failed (Stratus object already written):', {
+      stratusKey,
+      message: err?.message,
+      stack: err?.stack,
+      raw: err,
+    });
+    const detail = err?.message ? String(err.message).slice(0, 300) : 'unknown error';
+    sendError(res, `Attachment record save failed: ${detail}`, 500);
+    return;
+  }
+
+  sendSuccess(res, shapeAttachment(row), 'File uploaded', 201);
+}
+
+/**
+ * GET /api/uploads?contextType=GRIEVANCE&contextId=123
+ *
+ * Lists attachments for a single parent record. Authenticated users only;
+ * parent-record ACL is enforced upstream (if you can read the grievance,
+ * you can read its attachments). Admins automatically see everything because
+ * the parent routes return everything for them.
+ */
+export async function listAttachments(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const contextTypeRaw = String(req.query?.contextType ?? '').toUpperCase().trim();
     if (!ALLOWED_CONTEXTS.has(contextTypeRaw)) {
       sendError(
         res,
@@ -76,28 +169,24 @@ export async function uploadFile(
       return;
     }
 
-    const contextIdRaw = req.body?.contextId;
-    const contextId = contextIdRaw ? String(contextIdRaw).trim() : null;
+    const contextIdRaw = req.query?.contextId;
+    const contextId = contextIdRaw ? String(contextIdRaw).trim() : '';
+    if (!contextId) {
+      sendError(res, 'contextId is required', 400);
+      return;
+    }
 
-    const stratusKey = buildObjectKey(contextTypeRaw, contextId, req.file.originalname);
+    const query =
+      `SELECT * FROM ${ATTACHMENT_TABLE} ` +
+      `WHERE contextType = '${zcqlEscapeValue(contextTypeRaw)}' ` +
+      `AND contextId = '${zcqlEscapeValue(contextId)}' ` +
+      `ORDER BY CREATEDTIME DESC`;
+    const rows = await executeZCQL<CatalystRow>(query);
 
-    // Upload to Stratus first. If the DB insert below fails, we'd rather
-    // have an orphan object in the bucket than a row pointing at nothing.
-    await uploadObject(req as unknown as Request, stratusKey, req.file.buffer, req.file.mimetype);
-
-    const row = await insertRow(ATTACHMENT_TABLE, {
-      contextType: contextTypeRaw,
-      contextId,
-      filename: req.file.originalname,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-      stratusKey,
-      uploaderId: req.user?.id ?? null,
-    });
-
-    sendSuccess(res, shapeAttachment(row), 'File uploaded', 201);
+    const attachments = rows.map(shapeAttachment);
+    sendSuccess(res, attachments, 'Attachments retrieved');
   } catch (error) {
-    sendServerError(res, 'Failed to upload file', error);
+    sendServerError(res, 'Failed to list attachments', error);
   }
 }
 

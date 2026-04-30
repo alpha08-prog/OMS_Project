@@ -13,18 +13,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Upload } from "lucide-react";
-import { grievanceApi, uploadsApi, type GrievanceType, type ActionRequired } from "@/lib/api";
+import { grievanceApi, type GrievanceType, type ActionRequired } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { useFormDraft } from "@/hooks/useFormDraft";
 
 export default function GrievanceCreate() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  // File-upload UI is gated as "Coming soon" — see the Supporting Documents
+  // section below. Keep this hook's slot empty so the rest of the form keeps
+  // its declaration order; restore the [file, setFile] tuple to re-enable.
 
-  // Form state
-  const [formData, setFormData] = useState({
+  // Form state — persisted to sessionStorage so a refresh / back-button trip
+  // doesn't wipe everything the staff member has typed. Cleared on success.
+  const [formData, setFormData, clearFormDraft] = useFormDraft("grievance:create", {
     petitionerName: "",
     mobileNumber: "",
     constituency: "",
@@ -91,20 +95,12 @@ export default function GrievanceCreate() {
         referencedBy: formData.referencedBy || undefined,
       });
 
-      // Upload the supporting document, if one was selected. Failure to
-      // upload doesn't roll back the grievance — surface a partial-success
-      // warning instead so the staff member knows to re-upload manually.
-      if (file && created?.id) {
-        try {
-          await uploadsApi.upload(file, 'GRIEVANCE', created.id);
-        } catch (uploadErr) {
-          const m = uploadErr instanceof Error ? uploadErr.message : 'Unknown error';
-          setError(`Grievance saved, but file upload failed: ${m}`);
-          setLoading(false);
-          return;
-        }
-      }
+      // File upload is currently gated behind a "Coming soon" placeholder —
+      // skipped until Stratus is restored. The grievance row is created
+      // without an attachment.
+      void created;
 
+      clearFormDraft();
       setSuccess(true);
       setTimeout(() => {
         navigate("/staff/home");
@@ -114,12 +110,6 @@ export default function GrievanceCreate() {
       setError(error.message || "Failed to create grievance");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
     }
   };
 
@@ -290,25 +280,17 @@ export default function GrievanceCreate() {
                       <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
                         Supporting Documents
                       </h3>
-                      <div>
-                        <input 
-                          id="file-upload" 
-                          type="file" 
-                          className="hidden" 
-                          onChange={handleFileUpload}
-                        />
-                        <label 
-                          htmlFor="file-upload" 
-                          className="cursor-pointer border border-dashed border-indigo-200 hover:border-indigo-400 bg-white hover:bg-indigo-50 transition-colors rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center"
-                        >
-                          <Upload className="h-6 w-6 text-indigo-500" />
-                          <p className="text-sm font-medium text-indigo-900">
-                            {file ? file.name : "Upload physical grievance copy"}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Scan or photo (PNG, JPG, PDF up to 10MB)
-                          </p>
-                        </label>
+                      <div
+                        className="border border-dashed border-slate-300 bg-slate-50/70 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center cursor-not-allowed select-none"
+                        aria-disabled="true"
+                      >
+                        <Upload className="h-6 w-6 text-slate-400" />
+                        <p className="text-sm font-medium text-slate-600">
+                          File uploads — Coming soon
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          You can submit without an attachment for now.
+                        </p>
                       </div>
                     </section>
 

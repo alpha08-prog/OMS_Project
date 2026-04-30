@@ -34,6 +34,8 @@ export type LoginResponse = { user: User; token: string }
 export type GrievanceType = 'WATER' | 'ROAD' | 'POLICE' | 'HEALTH' | 'TRANSFER' | 'FINANCIAL_AID' | 'ELECTRICITY' | 'EDUCATION' | 'HOUSING' | 'OTHER'
 export type GrievanceStatus = 'OPEN' | 'IN_PROGRESS' | 'VERIFIED' | 'RESOLVED' | 'REJECTED'
 export type ActionRequired = 'GENERATE_LETTER' | 'CALL_OFFICIAL' | 'FORWARD_TO_DEPT' | 'SCHEDULE_MEETING' | 'NO_ACTION'
+export type GrievancePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+export type GrievanceSource = 'PUBLIC' | 'OFFICE'
 
 export type Grievance = {
   id: string
@@ -54,6 +56,8 @@ export type Grievance = {
   createdBy: { id: string; name: string; email: string }
   createdById?: string
   verifiedBy?: { id: string; name: string; email: string }
+  priority?: GrievancePriority
+  source?: GrievanceSource
 }
 
 export type CreateGrievanceRequest = {
@@ -66,6 +70,8 @@ export type CreateGrievanceRequest = {
   actionRequired?: ActionRequired
   letterTemplate?: string
   referencedBy?: string
+  priority?: GrievancePriority
+  source?: GrievanceSource
 }
 
 // Visitor Types
@@ -465,8 +471,8 @@ export const grievanceApi = {
     return res.data.data
   },
 
-  updateStatus: async (id: string, status: GrievanceStatus) => {
-    const res = await http.patch<ApiResponse<Grievance>>(`/grievances/${id}/status`, { status })
+  updateStatus: async (id: string, status: GrievanceStatus, reason?: string) => {
+    const res = await http.patch<ApiResponse<Grievance>>(`/grievances/${id}/status`, { status, reason })
     return res.data.data
   },
 
@@ -1210,12 +1216,59 @@ export const uploadsApi = {
     return res.data.data
   },
 
+  /** List attachments for a parent record (e.g. one grievance, one tour). */
+  list: async (
+    contextType: AttachmentContextType,
+    contextId: string
+  ): Promise<Attachment[]> => {
+    const res = await http.get<ApiResponse<Attachment[]>>('/uploads', {
+      params: { contextType, contextId },
+    })
+    return res.data.data
+  },
+
   /** Returns the full URL to use as a link/img src — hits the auth-gated backend route. */
   getUrl: (id: string) => `${API_URL}/uploads/${id}`,
 
   delete: async (id: string) => {
     const res = await http.delete<ApiResponse<{ id: string }>>(`/uploads/${id}`)
     return res.data
+  },
+}
+
+// Notifications (in-app bell)
+export type NotificationType = 'TASK_ASSIGNED' | 'TOUR_DECIDED' | 'NEWS_CRITICAL'
+
+export type Notification = {
+  id: string
+  recipientId: string | null
+  type: NotificationType
+  title: string
+  body: string
+  link: string | null
+  referenceId: string | null
+  referenceType: string | null
+  isRead: boolean
+  createdAt: string | null
+}
+
+export const notificationsApi = {
+  list: async (unreadOnly = false): Promise<Notification[]> => {
+    const params = unreadOnly ? { unread: 'true' } : undefined
+    const res = await http.get<ApiResponse<Notification[]>>('/notifications', { params })
+    return res.data.data
+  },
+  unreadCount: async (): Promise<number> => {
+    const res = await http.get<ApiResponse<{ count: number }>>('/notifications/unread-count')
+    return res.data.data?.count ?? 0
+  },
+  markRead: async (id: string) => {
+    const res = await http.patch<ApiResponse<Notification>>(`/notifications/${id}/read`)
+    return res.data.data
+  },
+  markAllRead: async () => {
+    const res = await http.post<ApiResponse<{ updated: number }>>('/notifications/read-all')
+    return res.data.data
   },
 }
 

@@ -37,6 +37,7 @@ import {
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import { cacheClear } from '../lib/cache';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { emitNotification } from './notification.controller';
 import type {
   AuthenticatedRequest,
   TourProgramFilters,
@@ -413,6 +414,23 @@ export async function updateDecision(
       decisionNote: decisionNote ?? null,
     });
 
+    // Notify the original creator that a decision was made on their tour.
+    if (updated?.createdById) {
+      try {
+        await emitNotification({
+          recipientId: String(updated.createdById),
+          type: 'TOUR_DECIDED',
+          title: `Tour ${String(decision).toLowerCase()}: ${updated.eventName ?? 'event'}`,
+          body: decisionNote ? String(decisionNote).slice(0, 200) : '',
+          link: '/staff/home',
+          referenceId: String(updated.ROWID),
+          referenceType: 'TOUR',
+        });
+      } catch (notifErr) {
+        console.error('[tour] decision notification failed:', notifErr);
+      }
+    }
+
     invalidateCaches();
     const [shaped] = await hydrate([updated]);
     sendSuccess(res, shaped, 'Decision updated successfully');
@@ -506,8 +524,24 @@ export async function getPendingDecisions(
       req.query as { page?: string; limit?: string }
     );
 
+    const { startDate, endDate } = req.query as Record<string, string>;
+
     let rows = await listAllRows(TOUR_TABLE);
     rows = rows.filter((r) => r.decision === 'PENDING');
+
+    if (startDate) {
+      const start = new Date(startDate).getTime();
+      rows = rows.filter(
+        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
+      );
+    }
+    if (endDate) {
+      const end = new Date(endDate).getTime();
+      rows = rows.filter(
+        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
+      );
+    }
+
     rows.sort((a, b) => {
       const ta = a.dateTime ? new Date(a.dateTime).getTime() : 0;
       const tb = b.dateTime ? new Date(b.dateTime).getTime() : 0;
@@ -525,7 +559,14 @@ export async function getPendingDecisions(
   }
 }
 
-/** GET /api/tour-programs/events — past completed events (ACCEPTED + dateTime in past). */
+/**
+ * GET /api/tour-programs/events
+ *
+ * Returns every ACCEPTED tour as an event — both upcoming (not yet held)
+ * and past (already happened). The frontend's Event Reports page splits
+ * them into pending vs completed via the `isCompleted` flag, so we don't
+ * gate by date here. Anything still PENDING or REGRET is excluded.
+ */
 export async function getEvents(
   req: AuthenticatedRequest,
   res: Response
@@ -535,14 +576,9 @@ export async function getEvents(
       req.query as { page?: string; limit?: string }
     );
     const filters = req.query as EventFilters;
-    const now = new Date().getTime();
 
     let rows = await listAllRows(TOUR_TABLE);
-    rows = rows.filter((r) => {
-      if (r.decision !== 'ACCEPTED') return false;
-      if (!r.dateTime) return false;
-      return new Date(r.dateTime).getTime() < now;
-    });
+    rows = rows.filter((r) => r.decision === 'ACCEPTED');
 
     if (filters.search) {
       const q = String(filters.search).toLowerCase();

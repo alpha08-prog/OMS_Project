@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { AttachmentsList } from "@/components/common/AttachmentsList";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { StaffMultiSelect } from "@/components/StaffMultiSelect";
 import { grievanceApi, pdfApi, taskApi, type Grievance, type TaskAssignment } from "@/lib/api";
 import {
   Dialog,
@@ -33,16 +36,22 @@ export default function GrievanceVerification() {
   
   // Status filter
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  // Source + priority filters
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  // Date range filter
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   // Task assignment state
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [verifiedGrievance, setVerifiedGrievance] = useState<Grievance | null>(null);
   const [staffMembers, setStaffMembers] = useState<Array<{ id: string; name: string; email: string }>>([]);
-  const [assignToId, setAssignToId] = useState("");
+  const [assignToIds, setAssignToIds] = useState<string[]>([]);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState("NORMAL");
+  const [priority, setPriority] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [_actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -53,6 +62,10 @@ export default function GrievanceVerification() {
       // Use isVerified=false filter so the DB returns only unverified rows (fast index scan)
       const grievanceParams: Record<string, string> = { isVerified: 'false', limit: '50' };
       if (statusFilter !== "all") grievanceParams.status = statusFilter;
+      if (sourceFilter !== "all") grievanceParams.source = sourceFilter;
+      if (priorityFilter !== "all") grievanceParams.priority = priorityFilter;
+      if (startDate) grievanceParams.startDate = startDate;
+      if (endDate) grievanceParams.endDate = endDate;
       const [grievancesRes, tasksRes] = await Promise.all([
         grievanceApi.getAll(grievanceParams), // Get all grievances, not just OPEN
         taskApi.getAll({ limit: '50' }) // Get all tasks
@@ -105,7 +118,7 @@ export default function GrievanceVerification() {
 
   useEffect(() => {
     fetchGrievances();
-  }, [statusFilter]);
+  }, [statusFilter, sourceFilter, priorityFilter, startDate, endDate]);
 
   const fetchStaffMembers = async () => {
     try {
@@ -132,8 +145,16 @@ export default function GrievanceVerification() {
   };
 
   const handleAssignTask = async () => {
-    if (!assignToId || !taskTitle || !verifiedGrievance) {
-      setError("Please select a staff member and enter task title");
+    if (assignToIds.length === 0 || !taskTitle || !verifiedGrievance) {
+      setError("Please select at least one staff member and enter task title");
+      return;
+    }
+    if (!priority) {
+      setError("Please select a priority");
+      return;
+    }
+    if (!dueDate?.trim()) {
+      setError("Please select a due date");
       return;
     }
 
@@ -142,7 +163,8 @@ export default function GrievanceVerification() {
       // Step 1: Verify the grievance in the database
       await grievanceApi.verify(verifiedGrievance.id);
 
-      // Step 2: Create the assigned task
+      // Step 2: Create the assigned task — one row per selected staff,
+      // batched server-side via assignedToIds.
       await taskApi.create({
         title: taskTitle,
         description: taskDescription || undefined,
@@ -150,7 +172,7 @@ export default function GrievanceVerification() {
         priority: priority as 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT',
         referenceId: verifiedGrievance.id,
         referenceType: 'GRIEVANCE',
-        assignedToId: assignToId,
+        assignedToIds: assignToIds,
         dueDate: dueDate || undefined,
       });
 
@@ -169,18 +191,20 @@ export default function GrievanceVerification() {
   };
 
   const resetAssignForm = () => {
-    setAssignToId("");
+    setAssignToIds([]);
     setTaskTitle("");
     setTaskDescription("");
     setDueDate("");
-    setPriority("NORMAL");
+    setPriority("");
     setVerifiedGrievance(null);
   };
 
   const handleReject = async (id: string) => {
+    const reason = prompt('Reason for rejection (optional — staff will see this in their notification):');
+    if (reason === null) return; // user cancelled
     setActionLoading(id);
     try {
-      await grievanceApi.updateStatus(id, 'REJECTED');
+      await grievanceApi.updateStatus(id, 'REJECTED', reason.trim() || undefined);
       // Remove from list after rejection
       setGrievances((prev) => prev.filter((g) => g.id !== id));
     } catch (err: unknown) {
@@ -230,7 +254,39 @@ export default function GrievanceVerification() {
                 Review and approve submitted grievances
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-end gap-2 shrink-0">
+              <DateRangeFilter
+                startDate={startDate}
+                endDate={endDate}
+                onStartDateChange={setStartDate}
+                onEndDateChange={setEndDate}
+              />
+              <div className="w-[140px]">
+                <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sources</SelectItem>
+                    <SelectItem value="PUBLIC">Public</SelectItem>
+                    <SelectItem value="OFFICE">Office</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-[140px]">
+                <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Priorities</SelectItem>
+                    <SelectItem value="CRITICAL">🚨 Critical</SelectItem>
+                    <SelectItem value="HIGH">High</SelectItem>
+                    <SelectItem value="MEDIUM">Medium</SelectItem>
+                    <SelectItem value="LOW">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="w-[160px]">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger>
@@ -283,11 +339,27 @@ export default function GrievanceVerification() {
                       </div>
 
                       <div>
-                        <div className="font-medium flex items-center gap-2">
+                        <div className="font-medium flex flex-wrap items-center gap-2">
                           <span>{g.petitionerName}</span>
-                          <Badge className="ml-2" variant="outline">
-                            {g.status}
-                          </Badge>
+                          <Badge variant="outline">{g.status}</Badge>
+                          {g.source === 'OFFICE' && (
+                            <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white">
+                              Office
+                            </Badge>
+                          )}
+                          {g.priority && g.priority !== 'MEDIUM' && (
+                            <Badge
+                              className={
+                                g.priority === 'CRITICAL'
+                                  ? 'bg-red-600 hover:bg-red-600 text-white'
+                                  : g.priority === 'HIGH'
+                                    ? 'bg-orange-500 hover:bg-orange-500 text-white'
+                                    : 'bg-slate-400 hover:bg-slate-400 text-white'
+                              }
+                            >
+                              {g.priority === 'CRITICAL' ? '🚨 Critical' : g.priority}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground">
                           {g.grievanceType} • {g.constituency} • {formatCurrency(g.monetaryValue)}
@@ -401,7 +473,15 @@ export default function GrievanceVerification() {
                     <p className="font-medium">{selectedGrievance.referencedBy}</p>
                   </div>
                 )}
-                
+
+                <div className="pt-2 border-t">
+                  <AttachmentsList
+                    contextType="GRIEVANCE"
+                    contextId={selectedGrievance.id}
+                    emptyMessage="No supporting files were uploaded with this grievance."
+                  />
+                </div>
+
                 <div className="flex justify-end gap-2 pt-4 border-t">
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Close
@@ -448,11 +528,11 @@ export default function GrievanceVerification() {
         <Dialog open={assignDialogOpen} onOpenChange={(open) => {
           if (!open && !assigning) {
             // Dialog closed without assigning — grievance stays unverified in the pending queue
-            setAssignToId("");
+            setAssignToIds([]);
             setTaskTitle("");
             setTaskDescription("");
             setDueDate("");
-            setPriority("NORMAL");
+            setPriority("");
             setVerifiedGrievance(null);
           }
           setAssignDialogOpen(open);
@@ -479,19 +559,15 @@ export default function GrievanceVerification() {
 
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="assignTo">Assign To Staff *</Label>
-                    <Select value={assignToId} onValueChange={setAssignToId}>
-                      <SelectTrigger id="assignTo">
-                        <SelectValue placeholder="Select staff member" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {staffMembers.map((staff) => (
-                          <SelectItem key={staff.id} value={staff.id}>
-                            {staff.name} ({staff.email})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>Assign To Staff *</Label>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Select one or more staff members. Each gets their own task row with shared progress.
+                    </p>
+                    <StaffMultiSelect
+                      staff={staffMembers}
+                      selectedIds={assignToIds}
+                      onChange={setAssignToIds}
+                    />
                   </div>
 
                   <div>
@@ -517,10 +593,10 @@ export default function GrievanceVerification() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="priority">Priority</Label>
+                      <Label htmlFor="priority">Priority <span className="text-red-500">*</span></Label>
                       <Select value={priority} onValueChange={setPriority}>
                         <SelectTrigger id="priority">
-                          <SelectValue />
+                          <SelectValue placeholder="Select priority" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="LOW">Low</SelectItem>
@@ -532,12 +608,14 @@ export default function GrievanceVerification() {
                     </div>
 
                     <div>
-                      <Label htmlFor="dueDate">Due Date</Label>
+                      <Label htmlFor="dueDate">Due Date <span className="text-red-500">*</span></Label>
                       <Input
                         id="dueDate"
                         type="date"
                         value={dueDate}
                         onChange={(e) => setDueDate(e.target.value)}
+                        min={new Date().toISOString().split("T")[0]}
+                        required
                       />
                     </div>
                   </div>
@@ -556,7 +634,7 @@ export default function GrievanceVerification() {
                   <Button
                     className="bg-indigo-600 hover:bg-indigo-700"
                     onClick={handleAssignTask}
-                    disabled={assigning || !assignToId || !taskTitle}
+                    disabled={assigning || assignToIds.length === 0 || !taskTitle || !priority || !dueDate}
                   >
                     {assigning ? (
                       <>

@@ -27,13 +27,12 @@ const APPUSER_TABLE = 'AppUser';
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 /**
- * Seed/test accounts that exist in the AppUser table for development &
- * automated testing but should never surface in any UI list or label.
- * Login still works for these accounts (auth lookup is by exact email),
- * they just don't appear in dropdowns, user lists, or assigned-by chips.
- *
- * If we ever onboard a real "office admin" using oms.gov.in, they should
- * use a different local-part to stay out of this list.
+ * Set of seed/test account emails that should be hidden from UI lists.
+ * These accounts can still log in and use the app for development /
+ * acceptance testing, but they're omitted from dropdowns, user lists,
+ * staff-picker chips, and "assigned-by" badges that real (real-world)
+ * users see — so production traffic stays clean while developers retain
+ * working credentials.
  */
 export const HIDDEN_TEST_EMAILS: ReadonlySet<string> = new Set([
   'staff@oms.gov.in',

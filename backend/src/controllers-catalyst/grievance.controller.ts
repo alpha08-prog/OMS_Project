@@ -36,6 +36,7 @@ import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import { cacheClear } from '../lib/cache';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import { useZCQL } from '../config/feature-flags';
+import { emitNotification } from './notification.controller';
 import type { AuthenticatedRequest, GrievanceFilters } from '../types';
 
 const GRIEVANCE_TABLE = 'Grievance';
@@ -75,6 +76,8 @@ const VALID_STAGES = new Set([
   'COMPLETED',
   'CLOSED',
 ]);
+const VALID_PRIORITY = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+const VALID_SOURCE = new Set(['PUBLIC', 'OFFICE']);
 
 /**
  * Catalyst returns boolean columns as the strings "true"/"false" rather than
@@ -128,6 +131,10 @@ function shapeGrievance(
     verifiedById: row.verifiedById ?? null,
     currentStage: row.currentStage,
     isLocked: parseBool(row.isLocked),
+    // Legacy rows pre-date these columns; default at the read layer so
+    // the frontend can treat them as ('MEDIUM' / 'PUBLIC') without nulls.
+    priority: (row.priorities as string) ?? 'MEDIUM',
+    source: (row.source as string) ?? 'PUBLIC',
     createdBy: createdBy ?? null,
     verifiedBy: verifiedBy ?? null,
   };
@@ -192,6 +199,8 @@ export async function createGrievance(
       actionRequired,
       letterTemplate,
       referencedBy,
+      priority,
+      source,
     } = req.body;
 
     if (!VALID_TYPES.has(grievanceType)) {
@@ -201,6 +210,16 @@ export async function createGrievance(
     const action = actionRequired || 'NO_ACTION';
     if (!VALID_ACTIONS.has(action)) {
       sendError(res, `Invalid actionRequired: ${actionRequired}`);
+      return;
+    }
+    const finalPriority = priority || 'MEDIUM';
+    if (!VALID_PRIORITY.has(finalPriority)) {
+      sendError(res, `Invalid priority: ${priority}`);
+      return;
+    }
+    const finalSource = source || 'PUBLIC';
+    if (!VALID_SOURCE.has(finalSource)) {
+      sendError(res, `Invalid source: ${source}`);
       return;
     }
 
@@ -227,6 +246,10 @@ export async function createGrievance(
       verifiedById: null,
       currentStage: 'RECEIVED',
       isLocked: false,
+      // `priority` is a Catalyst reserved keyword, so the column is named
+      // `priorities`. Translate frontend `priority` -> stored `priorities`.
+      priorities: finalPriority,
+      source: finalSource,
     });
 
     invalidateStatCaches();
@@ -260,6 +283,13 @@ function buildGrievanceZCQL(
     conditions.push(
       `grievanceType = '${zcqlEscapeValue(String(filters.grievanceType))}'`
     );
+  }
+  if (filters.priority) {
+    // Catalyst column is `priorities` (priority is a reserved keyword).
+    conditions.push(`priorities = '${zcqlEscapeValue(String(filters.priority))}'`);
+  }
+  if (filters.source) {
+    conditions.push(`source = '${zcqlEscapeValue(String(filters.source))}'`);
   }
   if (filters.constituency) {
     const q = zcqlEscapeValue(String(filters.constituency));
@@ -332,6 +362,12 @@ export async function getGrievances(
     }
     if (filters.grievanceType) {
       rows = rows.filter((r) => r.grievanceType === filters.grievanceType);
+    }
+    if (filters.priority) {
+      rows = rows.filter((r) => r.priorities === filters.priority);
+    }
+    if (filters.source) {
+      rows = rows.filter((r) => r.source === filters.source);
     }
     if (filters.constituency) {
       const q = String(filters.constituency).toLowerCase();
@@ -499,17 +535,40 @@ export async function updateGrievanceStatus(
 ): Promise<void> {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, reason } = req.body as { status: string; reason?: string };
     if (!VALID_STATUS.has(status)) {
       sendError(res, `Invalid status: ${status}`);
       return;
     }
+    // Pull the existing row before updating so we know who created the
+    // grievance — needed to notify them on REJECTED.
+    const existing = await getRow(GRIEVANCE_TABLE, id);
     const updateData: Record<string, unknown> = { ROWID: id, status };
     if (status === 'RESOLVED') {
       updateData.resolvedAt = toCatalystDate(new Date());
     }
     const updated = await updateRow(GRIEVANCE_TABLE, updateData as any);
     invalidateStatCaches();
+
+    // Notify the submitting staff member when their grievance is rejected.
+    // Best-effort — emitNotification swallows its own errors.
+    if (status === 'REJECTED' && existing?.createdById) {
+      const petitioner = String(existing.petitionerName ?? 'a petitioner');
+      const trimmedReason = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+      const body = trimmedReason
+        ? `Your grievance for "${petitioner}" was rejected by an admin. Reason: ${trimmedReason}`
+        : `Your grievance for "${petitioner}" was rejected by an admin.`;
+      void emitNotification({
+        recipientId: String(existing.createdById),
+        type: 'GRIEVANCE_REJECTED',
+        title: 'Grievance rejected',
+        body,
+        link: `/grievances/view?search=${encodeURIComponent(petitioner)}`,
+        referenceId: String(id),
+        referenceType: 'GRIEVANCE',
+      });
+    }
+
     const [shaped] = await attachUsers([updated]);
     sendSuccess(res, shaped, 'Grievance status updated successfully');
   } catch (error) {

@@ -166,9 +166,29 @@ export default function AdminHome() {
                     ) : (
                       <>
                         {pendingGrievances.map((g) => (
-                          <div key={g.id} className="flex items-center justify-between">
-                            <div>
-                              <p className="font-medium">Grievance – {g.grievanceType}</p>
+                          <div key={g.id} className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <p className="font-medium">Grievance – {g.grievanceType}</p>
+                                {g.source === 'OFFICE' && (
+                                  <Badge className="text-[10px] px-1.5 py-0 h-4 bg-indigo-600 hover:bg-indigo-600 text-white">
+                                    OFFICE
+                                  </Badge>
+                                )}
+                                {g.priority && g.priority !== 'MEDIUM' && (
+                                  <Badge
+                                    className={`text-[10px] px-1.5 py-0 h-4 text-white ${
+                                      g.priority === 'CRITICAL'
+                                        ? 'bg-red-600 hover:bg-red-600'
+                                        : g.priority === 'HIGH'
+                                          ? 'bg-orange-500 hover:bg-orange-500'
+                                          : 'bg-slate-400 hover:bg-slate-400'
+                                    }`}
+                                  >
+                                    {g.priority === 'CRITICAL' ? '🚨 ' : ''}{g.priority}
+                                  </Badge>
+                                )}
+                              </div>
                               <p className="text-muted-foreground">
                                 {g.petitionerName} • {new Date(g.createdAt).toLocaleDateString()}
                               </p>

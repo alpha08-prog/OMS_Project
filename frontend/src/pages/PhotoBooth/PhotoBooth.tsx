@@ -1,11 +1,9 @@
-import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { Camera, Search, Users, Upload, Calendar, Grid } from "lucide-react";
+import { Camera, Search, Users, Upload, Calendar, Grid, Clock } from "lucide-react";
 
 export default function PhotoBooth() {
-  const navigate = useNavigate();
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -28,13 +26,23 @@ export default function PhotoBooth() {
               </p>
             </div>
 
+            {/* Coming Soon banner */}
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start gap-3">
+              <Clock className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold text-amber-900">Coming soon</p>
+                <p className="text-sm text-amber-800">
+                  Photo Booth depends on file uploads, which are currently being upgraded.
+                  The interface is shown below for preview only — both flows are disabled until the upload service is back online.
+                </p>
+              </div>
+            </div>
+
             {/* Interface Selection */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-60 pointer-events-none select-none" aria-disabled="true">
+
               {/* Public Interface Card */}
-              <Card className="rounded-2xl shadow-lg border-2 border-transparent hover:border-indigo-300 transition-all duration-300 cursor-pointer group"
-                onClick={() => navigate("/photo-booth/public")}
-              >
+              <Card className="rounded-2xl shadow-lg border-2 border-transparent transition-all duration-300 group">
                 <CardHeader className="text-center pb-2">
                   <div className="mx-auto p-4 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl mb-4 group-hover:scale-110 transition-transform">
                     <Users className="h-12 w-12 text-green-600" />
@@ -78,9 +86,7 @@ export default function PhotoBooth() {
               </Card>
 
               {/* Employee Interface Card */}
-              <Card className="rounded-2xl shadow-lg border-2 border-transparent hover:border-indigo-300 transition-all duration-300 cursor-pointer group"
-                onClick={() => navigate("/photo-booth/employee")}
-              >
+              <Card className="rounded-2xl shadow-lg border-2 border-transparent transition-all duration-300 group">
                 <CardHeader className="text-center pb-2">
                   <div className="mx-auto p-4 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl mb-4 group-hover:scale-110 transition-transform">
                     <Search className="h-12 w-12 text-blue-600" />

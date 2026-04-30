@@ -5,9 +5,17 @@ import type { Request } from 'express';
 type CatalystApp = ReturnType<typeof catalystSDK.initializeApp>;
 
 /**
- * SDK bug workaround: zcatalyst-sdk-node v3.4.0 appends `&next_token=` (empty)
- * to getPagedRows requests, which Catalyst rejects with HTTP 400 HTML.
- * We strip empty next_token from outgoing https requests once at module load.
+ * SDK bug workarounds applied to every outgoing https.request once at module
+ * load.
+ *
+ *   1. zcatalyst-sdk-node v3.4.0 appends `&next_token=` (empty) to
+ *      getPagedRows requests; Catalyst rejects with HTTP 400 HTML. Strip it.
+ *
+ *   2. The same SDK builds the Accept header by concatenating its own value
+ *      + ', ' + (existing || ''), which yields a trailing `, ` when no
+ *      existing Accept is present (e.g. `application/vnd.catalyst.v2+json, `).
+ *      Catalyst's Tomcat parses Accept strictly and returns the default
+ *      HTML 400 page on POST/PUT (not GET) with that trailing comma. Trim it.
  */
 (() => {
   const original = https.request;
@@ -17,8 +25,63 @@ type CatalystApp = ReturnType<typeof catalystSDK.initializeApp>;
       opts.path = opts.path
         .replace(/[?&]next_token=(?=&|$)/g, '')   // strip empty next_token
         .replace(/\?$/, '');                       // trailing '?'
+
+      if (opts.headers) {
+        const acceptKey = 'Accept' in opts.headers ? 'Accept' : ('accept' in opts.headers ? 'accept' : null);
+        if (acceptKey && typeof opts.headers[acceptKey] === 'string') {
+          opts.headers[acceptKey] = (opts.headers[acceptKey] as string).replace(/,\s*$/, '');
+        }
+      }
+
+      // SDK bug workaround: zcatalyst-sdk-node@3.4.0 calls POST /bucket/signature
+      // with type:'json' and no body field, so the SDK's _request() takes the
+      // `data === undefined` branch and calls req.end() with no payload.
+      // Catalyst's Tomcat rejects empty POST bodies (Content-Type: application/json
+      // with Content-Length:0) by serving the default HTML 400 page. We inject
+      // an empty JSON object body to satisfy the parser.
+      (opts as any).__omsInjectEmptyJsonBody =
+        typeof opts.method === 'string' &&
+        opts.method.toUpperCase() === 'POST' &&
+        opts.path.includes('/bucket/signature');
+      if ((opts as any).__omsInjectEmptyJsonBody) {
+        opts.headers = opts.headers || {};
+        opts.headers['Content-Length'] = '2';
+        if (!('Content-Type' in opts.headers) && !('content-type' in opts.headers)) {
+          opts.headers['Content-Type'] = 'application/json';
+        }
+      }
+
+      // Diagnostic: log every Stratus-relevant outbound request so we can see
+      // exactly what the SDK is sending when uploads fail.
+      if (
+        process.env.OMS_DEBUG_STRATUS === '1' &&
+        (opts.path.includes('/bucket') || (opts.host || opts.hostname || '').includes('stratus'))
+      ) {
+        const safeHeaders = { ...(opts.headers || {}) };
+        if (safeHeaders.Authorization) safeHeaders.Authorization = '<redacted>';
+        if (safeHeaders.authorization) safeHeaders.authorization = '<redacted>';
+        // eslint-disable-next-line no-console
+        console.log('[stratus-debug] outbound', {
+          method: opts.method,
+          host: opts.host || opts.hostname,
+          port: opts.port,
+          path: opts.path,
+          headers: safeHeaders,
+        });
+      }
     }
-    return original.apply(https, args as any);
+    const req = original.apply(https, args as any);
+    // Pre-write the `{}` body so the SDK's later req.end() finalizes the
+    // request with the body already in the buffer. We set Content-Length:2
+    // above so Node sends a content-length-framed body, not chunked.
+    if (opts && (opts as any).__omsInjectEmptyJsonBody && req && typeof (req as any).write === 'function') {
+      try {
+        (req as any).write('{}');
+      } catch {
+        // best-effort — if write fails the SDK's req.end() still runs
+      }
+    }
+    return req;
   };
 })();
 

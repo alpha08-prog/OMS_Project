@@ -28,6 +28,7 @@ import {
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
 import { getCachedTableList, isHiddenTestUser } from '../lib/catalyst-user-lookup';
+import { emitNotifications } from './notification.controller';
 import {
   sendSuccess,
   sendError,
@@ -402,6 +403,17 @@ export async function createTask(
       ids.map((id) => insertRow(TASK_TABLE, { ...baseRow, assignedToId: id }))
     );
 
+    // Fire one in-app notification per assignee. Best-effort — emit helper
+    // swallows errors so a notify failure cannot fail the assignment itself.
+    await emitNotifications(ids, {
+      type: 'TASK_ASSIGNED',
+      title: `New task: ${title}`,
+      body: description ? String(description).slice(0, 200) : `Type: ${taskType}`,
+      link: '/staff/tasks',
+      referenceId: rows[0] ? String(rows[0].ROWID) : undefined,
+      referenceType: 'TASK',
+    });
+
     const shaped = await attachUsers(rows);
     const message =
       ids.length === 1
@@ -413,11 +425,29 @@ export async function createTask(
   }
 }
 
+/**
+ * Standard list ordering for tasks: COMPLETED rows always sink to the bottom,
+ * within each bucket HIGH priority floats up, ties break newest-first.
+ */
+function taskListCompare(a: CatalystRow, b: CatalystRow): number {
+  const ca = String(a.status) === 'COMPLETED' ? 1 : 0;
+  const cb = String(b.status) === 'COMPLETED' ? 1 : 0;
+  if (ca !== cb) return ca - cb;
+  const pa = a.priorities === 'HIGH' ? 1 : 0;
+  const pb = b.priorities === 'HIGH' ? 1 : 0;
+  if (pa !== pb) return pb - pa;
+  const ta = a.CREATEDTIME ? new Date(String(a.CREATEDTIME)).getTime() : 0;
+  const tb = b.CREATEDTIME ? new Date(String(b.CREATEDTIME)).getTime() : 0;
+  return tb - ta;
+}
+
 function buildTaskZCQL(params: {
   status?: string;
   taskType?: string;
   assignedToId?: string;
   priority?: string;
+  startDate?: string;
+  endDate?: string;
   orderBy?: 'created' | 'due';
 }): string {
   const conditions: string[] = [];
@@ -426,6 +456,14 @@ function buildTaskZCQL(params: {
   if (params.assignedToId)
     conditions.push(`assignedToId = '${zcqlEscapeValue(params.assignedToId)}'`);
   if (params.priority) conditions.push(`priorities = '${zcqlEscapeValue(params.priority)}'`);
+  if (params.startDate) {
+    const start = toCatalystDate(params.startDate);
+    if (start) conditions.push(`CREATEDTIME >= '${start}'`);
+  }
+  if (params.endDate) {
+    const end = toCatalystDate(params.endDate);
+    if (end) conditions.push(`CREATEDTIME <= '${end}'`);
+  }
 
   const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
   // Catalyst ZCQL supports only single-column ORDER BY. We sort by the time
@@ -586,26 +624,23 @@ export async function getTasks(
     const { page, limit, skip } = parsePagination(
       req.query as { page?: string; limit?: string }
     );
-    const { status, taskType, assignedToId, priority } = req.query as Record<string, string>;
+    const { status, taskType, assignedToId, priority, startDate, endDate } =
+      req.query as Record<string, string>;
 
     let pageRows: CatalystRow[];
     let total: number;
 
     if (useZCQL()) {
-      const baseQuery = buildTaskZCQL({ status, taskType, assignedToId, priority, orderBy: 'created' });
+      const baseQuery = buildTaskZCQL({
+        status, taskType, assignedToId, priority, startDate, endDate, orderBy: 'created',
+      });
       const safeLimit = zcqlSafeLimit(limit);
       const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
       const hasMore = fetched.length > safeLimit;
       pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
-      // Re-sort the page so HIGH priority floats above NORMAL/LOW.
-      pageRows.sort((a, b) => {
-        const pa = a.priorities === 'HIGH' ? 1 : 0;
-        const pb = b.priorities === 'HIGH' ? 1 : 0;
-        if (pa !== pb) return pb - pa;
-        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-        return tb - ta;
-      });
+      // Page-level sort: completed sinks to the bottom; within each bucket,
+      // HIGH priority floats up; ties break on newest-first.
+      pageRows.sort(taskListCompare);
       total = skip + pageRows.length + (hasMore ? 1 : 0);
     } else {
       let rows = await listAllRows(TASK_TABLE);
@@ -613,15 +648,20 @@ export async function getTasks(
       if (taskType) rows = rows.filter((r) => r.taskType === taskType);
       if (assignedToId) rows = rows.filter((r) => r.assignedToId === assignedToId);
       if (priority) rows = rows.filter((r) => r.priorities === priority);
+      if (startDate) {
+        const start = new Date(startDate).getTime();
+        rows = rows.filter(
+          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
+        );
+      }
+      if (endDate) {
+        const end = new Date(endDate).getTime();
+        rows = rows.filter(
+          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
+        );
+      }
 
-      rows.sort((a, b) => {
-        const pa = a.priorities === 'HIGH' ? 1 : 0;
-        const pb = b.priorities === 'HIGH' ? 1 : 0;
-        if (pa !== pb) return pb - pa;
-        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-        return tb - ta;
-      });
+      rows.sort(taskListCompare);
 
       total = rows.length;
       pageRows = rows.slice(skip, skip + limit);
@@ -653,7 +693,7 @@ export async function getMyTasks(
     const { page, limit, skip } = parsePagination(
       req.query as { page?: string; limit?: string }
     );
-    const { status } = req.query as Record<string, string>;
+    const { status, startDate, endDate } = req.query as Record<string, string>;
 
     let pageRows: CatalystRow[];
     let total: number;
@@ -662,26 +702,33 @@ export async function getMyTasks(
       const baseQuery = buildTaskZCQL({
         status,
         assignedToId: req.user.id,
+        startDate,
+        endDate,
         orderBy: 'due',
       });
       const safeLimit = zcqlSafeLimit(limit);
       const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
       const hasMore = fetched.length > safeLimit;
       pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
-      // Re-sort: HIGH priority first, then due date asc.
-      pageRows.sort((a, b) => {
-        const pa = a.priorities === 'HIGH' ? 1 : 0;
-        const pb = b.priorities === 'HIGH' ? 1 : 0;
-        if (pa !== pb) return pb - pa;
-        const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-        const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-        return da - db;
-      });
+      // Re-sort: completed sinks; otherwise HIGH priority first, then newest.
+      pageRows.sort(taskListCompare);
       total = skip + pageRows.length + (hasMore ? 1 : 0);
     } else {
       let rows = await listAllRows(TASK_TABLE);
       rows = rows.filter((r) => r.assignedToId === req.user!.id);
       if (status) rows = rows.filter((r) => r.status === status);
+      if (startDate) {
+        const start = new Date(startDate).getTime();
+        rows = rows.filter(
+          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
+        );
+      }
+      if (endDate) {
+        const end = new Date(endDate).getTime();
+        rows = rows.filter(
+          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
+        );
+      }
 
       rows.sort((a, b) => {
         const pa = a.priorities === 'HIGH' ? 1 : 0;

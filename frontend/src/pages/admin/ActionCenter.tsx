@@ -111,7 +111,7 @@ export default function AdminActionCenter() {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState("NORMAL");
+  const [priority, setPriority] = useState("");
   const [assigning, setAssigning] = useState(false);
 
   const fetchData = async () => {
@@ -249,6 +249,18 @@ export default function AdminActionCenter() {
     }
   };
 
+  const handleRejectGrievance = async (id: string) => {
+    const reason = prompt('Reason for rejection (optional — staff will see this in their notification):');
+    if (reason === null) return; // user cancelled
+    try {
+      await grievanceApi.updateStatus(id, 'REJECTED', reason.trim() || undefined);
+      fetchData();
+    } catch (error) {
+      console.error('Failed to reject grievance:', error);
+      alert('Failed to reject grievance. Please try again.');
+    }
+  };
+
   const handleTourDecision = async (id: string, decision: 'ACCEPTED' | 'REGRET') => {
     const note = decision === 'REGRET' ? prompt('Enter regret note:') : undefined;
     try {
@@ -262,6 +274,14 @@ export default function AdminActionCenter() {
   const handleAssignTask = async () => {
     if (assignToIds.length === 0 || !taskTitle) {
       alert('Please select at least one staff member and enter task title');
+      return;
+    }
+    if (!priority) {
+      alert('Please select a priority');
+      return;
+    }
+    if (!dueDate?.trim()) {
+      alert('Please select a due date');
       return;
     }
 
@@ -310,7 +330,7 @@ export default function AdminActionCenter() {
         title: taskTitle.trim(),
         description: taskDescription?.trim() || undefined,
         taskType,
-        priority: priority || 'NORMAL',
+        priority: priority,
         referenceId: selectedItem.id,
         referenceType,
         assignedToIds: assignToIds,
@@ -397,7 +417,7 @@ export default function AdminActionCenter() {
     setTaskTitle("");
     setTaskDescription("");
     setDueDate("");
-    setPriority("NORMAL");
+    setPriority("");
   };
 
   const formatDate = (dateStr: string | undefined) => {
@@ -520,10 +540,37 @@ export default function AdminActionCenter() {
                     <p className="text-sm text-muted-foreground text-center py-4">No pending grievances</p>
                   ) : (
                     pendingGrievances.slice(0, 5).map((g) => (
-                      <div key={g.id} className="p-3 rounded-lg bg-gray-50 hover:bg-indigo-50 transition">
+                      <div
+                        key={g.id}
+                        className={`p-3 rounded-lg transition ${
+                          g.source === 'OFFICE'
+                            ? 'bg-indigo-50 border-l-4 border-indigo-600 hover:bg-indigo-100'
+                            : 'bg-gray-50 hover:bg-indigo-50'
+                        }`}
+                      >
                         <div className="flex justify-between items-start gap-2 mb-2">
                           <div className="min-w-0 flex-1">
-                            <p className="font-medium text-sm truncate">{g.petitionerName}</p>
+                            <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                              <p className="font-medium text-sm truncate">{g.petitionerName}</p>
+                              {g.source === 'OFFICE' && (
+                                <Badge className="text-[10px] px-1.5 py-0 h-4 bg-indigo-600 hover:bg-indigo-600 text-white">
+                                  OFFICE
+                                </Badge>
+                              )}
+                              {g.priority && g.priority !== 'MEDIUM' && (
+                                <Badge
+                                  className={`text-[10px] px-1.5 py-0 h-4 text-white ${
+                                    g.priority === 'CRITICAL'
+                                      ? 'bg-red-600 hover:bg-red-600'
+                                      : g.priority === 'HIGH'
+                                        ? 'bg-orange-500 hover:bg-orange-500'
+                                        : 'bg-slate-400 hover:bg-slate-400'
+                                  }`}
+                                >
+                                  {g.priority === 'CRITICAL' ? '🚨 ' : ''}{g.priority}
+                                </Badge>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground truncate">{g.grievanceType}</p>
                           </div>
                           <Badge variant="outline" className="text-xs flex-shrink-0">{formatDate(g.createdAt)}</Badge>
@@ -537,6 +584,10 @@ export default function AdminActionCenter() {
                           <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-green-600" onClick={() => handleOpenAssign(g, 'grievance')}>
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Verify &amp; Assign
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-red-600" onClick={() => handleRejectGrievance(g.id)}>
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Reject
                           </Button>
                         </div>
                       </div>
@@ -700,20 +751,22 @@ export default function AdminActionCenter() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="dueDate">Due Date (Optional)</Label>
-                    <Input 
-                      id="dueDate" 
+                    <Label htmlFor="dueDate">Due Date <span className="text-red-500">*</span></Label>
+                    <Input
+                      id="dueDate"
                       type="date"
-                      value={dueDate} 
-                      onChange={(e) => setDueDate(e.target.value)} 
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                      min={new Date().toISOString().split("T")[0]}
+                      required
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
-                    <Label htmlFor="priority">Priority</Label>
+                    <Label htmlFor="priority">Priority <span className="text-red-500">*</span></Label>
                     <Select value={priority} onValueChange={setPriority}>
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Select priority" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="LOW">Low</SelectItem>
@@ -724,12 +777,12 @@ export default function AdminActionCenter() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleAssignTask} disabled={assigning}>
+                <Button onClick={handleAssignTask} disabled={assigning || !priority || !dueDate || assignToIds.length === 0 || !taskTitle}>
                   {assigning ? (
                     <>
                       <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -834,7 +887,7 @@ export default function AdminActionCenter() {
                     <div className="bg-white border-2 border-indigo-100 rounded-xl p-5">
                       <h4 className="font-semibold text-indigo-900 mb-4">Quick Actions</h4>
                       <div className="flex flex-wrap gap-3">
-                        <Button 
+                        <Button
                           className="bg-green-600 hover:bg-green-700"
                           onClick={() => {
                             setDetailsOpen(false);
@@ -843,6 +896,17 @@ export default function AdminActionCenter() {
                         >
                           <CheckCircle className="h-4 w-4 mr-2" />
                           Verify and Assign to Staff
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={async () => {
+                            await handleRejectGrievance(selectedItem.id);
+                            setDetailsOpen(false);
+                          }}
+                        >
+                          <XCircle className="h-4 w-4 mr-2" />
+                          Reject
                         </Button>
                       </div>
                     </div>
@@ -1212,10 +1276,10 @@ export default function AdminActionCenter() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-sm font-medium">Priority</Label>
+                      <Label className="text-sm font-medium">Priority <span className="text-red-500">*</span></Label>
                       <Select value={priority} onValueChange={setPriority}>
                         <SelectTrigger className="mt-1.5 h-10">
-                          <SelectValue />
+                          <SelectValue placeholder="Select priority" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="LOW">
@@ -1247,13 +1311,14 @@ export default function AdminActionCenter() {
                     </div>
 
                     <div>
-                      <Label className="text-sm font-medium">Due Date</Label>
+                      <Label className="text-sm font-medium">Due Date <span className="text-red-500">*</span></Label>
                       <Input
                         type="date"
                         value={dueDate}
                         onChange={(e) => setDueDate(e.target.value)}
                         className="mt-1.5 h-10"
                         min={new Date().toISOString().split('T')[0]}
+                        required
                       />
                     </div>
                   </div>
@@ -1268,7 +1333,7 @@ export default function AdminActionCenter() {
               </Button>
               <Button
                 onClick={handleAssignTask}
-                disabled={assigning || assignToIds.length === 0 || !taskTitle}
+                disabled={assigning || assignToIds.length === 0 || !taskTitle || !priority || !dueDate}
                 className="flex-1 h-10 bg-indigo-600 hover:bg-indigo-700"
               >
                 {assigning ? (

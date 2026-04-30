@@ -28,8 +28,18 @@ function getBucket(req: Request) {
 }
 
 /**
- * Upload a buffer to Stratus.
- * Throws on failure. Returns void; callers persist the key/metadata themselves.
+ * Upload a buffer to Stratus via the SDK's putObject.
+ *
+ * For admin scope (our backend), the SDK internally:
+ *   1. POSTs /bucket/signature to fetch an stsSignature set of qs params
+ *      (requires ZohoCatalyst.buckets.objects.CREATE on the refresh token).
+ *   2. PUTs to <bucket_url>/_signed/<key>?<signature qs> — no Authorization
+ *      header on the actual PUT, the signature in the URL authenticates it.
+ *
+ * Earlier failures of this call were caused by step 1 returning a Tomcat
+ * HTML 400 because the refresh token lacked the buckets.objects.CREATE
+ * scope. With the scope now attached, step 1 succeeds and the signed PUT
+ * goes through.
  */
 export async function uploadObject(
   req: Request,
@@ -38,9 +48,7 @@ export async function uploadObject(
   contentType: string
 ): Promise<void> {
   const bucket = getBucket(req);
-  // The SDK accepts a wider options object than its TS overload exposes.
-  // Cast to `any` so we can pass overwrite + contentType together.
-  await (bucket.putObject as any)(key, body, { contentType, overwrite: true });
+  await (bucket.putObject as any)(key, body, { contentType });
 }
 
 /**

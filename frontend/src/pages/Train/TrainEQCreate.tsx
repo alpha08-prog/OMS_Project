@@ -12,9 +12,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { trainRequestApi } from "@/lib/api";
+import { trainRequestApi, pdfApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { Plus, X, AlertTriangle, Users } from "lucide-react";
+import { Plus, X, AlertTriangle, Users, Download, Eye } from "lucide-react";
 
 // Passenger limit constants
 const MAX_PASSENGERS_GENERAL = 6;
@@ -27,6 +27,10 @@ export default function TrainEQCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Backend auto-approves on create, so we hold the new id and surface the
+  // print + preview buttons inline instead of bouncing the user back home.
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [pnrLoading, setPnrLoading] = useState(false);
   
   // Booking type for passenger limit
@@ -287,7 +291,7 @@ export default function TrainEQCreate() {
       // Join passenger names with comma for backend storage
       const passengerNameStr = validPassengers.join(', ');
       
-      await trainRequestApi.create({
+      const created = await trainRequestApi.create({
         passengerName: passengerNameStr,
         pnrNumber: formData.pnrNumber,
         contactNumber: formData.ContactNumber,
@@ -301,10 +305,10 @@ export default function TrainEQCreate() {
         referencedBy: formData.referencedBy || undefined,
       });
 
+      setCreatedId(created?.id ?? null);
       setSuccess(true);
-      setTimeout(() => {
-        navigate("/staff/home");
-      }, 2000);
+      // No auto-redirect — the staff member needs to print the letter from
+      // this same screen now that admin no longer mediates the flow.
     } catch (err: unknown) {
       const e = err as { message?: string; errors?: Array<{ field: string; message: string }> };
       const errorMessage =
@@ -335,10 +339,53 @@ export default function TrainEQCreate() {
               </p>
             </div>
 
-            {/* Success Message */}
-            {success && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-                ✅ Train EQ request created successfully! Redirecting...
+            {/* Success state — auto-approved, ready to print */}
+            {success && createdId && (
+              <div className="bg-green-50 border border-green-200 text-green-900 rounded-lg p-4 space-y-3">
+                <div className="font-semibold">
+                  ✅ Train EQ request created and approved.
+                </div>
+                <p className="text-sm">
+                  Print the letter now or preview it before printing. Admin will see this entry in the read-only list.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    className="bg-indigo-600 hover:bg-indigo-700"
+                    disabled={pdfLoading}
+                    onClick={async () => {
+                      setPdfLoading(true);
+                      try {
+                        await pdfApi.downloadTrainEQLetter(createdId);
+                      } catch (err) {
+                        const m = err instanceof Error ? err.message : "Failed to download PDF";
+                        setError(m);
+                      } finally {
+                        setPdfLoading(false);
+                      }
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    {pdfLoading ? "Preparing…" : "Print / Download Letter"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      window.open(`/api/pdf/train-eq/${createdId}/preview`, "_blank");
+                    }}
+                  >
+                    <Eye className="h-4 w-4 mr-1" />
+                    Preview
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => navigate("/staff/home")}
+                  >
+                    Done
+                  </Button>
+                </div>
               </div>
             )}
 

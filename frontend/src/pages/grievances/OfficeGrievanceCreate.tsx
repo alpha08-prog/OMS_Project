@@ -13,18 +13,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Upload } from "lucide-react";
-import { grievanceApi, uploadsApi, type GrievanceType, type ActionRequired } from "@/lib/api";
+import { grievanceApi, type GrievanceType, type ActionRequired } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { useFormDraft } from "@/hooks/useFormDraft";
 
 export default function OfficeGrievanceCreate() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  // File-upload UI is gated as "Coming soon" — see Supporting Documents
+  // section. Restore [file, setFile] tuple here to re-enable.
 
   // Form state
-  const [formData, setFormData] = useState({
+  const [formData, setFormData, clearFormDraft] = useFormDraft("office-grievance:create", {
     petitionerName: "",
     mobileNumber: "",
     constituency: "",
@@ -34,6 +36,7 @@ export default function OfficeGrievanceCreate() {
     actionRequired: "" as ActionRequired | "",
     letterTemplate: "",
     referencedBy: "",
+    priority: "MEDIUM" as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
   });
 
   const handleChange = (field: string, value: string) => {
@@ -89,19 +92,18 @@ export default function OfficeGrievanceCreate() {
         actionRequired: formData.actionRequired as ActionRequired || undefined,
         letterTemplate: formData.letterTemplate || undefined,
         referencedBy: formData.referencedBy || undefined,
+        priority: formData.priority,
+        // Marks this entry as filed by an office staffer rather than a public
+        // walk-in. Admin views show a separate badge + can filter on it.
+        source: 'OFFICE',
       });
 
-      if (file && created?.id) {
-        try {
-          await uploadsApi.upload(file, 'GRIEVANCE', created.id);
-        } catch (uploadErr) {
-          const m = uploadErr instanceof Error ? uploadErr.message : 'Unknown error';
-          setError(`Grievance saved, but file upload failed: ${m}`);
-          setLoading(false);
-          return;
-        }
-      }
+      // File upload is gated behind a "Coming soon" placeholder until
+      // Stratus is restored. Created without an attachment.
+      void created;
 
+      // Drop the draft from sessionStorage so the next visit starts fresh.
+      clearFormDraft();
       setSuccess(true);
       setTimeout(() => {
         navigate("/staff/home");
@@ -114,11 +116,6 @@ export default function OfficeGrievanceCreate() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
-    }
-  };
 
   return (
     <div className="flex min-h-screen bg-background relative">
@@ -235,8 +232,8 @@ export default function OfficeGrievanceCreate() {
 
                         <div>
                           <Label>Grievance Type <span className="text-red-500">*</span></Label>
-                          <Select 
-                            value={formData.grievanceType} 
+                          <Select
+                            value={formData.grievanceType}
                             onValueChange={(v) => handleChange("grievanceType", v)}
                           >
                             <SelectTrigger>
@@ -255,6 +252,27 @@ export default function OfficeGrievanceCreate() {
                               <SelectItem value="OTHER">Other</SelectItem>
                             </SelectContent>
                           </Select>
+                        </div>
+
+                        <div>
+                          <Label>Priority <span className="text-red-500">*</span></Label>
+                          <Select
+                            value={formData.priority}
+                            onValueChange={(v) => handleChange("priority", v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="LOW">Low</SelectItem>
+                              <SelectItem value="MEDIUM">Medium</SelectItem>
+                              <SelectItem value="HIGH">High</SelectItem>
+                              <SelectItem value="CRITICAL">🚨 Critical</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Sets how urgently this office grievance is shown to the admin.
+                          </p>
                         </div>
                       </div>
 
@@ -287,25 +305,17 @@ export default function OfficeGrievanceCreate() {
                       <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
                         Supporting Documents
                       </h3>
-                      <div>
-                        <input 
-                          id="file-upload" 
-                          type="file" 
-                          className="hidden" 
-                          onChange={handleFileUpload}
-                        />
-                        <label 
-                          htmlFor="file-upload" 
-                          className="cursor-pointer border border-dashed border-indigo-200 hover:border-indigo-400 bg-white hover:bg-indigo-50 transition-colors rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center"
-                        >
-                          <Upload className="h-6 w-6 text-indigo-500" />
-                          <p className="text-sm font-medium text-indigo-900">
-                            {file ? file.name : "Upload physical grievance copy"}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Scan or photo (PNG, JPG, PDF up to 10MB)
-                          </p>
-                        </label>
+                      <div
+                        className="border border-dashed border-slate-300 bg-slate-50/70 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center cursor-not-allowed select-none"
+                        aria-disabled="true"
+                      >
+                        <Upload className="h-6 w-6 text-slate-400" />
+                        <p className="text-sm font-medium text-slate-600">
+                          File uploads — Coming soon
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          You can submit without an attachment for now.
+                        </p>
                       </div>
                     </section>
 

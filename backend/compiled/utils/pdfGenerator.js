@@ -16,6 +16,51 @@ const COLORS = {
     black: '#000000',
     gray: '#666666',
 };
+// Build the PDF entirely in memory, then send. The previous implementation
+// piped doc directly to res, which sent `Content-Type: application/pdf`
+// headers immediately. If a downstream `doc.text(...)` call threw partway
+// through (e.g., PDFKit's default Helvetica throws WinAnsi-encoding errors
+// on Devanagari / smart-quote / em-dash chars), the client received a
+// truncated stream that no PDF reader could open.
+//
+// Buffering first lets us either send a complete PDF or a real 500 JSON
+// error -- never a corrupt file.
+function streamPdfToResponse(res, filename, label, build) {
+    const doc = new pdfkit_1.default({ margin: 50 });
+    const chunks = [];
+    let failed = false;
+    const fail = (error) => {
+        if (failed)
+            return;
+        failed = true;
+        console.error(`PDF generation error (${label}):`, error);
+        if (!res.headersSent) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to generate PDF',
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    };
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('error', fail);
+    doc.on('end', () => {
+        if (failed)
+            return;
+        const buf = Buffer.concat(chunks);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+        res.setHeader('Content-Length', String(buf.length));
+        res.send(buf);
+    });
+    try {
+        build(doc);
+        doc.end();
+    }
+    catch (error) {
+        fail(error);
+    }
+}
 // Helper to create letterhead
 function createLetterhead(doc) {
     const pageWidth = doc.page.width;
@@ -129,21 +174,9 @@ function createFooter(doc) {
 }
 // Generate Train EQ Letter with watermark and multiple passengers support
 function generateTrainEQLetter(data, res) {
-    try {
-        const doc = new pdfkit_1.default({ margin: 50 });
-        // Generate unique document ID if not provided
-        const documentId = data.documentId || `EQ${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        // Set response headers
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=TrainEQ_${data.pnrNumber}_${documentId.slice(0, 8)}.pdf`);
-        // Handle errors - must be set BEFORE piping
-        doc.on('error', (error) => {
-            console.error('PDF generation error (TrainEQ):', error);
-            // Once piped, we can't send JSON, so just log the error
-            // The response will be incomplete/corrupted, which the client will detect
-        });
-        // Pipe to response - this starts the stream and sends headers
-        doc.pipe(res);
+    const documentId = data.documentId || `EQ${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const filename = `TrainEQ_${data.pnrNumber}_${documentId.slice(0, 8)}.pdf`;
+    streamPdfToResponse(res, filename, 'TrainEQ', (doc) => {
         // Add watermark to every page using page event
         doc.on('pageAdded', () => {
             createWatermark(doc, documentId, data.refNumber);
@@ -233,33 +266,13 @@ Kindly extend your cooperation in this regard.`;
             .font('Helvetica')
             .fillColor('#888888')
             .text(`This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`, margin, doc.page.height - 40, { width: doc.page.width - margin * 2, align: 'center' });
-        // Finalize
-        doc.end();
-    }
-    catch (error) {
-        console.error('Error generating TrainEQ PDF:', error);
-        if (!res.headersSent) {
-            res.status(500).json({ success: false, message: 'Failed to generate PDF', error: error instanceof Error ? error.message : 'Unknown error' });
-        }
-    }
+    });
 }
 // Generate Grievance Letter
 function generateGrievanceLetter(data, res) {
-    try {
-        const doc = new pdfkit_1.default({ margin: 50 });
-        // Generate unique document ID for watermark
-        const documentId = `GRV${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        // Set response headers
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=Grievance_${data.refNumber}.pdf`);
-        // Handle errors - must be set BEFORE piping
-        doc.on('error', (error) => {
-            console.error('PDF generation error (Grievance):', error);
-            // Once piped, we can't send JSON, so just log the error
-            // The response will be incomplete/corrupted, which the client will detect
-        });
-        // Pipe to response - this starts the stream and sends headers
-        doc.pipe(res);
+    const documentId = `GRV${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const filename = `Grievance_${data.refNumber}.pdf`;
+    streamPdfToResponse(res, filename, 'Grievance', (doc) => {
         // Add watermark to every page using page event
         doc.on('pageAdded', () => {
             createWatermark(doc, documentId, data.refNumber);
@@ -335,34 +348,14 @@ I request you to look into this matter personally and take necessary action at t
             .font('Helvetica')
             .fillColor('#888888')
             .text(`This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`, margin, doc.page.height - 40, { width: doc.page.width - margin * 2, align: 'center' });
-        // Finalize
-        doc.end();
-    }
-    catch (error) {
-        console.error('Error generating Grievance PDF:', error);
-        if (!res.headersSent) {
-            res.status(500).json({ success: false, message: 'Failed to generate PDF', error: error instanceof Error ? error.message : 'Unknown error' });
-        }
-    }
+    });
 }
 // Generate Tour Program PDF
 function generateTourProgramPDF(events, dateRange, res) {
-    try {
-        const doc = new pdfkit_1.default({ margin: 50 });
-        // Generate unique document ID for watermark
-        const documentId = `TOUR${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        const refNumber = `TOUR-${Date.now().toString(36).toUpperCase()}`;
-        // Set response headers
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=TourProgram_${Date.now()}.pdf`);
-        // Handle errors - must be set BEFORE piping
-        doc.on('error', (error) => {
-            console.error('PDF generation error (TourProgram):', error);
-            // Once piped, we can't send JSON, so just log the error
-            // The response will be incomplete/corrupted, which the client will detect
-        });
-        // Pipe to response
-        doc.pipe(res);
+    const documentId = `TOUR${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const refNumber = `TOUR-${Date.now().toString(36).toUpperCase()}`;
+    const filename = `TourProgram_${Date.now()}.pdf`;
+    streamPdfToResponse(res, filename, 'TourProgram', (doc) => {
         // Add watermark to every page using page event
         doc.on('pageAdded', () => {
             createWatermark(doc, documentId, refNumber);
@@ -443,33 +436,13 @@ function generateTourProgramPDF(events, dateRange, res) {
             .font('Helvetica')
             .fillColor('#888888')
             .text(`This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`, margin, doc.page.height - 40, { width: doc.page.width - margin * 2, align: 'center' });
-        // Finalize
-        doc.end();
-    }
-    catch (error) {
-        console.error('Error generating TourProgram PDF:', error);
-        if (!res.headersSent) {
-            res.status(500).json({ success: false, message: 'Failed to generate PDF', error: error instanceof Error ? error.message : 'Unknown error' });
-        }
-    }
+    });
 }
 // Generate generic letter
 function generateGenericLetter(config, res) {
-    try {
-        const doc = new pdfkit_1.default({ margin: 50 });
-        // Generate unique document ID for watermark
-        const documentId = `LTR${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        // Set response headers
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=Letter_${config.refNumber}.pdf`);
-        // Handle errors - must be set BEFORE piping
-        doc.on('error', (error) => {
-            console.error('PDF generation error (GenericLetter):', error);
-            // Once piped, we can't send JSON, so just log the error
-            // The response will be incomplete/corrupted, which the client will detect
-        });
-        // Pipe to response
-        doc.pipe(res);
+    const documentId = `LTR${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const filename = `Letter_${config.refNumber}.pdf`;
+    streamPdfToResponse(res, filename, 'GenericLetter', (doc) => {
         // Add watermark to every page using page event
         doc.on('pageAdded', () => {
             createWatermark(doc, documentId, config.refNumber);
@@ -538,14 +511,6 @@ function generateGenericLetter(config, res) {
             .font('Helvetica')
             .fillColor('#888888')
             .text(`This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`, margin, doc.page.height - 40, { width: doc.page.width - margin * 2, align: 'center' });
-        // Finalize
-        doc.end();
-    }
-    catch (error) {
-        console.error('Error generating GenericLetter PDF:', error);
-        if (!res.headersSent) {
-            res.status(500).json({ success: false, message: 'Failed to generate PDF', error: error instanceof Error ? error.message : 'Unknown error' });
-        }
-    }
+    });
 }
 //# sourceMappingURL=pdfGenerator.js.map

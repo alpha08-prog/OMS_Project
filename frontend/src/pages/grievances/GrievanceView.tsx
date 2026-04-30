@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { AttachmentsList } from "@/components/common/AttachmentsList";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { grievanceApi, pdfApi, type Grievance, type GrievanceStatus } from "@/lib/api";
 import {
   Dialog,
@@ -33,6 +35,8 @@ export default function GrievanceView() {
   // Filters (search from URL for header search)
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") ?? "");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   const fetchGrievances = async () => {
     setLoading(true);
@@ -122,6 +126,20 @@ export default function GrievanceView() {
       if (filterStatus === "verified" && !g.isVerified) return false;
       if (filterStatus === "pending" && g.isVerified) return false;
       if (filterStatus !== "verified" && filterStatus !== "pending" && g.status !== filterStatus) return false;
+    }
+    // Date range filter against created-at. End date is inclusive of the
+    // whole day, so anything created before midnight UTC of (endDate + 1)
+    // matches.
+    if (startDate || endDate) {
+      const created = new Date(g.createdAt).getTime();
+      if (startDate) {
+        const from = new Date(startDate).getTime();
+        if (Number.isFinite(from) && created < from) return false;
+      }
+      if (endDate) {
+        const to = new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1;
+        if (Number.isFinite(to) && created > to) return false;
+      }
     }
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -221,11 +239,22 @@ export default function GrievanceView() {
                     <SelectItem value="REJECTED">Rejected</SelectItem>
                   </SelectContent>
                 </Select>
-                {(filterStatus !== "all" || searchQuery) && (
-                  <Button 
-                    variant="ghost" 
+                <DateRangeFilter
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                />
+                {(filterStatus !== "all" || searchQuery || startDate || endDate) && (
+                  <Button
+                    variant="ghost"
                     size="sm"
-                    onClick={() => { setFilterStatus("all"); setSearchQuery(""); }}
+                    onClick={() => {
+                      setFilterStatus("all");
+                      setSearchQuery("");
+                      setStartDate("");
+                      setEndDate("");
+                    }}
                   >
                     Clear Filters
                   </Button>
@@ -259,9 +288,14 @@ export default function GrievanceView() {
                         </div>
 
                         <div>
-                          <div className="font-medium flex items-center gap-2">
+                          <div className="font-medium flex flex-wrap items-center gap-2">
                             <span>{g.petitionerName}</span>
                             {getStatusBadge(g.status, g.isVerified)}
+                            {g.source === 'OFFICE' && (
+                              <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white">
+                                Office
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-sm text-muted-foreground">
                             {g.grievanceType} • {g.constituency} • {formatCurrency(g.monetaryValue)}
@@ -319,8 +353,13 @@ export default function GrievanceView() {
             
             {selectedGrievance && (
               <div className="space-y-4">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {getStatusBadge(selectedGrievance.status, selectedGrievance.isVerified)}
+                  {selectedGrievance.source === 'OFFICE' && (
+                    <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white">
+                      Office
+                    </Badge>
+                  )}
                   {selectedGrievance.isVerified && (
                     <span className="text-sm text-green-600">✓ Verified by {selectedGrievance.verifiedBy?.name || 'Admin'}</span>
                   )}
@@ -369,7 +408,15 @@ export default function GrievanceView() {
                     <p className="font-medium">{selectedGrievance.referencedBy}</p>
                   </div>
                 )}
-                
+
+                <div className="pt-2 border-t">
+                  <AttachmentsList
+                    contextType="GRIEVANCE"
+                    contextId={selectedGrievance.id}
+                    emptyMessage="No supporting files were uploaded with this grievance."
+                  />
+                </div>
+
                 <div className="flex justify-end gap-2 pt-4 border-t">
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Close

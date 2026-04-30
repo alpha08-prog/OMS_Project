@@ -14,3 +14,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Personal / non-shippable docs
+DEPLOYMENT_GUIDE.md
+INTERVIEW_PREP.md

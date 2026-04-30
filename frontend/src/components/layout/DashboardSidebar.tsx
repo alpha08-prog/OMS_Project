@@ -26,6 +26,7 @@ import {
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "../../lib/utils";
+import { NotificationBell } from "../common/NotificationBell";
 
 
 type MenuItem = {
@@ -188,11 +189,21 @@ export function DashboardSidebar() {
           </div>
 
           {!collapsed && (
-            <div>
-              <h2 className="text-lg font-bold">OMS</h2>
-              <p className="text-xs text-indigo-200">
-                Office Management
-              </p>
+            <div className="flex-1 flex items-center justify-between gap-2 min-w-0">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold">OMS</h2>
+                <p className="text-xs text-indigo-200 truncate">
+                  Office Management
+                </p>
+              </div>
+              <div className="bg-white rounded-full">
+                <NotificationBell />
+              </div>
+            </div>
+          )}
+          {collapsed && (
+            <div className="bg-white rounded-full">
+              <NotificationBell />
             </div>
           )}
         </div>

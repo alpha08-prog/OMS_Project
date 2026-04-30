@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Upload } from "lucide-react";
-import { newsApi, uploadsApi, type NewsPriority } from "@/lib/api";
+import { newsApi, type NewsPriority } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 export default function NewsIntelligenceCreate() {
@@ -22,7 +22,8 @@ export default function NewsIntelligenceCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  // File-upload UI is gated as "Coming soon" — see upload section.
+  // Restore [file, setFile] tuple here to re-enable.
 
   const [formData, setFormData] = useState({
     headline: "",
@@ -84,16 +85,9 @@ export default function NewsIntelligenceCreate() {
         imageUrl: formData.imageUrl || undefined,
       });
 
-      if (file && created?.id) {
-        try {
-          await uploadsApi.upload(file, 'NEWS', created.id);
-        } catch (uploadErr) {
-          const m = uploadErr instanceof Error ? uploadErr.message : 'Unknown error';
-          setError(`News saved, but image upload failed: ${m}`);
-          setLoading(false);
-          return;
-        }
-      }
+      // File upload is gated behind a "Coming soon" placeholder until
+      // Stratus is restored. Created without an attachment.
+      void created;
 
       setSuccess(true);
       setTimeout(() => {
@@ -104,12 +98,6 @@ export default function NewsIntelligenceCreate() {
       setError(errorMessage);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
     }
   };
 
@@ -323,25 +311,17 @@ export default function NewsIntelligenceCreate() {
                         </p>
                       </div>
 
-                      <div>
-                        <input 
-                          id="file-upload" 
-                          type="file" 
-                          className="hidden" 
-                          onChange={handleFileUpload}
-                        />
-                        <label 
-                          htmlFor="file-upload" 
-                          className="cursor-pointer border border-dashed border-indigo-200 hover:border-indigo-400 bg-white hover:bg-indigo-50 transition-colors rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center"
-                        >
-                          <Upload className="h-6 w-6 text-indigo-500" />
-                          <p className="text-sm font-medium text-indigo-900">
-                            {file ? file.name : "Click to upload a file"}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            PNG, JPG, PDF up to 10MB
-                          </p>
-                        </label>
+                      <div
+                        className="border border-dashed border-slate-300 bg-slate-50/70 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center cursor-not-allowed select-none"
+                        aria-disabled="true"
+                      >
+                        <Upload className="h-6 w-6 text-slate-400" />
+                        <p className="text-sm font-medium text-slate-600">
+                          File uploads — Coming soon
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          You can submit without an attachment for now.
+                        </p>
                       </div>
                     </section>
                   </div>

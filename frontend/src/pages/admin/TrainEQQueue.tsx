@@ -1,17 +1,11 @@
 import { useEffect, useState } from "react";
-import { Train, Printer, CheckCircle, XCircle, RefreshCw, Eye, Download, CircleCheck } from "lucide-react";
+import { Train, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { trainRequestApi, pdfApi, taskApi, type TrainRequest } from "@/lib/api";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { trainRequestApi, type TrainRequest } from "@/lib/api";
 import {
   Select,
   SelectContent,
@@ -19,37 +13,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 
-interface StaffMember {
-  id: string;
-  name: string;
-  email: string;
-}
-
+/**
+ * Read-only admin view of Train EQ entries.
+ *
+ * Train EQ is now self-service for staff: they create the entry and print
+ * the letter on their own. Admin observes here but no longer approves /
+ * assigns / generates the PDF themselves.
+ */
 export default function TrainEQQueue() {
   const [requests, setRequests] = useState<TrainRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewContent, setPreviewContent] = useState<string>("");
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
-  
-  // Task assignment states
-  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<TrainRequest | null>(null);
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const [assignToId, setAssignToId] = useState("");
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState("NORMAL");
-  const [assigning, setAssigning] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -57,6 +35,8 @@ export default function TrainEQQueue() {
     try {
       const params: Record<string, string> = { limit: "50" };
       if (statusFilter !== "ALL") params.status = statusFilter;
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
       const res = await trainRequestApi.getAll(params);
       setRequests(res.data);
     } catch (err: unknown) {
@@ -68,73 +48,8 @@ export default function TrainEQQueue() {
   };
 
   useEffect(() => {
-    fetchStaffMembers();
-  }, []);
-
-  useEffect(() => {
     fetchRequests();
-  }, [statusFilter]);
-
-  const fetchStaffMembers = async () => {
-    try {
-      const staffRes = await taskApi.getStaffMembers();
-      setStaffMembers(staffRes || []);
-    } catch (err) {
-      console.error('Failed to fetch staff members:', err);
-    }
-  };
-
-  const handleResolve = async (id: string) => {
-    if (!confirm("Mark this train EQ request as resolved (journey completed)?")) return;
-    setActionLoading(id);
-    try {
-      await trainRequestApi.resolve(id);
-      await fetchRequests();
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to mark resolved";
-      setError(errorMessage);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    setActionLoading(id);
-    try {
-      await trainRequestApi.reject(id);
-      // Remove from list after rejection
-      setRequests((prev) => prev.filter((r) => r.id !== id));
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to reject request";
-      setError(errorMessage);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handlePreview = async (id: string) => {
-    setPreviewLoading(true);
-    setSelectedRequestId(id);
-    try {
-      const html = await pdfApi.previewTrainEQLetter(id);
-      setPreviewContent(html as string);
-      setPreviewOpen(true);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to load preview";
-      setError(errorMessage);
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
-  const handleDownloadPDF = async (id: string) => {
-    try {
-      await pdfApi.downloadPDF(`/pdf/train-eq/${id}`, `TrainEQ_Letter_${id}.pdf`);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to download PDF";
-      setError(errorMessage);
-    }
-  };
+  }, [statusFilter, startDate, endDate]);
 
   const formatDate = (dateStr: string | undefined) => {
     if (!dateStr) return 'N/A';
@@ -142,143 +57,10 @@ export default function TrainEQQueue() {
       return new Date(dateStr).toLocaleDateString('en-IN', {
         day: 'numeric',
         month: 'short',
-        year: 'numeric'
+        year: 'numeric',
       });
     } catch {
       return dateStr;
-    }
-  };
-
-  const handleOpenAssign = (request: TrainRequest) => {
-    setSelectedRequest(request);
-    setTaskTitle(`Train EQ: ${request.passengerName} - PNR ${request.pnrNumber}`);
-    setTaskDescription(
-      `Passenger: ${request.passengerName}\n` +
-      `PNR: ${request.pnrNumber}\n` +
-      `Contact: ${request.contactNumber || "N/A"}\n` +
-      `Train: ${request.trainName || 'N/A'} (${request.trainNumber || 'N/A'})\n` +
-      `Journey Date: ${formatDate(request.dateOfJourney)}\n` +
-      `Route: ${request.fromStation} → ${request.toStation}\n` +
-      `Class: ${request.journeyClass}`
-    );
-    setAssignDialogOpen(true);
-  };
-
-  const resetAssignForm = () => {
-    setAssignToId("");
-    setTaskTitle("");
-    setTaskDescription("");
-    setDueDate("");
-    setPriority("NORMAL");
-    setSelectedRequest(null);
-  };
-
-  const handleAssignTask = async () => {
-    if (!assignToId || !taskTitle || !selectedRequest) {
-      alert('Please select a staff member and enter task title');
-      return;
-    }
-    
-    setAssigning(true);
-    try {
-      // Format dueDate - convert YYYY-MM-DD to ISO8601 format
-      let finalDueDate: string | undefined = undefined;
-      if (dueDate && dueDate.trim()) {
-        try {
-          const dateObj = new Date(dueDate + 'T00:00:00');
-          if (!isNaN(dateObj.getTime())) {
-            finalDueDate = dateObj.toISOString();
-          } else {
-            finalDueDate = dueDate.trim();
-          }
-        } catch (e) {
-          console.error('Date parsing error:', e);
-          finalDueDate = dueDate.trim();
-        }
-      }
-      
-      // Accept either UUID (legacy Prisma ids) or numeric Catalyst ROWID.
-      const idRegex = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9]+)$/i;
-      if (!idRegex.test(assignToId)) {
-        alert('Invalid staff member selected. Please select a valid staff member.');
-        setAssigning(false);
-        return;
-      }
-      
-      console.log('Creating task with:', {
-        title: taskTitle.trim(),
-        taskType: 'TRAIN_REQUEST',
-        assignedToId: assignToId,
-        dueDate: finalDueDate,
-        referenceId: selectedRequest.id,
-        referenceType: 'TRAIN_REQUEST',
-        priority,
-      });
-      
-      const result = await taskApi.create({
-        title: taskTitle.trim(),
-        description: taskDescription?.trim() || undefined,
-        taskType: 'TRAIN_REQUEST',
-        priority: priority || 'NORMAL',
-        referenceId: selectedRequest.id,
-        referenceType: 'TRAIN_REQUEST',
-        assignedToId: assignToId,
-        dueDate: finalDueDate,
-      });
-      // taskApi.create now returns TaskAssignment | TaskAssignment[] depending
-      // on whether single (this caller) or multi-assign was used. This caller
-      // sends a single assignedToId so the result is a single object, but
-      // normalise defensively.
-      const createdTask = Array.isArray(result) ? result[0] : result;
-
-      console.log('Task created successfully:', createdTask);
-
-      // Approve the train request after assigning to staff
-      await trainRequestApi.approve(selectedRequest.id);
-
-      // Show success message
-      const staffName = createdTask.assignedTo?.name || 'Staff member';
-      alert(`✅ Verified and assigned to staff!\n\nAssigned to: ${staffName}\nTask: ${createdTask.title}\nTrain request approved.`);
-      
-      // Close dialog and reset form
-      setAssignDialogOpen(false);
-      resetAssignForm();
-      
-      // Remove from list and refresh
-      setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
-      await fetchRequests();
-    } catch (error: unknown) {
-      console.error('Failed to assign task - Full error:', error);
-      
-      let errorMessage = 'Failed to assign task. Please check all fields and try again.';
-      const e = error as Record<string, unknown> | null;
-      const msg = e && typeof e === 'object' && typeof e.message === 'string' ? e.message : undefined;
-      if (msg) errorMessage = msg;
-      
-      const toValidationMessage = (issues: unknown): string | null => {
-        if (!Array.isArray(issues)) return null;
-        const lines = (issues as Array<Record<string, unknown>>).map((issue) => {
-          const field = typeof issue.field === 'string' ? issue.field : typeof issue.path === 'string' ? issue.path : 'field';
-          const m = typeof issue.message === 'string' ? issue.message : typeof issue.msg === 'string' ? issue.msg : 'Invalid value';
-          return `${field}: ${m}`;
-        });
-        return lines.length ? lines.join('\n') : null;
-      };
-
-      const directErrors = e && typeof e === 'object' ? e.errors : undefined;
-      const respErrors =
-        e && typeof e === 'object' && e.response && typeof e.response === 'object'
-          ? (e.response as Record<string, unknown>).data && typeof (e.response as Record<string, unknown>).data === 'object'
-            ? ((e.response as Record<string, unknown>).data as Record<string, unknown>).errors
-            : undefined
-          : undefined;
-
-      const validationErrors = toValidationMessage(directErrors) || toValidationMessage(respErrors);
-      if (validationErrors) errorMessage = `Validation Errors:\n${validationErrors}`;
-
-      alert(`Task Assignment Failed:\n\n${errorMessage}\n\nPlease check the console for more details.`);
-    } finally {
-      setAssigning(false);
     }
   };
 
@@ -295,22 +77,28 @@ export default function TrainEQQueue() {
                 Train EQ Requests
               </h1>
               <p className="text-sm text-muted-foreground">
-                Review and issue emergency quota letters
+                Read-only log of staff-generated emergency quota letters
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-end gap-2 shrink-0">
+              <DateRangeFilter
+                startDate={startDate}
+                endDate={endDate}
+                onStartDateChange={setStartDate}
+                onEndDateChange={setEndDate}
+              />
               <div className="w-[160px]">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All</SelectItem>
-                  <SelectItem value="APPROVED">Accepted</SelectItem>
-                  <SelectItem value="REJECTED">Regret</SelectItem>
-                  <SelectItem value="RESOLVED">Resolved</SelectItem>
-                </SelectContent>
-              </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All</SelectItem>
+                    <SelectItem value="APPROVED">Approved</SelectItem>
+                    <SelectItem value="REJECTED">Rejected</SelectItem>
+                    <SelectItem value="RESOLVED">Resolved</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <Button variant="outline" onClick={fetchRequests} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -328,7 +116,7 @@ export default function TrainEQQueue() {
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
               <CardTitle>
-                {statusFilter === "ALL" ? "All" : statusFilter === "APPROVED" ? "Accepted" : statusFilter === "REJECTED" ? "Regret" : "Resolved"} EQ Requests ({requests.length})
+                {statusFilter === "ALL" ? "All" : statusFilter} EQ Requests ({requests.length})
               </CardTitle>
             </CardHeader>
 
@@ -337,94 +125,37 @@ export default function TrainEQQueue() {
                 <p className="text-muted-foreground text-center py-8">Loading requests...</p>
               ) : requests.length === 0 ? (
                 <div className="text-center py-8">
-                  <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
                   <p className="text-muted-foreground">No train EQ requests in this filter.</p>
                 </div>
               ) : (
                 requests.map((r) => (
                   <div
                     key={r.id}
-                    className="flex items-center justify-between p-4 rounded-xl border bg-white"
+                    className="flex items-center gap-4 p-4 rounded-xl border bg-white"
                   >
-                    <div className="flex gap-4">
-                      <div className="p-2 bg-indigo-100 rounded-lg">
-                        <Train className="h-5 w-5 text-indigo-700" />
-                      </div>
-
-                      <div>
-                        <p className="font-medium">
-                          {r.passengerName}
-                          <Badge className="ml-2" variant="outline">
-                            {r.status}
-                          </Badge>
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          PNR: {r.pnrNumber} • {r.fromStation} → {r.toStation} • {new Date(r.dateOfJourney).toLocaleDateString()} • {r.journeyClass}
-                        </p>
-                        {r.contactNumber && (
-                          <p className="text-xs text-indigo-700 font-medium">Contact: {r.contactNumber}</p>
-                        )}
-                        {r.trainName && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            🚂 {r.trainNumber} - {r.trainName}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          Created by: {r.createdBy?.name || 'Unknown'} • {new Date(r.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
+                    <div className="p-2 bg-indigo-100 rounded-lg shrink-0">
+                      <Train className="h-5 w-5 text-indigo-700" />
                     </div>
 
-                    <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => handlePreview(r.id)}
-                        disabled={previewLoading && selectedRequestId === r.id}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        {previewLoading && selectedRequestId === r.id ? "..." : "Preview"}
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        className="bg-indigo-600 hover:bg-indigo-700"
-                        onClick={() => handleDownloadPDF(r.id)}
-                      >
-                        <Download className="h-4 w-4 mr-1" />
-                        Download PDF
-                      </Button>
-                      {r.status === "PENDING" && (
-                        <>
-                          <Button 
-                            size="sm" 
-                            className="bg-green-600 hover:bg-green-700"
-                            onClick={() => handleOpenAssign(r)}
-                          >
-                            <CheckCircle className="h-4 w-4 mr-1" />
-                            Verify and Assign to Staff
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="destructive"
-                            onClick={() => handleReject(r.id)}
-                            disabled={actionLoading === r.id}
-                          >
-                            <XCircle className="h-4 w-4 mr-1" />
-                            Reject
-                          </Button>
-                        </>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium flex flex-wrap items-center gap-2">
+                        <span>{r.passengerName}</span>
+                        <Badge variant="outline">{r.status}</Badge>
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        PNR: {r.pnrNumber} • {r.fromStation} → {r.toStation} • {formatDate(r.dateOfJourney)} • {r.journeyClass}
+                      </p>
+                      {r.contactNumber && (
+                        <p className="text-xs text-indigo-700 font-medium">Contact: {r.contactNumber}</p>
                       )}
-                      {r.status === "APPROVED" && (
-                        <Button
-                          size="sm"
-                          className="bg-violet-600 hover:bg-violet-700"
-                          onClick={() => handleResolve(r.id)}
-                          disabled={actionLoading === r.id}
-                        >
-                          <CircleCheck className="h-4 w-4 mr-1" />
-                          Mark resolved
-                        </Button>
+                      {r.trainName && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          🚂 {r.trainNumber} - {r.trainName}
+                        </p>
                       )}
+                      <p className="text-xs text-muted-foreground">
+                        Created by: {r.createdBy?.name || 'Unknown'} • {formatDate(r.createdAt)}
+                      </p>
                     </div>
                   </div>
                 ))
@@ -433,132 +164,6 @@ export default function TrainEQQueue() {
           </Card>
 
         </div>
-
-        {/* Letter Preview Dialog */}
-        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Printer className="h-5 w-5" />
-                Train EQ Letter Preview
-              </DialogTitle>
-            </DialogHeader>
-            <div 
-              className="border rounded-lg p-4 bg-white"
-              dangerouslySetInnerHTML={{ __html: previewContent }}
-            />
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setPreviewOpen(false)}>
-                Close
-              </Button>
-              {selectedRequestId && (
-                <Button 
-                  className="bg-indigo-600 hover:bg-indigo-700"
-                  onClick={() => handleDownloadPDF(selectedRequestId)}
-                >
-                  <Download className="h-4 w-4 mr-1" />
-                  Download PDF
-                </Button>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Assign Task Dialog */}
-        <Dialog open={assignDialogOpen} onOpenChange={(open) => {
-          setAssignDialogOpen(open);
-          if (!open) {
-            resetAssignForm();
-          }
-        }}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Verify and Assign to Staff</DialogTitle>
-              <DialogDescription>
-                Assign this Train EQ request to a staff member. The request will be approved and a task created.
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              <div>
-                <Label>Assign To <span className="text-red-500">*</span></Label>
-                <Select value={assignToId} onValueChange={setAssignToId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Select staff member" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {staffMembers.map((staff) => (
-                      <SelectItem key={staff.id} value={staff.id}>
-                        {staff.name} ({staff.email})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div>
-                <Label>Task Title <span className="text-red-500">*</span></Label>
-                <Input
-                  value={taskTitle}
-                  onChange={(e) => setTaskTitle(e.target.value)}
-                  className="mt-1"
-                  placeholder="Enter task title"
-                />
-              </div>
-              
-              <div>
-                <Label>Description</Label>
-                <Textarea
-                  value={taskDescription}
-                  onChange={(e) => setTaskDescription(e.target.value)}
-                  className="mt-1"
-                  placeholder="Enter task description and instructions"
-                  rows={4}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Priority</Label>
-                  <Select value={priority} onValueChange={setPriority}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="LOW">Low</SelectItem>
-                      <SelectItem value="NORMAL">Normal</SelectItem>
-                      <SelectItem value="HIGH">High</SelectItem>
-                      <SelectItem value="URGENT">Urgent</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label>Due Date</Label>
-                  <Input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-              
-              <div className="flex gap-2 pt-4 border-t">
-                <Button variant="outline" onClick={() => setAssignDialogOpen(false)} className="flex-1">
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleAssignTask}
-                  disabled={assigning || !assignToId || !taskTitle}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  {assigning ? "..." : "Verify and Assign to Staff"}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
       </main>
     </div>
   );
