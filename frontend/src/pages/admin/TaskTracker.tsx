@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import { taskApi, type TaskAssignment, type TaskStatus, type TaskTrackingData, type TaskType } from "@/lib/api";
 import {
   Dialog,
@@ -137,6 +138,9 @@ export default function AdminTaskTracker() {
     if (filterStaff !== "all" && task.assignedTo?.id !== filterStaff) return false;
     return true;
   });
+
+  // Client-side pagination — 10 rows per page on the admin task tracker.
+  const pager = usePagination(filteredTasks, 10);
 
   const getStatusOptions = (taskType: string) => {
     switch (taskType) {
@@ -516,7 +520,7 @@ export default function AdminTaskTracker() {
                     <p className="text-muted-foreground">No tasks found</p>
                   </div>
                 ) : (
-                  filteredTasks.map((task) => {
+                  pager.pageItems.map((task) => {
                     const isExpanded = expandedIds.has(task.id);
                     return (
                     <div
@@ -615,6 +619,14 @@ export default function AdminTaskTracker() {
                     );
                   })
                 )}
+                <Pagination
+                  page={pager.page}
+                  totalPages={pager.totalPages}
+                  total={pager.total}
+                  rangeStart={pager.rangeStart}
+                  rangeEnd={pager.rangeEnd}
+                  onChange={pager.setPage}
+                />
               </CardContent>
             </Card>
 

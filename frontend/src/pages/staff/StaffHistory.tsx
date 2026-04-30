@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import {
   History,
   FileCheck,
@@ -63,6 +64,9 @@ export default function StaffHistory() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+
+  // Client-side pagination — 10 rows per page; pager.setPage on Prev/Next.
+  const pager = usePagination(submissions, 10);
 
   // Status options keyed by type
   const STATUS_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -401,51 +405,61 @@ export default function StaffHistory() {
                   <p className="text-muted-foreground">No submissions found</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Title</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Date/Time</TableHead>
-                        <TableHead className="text-right">Details</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {submissions.map((item) => (
-                        <TableRow key={`${item.type}-${item.id}`} className="hover:bg-indigo-50/50">
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {getTypeIcon(item.type)}
-                              <span className="text-sm">{item.type.replace(/_/g, " ")}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-medium max-w-[200px] truncate">
-                            {item.title}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground max-w-[200px] truncate">
-                            {item.description}
-                          </TableCell>
-                          <TableCell>{getStatusBadge(item.status)}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {formatDate(item.createdAt)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setSelectedItem(item)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Date/Time</TableHead>
+                          <TableHead className="text-right">Details</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {pager.pageItems.map((item) => (
+                          <TableRow key={`${item.type}-${item.id}`} className="hover:bg-indigo-50/50">
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {getTypeIcon(item.type)}
+                                <span className="text-sm">{item.type.replace(/_/g, " ")}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium max-w-[200px] truncate">
+                              {item.title}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground max-w-[200px] truncate">
+                              {item.description}
+                            </TableCell>
+                            <TableCell>{getStatusBadge(item.status)}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatDate(item.createdAt)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setSelectedItem(item)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <Pagination
+                    page={pager.page}
+                    totalPages={pager.totalPages}
+                    total={pager.total}
+                    rangeStart={pager.rangeStart}
+                    rangeEnd={pager.rangeEnd}
+                    onChange={pager.setPage}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
