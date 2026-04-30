@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import { grievanceApi, pdfApi, type Grievance, type GrievanceStatus } from "@/lib/api";
 import {
   Dialog,
@@ -153,6 +154,9 @@ export default function GrievanceView() {
     return true;
   });
 
+  // Client-side pagination — 10 rows per page.
+  const pager = usePagination(filteredGrievances, 10);
+
   // Stats
   const totalCount = grievances.length;
   const verifiedCount = grievances.filter(g => g.isVerified).length;
@@ -277,7 +281,7 @@ export default function GrievanceView() {
                     <p className="text-muted-foreground">No grievances found</p>
                   </div>
                 ) : (
-                  filteredGrievances.map((g) => (
+                  pager.pageItems.map((g) => (
                     <div
                       key={g.id}
                       className="flex items-center justify-between p-4 rounded-xl border bg-white hover:shadow-md transition"
@@ -332,6 +336,14 @@ export default function GrievanceView() {
                     </div>
                   ))
                 )}
+                <Pagination
+                  page={pager.page}
+                  totalPages={pager.totalPages}
+                  total={pager.total}
+                  rangeStart={pager.rangeStart}
+                  rangeEnd={pager.rangeEnd}
+                  onChange={pager.setPage}
+                />
               </CardContent>
             </Card>
 

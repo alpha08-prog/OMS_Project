@@ -537,8 +537,8 @@ export default function GrievanceVerification() {
           }
           setAssignDialogOpen(open);
         }}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
+            <DialogHeader className="px-6 pt-6 pb-3 flex-shrink-0">
               <DialogTitle className="flex items-center gap-2">
                 <UserPlus className="h-5 w-5" />
                 Verify &amp; Assign Task
@@ -547,83 +547,87 @@ export default function GrievanceVerification() {
                 Submitting this form will verify the grievance and assign a follow-up task to a staff member
               </DialogDescription>
             </DialogHeader>
-            
+
             {verifiedGrievance && (
-              <div className="space-y-4">
-                <div className="p-3 bg-indigo-50 rounded-lg">
-                  <p className="text-sm font-medium text-indigo-900">Verified Grievance</p>
-                  <p className="text-sm text-indigo-700">
-                    {verifiedGrievance.petitionerName} • {verifiedGrievance.grievanceType} • {verifiedGrievance.constituency}
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <Label>Assign To Staff *</Label>
-                    <p className="text-xs text-muted-foreground mb-1">
-                      Select one or more staff members. Each gets their own task row with shared progress.
+              <>
+                {/* Scrollable middle — keeps the action buttons visible no matter how tall the staff list / description grow. */}
+                <div className="overflow-y-auto px-6 py-4 space-y-4 flex-1">
+                  <div className="p-3 bg-indigo-50 rounded-lg">
+                    <p className="text-sm font-medium text-indigo-900">Verified Grievance</p>
+                    <p className="text-sm text-indigo-700">
+                      {verifiedGrievance.petitionerName} • {verifiedGrievance.grievanceType} • {verifiedGrievance.constituency}
                     </p>
-                    <StaffMultiSelect
-                      staff={staffMembers}
-                      selectedIds={assignToIds}
-                      onChange={setAssignToIds}
-                    />
                   </div>
 
-                  <div>
-                    <Label htmlFor="taskTitle">Task Title *</Label>
-                    <Input
-                      id="taskTitle"
-                      value={taskTitle}
-                      onChange={(e) => setTaskTitle(e.target.value)}
-                      placeholder="Enter task title"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="taskDescription">Task Description</Label>
-                    <Textarea
-                      id="taskDescription"
-                      value={taskDescription}
-                      onChange={(e) => setTaskDescription(e.target.value)}
-                      placeholder="Enter task description"
-                      rows={4}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-4">
                     <div>
-                      <Label htmlFor="priority">Priority <span className="text-red-500">*</span></Label>
-                      <Select value={priority} onValueChange={setPriority}>
-                        <SelectTrigger id="priority">
-                          <SelectValue placeholder="Select priority" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="LOW">Low</SelectItem>
-                          <SelectItem value="NORMAL">Normal</SelectItem>
-                          <SelectItem value="HIGH">High</SelectItem>
-                          <SelectItem value="URGENT">Urgent</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="dueDate">Due Date <span className="text-red-500">*</span></Label>
-                      <Input
-                        id="dueDate"
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        min={new Date().toISOString().split("T")[0]}
-                        required
+                      <Label>Assign To Staff *</Label>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Select one or more staff members. Each gets their own task row with shared progress.
+                      </p>
+                      <StaffMultiSelect
+                        staff={staffMembers}
+                        selectedIds={assignToIds}
+                        onChange={setAssignToIds}
                       />
                     </div>
+
+                    <div>
+                      <Label htmlFor="taskTitle">Task Title *</Label>
+                      <Input
+                        id="taskTitle"
+                        value={taskTitle}
+                        onChange={(e) => setTaskTitle(e.target.value)}
+                        placeholder="Enter task title"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="taskDescription">Task Description</Label>
+                      <Textarea
+                        id="taskDescription"
+                        value={taskDescription}
+                        onChange={(e) => setTaskDescription(e.target.value)}
+                        placeholder="Enter task description"
+                        rows={4}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="priority">Priority <span className="text-red-500">*</span></Label>
+                        <Select value={priority} onValueChange={setPriority}>
+                          <SelectTrigger id="priority">
+                            <SelectValue placeholder="Select priority" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="LOW">Low</SelectItem>
+                            <SelectItem value="NORMAL">Normal</SelectItem>
+                            <SelectItem value="HIGH">High</SelectItem>
+                            <SelectItem value="URGENT">Urgent</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="dueDate">Due Date <span className="text-red-500">*</span></Label>
+                        <Input
+                          id="dueDate"
+                          type="date"
+                          value={dueDate}
+                          onChange={(e) => setDueDate(e.target.value)}
+                          min={new Date().toISOString().split("T")[0]}
+                          required
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-4 border-t">
-                  <Button 
-                    variant="outline" 
+                {/* Sticky footer — always visible at the bottom of the dialog */}
+                <div className="flex justify-end gap-2 px-6 py-4 border-t flex-shrink-0 bg-background">
+                  <Button
+                    variant="outline"
                     onClick={() => {
                       setAssignDialogOpen(false);
                       resetAssignForm();
@@ -649,7 +653,7 @@ export default function GrievanceVerification() {
                     )}
                   </Button>
                 </div>
-              </div>
+              </>
             )}
           </DialogContent>
         </Dialog>

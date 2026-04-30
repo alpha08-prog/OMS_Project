@@ -73,9 +73,27 @@ function currentMonthKey(d: Date = new Date()): string {
   return `${y}-${m}`;
 }
 
-/** ISO timestamp for 00:00 UTC on the first of next month. */
+/**
+ * ISO timestamp for 00:00 IST on the 1st of next month (in IST).
+ *
+ * The user-facing "Resets on …" label renders in en-IN (Asia/Kolkata).
+ * If we did the +1-month math in UTC, then between 00:00 IST and 05:30
+ * IST on the 1st of any month UTC is still on the prior day — so
+ * `getUTCMonth() + 1` would point at the *current* IST month and the
+ * label would read e.g. "Resets on 01 May" on May 1st itself. Compute
+ * the boundary in IST to keep the label aligned with the user's clock.
+ */
 function nextMonthFirstDayISO(d: Date = new Date()): string {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString();
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  // Shift "now" into IST so getUTC* methods give IST calendar fields.
+  const istNow = new Date(d.getTime() + IST_OFFSET_MS);
+  // First-of-next-month at 00:00 IST, expressed back in UTC.
+  const istFirstOfNextMonth = Date.UTC(
+    istNow.getUTCFullYear(),
+    istNow.getUTCMonth() + 1,
+    1
+  );
+  return new Date(istFirstOfNextMonth - IST_OFFSET_MS).toISOString();
 }
 
 /**
