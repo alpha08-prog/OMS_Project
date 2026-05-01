@@ -153,6 +153,17 @@ export type TrainRequest = {
   approvedBy?: { id: string; name: string; email: string }
 }
 
+export type TrainPassengerInput = {
+  name: string
+  gender?: 'MALE' | 'FEMALE' | 'OTHER'
+  age?: number
+  /**
+   * Current waitlist / booking status string (e.g. "WL/12", "RAC/3", "CNF").
+   * Stored on TrainPassenger.currentStatus and rendered in the letter's W/L column.
+   */
+  currentStatus?: string
+}
+
 export type CreateTrainRequestRequest = {
   passengerName: string
   pnrNumber: string
@@ -165,6 +176,8 @@ export type CreateTrainRequestRequest = {
   toStation: string
   route?: string
   referencedBy?: string
+  /** Structured passenger rows. Backend writes these to TrainPassenger. */
+  passengers?: TrainPassengerInput[]
 }
 
 // Tour Program Types
