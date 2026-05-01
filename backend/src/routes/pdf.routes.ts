@@ -4,6 +4,8 @@ import {
   generateTrainEQPDF,
   generateGrievancePDF,
   generateTourProgramPDFController,
+  generateTourProgramSinglePDF,
+  previewTourProgram,
   previewTrainEQ,
   previewGrievance,
 } from '../controllers-catalyst/pdf.controller';
@@ -26,5 +28,7 @@ router.get('/train-eq/:id/preview', staffOnly, validate(idParamValidation), prev
 router.get('/grievance/:id', staffOnly, validate(idParamValidation), generateGrievancePDF);
 router.get('/grievance/:id/preview', staffOnly, validate(idParamValidation), previewGrievance);
 router.get('/tour-program', adminOnly, generateTourProgramPDFController);
+router.get('/tour-program/:id', adminOnly, validate(idParamValidation), generateTourProgramSinglePDF);
+router.get('/tour-program/:id/preview', adminOnly, validate(idParamValidation), previewTourProgram);
 
 export default router;

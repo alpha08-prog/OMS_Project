@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import { StaffMultiSelect } from "@/components/StaffMultiSelect";
 import { grievanceApi, pdfApi, taskApi, type Grievance, type TaskAssignment } from "@/lib/api";
 import {
@@ -54,6 +55,9 @@ export default function GrievanceVerification() {
   const [priority, setPriority] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [_actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Client-side pagination — 10 rows per page, matching the admin task tracker.
+  const pager = usePagination(grievances, 10);
 
   const fetchGrievances = async () => {
     setLoading(true);
@@ -328,7 +332,7 @@ export default function GrievanceVerification() {
                   <p className="text-muted-foreground">All grievances have been verified!</p>
                 </div>
               ) : (
-                grievances.map((g) => (
+                pager.pageItems.map((g) => (
                   <div
                     key={g.id}
                     className="flex items-center justify-between p-4 rounded-xl border bg-white"
@@ -410,6 +414,15 @@ export default function GrievanceVerification() {
                   </div>
                 ))
               )}
+
+              <Pagination
+                page={pager.page}
+                totalPages={pager.totalPages}
+                total={pager.total}
+                rangeStart={pager.rangeStart}
+                rangeEnd={pager.rangeEnd}
+                onChange={pager.setPage}
+              />
             </CardContent>
           </Card>
 

@@ -518,3 +518,156 @@ export async function generateTourProgramPDFController(
     sendServerError(res, 'Failed to generate Tour Program PDF', error);
   }
 }
+
+/** GET /api/pdf/tour-program/:id */
+export async function generateTourProgramSinglePDF(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    const row = await getRow(TOUR_TABLE, id);
+    if (!row) {
+      sendNotFound(res, 'Tour program not found');
+      return;
+    }
+
+    if (String(row.decision) !== 'ACCEPTED') {
+      sendError(res, 'Only accepted tour programs can be printed', 400);
+      return;
+    }
+
+    const eventDate = row.dateTime
+      ? new Date(String(row.dateTime)).toLocaleDateString('en-IN')
+      : 'N/A';
+
+    generateTourProgramPDF(
+      [
+        {
+          eventName: String(row.eventName),
+          organizer: String(row.organizer),
+          eventDate: row.dateTime
+            ? new Date(String(row.dateTime)).toISOString()
+            : new Date().toISOString(),
+          venue: String(row.venue),
+          decision: String(row.decision),
+        },
+      ],
+      eventDate,
+      res
+    );
+  } catch (error) {
+    sendServerError(res, 'Failed to generate Tour Program PDF', error);
+  }
+}
+
+/** GET /api/pdf/tour-program/:id/preview */
+export async function previewTourProgram(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    const row = await getRow(TOUR_TABLE, id);
+    if (!row) {
+      sendNotFound(res, 'Tour program not found');
+      return;
+    }
+
+    const eventDateObj = row.dateTime ? new Date(String(row.dateTime)) : null;
+    const eventDate =
+      eventDateObj && !isNaN(eventDateObj.getTime())
+        ? eventDateObj.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+          })
+        : 'N/A';
+    const eventTime =
+      eventDateObj && !isNaN(eventDateObj.getTime())
+        ? eventDateObj.toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : 'N/A';
+
+    const refNumber = `TOUR/${new Date().getFullYear()}/${refSuffix(id)}`;
+    const generatedDate = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Georgia, serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+    .letterhead { text-align: center; border-bottom: 3px solid; border-image: linear-gradient(to right, #FF9933, white, #138808) 1; padding-bottom: 20px; margin-bottom: 30px; }
+    .letterhead h1 { color: #000080; margin: 5px 0; font-size: 16px; }
+    .letterhead h2 { color: #000; margin: 10px 0; font-size: 20px; }
+    .letterhead p { color: #666; margin: 5px 0; }
+    .meta { display: flex; justify-content: space-between; margin-bottom: 20px; }
+    .title { text-align: center; color: #000080; font-size: 18px; font-weight: bold; margin-bottom: 8px; letter-spacing: 1px; }
+    .subtitle { text-align: center; color: #333; margin-bottom: 30px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th { background: #000080; color: white; padding: 10px; text-align: left; font-size: 12px; }
+    td { padding: 10px; border: 1px solid #ccc; font-size: 12px; vertical-align: top; }
+    tr:nth-child(even) td { background: #f8f9fa; }
+    .footer { margin-top: 50px; text-align: center; border-top: 3px solid; border-image: linear-gradient(to right, #FF9933, white, #138808) 1; padding-top: 10px; color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="letterhead">
+    <p style="font-size: 20px;">॥ सत्यमेव जयते ॥</p>
+    <h1>GOVERNMENT OF INDIA</h1>
+    <h1>MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION</h1>
+    <h2>SHRI PRAHLAD JOSHI</h2>
+    <p>Hon'ble Union Minister</p>
+  </div>
+
+  <div class="meta">
+    <span>Ref No: ${refNumber}</span>
+    <span>Generated: ${generatedDate}</span>
+  </div>
+
+  <div class="title">TOUR PROGRAM</div>
+  <div class="subtitle">${eventDate}</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40px;">S.No</th>
+        <th>Event</th>
+        <th>Venue</th>
+        <th style="width:80px;">Time</th>
+        <th style="width:90px;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><strong>${String(row.eventName)}</strong><br><span style="color:#555;">(${String(row.organizer)})</span></td>
+        <td>${String(row.venue)}</td>
+        <td>${eventTime}</td>
+        <td>${String(row.decision)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    Office of Hon'ble Minister | Krishi Bhawan, New Delhi - 110001 | Tel: 011-23383615
+  </div>
+</body>
+</html>
+    `;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (error) {
+    sendServerError(res, 'Failed to preview tour program', error);
+  }
+}

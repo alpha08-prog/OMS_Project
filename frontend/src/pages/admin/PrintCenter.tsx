@@ -14,16 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
-import { grievanceApi, trainRequestApi, pdfApi, http, type Grievance, type TrainRequest } from "@/lib/api";
+import { grievanceApi, trainRequestApi, tourProgramApi, pdfApi, http, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 type PrintableItem = {
   id: string;
@@ -32,7 +29,7 @@ type PrintableItem = {
   subtitle: string;
   date: string;
   status: string;
-  data: Grievance | TrainRequest;
+  data: Grievance | TrainRequest | TourProgram;
 };
 
 export default function PrintCenter() {
@@ -42,8 +39,6 @@ export default function PrintCenter() {
   const [filter, setFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
-  const [tourDateRange, setTourDateRange] = useState({ start: '', end: '' });
-  const [tourDialogOpen, setTourDialogOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -106,6 +101,28 @@ export default function PrintCenter() {
         });
       });
 
+      // Fetch accepted tour programs (admin-only feature, mirrors the
+      // adminOnly /pdf/tour-program/:id route on the backend)
+      if (!isStaff) {
+        const tourParams: Record<string, string> = { decision: 'ACCEPTED', limit: '50' };
+        if (startDate) tourParams.startDate = startDate;
+        if (endDate) tourParams.endDate = endDate;
+        const tourRes = await tourProgramApi.getAll(tourParams);
+        console.log('PrintCenter - Tour programs response:', tourRes);
+        const tours = Array.isArray(tourRes?.data) ? tourRes.data : [];
+        tours.forEach((t: TourProgram) => {
+          items.push({
+            id: t.id,
+            type: 'tour',
+            title: `Tour Program - ${t.eventName}`,
+            subtitle: `${t.organizer} • ${t.venue}`,
+            date: t.dateTime || t.createdAt,
+            status: 'Accepted',
+            data: t,
+          });
+        });
+      }
+
       console.log('PrintCenter - Printable items:', items);
       setPrintableItems(items);
     } catch (err: unknown) {
@@ -141,14 +158,25 @@ export default function PrintCenter() {
     return date.toLocaleDateString();
   };
 
+  const endpointFor = (item: PrintableItem): string | null => {
+    if (item.type === 'grievance') return `/pdf/grievance/${item.id}`;
+    if (item.type === 'train') return `/pdf/train-eq/${item.id}`;
+    if (item.type === 'tour') return `/pdf/tour-program/${item.id}`;
+    return null;
+  };
+
+  const filenameFor = (item: PrintableItem): string => {
+    if (item.type === 'grievance') return `Grievance_Letter_${item.id}.pdf`;
+    if (item.type === 'train') return `TrainEQ_Letter_${item.id}.pdf`;
+    return `TourProgram_${item.id}.pdf`;
+  };
+
   const handleDownloadPDF = async (item: PrintableItem) => {
     try {
       console.log('Downloading PDF for item:', item);
-      if (item.type === 'grievance') {
-        await pdfApi.downloadPDF(`/pdf/grievance/${item.id}`, `Grievance_Letter_${item.id}.pdf`);
-      } else if (item.type === 'train') {
-        await pdfApi.downloadPDF(`/pdf/train-eq/${item.id}`, `TrainEQ_Letter_${item.id}.pdf`);
-      }
+      const endpoint = endpointFor(item);
+      if (!endpoint) return;
+      await pdfApi.downloadPDF(endpoint, filenameFor(item));
     } catch (error: unknown) {
       console.error('Failed to download PDF:', error);
       const e = error as Record<string, unknown> | null;
@@ -166,6 +194,8 @@ export default function PrintCenter() {
         html = await pdfApi.previewTrainEQLetter(item.id) as string;
       } else if (item.type === 'grievance') {
         html = await pdfApi.previewGrievanceLetter(item.id) as string;
+      } else if (item.type === 'tour') {
+        html = await pdfApi.previewTourProgram(item.id);
       } else {
         setPreviewLoading(false);
         return;
@@ -186,16 +216,9 @@ export default function PrintCenter() {
   const handlePrint = async (item: PrintableItem) => {
     try {
       console.log('Printing item:', item);
-      // Fetch PDF and open in new tab for printing
-      let endpoint = '';
-      if (item.type === 'grievance') {
-        endpoint = `/pdf/grievance/${item.id}`;
-      } else if (item.type === 'train') {
-        endpoint = `/pdf/train-eq/${item.id}`;
-      } else {
-        return;
-      }
-      
+      const endpoint = endpointFor(item);
+      if (!endpoint) return;
+
       const res = await http.get(endpoint, { responseType: 'blob' });
       const blob = new Blob([res.data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
@@ -211,11 +234,6 @@ export default function PrintCenter() {
       const msg = (e && typeof e === 'object' && typeof e.message === 'string' && e.message) ? e.message : 'Unknown error';
       alert(`Failed to open PDF for printing: ${msg}`);
     }
-  };
-
-  const handleDownloadTourProgram = () => {
-    pdfApi.downloadTourProgram(tourDateRange.start, tourDateRange.end);
-    setTourDialogOpen(false);
   };
 
   const getItemIcon = (type: string) => {
@@ -300,12 +318,12 @@ export default function PrintCenter() {
                   </Button>
                   {!isStaff && (
                     <Button
-                      variant="outline"
-                      onClick={() => setTourDialogOpen(true)}
+                      variant={filter === "tour" ? "default" : "outline"}
+                      onClick={() => setFilter("tour")}
                       className="h-10 w-full justify-center"
                     >
                       <Calendar className="h-4 w-4 mr-2" />
-                      Tour Program PDF
+                      Tour Program ({printableItems.filter(i => i.type === 'tour').length})
                     </Button>
                   )}
                 </div>
@@ -375,7 +393,7 @@ export default function PrintCenter() {
                           {item.type === 'grievance' ? 'Grievance' : item.type === 'train' ? 'Train EQ' : 'Tour'}
                         </Badge>
 
-                        {(item.type === 'train' || item.type === 'grievance') && (
+                        {(item.type === 'train' || item.type === 'grievance' || item.type === 'tour') && (
                           <Button 
                             size="icon" 
                             variant="ghost" 
@@ -423,60 +441,6 @@ export default function PrintCenter() {
             </Card>
           </div>
         </div>
-
-        {/* Tour Program Date Range Dialog */}
-        <Dialog open={tourDialogOpen} onOpenChange={setTourDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                Generate Tour Program PDF
-              </DialogTitle>
-              <DialogDescription>
-                Select a date range to generate the tour program document
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="startDate">Start Date</Label>
-                  <Input
-                    id="startDate"
-                    type="date"
-                    value={tourDateRange.start}
-                    onChange={(e) => setTourDateRange(prev => ({ ...prev, start: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="endDate">End Date</Label>
-                  <Input
-                    id="endDate"
-                    type="date"
-                    value={tourDateRange.end}
-                    onChange={(e) => setTourDateRange(prev => ({ ...prev, end: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Leave empty to generate for the next 7 days
-              </p>
-            </div>
-            
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setTourDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button 
-                className="bg-indigo-600 hover:bg-indigo-700"
-                onClick={handleDownloadTourProgram}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download PDF
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {/* Letter Preview Dialog */}
         <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
