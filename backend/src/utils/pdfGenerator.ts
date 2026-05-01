@@ -1,5 +1,7 @@
 import PDFDocument from 'pdfkit';
 import { Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 
 // Government letterhead colors
 const COLORS = {
@@ -9,6 +11,32 @@ const COLORS = {
   black: '#000000',
   gray: '#666666',
 };
+
+// Resolve and cache the national emblem PNG once. Source lives in src/assets;
+// when running from compiled/ we fall back to ../../src/assets so the same
+// binary works in both `ts-node-dev` (src/) and `node compiled/app.js` setups.
+let cachedEmblem: Buffer | null | undefined;
+function getEmblemBuffer(): Buffer | null {
+  if (cachedEmblem !== undefined) return cachedEmblem;
+  const candidates = [
+    path.resolve(__dirname, '../assets/Embelem.png'),
+    path.resolve(__dirname, '../../src/assets/Embelem.png'),
+    path.resolve(process.cwd(), 'src/assets/Embelem.png'),
+    path.resolve(process.cwd(), 'backend/src/assets/Embelem.png'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        cachedEmblem = fs.readFileSync(p);
+        return cachedEmblem;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  cachedEmblem = null;
+  return null;
+}
 
 interface LetterConfig {
   refNumber: string;
@@ -21,6 +49,15 @@ interface LetterConfig {
   senderName: string;
   senderDesignation: string;
   senderOffice: string;
+}
+
+// Per-passenger row used in the railway EQ letter. Sex/Age and W/L columns
+// pull from this when present; missing fields render as blanks.
+export interface TrainEQPassenger {
+  name: string;
+  gender?: string;
+  age?: number | string;
+  waitlist?: string;
 }
 
 interface TrainEQLetter {
@@ -38,6 +75,11 @@ interface TrainEQLetter {
   senderDesignation: string;
   // Additional passenger names for multiple passengers
   additionalPassengers?: string[];
+  // Structured passenger rows (preferred over name strings when supplied —
+  // populates Sex/Age and W/L columns).
+  passengerDetails?: TrainEQPassenger[];
+  // Number of berths requested. Falls back to passenger count if absent.
+  numberOfPassengers?: number;
   // Unique document ID for watermark
   documentId?: string;
 }
@@ -251,129 +293,261 @@ function createFooter(doc: PDFKit.PDFDocument): void {
      );
 }
 
-// Generate Train EQ Letter with watermark and multiple passengers support
+// Generate Train EQ Letter using the Addl. PS / Chief Commercial Manager
+// pre-printed form layout. Staff-entered fields populate the blanks; Sex/Age
+// and W/L columns are filled from passengerDetails when present.
 export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void {
   const documentId = data.documentId || `EQ${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   const filename = `TrainEQ_${data.pnrNumber}_${documentId.slice(0, 8)}.pdf`;
 
-  streamPdfToResponse(res, filename, 'TrainEQ', (doc) => {
-    // Add watermark to every page using page event
-    doc.on('pageAdded', () => {
-      createWatermark(doc, documentId, data.refNumber);
-    });
+  // Resolve the full passenger list. Prefer passengerDetails (full rows) when
+  // supplied; otherwise fall back to comma-split names + additionalPassengers
+  // for backward compat.
+  let rows: TrainEQPassenger[];
+  if (data.passengerDetails && data.passengerDetails.length > 0) {
+    rows = data.passengerDetails.filter((p) => p.name && p.name.trim());
+  } else {
+    const splitNames = data.passengerName
+      .split(',')
+      .map((n) => n.trim())
+      .filter(Boolean);
+    const names =
+      splitNames.length > 1 ? splitNames : data.passengerName.trim() ? [data.passengerName.trim()] : [];
+    if (data.additionalPassengers && data.additionalPassengers.length > 0) {
+      data.additionalPassengers.forEach((p) => {
+        const t = p.trim();
+        if (t) names.push(t);
+      });
+    }
+    rows = names.map((name) => ({ name }));
+  }
 
-    // Add watermark to first page
+  const berthCount = data.numberOfPassengers && data.numberOfPassengers > 0
+    ? data.numberOfPassengers
+    : rows.length || 1;
+
+  // Format Sex/Age cell as "M/34", "F/27", "OTHER/—". Returns empty string
+  // when neither field is present so the cell looks blank rather than "—/—".
+  const sexAgeCell = (p: TrainEQPassenger): string => {
+    const g = (p.gender || '').toString().trim().toUpperCase();
+    const sexLetter = g === 'MALE' ? 'M' : g === 'FEMALE' ? 'F' : g === 'OTHER' ? 'O' : '';
+    const ageStr = p.age !== undefined && p.age !== null && String(p.age).trim() && Number(p.age) > 0
+      ? String(p.age).trim()
+      : '';
+    if (!sexLetter && !ageStr) return '';
+    return `${sexLetter || '-'}/${ageStr || '-'}`;
+  };
+
+  streamPdfToResponse(res, filename, 'TrainEQ', (doc) => {
+    // Tighten the bottom margin so the contact-line footer + verification
+    // notice (which sit close to the page edge) don't trip PDFKit's auto
+    // pagination and produce extra blank pages.
+    doc.page.margins.bottom = 15;
+
+    doc.on('pageAdded', () => createWatermark(doc, documentId, data.refNumber));
     createWatermark(doc, documentId, data.refNumber);
 
-  // Create letterhead
-  createLetterhead(doc);
+    const pageWidth = doc.page.width;
+    const margin = 50;
+    const innerWidth = pageWidth - margin * 2;
+    const headerTop = 50;
 
-  const margin = 50;
-  let y = 170;
+    // ── Three-column letterhead ───────────────────────────────────────────
+    // Width budget across the 495pt content row:
+    //   Left officer block : 220pt   (50  → 270)
+    //   Emblem column      :  65pt   (275 → 340)
+    //   Right contact block: 200pt   (345 → 545)
+    // The right block needs ~140pt of value width so "CHITAGUPPI HOSPITAL
+    // COMPOUND," fits on one line — keeping it wider than that prevents
+    // PDFKit from line-wrapping which previously caused the rows to overlap.
+    const officerW = 220;
 
-  // Reference and Date
-  doc.fontSize(10)
-     .font('Helvetica')
-     .fillColor(COLORS.black)
-     .text(`Ref No: ${data.refNumber}`, margin, y)
-     .text(`Date: ${data.date}`, doc.page.width - 150, y);
-
-  y += 30;
-
-  // To Address
-  doc.fontSize(11)
-     .font('Helvetica-Bold')
-     .text('To,', margin, y);
-  
-  y += 15;
-  doc.font('Helvetica')
-     .text('The Station Master / TTI', margin, y);
-  y += 15;
-  doc.text(`${data.fromStation} Railway Station`, margin, y);
-  y += 15;
-  doc.text('Indian Railways', margin, y);
-
-  y += 30;
-
-  // Subject
-  doc.font('Helvetica-Bold')
-     .text('Subject: Request for Emergency Quota Accommodation', margin, y);
-
-  y += 25;
-
-  // Body
-  doc.font('Helvetica')
-     .fontSize(11)
-     .text('Sir/Madam,', margin, y);
-
-  y += 20;
-
-  // Build passenger list
-  let passengerList = `• Name: ${data.passengerName}`;
-  
-  // Add additional passengers if provided
-  if (data.additionalPassengers && data.additionalPassengers.length > 0) {
-    data.additionalPassengers.forEach((passenger, index) => {
-      passengerList += `\n• Passenger ${index + 2}: ${passenger}`;
+    // Left: officer name + designation block.
+    // Description uses fontSize 7.5 so the longest designation line
+    // ("FOOD & PUBLIC DISTRIBUTION AND CONSUMER AFFAIRS", ~230pt at fontSize
+    // 8) fits inside the 220pt officer column without wrapping into the
+    // next row. lineBreak:false alone isn't reliable with `&`-containing
+    // strings in older PDFKit versions.
+    doc.font('Helvetica-Bold')
+      .fontSize(13)
+      .fillColor(COLORS.navy)
+      .text('MALLIKARJUNGOUDA PATIL', margin, headerTop, { width: officerW, lineBreak: false });
+    const descLines = [
+      'ADDITIONAL PRIVATE SECRETARY TO MINISTER OF',
+      'FOOD & PUBLIC DISTRIBUTION AND CONSUMER AFFAIRS',
+      'NEW & RENEWABLE ENERGY',
+      'GOVERNMENT OF INDIA, NEW DELHI',
+    ];
+    const descLineGap = 11;
+    doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.black);
+    descLines.forEach((line, i) => {
+      doc.text(line, margin, headerTop + 22 + i * descLineGap, {
+        width: officerW,
+        lineBreak: false,
+      });
     });
-  }
-  
-  // Parse comma-separated names as well
-  const passengerNames = data.passengerName.split(',').map(n => n.trim()).filter(n => n);
-  if (passengerNames.length > 1) {
-    passengerList = passengerNames.map((name, index) => 
-      `• Passenger ${index + 1}: ${name}`
-    ).join('\n');
-  }
 
-  const bodyText = `I am writing to request your kind consideration for emergency quota accommodation for the following passenger(s) traveling under my recommendation.
+    // Center: national emblem (Ashoka pillar). Falls back to text label if
+    // the asset can't be located on disk for any reason.
+    const centerX = margin + officerW + 5;     // 275
+    const centerW = 65;
+    const emblem = getEmblemBuffer();
+    if (emblem) {
+      try {
+        doc.image(emblem, centerX, headerTop, { fit: [centerW, 75], align: 'center' });
+      } catch {
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+          .text('GOVT. OF INDIA', centerX, headerTop + 30, { width: centerW, align: 'center', lineBreak: false });
+      }
+    } else {
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+        .text('GOVT. OF INDIA', centerX, headerTop + 30, { width: centerW, align: 'center', lineBreak: false });
+    }
 
-Passenger Details:
-${passengerList}
+    // Right: contact info block. rightValueW = 545 - 405 = 140pt at A4.
+    const rightX = margin + officerW + 5 + centerW + 5;   // 345
+    const rightLabelW = 55;
+    const rightValueX = rightX + rightLabelW;             // 400
+    const rightValueW = pageWidth - margin - rightValueX; // 145
+    let rightY = headerTop;
+    const rowGap = 12; // a touch over fontSize 8's natural line height
 
-Booking Information:
-• PNR Number: ${data.pnrNumber}
-• Train: ${data.trainNumber} - ${data.trainName}
-• Date of Journey: ${data.journeyDate}
-• Class: ${data.journeyClass}
-• Route: ${data.fromStation} to ${data.toStation}
+    const writeRow = (label: string, value: string) => {
+      doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+        .text(label, rightX, rightY, { width: rightLabelW, lineBreak: false });
+      doc.text(': ' + value, rightValueX, rightY, { width: rightValueW, lineBreak: false });
+      rightY += rowGap;
+    };
+    const writeContinuation = (value: string) => {
+      doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+        .text('  ' + value, rightValueX, rightY, { width: rightValueW, lineBreak: false });
+      rightY += rowGap;
+    };
 
-This is a matter of urgent importance and I would greatly appreciate your assistance in accommodating this request under the Emergency Quota (EQ) facility.
+    writeRow('OFF', 'CHITAGUPPI HOSPITAL COMPOUND,');
+    writeContinuation('LAMINGTON ROAD, HUBLI- 580 020.');
+    writeRow('TEL', '(0) 2251055   FAX : 2258955');
+    writeRow('E-MAIL', 'patil.nimmav@gmail.com');
+    writeRow('DELHI OFF', 'Room No. 179 "G" Wing, 1st Floor');
+    writeContinuation('Krishi Bhawan, New Delhi - 110 001');
+    writeRow('TEL', '23070637, 23070642');
 
-Kindly extend your cooperation in this regard.`;
+    // Last description line ends at headerTop + 22 + 3*11 = headerTop + 55.
+    // Add ~30pt of breathing room before the body.
+    let y = Math.max(headerTop + 85, rightY + 10);
 
-  doc.text(bodyText, margin, y, {
-    width: doc.page.width - margin * 2,
-    align: 'justify',
-    lineGap: 5,
-  });
+    // ── Reference number + Date row ───────────────────────────────────────
+    doc.font('Helvetica').fontSize(10).fillColor(COLORS.black)
+      .text('No. M(CA, F & PD And MNRE) Addl. PS/', margin, y, { lineBreak: false });
+    doc.text(`Date : ${data.date}`, pageWidth - margin - 180, y, { width: 180, align: 'left', lineBreak: false });
+    y += 24;
 
-  y = doc.y + 40;
+    // ── Addressee ─────────────────────────────────────────────────────────
+    doc.font('Helvetica').fontSize(11).text('To,', margin, y, { lineBreak: false });
+    y += 14;
+    doc.text('Chief Commercial Manager,', margin, y, { lineBreak: false });
+    y += 14;
+    doc.text('South Western Railway, Hubli.', margin, y, { lineBreak: false });
 
-  // Signature
-  doc.text('With regards,', margin, y);
-  y += 30;
-  doc.font('Helvetica-Bold')
-     .text(data.senderName, margin, y);
-  y += 15;
-  doc.font('Helvetica')
-     .text(data.senderDesignation, margin, y);
-  y += 15;
-  doc.text('Office of Hon\'ble Union Minister', margin, y);
+    y += 22;
+    doc.text('Sir,', margin, y, { lineBreak: false });
+    y += 16;
 
-  // Footer
-  createFooter(doc);
-  
-    // Add verification notice at bottom
-    doc.fontSize(7)
-       .font('Helvetica')
-       .fillColor('#888888')
-       .text(
-         `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
-         margin,
-         doc.page.height - 40,
-         { width: doc.page.width - margin * 2, align: 'center' }
-       );
+    // ── Body with fill-ins ────────────────────────────────────────────────
+    doc.font('Helvetica').fontSize(11);
+
+    // "Please arrange to release <berths> Berths from Emergency"
+    doc.text('Please arrange to release ', margin, y, { continued: true })
+      .font('Helvetica-Bold').text(String(berthCount), { continued: true })
+      .font('Helvetica').text(' Berths from Emergency');
+    y = doc.y + 2;
+
+    // "Quota for the following persons who are Travelling by Train No. <num>"
+    doc.text('Quota for the following persons who are Travelling by Train No. ', margin, y, { continued: true })
+      .font('Helvetica-Bold').text(data.trainNumber || '_____');
+    y = doc.y + 4;
+
+    // "Train Name <name>"
+    doc.font('Helvetica').text('Train Name ', margin, y, { continued: true })
+      .font('Helvetica-Bold').text(data.trainName || '_____');
+    y = doc.y + 4;
+
+    // "From <from> To <to> in <class> on <date>"
+    doc.font('Helvetica').text('From ', margin, y, { continued: true })
+      .font('Helvetica-Bold').text(data.fromStation || '_____', { continued: true })
+      .font('Helvetica').text(' To ', { continued: true })
+      .font('Helvetica-Bold').text(data.toStation || '_____', { continued: true })
+      .font('Helvetica').text(' in ', { continued: true })
+      .font('Helvetica-Bold').text(data.journeyClass || '_____', { continued: true })
+      .font('Helvetica').text(' on ', { continued: true })
+      .font('Helvetica-Bold').text(data.journeyDate || '_____');
+    y = doc.y + 14;
+
+    // ── Passenger Table ───────────────────────────────────────────────────
+    const colW = [40, 200, 70, 130, 50];
+    const colX = [margin];
+    for (let i = 1; i < colW.length; i++) colX[i] = colX[i - 1] + colW[i - 1];
+    const tableEndX = colX[colW.length - 1] + colW[colW.length - 1];
+
+    const headers = ['Sl No.', 'Name', 'Sex/Age', 'PNR No.', 'W/L'];
+    doc.font('Helvetica-Bold').fontSize(10);
+    headers.forEach((h, i) => doc.text(h, colX[i] + 4, y, { width: colW[i] - 8, lineBreak: false }));
+    y += 14;
+    doc.moveTo(margin, y).lineTo(tableEndX, y).strokeColor(COLORS.gray).stroke();
+    y += 5;
+
+    doc.font('Helvetica').fontSize(10).fillColor(COLORS.black);
+    if (rows.length === 0) {
+      // No names at all — render at least one blank row so the grid isn't empty.
+      doc.text('1', colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
+      doc.text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
+      y += 16;
+    } else {
+      rows.forEach((p, i) => {
+        doc.text(String(i + 1), colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
+        doc.text(p.name, colX[1] + 4, y, { width: colW[1] - 8, lineBreak: false });
+        const sa = sexAgeCell(p);
+        if (sa) doc.text(sa, colX[2] + 4, y, { width: colW[2] - 8, lineBreak: false });
+        // PNR shows only on the first row (one PNR covers all passengers).
+        if (i === 0) {
+          doc.text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
+        }
+        if (p.waitlist && String(p.waitlist).trim()) {
+          doc.text(String(p.waitlist).trim(), colX[4] + 4, y, { width: colW[4] - 8, lineBreak: false });
+        }
+        y += 16;
+      });
+    }
+
+    // Bottom border under table
+    doc.moveTo(margin, y).lineTo(tableEndX, y).strokeColor(COLORS.gray).stroke();
+
+    // ── Signature block (anchored above the bottom footer) ────────────────
+    const signatureY = doc.page.height - 150;
+    doc.font('Helvetica').fontSize(11).fillColor(COLORS.black)
+      .text("Your's Faithfully,", pageWidth - margin - 220, signatureY, { width: 220, lineBreak: false });
+    doc.font('Helvetica-Bold').fontSize(13)
+      .text('MALLIKARJUNGOUDA PATIL', pageWidth - margin - 260, signatureY + 45, { width: 260, lineBreak: false });
+
+    // ── Bottom footer ─────────────────────────────────────────────────────
+    const footerLineY = doc.page.height - 55;
+    doc.moveTo(margin, footerLineY).lineTo(pageWidth - margin, footerLineY).strokeColor(COLORS.black).stroke();
+    doc.font('Helvetica').fontSize(9).fillColor(COLORS.black)
+      .text(
+        'DELHI RESIDENCE : #11, AKBAR ROAD, NEW DELHI - 110001, TEL : 011 23014097, 23094098',
+        margin,
+        footerLineY + 6,
+        { align: 'center', width: innerWidth, lineBreak: false }
+      );
+
+    // Verification notice (small) — kept inline with footer to stay on-page.
+    doc.fontSize(7).fillColor('#888888')
+      .text(
+        `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
+        margin,
+        footerLineY + 22,
+        { width: innerWidth, align: 'center', lineBreak: false }
+      );
   });
 }
 

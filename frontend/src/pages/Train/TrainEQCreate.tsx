@@ -35,9 +35,17 @@ export default function TrainEQCreate() {
   
   // Booking type for passenger limit
   const [bookingType, setBookingType] = useState<BookingType>('GENERAL');
-  
-  // Multiple passengers support
-  const [passengers, setPassengers] = useState<string[]>(['']);
+
+  // Per-passenger row capturing the fields the EQ letter needs.
+  // Gender/Age populate the Sex/Age column; waitlist populates W/L.
+  type PassengerRow = {
+    name: string;
+    gender: '' | 'MALE' | 'FEMALE' | 'OTHER';
+    age: string;
+    waitlist: string;
+  };
+  const emptyPassenger = (): PassengerRow => ({ name: '', gender: '', age: '', waitlist: '' });
+  const [passengers, setPassengers] = useState<PassengerRow[]>([emptyPassenger()]);
 
   const [formData, setFormData] = useState({
     pnrNumber: "",
@@ -62,13 +70,13 @@ export default function TrainEQCreate() {
   const addPassenger = () => {
     const maxPassengers = getMaxPassengers();
     if (passengers.length < maxPassengers) {
-      setPassengers([...passengers, '']);
+      setPassengers([...passengers, emptyPassenger()]);
       setError(null);
     } else {
       setError(`Maximum ${maxPassengers} passengers allowed for ${bookingType === 'TATKAL' ? 'Tatkal' : 'General'} bookings`);
     }
   };
-  
+
   // Remove passenger
   const removePassenger = (index: number) => {
     if (passengers.length > 1) {
@@ -76,12 +84,18 @@ export default function TrainEQCreate() {
       setError(null);
     }
   };
-  
-  // Update passenger name
-  const updatePassenger = (index: number, name: string) => {
-    const newPassengers = [...passengers];
-    newPassengers[index] = name;
-    setPassengers(newPassengers);
+
+  // Update a single field on a passenger row.
+  const updatePassengerField = <K extends keyof PassengerRow>(
+    index: number,
+    field: K,
+    value: PassengerRow[K]
+  ) => {
+    setPassengers((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
     setError(null);
   };
   
@@ -230,16 +244,28 @@ export default function TrainEQCreate() {
     setError(null);
     setLoading(true);
 
-    // Filter out empty passenger names
-    const validPassengers = passengers.filter(p => p.trim());
-    
+    // Filter out rows where the name is blank — those are unfilled placeholders.
+    const validPassengers = passengers.filter((p) => p.name.trim());
+
     // Validation
     if (validPassengers.length === 0) {
       setError("At least one passenger name is required");
       setLoading(false);
       return;
     }
-    
+
+    // Age sanity check — if provided, must be 0 < age <= 120.
+    for (const p of validPassengers) {
+      if (p.age.trim()) {
+        const n = Number(p.age);
+        if (!Number.isFinite(n) || n <= 0 || n > 120) {
+          setError(`Invalid age "${p.age}" for ${p.name}. Enter a value between 1 and 120.`);
+          setLoading(false);
+          return;
+        }
+      }
+    }
+
     // Check passenger limit
     const maxPassengers = getMaxPassengers();
     if (validPassengers.length > maxPassengers) {
@@ -288,9 +314,11 @@ export default function TrainEQCreate() {
     }
 
     try {
-      // Join passenger names with comma for backend storage
-      const passengerNameStr = validPassengers.join(', ');
-      
+      // Join passenger names with comma for backend storage (legacy field).
+      // The structured `passengers` array drives the per-row data (Sex/Age/W/L)
+      // shown on the EQ letter.
+      const passengerNameStr = validPassengers.map((p) => p.name.trim()).join(', ');
+
       const created = await trainRequestApi.create({
         passengerName: passengerNameStr,
         pnrNumber: formData.pnrNumber,
@@ -303,6 +331,12 @@ export default function TrainEQCreate() {
         toStation: formData.toStation,
         route: formData.route || `${formData.fromStation} to ${formData.toStation}`,
         referencedBy: formData.referencedBy || undefined,
+        passengers: validPassengers.map((p) => ({
+          name: p.name.trim(),
+          gender: p.gender || undefined,
+          age: p.age.trim() ? Number(p.age) : undefined,
+          currentStatus: p.waitlist.trim() || undefined,
+        })),
       });
 
       setCreatedId(created?.id ?? null);
@@ -521,31 +555,88 @@ export default function TrainEQCreate() {
                         </span>
                       </div>
                       
-                      {/* Passenger List */}
-                      <div className="space-y-3">
+                      {/* Passenger List — Name + Gender + Age + W/L per row.
+                          Gender, Age, and W/L populate the Sex/Age and W/L columns
+                          on the generated EQ letter. */}
+                      <div className="space-y-4">
                         {passengers.map((passenger, index) => (
-                          <div key={index} className="flex gap-2 items-center">
-                            <div className="flex-1">
-                              <Label className="text-xs text-muted-foreground">
+                          <div
+                            key={index}
+                            className="rounded-lg border border-gray-200 bg-white/70 p-3 space-y-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-indigo-700">
                                 Passenger {index + 1} {index === 0 && <span className="text-red-500">*</span>}
-                              </Label>
-                              <Input 
-                                placeholder={`Enter passenger ${index + 1} full name`}
-                                value={passenger}
-                                onChange={(e) => updatePassenger(index, e.target.value)}
-                              />
+                              </span>
+                              {passengers.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  onClick={() => removePassenger(index)}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
-                            {passengers.length > 1 && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="mt-5 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => removePassenger(index)}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            )}
+
+                            <div className="grid grid-cols-12 gap-2">
+                              <div className="col-span-12 md:col-span-5">
+                                <Label className="text-xs text-muted-foreground">Full Name</Label>
+                                <Input
+                                  placeholder={`Passenger ${index + 1} full name`}
+                                  value={passenger.name}
+                                  onChange={(e) => updatePassengerField(index, 'name', e.target.value)}
+                                />
+                              </div>
+
+                              <div className="col-span-6 md:col-span-3">
+                                <Label className="text-xs text-muted-foreground">Gender</Label>
+                                <Select
+                                  value={passenger.gender}
+                                  onValueChange={(v) =>
+                                    updatePassengerField(index, 'gender', v as PassengerRow['gender'])
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="MALE">Male</SelectItem>
+                                    <SelectItem value="FEMALE">Female</SelectItem>
+                                    <SelectItem value="OTHER">Other</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="col-span-3 md:col-span-2">
+                                <Label className="text-xs text-muted-foreground">Age</Label>
+                                <Input
+                                  type="number"
+                                  inputMode="numeric"
+                                  min={1}
+                                  max={120}
+                                  placeholder="Age"
+                                  value={passenger.age}
+                                  onChange={(e) => {
+                                    const v = e.target.value.replace(/\D/g, '').slice(0, 3);
+                                    updatePassengerField(index, 'age', v);
+                                  }}
+                                />
+                              </div>
+
+                              <div className="col-span-3 md:col-span-2">
+                                <Label className="text-xs text-muted-foreground">W/L</Label>
+                                <Input
+                                  placeholder="e.g. WL/12"
+                                  value={passenger.waitlist}
+                                  onChange={(e) =>
+                                    updatePassengerField(index, 'waitlist', e.target.value)
+                                  }
+                                />
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
