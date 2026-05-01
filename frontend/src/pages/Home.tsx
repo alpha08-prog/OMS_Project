@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardHeader } from "../components/layout/DashboardHeader";
 import { TodaySchedule } from "../components/dashboard/TodaySchedule";
 import { RecentGrievances } from "../components/dashboard/RecentGrievances";
@@ -7,12 +8,17 @@ import { BirthdayWidget } from "../components/dashboard/BirthdayWidget";
 import { GrievanceChart } from "../components/dashboard/GrievanceChart";
 import {
   FileText,
-  CheckCircle2,
   AlertTriangle,
   CalendarDays,
+  Star,
 } from "lucide-react";
 import { statsApi, type DashboardStats } from "../lib/api";
 import { Card, CardContent } from "../components/ui/card";
+import { Dialog, DialogContent } from "../components/ui/dialog";
+import { SuperAdminGrievancesContent } from "./admin/SuperAdminGrievances";
+import { SuperAdminTourProgramsContent } from "./admin/SuperAdminTourPrograms";
+import { SuperAdminNewsContent } from "./admin/SuperAdminNews";
+import { SuperAdminEventsContent } from "./admin/SuperAdminEventsContent";
 
 type StatItem = {
   label: string;
@@ -22,9 +28,23 @@ type StatItem = {
   color: string;
   bg: string;
   trend?: string;
+  to: string;  // navigation target on click
 };
 
 const Home = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // SUPER_ADMIN's "tabs" don't navigate — they trigger an in-page popup
+  // controlled by the ?popup=<key> URL param. Sidebar links use that
+  // shape; this component renders the matching dialog.
+  const popup = searchParams.get('popup');
+  const closePopup = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('popup');
+    setSearchParams(next, { replace: true });
+  };
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -42,23 +62,20 @@ const Home = () => {
     fetchStats();
   }, []);
 
+  // Active grievances only (resolved hidden on the SUPER_ADMIN dashboard).
+  const activeGrievances =
+    (stats?.grievances.total ?? 0) - (stats?.grievances.resolved ?? 0);
+
   const statItems: StatItem[] = [
     {
-      label: "Total Grievances",
-      value: loading ? "—" : stats?.grievances.total ?? 0,
+      label: "Active Grievances",
+      value: loading ? "—" : activeGrievances,
       sub: `${loading ? "—" : stats?.grievances.open ?? 0} pending`,
       icon: FileText,
       color: "text-indigo-600",
       bg: "bg-indigo-50",
       trend: "open",
-    },
-    {
-      label: "Resolved",
-      value: loading ? "—" : stats?.grievances.resolved ?? 0,
-      sub: "grievances closed",
-      icon: CheckCircle2,
-      color: "text-emerald-600",
-      bg: "bg-emerald-50",
+      to: "/home?popup=grievances",
     },
     {
       label: "Critical Alerts",
@@ -67,6 +84,7 @@ const Home = () => {
       icon: AlertTriangle,
       color: "text-amber-600",
       bg: "bg-amber-50",
+      to: "/home?popup=news",
     },
     {
       label: "Tour Programs",
@@ -75,6 +93,16 @@ const Home = () => {
       icon: CalendarDays,
       color: "text-violet-600",
       bg: "bg-violet-50",
+      to: "/home?popup=tour",
+    },
+    {
+      label: "Events",
+      value: loading ? "—" : (stats?.tourPrograms.total ?? 0) - (stats?.tourPrograms.pending ?? 0),
+      sub: "decided invitations",
+      icon: Star,
+      color: "text-emerald-600",
+      bg: "bg-emerald-50",
+      to: "/home?popup=events",
     },
   ];
 
@@ -119,26 +147,31 @@ const Home = () => {
           </div>
         </div>
 
-        {/* ── Stats Grid ──────────────────────────────────────────────────── */}
+        {/* ── Stats Grid (each tile navigates to its detail page) ─────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {statItems.map((s) => (
-            <Card
+            <button
               key={s.label}
-              className="rounded-2xl border-0 shadow-sm hover:shadow-md transition-shadow"
+              type="button"
+              onClick={() => navigate(s.to)}
+              className="text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-2xl"
+              aria-label={`View ${s.label}`}
             >
-              <CardContent className="p-5 space-y-4">
-                <div className={`inline-flex p-2.5 rounded-xl ${s.bg}`}>
-                  <s.icon className={`h-5 w-5 ${s.color}`} />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-3xl font-bold text-foreground leading-none">{s.value}</p>
-                  <p className="text-sm font-medium text-foreground">{s.label}</p>
-                  {s.sub && (
-                    <p className="text-xs text-muted-foreground">{s.sub}</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+              <Card className="rounded-2xl border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+                <CardContent className="p-5 space-y-4">
+                  <div className={`inline-flex p-2.5 rounded-xl ${s.bg}`}>
+                    <s.icon className={`h-5 w-5 ${s.color}`} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-3xl font-bold text-foreground leading-none">{s.value}</p>
+                    <p className="text-sm font-medium text-foreground">{s.label}</p>
+                    {s.sub && (
+                      <p className="text-xs text-muted-foreground">{s.sub}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </button>
           ))}
         </div>
 
@@ -160,6 +193,23 @@ const Home = () => {
 
         </div>
       </main>
+
+      {/* SUPER_ADMIN tab popups — the four stat tiles add ?popup=KEY to the
+          URL; this dialog opens with the matching content rendered inside it.
+          Closing the dialog clears the param. */}
+      <Dialog
+        open={Boolean(popup)}
+        onOpenChange={(open) => {
+          if (!open) closePopup();
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto p-6">
+          {popup === 'grievances' && <SuperAdminGrievancesContent />}
+          {popup === 'tour' && <SuperAdminTourProgramsContent />}
+          {popup === 'news' && <SuperAdminNewsContent />}
+          {popup === 'events' && <SuperAdminEventsContent />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

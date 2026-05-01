@@ -38,8 +38,8 @@ type MenuItem = {
 };
 
 const allMenuItems: MenuItem[] = [
-  // Dashboard - route based on role
-  { icon: LayoutDashboard, label: "Dashboard", route: "/home", roles: ['SUPER_ADMIN'] },
+  // Dashboard - route based on role. SUPER_ADMIN's dashboard is a popup
+  // launched from the header instead of a sidebar entry, so it's omitted here.
   { icon: LayoutDashboard, label: "Dashboard", route: "/admin/home", roles: ['ADMIN'] },
   { icon: LayoutDashboard, label: "Dashboard", route: "/staff/home", roles: ['STAFF'] },
 
@@ -91,12 +91,13 @@ const allMenuItems: MenuItem[] = [
   { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },
   { icon: Gift, label: "View Birthdays", route: "/admin/birthdays", roles: ['ADMIN', 'SUPER_ADMIN'] },
 
-  // Super Admin - Overview
-  { icon: FileText, label: "All Grievances", route: "/grievances/new", roles: ['SUPER_ADMIN'] },
-  { icon: Users, label: "Visitor Log", route: "/visitors/view", roles: ['SUPER_ADMIN'] },
-  { icon: Calendar, label: "Tour Program", route: "/tour-program/new", roles: ['SUPER_ADMIN'] },
-  { icon: Newspaper, label: "News Feed", route: "/news/view", roles: ['SUPER_ADMIN'] },
-  { icon: History, label: "Action History", route: "/admin/history", roles: ['SUPER_ADMIN'] },
+  // Super Admin — these don't navigate to separate pages. They stay on
+  // /home and trigger an in-page popup via the ?popup= search param.
+  // Home.tsx watches the param and renders the matching dialog.
+  { icon: FileText, label: "Grievances", route: "/home?popup=grievances", roles: ['SUPER_ADMIN'] },
+  { icon: Calendar, label: "Tour Program", route: "/home?popup=tour", roles: ['SUPER_ADMIN'] },
+  { icon: Newspaper, label: "News", route: "/home?popup=news", roles: ['SUPER_ADMIN'] },
+  { icon: Star, label: "Events", route: "/home?popup=events", roles: ['SUPER_ADMIN'] },
 
   // Common
   { icon: UserCircle, label: "My Profile", route: "/profile", roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },

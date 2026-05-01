@@ -19,8 +19,11 @@ export function RecentGrievances() {
   useEffect(() => {
     const fetchGrievances = async () => {
       try {
-        const res = await grievanceApi.getAll({ limit: '5' });
-        setGrievances(res.data);
+        // Pull a wider window so we can drop RESOLVED entries client-side
+        // and still have ~5 active ones to show on the SUPER_ADMIN dashboard.
+        const res = await grievanceApi.getAll({ limit: '20' });
+        const active = (res.data ?? []).filter((g) => g.status !== 'RESOLVED');
+        setGrievances(active.slice(0, 5));
       } catch (error) {
         console.error('Failed to fetch grievances:', error);
       } finally {

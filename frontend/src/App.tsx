@@ -34,6 +34,9 @@ const PhotoBooth = lazy(() => import("./pages/PhotoBooth/PhotoBooth.tsx"));
 const AboutUs = lazy(() => import("./pages/AboutUs"));
 const EventReport = lazy(() => import("./pages/Events/EventReport"));
 const EventsView = lazy(() => import("./pages/admin/EventsView"));
+const SuperAdminTourPrograms = lazy(() => import("./pages/admin/SuperAdminTourPrograms"));
+const SuperAdminGrievances = lazy(() => import("./pages/admin/SuperAdminGrievances"));
+const SuperAdminNews = lazy(() => import("./pages/admin/SuperAdminNews"));
 const AdminCalendar = lazy(() => import("./pages/admin/AdminCalendar"));
 const Profile = lazy(() => import("./pages/Profile"));
 const CreateUser = lazy(() => import("./pages/admin/CreateUser"));
@@ -255,6 +258,33 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['ADMIN']}>
               <EventsView />
+            </ProtectedRoute>
+          }
+        />
+        {/* Super Admin — read-only list of accepted tour programs */}
+        <Route
+          path="/super-admin/tour-program"
+          element={
+            <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+              <SuperAdminTourPrograms />
+            </ProtectedRoute>
+          }
+        />
+        {/* Super Admin — read-only grievance overview (no PDF, no resolved) */}
+        <Route
+          path="/super-admin/grievances"
+          element={
+            <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+              <SuperAdminGrievances />
+            </ProtectedRoute>
+          }
+        />
+        {/* Super Admin — read-only news feed (no delete) */}
+        <Route
+          path="/super-admin/news"
+          element={
+            <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+              <SuperAdminNews />
             </ProtectedRoute>
           }
         />
