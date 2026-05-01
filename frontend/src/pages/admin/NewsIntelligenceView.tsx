@@ -316,8 +316,8 @@ export default function NewsIntelligenceView() {
                           <Eye className="h-4 w-4 mr-1" />
                           View
                         </Button>
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="destructive"
                           onClick={() => handleDelete(item.id)}
                         >

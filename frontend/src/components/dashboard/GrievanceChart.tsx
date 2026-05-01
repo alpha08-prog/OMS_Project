@@ -10,7 +10,7 @@ type ChartData = {
 
 export function GrievanceChart() {
   const [data, setData] = useState<ChartData[]>([
-    { name: "Resolved", value: 0, color: "#22c55e" },
+    { name: "Completed", value: 0, color: "#22c55e" },
     { name: "In Progress", value: 0, color: "#f59e0b" },
     { name: "Open", value: 0, color: "#6366f1" },
   ]);
@@ -26,7 +26,7 @@ export function GrievanceChart() {
 
         setTotal(grievances.total);
         setData([
-          { name: "Resolved", value: Math.round((grievances.resolved / totalCount) * 100), color: "#22c55e" },
+          { name: "Completed", value: Math.round((grievances.resolved / totalCount) * 100), color: "#22c55e" },
           { name: "In Progress", value: Math.round(((grievances.inProgress + grievances.verified) / totalCount) * 100), color: "#f59e0b" },
           { name: "Open", value: Math.round((grievances.open / totalCount) * 100), color: "#6366f1" },
         ]);

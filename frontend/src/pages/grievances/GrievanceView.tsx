@@ -323,8 +323,8 @@ export default function GrievanceView() {
                           View
                         </Button>
                         {g.isVerified && (
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             className="bg-indigo-600 hover:bg-indigo-700"
                             onClick={() => handleDownloadPDF(g.id)}
                           >
@@ -434,7 +434,7 @@ export default function GrievanceView() {
                     Close
                   </Button>
                   {selectedGrievance.isVerified && (
-                    <Button 
+                    <Button
                       className="bg-indigo-600 hover:bg-indigo-700"
                       onClick={() => handleDownloadPDF(selectedGrievance.id)}
                     >
