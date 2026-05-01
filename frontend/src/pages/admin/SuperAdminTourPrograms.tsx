@@ -143,12 +143,12 @@ export function SuperAdminTourProgramsContent() {
 
             <Card className="rounded-2xl shadow-sm">
               <CardHeader>
-                <CardTitle>Tour Programs ({filtered.length})</CardTitle>
+                <CardTitle>Tour Programs ({programs.length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading…</p>
-                ) : filtered.length === 0 ? (
+                ) : programs.length === 0 ? (
                   <div className="text-center py-8">
                     <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-muted-foreground">No decided tour programs yet</p>
