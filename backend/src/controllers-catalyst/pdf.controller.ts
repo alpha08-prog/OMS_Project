@@ -25,12 +25,42 @@ import {
   generateTrainEQLetter,
   generateGrievanceLetter,
   generateTourProgramPDF,
+  type TrainEQPassenger,
 } from '../utils/pdfGenerator';
 import type { AuthenticatedRequest } from '../types';
 
 const TRAIN_TABLE = 'TrainRequest';
+const PASSENGER_TABLE = 'TrainPassenger';
 const GRIEVANCE_TABLE = 'Grievance';
 const TOUR_TABLE = 'TourProgram';
+
+/**
+ * Load passenger rows for a train request, ordered by Catalyst CREATEDTIME so
+ * the letter shows them in entry order. Returns an empty array if the table
+ * doesn't exist or the call fails — the PDF then falls back to splitting
+ * passengerName by comma (legacy behaviour).
+ */
+async function loadTrainPassengers(trainRequestId: string): Promise<TrainEQPassenger[]> {
+  let allRows: CatalystRow[] = [];
+  try {
+    allRows = await listAllRows(PASSENGER_TABLE);
+  } catch {
+    return [];
+  }
+  return allRows
+    .filter((p) => String(p.trainRequestId) === String(trainRequestId))
+    .sort((a, b) => String(a.CREATEDTIME).localeCompare(String(b.CREATEDTIME)))
+    .map((p) => ({
+      name: String(p.passengerName || '').trim(),
+      gender: p.gender ? String(p.gender) : undefined,
+      age: p.age !== null && p.age !== undefined ? Number(p.age) : undefined,
+      // We store the W/L value in `currentStatus` since the schema has no
+      // dedicated waitlist column — see TrainPassenger writes in the
+      // train-request controller.
+      waitlist: p.currentStatus ? String(p.currentStatus) : undefined,
+    }))
+    .filter((p) => p.name);
+}
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -147,6 +177,13 @@ export async function generateTrainEQPDF(
     const refNumber = `EQ/${new Date().getFullYear()}/${refSuffix(id)}`;
     const documentId = `EQ${id.replace(/-/g, '').slice(-12).toUpperCase()}`;
 
+    const rawCount = Number(row.numberOfPassengers);
+    const numberOfPassengers = Number.isFinite(rawCount) && rawCount > 0 ? rawCount : undefined;
+
+    // Pull structured passenger rows so the letter can fill Sex/Age + W/L
+    // columns. Falls through to the comma-split passengerName when none exist.
+    const passengerDetails = await loadTrainPassengers(id);
+
     generateTrainEQLetter(
       {
         refNumber,
@@ -165,6 +202,8 @@ export async function generateTrainEQPDF(
         toStation: String(row.toStation),
         senderName: 'Shri Pralhad Joshi',
         senderDesignation: "Hon'ble Union Minister",
+        passengerDetails: passengerDetails.length > 0 ? passengerDetails : undefined,
+        numberOfPassengers,
         documentId,
       },
       res
@@ -196,84 +235,159 @@ export async function previewTrainEQ(
       return;
     }
 
-    const refNumber = `EQ/${new Date().getFullYear()}/${refSuffix(id)}`;
     const date = new Date().toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'long',
       year: 'numeric',
     });
 
+    const passengerName = String(row.passengerName || '');
+    const splitNames = passengerName
+      .split(',')
+      .map((n) => n.trim())
+      .filter(Boolean);
+    const allNames = splitNames.length > 1 ? splitNames : passengerName ? [passengerName] : [];
+
+    // Prefer structured passenger rows when present so the preview matches
+    // the PDF (Sex/Age and W/L populated).
+    const passengers = await loadTrainPassengers(id);
+    const previewRows: TrainEQPassenger[] =
+      passengers.length > 0 ? passengers : allNames.map((n) => ({ name: n }));
+
+    const rawCount = Number(row.numberOfPassengers);
+    const berthCount =
+      Number.isFinite(rawCount) && rawCount > 0 ? rawCount : previewRows.length || 1;
+
+    const trainNumber = row.trainNumber ? String(row.trainNumber) : '';
+    const trainName = row.trainName ? String(row.trainName) : '';
+    const journeyClass = String(row.journeyClass || '');
+    const journeyDate = formatDateIN(row.dateOfJourney);
+    const fromStation = String(row.fromStation || '');
+    const toStation = String(row.toStation || '');
+    const pnrNumber = String(row.pnrNumber || '');
+
+    const sexAgeOf = (p: TrainEQPassenger): string => {
+      const g = (p.gender || '').toString().trim().toUpperCase();
+      const sex = g === 'MALE' ? 'M' : g === 'FEMALE' ? 'F' : g === 'OTHER' ? 'O' : '';
+      const age = p.age !== undefined && p.age !== null && Number(p.age) > 0 ? String(p.age) : '';
+      if (!sex && !age) return '';
+      return `${sex || '-'}/${age || '-'}`;
+    };
+
+    const tableRows =
+      previewRows.length === 0
+        ? `<tr><td>1</td><td></td><td></td><td>${pnrNumber}</td><td></td></tr>`
+        : previewRows
+            .map(
+              (p, i) => `<tr>
+                <td>${i + 1}</td>
+                <td>${p.name}</td>
+                <td>${sexAgeOf(p)}</td>
+                <td>${i === 0 ? pnrNumber : ''}</td>
+                <td>${p.waitlist ? String(p.waitlist) : ''}</td>
+              </tr>`
+            )
+            .join('');
+
     const html = `
 <!DOCTYPE html>
 <html>
 <head>
   <style>
-    body { font-family: Georgia, serif; max-width: 800px; margin: 40px auto; padding: 20px; }
-    .letterhead { text-align: center; border-bottom: 3px solid; border-image: linear-gradient(to right, #FF9933, white, #138808) 1; padding-bottom: 20px; margin-bottom: 30px; }
-    .letterhead h1 { color: #000080; margin: 5px 0; font-size: 16px; }
-    .letterhead h2 { color: #000; margin: 10px 0; font-size: 20px; }
-    .letterhead p { color: #666; margin: 5px 0; }
-    .meta { display: flex; justify-content: space-between; margin-bottom: 20px; }
-    .to { margin-bottom: 20px; }
-    .subject { font-weight: bold; margin-bottom: 20px; }
-    .body { line-height: 1.8; text-align: justify; }
-    .signature { margin-top: 50px; }
-    .footer { margin-top: 50px; text-align: center; border-top: 3px solid; border-image: linear-gradient(to right, #FF9933, white, #138808) 1; padding-top: 10px; color: #666; font-size: 12px; }
+    body { font-family: Georgia, serif; max-width: 820px; margin: 30px auto; padding: 20px; color: #000; }
+    .letterhead { display: grid; grid-template-columns: 1fr 90px 1fr; gap: 12px; align-items: flex-start; margin-bottom: 18px; }
+    .lh-left h1 { color: #000080; margin: 0 0 4px 0; font-size: 15px; letter-spacing: 0.5px; }
+    .lh-left p { margin: 1px 0; font-size: 9px; line-height: 1.3; }
+    .lh-center { text-align: center; color: #555; font-size: 9px; padding-top: 12px; }
+    .lh-center .label { font-weight: bold; font-size: 10px; color: #000; }
+    .lh-right { font-size: 9px; line-height: 1.45; }
+    .lh-right .row { display: grid; grid-template-columns: 75px 1fr; }
+    .lh-right .row .l { font-weight: normal; }
+    .lh-right .row .v { white-space: pre-line; }
+    .meta { display: flex; justify-content: space-between; margin: 16px 0 18px 0; font-size: 11px; }
+    .to { margin: 8px 0 16px 0; font-size: 12px; line-height: 1.6; }
+    .body { font-size: 12px; line-height: 1.9; }
+    .body .blank { font-weight: bold; border-bottom: 1px solid #000; padding: 0 6px; }
+    table.passengers { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 12px; }
+    table.passengers th, table.passengers td { border: 1px solid #888; padding: 6px 8px; text-align: left; }
+    table.passengers th { background: #f1f1f1; }
+    .signature { margin-top: 60px; text-align: right; }
+    .signature .line1 { font-size: 12px; margin-bottom: 36px; }
+    .signature .line2 { font-weight: bold; color: #000080; font-size: 13px; letter-spacing: 0.5px; }
+    .footer { margin-top: 30px; padding-top: 8px; border-top: 1px solid #000; text-align: center; font-size: 10px; }
   </style>
 </head>
 <body>
   <div class="letterhead">
-    <p style="font-size: 20px;">॥ सत्यमेव जयते ॥</p>
-    <h1>GOVERNMENT OF INDIA</h1>
-    <h1>MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION</h1>
-    <h2>SHRI PRAHLAD JOSHI</h2>
-    <p>Hon'ble Union Minister</p>
+    <div class="lh-left">
+      <h1>MALLIKARJUNGOUDA PATIL</h1>
+      <p>ADDITIONAL PRIVATE SECRETARY TO MINISTER OF</p>
+      <p>FOOD &amp; PUBLIC DISTRIBUTION AND CONSUMER AFFAIRS</p>
+      <p>NEW &amp; RENEWABLE ENERGY</p>
+      <p>GOVERNMENT OF INDIA, NEW DELHI</p>
+    </div>
+    <div class="lh-center">
+      <div class="label">GOVT.<br>OF INDIA</div>
+      <div style="margin-top:6px;">सत्यमेव जयते</div>
+    </div>
+    <div class="lh-right">
+      <div class="row"><span class="l">OFF</span><span class="v">: CHITAGUPPI HOSPITAL COMPOUND,
+  LAMINGTON ROAD, HUBLI- 580 020.</span></div>
+      <div class="row"><span class="l">TEL</span><span class="v">: (0) 2251055   FAX : 2258955</span></div>
+      <div class="row"><span class="l">E-MAIL</span><span class="v">: patil.nimmav@gmail.com</span></div>
+      <div class="row"><span class="l">DELHI OFF</span><span class="v">: Room No. 179 "G" Wing, 1st Floor
+  Krishi Bhawan, New Delhi - 110 001</span></div>
+      <div class="row"><span class="l">TEL</span><span class="v">: 23070637, 23070642</span></div>
+    </div>
   </div>
 
   <div class="meta">
-    <span>Ref No: ${refNumber}</span>
-    <span>Date: ${date}</span>
+    <span>No. M(CA, F &amp; PD And MNRE) Addl. PS/</span>
+    <span>Date : ${date}</span>
   </div>
 
   <div class="to">
-    <strong>To,</strong><br>
-    The Station Master / TTI<br>
-    ${String(row.fromStation)} Railway Station<br>
-    Indian Railways
+    To,<br>
+    Chief Commercial Manager,<br>
+    South Western Railway, Hubli.
   </div>
 
-  <div class="subject">
-    Subject: Request for Emergency Quota Accommodation
-  </div>
+  <p style="font-size:12px;">Sir,</p>
 
   <div class="body">
-    <p>Sir/Madam,</p>
-    <p>I am writing to request your kind consideration for emergency quota accommodation for the following passenger traveling under my recommendation.</p>
+    <p>Please arrange to release <span class="blank">${berthCount}</span> Berths from Emergency
+    Quota for the following persons who are Travelling by Train No. <span class="blank">${trainNumber || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span></p>
 
-    <p><strong>Passenger Details:</strong></p>
-    <ul>
-      <li>Name: ${String(row.passengerName)}</li>
-      <li>PNR Number: ${String(row.pnrNumber)}</li>
-      <li>Train: ${row.trainNumber ? String(row.trainNumber) : 'N/A'} - ${row.trainName ? String(row.trainName) : 'N/A'}</li>
-      <li>Date of Journey: ${formatDateIN(row.dateOfJourney)}</li>
-      <li>Class: ${String(row.journeyClass)}</li>
-      <li>Route: ${String(row.fromStation)} to ${String(row.toStation)}</li>
-    </ul>
+    <p>Train Name <span class="blank">${trainName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span></p>
 
-    <p>This is a matter of urgent importance and I would greatly appreciate your assistance in accommodating this request under the Emergency Quota (EQ) facility.</p>
-
-    <p>Kindly extend your cooperation in this regard.</p>
+    <p>From <span class="blank">${fromStation || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>
+    To <span class="blank">${toStation || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>
+    in <span class="blank">${journeyClass || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>
+    on <span class="blank">${journeyDate}</span></p>
   </div>
 
+  <table class="passengers">
+    <thead>
+      <tr>
+        <th style="width:50px;">Sl No.</th>
+        <th>Name</th>
+        <th style="width:80px;">Sex/Age</th>
+        <th style="width:140px;">PNR No.</th>
+        <th style="width:60px;">W/L</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${tableRows}
+    </tbody>
+  </table>
+
   <div class="signature">
-    <p>With regards,</p>
-    <p><strong>Shri Pralhad Joshi</strong><br>
-    Hon'ble Union Minister<br>
-    Office of Hon'ble Union Minister</p>
+    <div class="line1">Your's Faithfully,</div>
+    <div class="line2">MALLIKARJUNGOUDA PATIL</div>
   </div>
 
   <div class="footer">
-    Office of Hon'ble Minister | Krishi Bhawan, New Delhi - 110001 | Tel: 011-23383615
+    DELHI RESIDENCE : #11, AKBAR ROAD, NEW DELHI - 110001, TEL : 011 23014097, 23094098
   </div>
 </body>
 </html>

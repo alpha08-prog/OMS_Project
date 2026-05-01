@@ -183,7 +183,32 @@ async function hydrate(rows: CatalystRow[]): Promise<any[]> {
   );
 }
 
-/** Validate + write a list of passengers tied to a parent ROWID. */
+/**
+ * Validate the passenger payload up-front (cheap, synchronous). Throw on
+ * input errors here so the caller can return a 400 *before* creating the
+ * parent train request and avoid rolling back. Catalyst-side write failures
+ * are handled separately in writePassengers.
+ */
+function validatePassengers(passengers: any[] | undefined): void {
+  if (!Array.isArray(passengers)) return;
+  for (const p of passengers) {
+    if (!p) continue;
+    const name = (p.name ?? p.passengerName ?? '').toString().trim();
+    if (!name) continue;
+    const gender = (p.gender ?? '').toString().toUpperCase();
+    if (gender && !VALID_GENDERS.has(gender)) {
+      throw new Error(`Invalid gender for passenger ${name}: ${gender}`);
+    }
+  }
+}
+
+/**
+ * Write passengers tied to a parent ROWID. Best-effort: if the
+ * TrainPassenger table is missing or a single insert fails, we log and skip
+ * that row rather than aborting the whole request — the parent train request
+ * has already been created and is valid on its own. Per-row Sex/Age/W/L
+ * data can be re-entered once the table/schema is in place.
+ */
 async function writePassengers(
   trainRequestId: string,
   passengers: any[] | undefined
@@ -194,20 +219,24 @@ async function writePassengers(
     const name = (p.name ?? p.passengerName ?? '').toString().trim();
     if (!name) continue;
     const gender = (p.gender ?? '').toString().toUpperCase();
-    if (gender && !VALID_GENDERS.has(gender)) {
-      throw new Error(`Invalid gender for passenger ${name}: ${gender}`);
+    try {
+      await insertRow(PASSENGER_TABLE, {
+        trainRequestId,
+        passengerName: name,
+        age: parseInt0(p.age),
+        gender: gender || 'OTHER',
+        berthPreference: p.berthPreference ?? null,
+        seatNumber: p.seatNumber ?? null,
+        coachNumber: p.coachNumber ?? null,
+        bookingStatus: p.bookingStatus ?? null,
+        currentStatus: p.currentStatus ?? null,
+      });
+    } catch (err) {
+      console.warn(
+        `[trainRequest] Failed to persist TrainPassenger row "${name}" for trainRequest ${trainRequestId}:`,
+        err instanceof Error ? err.message : err
+      );
     }
-    await insertRow(PASSENGER_TABLE, {
-      trainRequestId,
-      passengerName: name,
-      age: parseInt0(p.age),
-      gender: gender || 'OTHER',
-      berthPreference: p.berthPreference ?? null,
-      seatNumber: p.seatNumber ?? null,
-      coachNumber: p.coachNumber ?? null,
-      bookingStatus: p.bookingStatus ?? null,
-      currentStatus: p.currentStatus ?? null,
-    });
   }
 }
 
@@ -268,42 +297,59 @@ export async function createTrainRequest(
       return;
     }
 
+    // Validate passengers BEFORE creating the parent so we never have to
+    // roll back on input errors. Catalyst-side failures inside the actual
+    // write are tolerated separately (see writePassengers).
+    try {
+      validatePassengers(passengers);
+    } catch (err: any) {
+      sendError(res, err?.message || 'Invalid passengers payload');
+      return;
+    }
+
     // Train EQ entries are now self-service: staff submission auto-approves
     // so the staff member can print the letter immediately. Admin sees
     // entries in a read-only list — no separate approval step.
     const nowIso = new Date().toISOString();
-    const row = await insertRow(TRAIN_TABLE, {
-      pnrNumber,
-      passengerName,
-      journeyClass,
-      dateOfJourney: toCatalystDate(dateOfJourney) || toCatalystDate(new Date()),
-      fromStation,
-      toStation,
-      journeyRoute: route ?? null, // frontend `route` → Catalyst `journeyRoute`
-      trainName: trainName ?? null,
-      trainNumber: trainNumber ?? null,
-      boardingPoint: boardingPoint ?? null,
-      bookingType: bType,
-      referencedBy: referencedBy ?? null,
-      contactNumber: contactNumber ?? null,
-      remarks: remarks ?? null,
-      status: 'APPROVED',
-      approvedAt: toCatalystDate(nowIso),
-      rejectionReason: null,
-      signatureData: null,
-      createdById: req.user.id,
-      approvedById: req.user.id,
-    });
+    let row: CatalystRow;
+    try {
+      row = await insertRow(TRAIN_TABLE, {
+        pnrNumber,
+        passengerName,
+        journeyClass,
+        dateOfJourney: toCatalystDate(dateOfJourney) || toCatalystDate(new Date()),
+        fromStation,
+        toStation,
+        journeyRoute: route ?? null, // frontend `route` → Catalyst `journeyRoute`
+        trainName: trainName ?? null,
+        trainNumber: trainNumber ?? null,
+        boardingPoint: boardingPoint ?? null,
+        bookingType: bType,
+        referencedBy: referencedBy ?? null,
+        contactNumber: contactNumber ?? null,
+        remarks: remarks ?? null,
+        status: 'APPROVED',
+        approvedAt: toCatalystDate(nowIso),
+        rejectionReason: null,
+        signatureData: null,
+        createdById: req.user.id,
+        approvedById: req.user.id,
+      });
+    } catch (err) {
+      // Surface the underlying Catalyst error message in the response so
+      // the cause (column mismatch / size limit / etc.) is visible in
+      // DevTools without having to dig through the backend terminal.
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error('[trainRequest] Parent insert failed:', err);
+      sendError(res, `Failed to create train request: ${detail}`, 500, detail);
+      return;
+    }
 
+    // Best-effort passenger persistence. Schema/table issues are logged
+    // inside writePassengers and don't fail the request; the train request
+    // itself was already created above.
     if (Array.isArray(passengers) && passengers.length > 0) {
-      try {
-        await writePassengers(String(row.ROWID), passengers);
-      } catch (err: any) {
-        // Roll back the parent if passengers fail validation
-        await deleteRow(TRAIN_TABLE, String(row.ROWID));
-        sendError(res, err?.message || 'Failed to create passengers');
-        return;
-      }
+      await writePassengers(String(row.ROWID), passengers);
     }
 
     const [shaped] = await hydrate([row]);
@@ -492,15 +538,18 @@ export async function updateTrainRequest(
 
     const updated = await updateRow(TRAIN_TABLE, updateData as any);
 
-    // If passengers array provided, replace all existing passengers (delete + reinsert).
+    // If passengers array provided, replace all existing passengers
+    // (delete + reinsert). Validation runs synchronously up-front;
+    // Catalyst-side write issues inside writePassengers are logged.
     if (Array.isArray(body.passengers)) {
-      await deletePassengersFor(id);
       try {
-        await writePassengers(id, body.passengers);
+        validatePassengers(body.passengers);
       } catch (err: any) {
-        sendError(res, err?.message || 'Failed to update passengers');
+        sendError(res, err?.message || 'Invalid passengers payload');
         return;
       }
+      await deletePassengersFor(id);
+      await writePassengers(id, body.passengers);
     }
 
     const [shaped] = await hydrate([updated]);
