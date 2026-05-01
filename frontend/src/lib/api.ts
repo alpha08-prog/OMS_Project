@@ -886,6 +886,12 @@ export const pdfApi = {
     return res.data as string
   },
 
+  // Preview Tour Program (HTML) for a single tour
+  previewTourProgram: async (id: string) => {
+    const res = await http.get(`/pdf/tour-program/${id}/preview`, { responseType: 'text' })
+    return res.data as string
+  },
+
   // Download Tour Program PDF (opens in new tab)
   downloadTourProgram: async (startDate?: string, endDate?: string) => {
     try {

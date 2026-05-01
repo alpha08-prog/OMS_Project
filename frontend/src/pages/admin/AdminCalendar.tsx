@@ -3,12 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { Calendar, dateFnsLocalizer, Views } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
 import { enUS } from "date-fns/locale/en-US";
+import jsPDF from "jspdf";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { API_URL, googleCalendarApi, type CalendarEvent } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CalendarCheck, CalendarX, Loader2, MapPin, User, Plus, RefreshCw } from "lucide-react";
+import { CalendarCheck, CalendarX, Loader2, MapPin, User, Plus, RefreshCw, Clock, Download, FileText } from "lucide-react";
 
 // ─── date-fns localizer ───────────────────────────────────────────────────────
 const locales = { "en-US": enUS };
@@ -35,48 +35,159 @@ function eventStyleGetter(event: CalendarEvent) {
   return { style: { ...style, borderRadius: "6px", border: `1px solid ${style.borderColor}`, padding: "2px 6px" } };
 }
 
-// ─── selected-event tooltip card ─────────────────────────────────────────────
-function EventDetail({ event, onClose }: { event: CalendarEvent; onClose: () => void }) {
+// ─── PDF generator ───────────────────────────────────────────────────────────
+function downloadEventPdf(event: CalendarEvent) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 48;
+  const contentWidth = pageWidth - margin * 2;
+  let y = margin;
+
+  // Header bar
+  doc.setFillColor(79, 70, 229); // indigo-600
+  doc.rect(0, 0, pageWidth, 72, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("Event Details", margin, 46);
+  y = 110;
+
+  // Title
+  doc.setTextColor(30, 27, 75); // indigo-950
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  const titleLines = doc.splitTextToSize(event.title || "Untitled Event", contentWidth);
+  doc.text(titleLines, margin, y);
+  y += titleLines.length * 20 + 8;
+
+  // Type badge text
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(99, 102, 241); // indigo-500
+  doc.text(event.type === "TOUR" ? "Tour Program" : "Custom Event", margin, y);
+  y += 24;
+
+  // Divider
+  doc.setDrawColor(226, 232, 240);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 24;
+
+  // Field renderer
+  const writeField = (label: string, value: string) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139); // slate-500
+    doc.text(label.toUpperCase(), margin, y);
+    y += 14;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42); // slate-900
+    const lines = doc.splitTextToSize(value, contentWidth);
+    doc.text(lines, margin, y);
+    y += lines.length * 16 + 14;
+  };
+
+  const startDate = new Date(event.start);
+  const endDate = new Date(event.end);
+  writeField("Start", format(startDate, "EEEE, dd MMM yyyy 'at' hh:mm a"));
+  writeField("End", format(endDate, "EEEE, dd MMM yyyy 'at' hh:mm a"));
+
+  if (event.type === "TOUR") {
+    if (event.organizer) writeField("Organizer", event.organizer);
+    if (event.venue) writeField("Venue", event.venue);
+  }
+
+  if (event.description) writeField("Description", event.description);
+
+  writeField(
+    "Google Calendar",
+    event.googleSynced ? "Synced" : "Not synced"
+  );
+
+  // Footer
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `Generated on ${format(new Date(), "dd MMM yyyy, hh:mm a")}`,
+    margin,
+    doc.internal.pageSize.getHeight() - 32
+  );
+
+  const safeTitle = (event.title || "event").replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
+  doc.save(`${safeTitle}_${format(startDate, "yyyy-MM-dd")}.pdf`);
+}
+
+// ─── selected-event detail dialog ────────────────────────────────────────────
+function EventDetailDialog({ event, onClose }: { event: CalendarEvent | null; onClose: () => void }) {
   return (
-    <Card className="absolute z-50 w-72 shadow-2xl border border-indigo-200 bg-white top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-      <CardContent className="p-4 space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <p className="font-semibold text-indigo-900 leading-snug">{event.title}</p>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
-        </div>
-
-        <Badge variant="outline" className={
-          event.type === "TOUR" ? "border-amber-400 text-amber-700" : "border-indigo-400 text-indigo-700"
-        }>
-          {event.type === "TOUR" ? "Tour Program" : "Custom Event"}
-        </Badge>
-
-        {event.type === "TOUR" && (
+    <Dialog open={!!event} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        {event && (
           <>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <User className="h-3.5 w-3.5" /> {event.organizer}
+            <DialogHeader>
+              <DialogTitle className="text-indigo-900 leading-snug pr-6">{event.title}</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 pt-1">
+              <Badge variant="outline" className={
+                event.type === "TOUR" ? "border-amber-400 text-amber-700" : "border-indigo-400 text-indigo-700"
+              }>
+                {event.type === "TOUR" ? "Tour Program" : "Custom Event"}
+              </Badge>
+
+              <div className="flex items-start gap-2 text-sm text-gray-700">
+                <Clock className="h-4 w-4 mt-0.5 text-gray-400 shrink-0" />
+                <div>
+                  <div>{format(new Date(event.start), "EEE, dd MMM yyyy, hh:mm a")}</div>
+                  <div className="text-xs text-gray-500">
+                    Ends {format(new Date(event.end), "hh:mm a")}
+                  </div>
+                </div>
+              </div>
+
+              {event.type === "TOUR" && event.organizer && (
+                <div className="flex items-center gap-2 text-sm text-gray-700">
+                  <User className="h-4 w-4 text-gray-400 shrink-0" />
+                  <span>{event.organizer}</span>
+                </div>
+              )}
+
+              {event.type === "TOUR" && event.venue && (
+                <div className="flex items-center gap-2 text-sm text-gray-700">
+                  <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
+                  <span>{event.venue}</span>
+                </div>
+              )}
+
+              {event.description && (
+                <div className="flex items-start gap-2 text-sm text-gray-700">
+                  <FileText className="h-4 w-4 mt-0.5 text-gray-400 shrink-0" />
+                  <p className="whitespace-pre-wrap">{event.description}</p>
+                </div>
+              )}
+
+              {event.googleSynced && (
+                <p className="text-xs text-green-600 flex items-center gap-1.5">
+                  <CalendarCheck className="h-3.5 w-3.5" /> Synced to Google Calendar
+                </p>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <MapPin className="h-3.5 w-3.5" /> {event.venue}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={onClose}>Close</Button>
+              <Button
+                onClick={() => downloadEventPdf(event)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                <Download className="h-4 w-4 mr-1.5" /> Download PDF
+              </Button>
             </div>
           </>
         )}
-
-        {event.type === "CUSTOM" && event.description && (
-          <p className="text-sm text-gray-600">{event.description}</p>
-        )}
-
-        <p className="text-xs text-gray-400 pt-1">
-          {format(new Date(event.start), "dd MMM yyyy, hh:mm a")}
-        </p>
-
-        {event.googleSynced && (
-          <p className="text-xs text-green-600 flex items-center gap-1">
-            <CalendarCheck className="h-3 w-3" /> Synced to Google Calendar
-          </p>
-        )}
-      </CardContent>
-    </Card>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -330,11 +441,10 @@ export default function AdminCalendar() {
             popup
           />
 
-          {/* Event detail overlay */}
-          {selectedEvent && (
-            <EventDetail event={selectedEvent} onClose={() => setSelectedEvent(null)} />
-          )}
         </div>
+
+        {/* Event detail dialog */}
+        <EventDetailDialog event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       </div>
 
       {/* Add Event Dialog */}
