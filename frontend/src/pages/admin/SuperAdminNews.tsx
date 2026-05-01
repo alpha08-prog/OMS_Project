@@ -8,6 +8,8 @@ import {
   MapPin,
   User,
   Clock,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,16 @@ export function SuperAdminNewsContent() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const fetchNews = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -58,7 +70,11 @@ export function SuperAdminNewsContent() {
       if (endDate) params.endDate = endDate;
       const res = await newsApi.getAll(params);
       const arr = Array.isArray(res?.data) ? res.data : [];
-      setNews(arr);
+      // Sort latest-first by createdAt so newest news appear at the top.
+      const sorted = [...arr].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setNews(sorted);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load news';
       setError(message);

@@ -7,6 +7,8 @@ import {
   Phone,
   Mail,
   Clock,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,19 +42,39 @@ export function SuperAdminTourProgramsContent() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const fetchPrograms = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Show both ACCEPTED and REGRET so SUPER_ADMIN sees the full picture
-      // of admin decisions on tour invitations. Pending (still-undecided)
-      // entries are excluded — those belong to the admin's queue.
-      const res = await tourProgramApi.getAll({ limit: '200' });
+      // Match the admin-page latency pattern: limit=50 + push date filters
+      // to the server so the backend hits indexed columns rather than
+      // scanning the full table client-side.
+      const params: Record<string, string> = { limit: '50' };
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
+      const res = await tourProgramApi.getAll(params);
       const all = Array.isArray(res?.data) ? res.data : [];
-      const decided = all.filter((p) => {
-        const d = String(p.decision);
-        return d === 'ACCEPTED' || d === 'REGRET';
-      });
+      const decided = all
+        .filter((p) => {
+          const d = String(p.decision);
+          return d === 'ACCEPTED' || d === 'REGRET';
+        })
+        // Sort latest-first by event dateTime so newest programs appear first.
+        .sort((a, b) => {
+          const ta = a.dateTime ? new Date(a.dateTime).getTime() : 0;
+          const tb = b.dateTime ? new Date(b.dateTime).getTime() : 0;
+          return tb - ta;
+        });
       setPrograms(decided);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load tour programs');
@@ -63,24 +85,13 @@ export function SuperAdminTourProgramsContent() {
   };
 
   useEffect(() => {
+    // Refetch when date filters change so server-side params take effect.
     fetchPrograms();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate]);
 
-  const filtered = programs.filter((p) => {
-    if (!startDate && !endDate) return true;
-    const t = p.dateTime ? new Date(p.dateTime).getTime() : 0;
-    if (startDate) {
-      const from = new Date(startDate).getTime();
-      if (Number.isFinite(from) && t < from) return false;
-    }
-    if (endDate) {
-      const to = new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1;
-      if (Number.isFinite(to) && t > to) return false;
-    }
-    return true;
-  });
-
-  const pager = usePagination(filtered, 10);
+  // Date range is applied server-side now; no client filter needed.
+  const pager = usePagination(programs, 10);
 
   const formatDateTime = (s?: string | null) => {
     if (!s) return '—';
@@ -145,12 +156,26 @@ export function SuperAdminTourProgramsContent() {
                 ) : (
                   pager.pageItems.map((p) => {
                     const isAccepted = String(p.decision) === 'ACCEPTED';
+                    const isExpanded = expandedIds.has(p.id);
                     return (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between p-4 rounded-xl border bg-white hover:shadow-md transition"
+                      className="p-4 rounded-xl border bg-white hover:shadow-md transition"
                     >
-                      <div className="flex gap-4 min-w-0">
+                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(p.id)}
+                          aria-label={isExpanded ? 'Collapse tour' : 'Expand tour'}
+                          className="mt-0.5 p-0.5 rounded hover:bg-indigo-50 text-indigo-700 shrink-0"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </button>
                         <div className={`p-2 rounded-lg flex-shrink-0 ${isAccepted ? 'bg-emerald-100' : 'bg-red-100'}`}>
                           <Calendar className={`h-5 w-5 ${isAccepted ? 'text-emerald-700' : 'text-red-700'}`} />
                         </div>
@@ -166,12 +191,6 @@ export function SuperAdminTourProgramsContent() {
                           <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
                             <Clock className="h-3.5 w-3.5" />
                             {formatDateTime(p.dateTime)}
-                            <span>•</span>
-                            <MapPin className="h-3.5 w-3.5" />
-                            {p.venue || '—'}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Organizer: {p.organizer || '—'}
                           </p>
                         </div>
                       </div>
@@ -186,6 +205,21 @@ export function SuperAdminTourProgramsContent() {
                         <Eye className="h-4 w-4 mr-1" />
                         View
                       </Button>
+                      </div>
+                      {isExpanded && (
+                        <div className="mt-3 pt-3 border-t pl-9 space-y-1">
+                          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <MapPin className="h-3.5 w-3.5" />
+                            {p.venue || '—'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Organizer: {p.organizer || '—'}
+                          </p>
+                          {p.description && (
+                            <p className="text-sm mt-2">{p.description}</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                     );
                   })

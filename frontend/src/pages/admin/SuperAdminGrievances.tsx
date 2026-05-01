@@ -7,6 +7,8 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,17 +58,43 @@ export function SuperAdminGrievancesContent() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
+  // Per-card collapse state (matches Task Tracker pattern). Cards start
+  // collapsed — header info only — and expand on chevron click.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const fetchGrievances = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await grievanceApi.getAll({ limit: '200' });
+      // Match the admin-page latency pattern: limit=50 + push status/date
+      // filters to the server so the backend hits indexed columns rather
+      // than scanning the full table client-side. Backend already sorts by
+      // CREATEDTIME DESC, so latest-first is free.
+      const params: Record<string, string> = { limit: '50' };
+      if (filterStatus !== 'all') {
+        if (filterStatus === 'verified') params.isVerified = 'true';
+        else if (filterStatus === 'pending') params.isVerified = 'false';
+        else params.status = filterStatus;
+      }
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
+
+      const res = await grievanceApi.getAll(params);
       let arr: Grievance[] = [];
       if (res) {
         if (Array.isArray(res)) arr = res as unknown as Grievance[];
         else if (Array.isArray(res.data)) arr = res.data;
       }
-      // Strip RESOLVED entries — Super Admin's overview is for active cases.
+      // RESOLVED filter stays client-side because the backend has no "status
+      // != RESOLVED" param. The 50-row window is mostly active anyway.
       setGrievances(arr.filter((g) => g.status !== 'RESOLVED'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load grievances');
@@ -77,8 +105,10 @@ export function SuperAdminGrievancesContent() {
   };
 
   useEffect(() => {
+    // Refetch on filter/date change so the server-side params take effect.
     fetchGrievances();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus, startDate, endDate]);
 
   const formatCurrency = (value?: number) => {
     if (!value) return 'N/A';
@@ -111,23 +141,9 @@ export function SuperAdminGrievancesContent() {
     return <Clock className="h-4 w-4 text-gray-600" />;
   };
 
+  // Status / date filters happen server-side in fetchGrievances; only the
+  // free-text search box runs locally on the already-filtered window.
   const filtered = grievances.filter((g) => {
-    if (filterStatus !== 'all') {
-      if (filterStatus === 'verified' && !g.isVerified) return false;
-      if (filterStatus === 'pending' && g.isVerified) return false;
-      if (filterStatus !== 'verified' && filterStatus !== 'pending' && g.status !== filterStatus) return false;
-    }
-    if (startDate || endDate) {
-      const c = new Date(g.createdAt).getTime();
-      if (startDate) {
-        const f = new Date(startDate).getTime();
-        if (Number.isFinite(f) && c < f) return false;
-      }
-      if (endDate) {
-        const t = new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1;
-        if (Number.isFinite(t) && c > t) return false;
-      }
-    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
@@ -218,47 +234,68 @@ export function SuperAdminGrievancesContent() {
                     <p className="text-muted-foreground">No active grievances</p>
                   </div>
                 ) : (
-                  pager.pageItems.map((g) => (
+                  pager.pageItems.map((g) => {
+                    const isExpanded = expandedIds.has(g.id);
+                    return (
                     <div
                       key={g.id}
-                      className="flex items-center justify-between p-4 rounded-xl border bg-white hover:shadow-md transition"
+                      className="p-4 rounded-xl border bg-white hover:shadow-md transition"
                     >
-                      <div className="flex gap-4">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                          {getStatusIcon(g.status, g.isVerified)}
-                        </div>
-                        <div>
-                          <div className="font-medium flex flex-wrap items-center gap-2">
-                            <span>{g.petitionerName}</span>
-                            {getStatusBadge(g.status, g.isVerified)}
-                            {g.source === 'OFFICE' && (
-                              <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white">Office</Badge>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(g.id)}
+                            aria-label={isExpanded ? 'Collapse grievance' : 'Expand grievance'}
+                            className="mt-0.5 p-0.5 rounded hover:bg-indigo-50 text-indigo-700 shrink-0"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
                             )}
+                          </button>
+                          <div className="p-2 bg-indigo-100 rounded-lg flex-shrink-0">
+                            {getStatusIcon(g.status, g.isVerified)}
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            {g.grievanceType} • {g.constituency} • {formatCurrency(g.monetaryValue)}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
+                          <div className="min-w-0">
+                            <div className="font-medium flex flex-wrap items-center gap-2">
+                              <span>{g.petitionerName}</span>
+                              {getStatusBadge(g.status, g.isVerified)}
+                              {g.source === 'OFFICE' && (
+                                <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white">Office</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {g.grievanceType} • {g.constituency} • {formatCurrency(g.monetaryValue)}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelected(g);
+                            setDetailsOpen(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                      </div>
+                      {isExpanded && (
+                        <div className="mt-3 pt-3 border-t pl-9 space-y-1">
+                          <p className="text-xs text-muted-foreground">
                             📞 {g.mobileNumber} • Created: {formatDate(g.createdAt)}
                           </p>
                           {g.description && (
-                            <p className="text-sm mt-2 line-clamp-2">{g.description}</p>
+                            <p className="text-sm mt-2">{g.description}</p>
                           )}
                         </div>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setSelected(g);
-                          setDetailsOpen(true);
-                        }}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
-                      </Button>
+                      )}
                     </div>
-                  ))
+                    );
+                  })
                 )}
                 <Pagination
                   page={pager.page}
