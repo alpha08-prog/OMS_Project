@@ -45,13 +45,44 @@ function bucketBaseUrl(): string {
 }
 
 // ─── access token ──────────────────────────────────────────────────────────
-// Cached in-process and persisted to /tmp so dev-time test runs don't trip
-// Zoho's "too many continuous OAuth refresh" rate limit.
+// Two paths:
+//   1. Inside AppSail / Functions: Catalyst injects the admin access token
+//      on every incoming request as `x-zc-admin-cred-token`. We just read
+//      it off req.headers — no OAuth call, no env-var refresh token needed.
+//      (Production AppSail does NOT set CATALYST_REFRESH_TOKEN, so the
+//      env-var path would 500 with "OAuth token refresh failed" otherwise.)
+//   2. Local dev: refresh-token flow against accounts.zoho.in, cached in
+//      /tmp so repeated runs don't trip Zoho's continuous-refresh limit.
 
 const TOKEN_CACHE_FILE = path.join(os.tmpdir(), 'oms-zoho-access-token.json');
 let cachedAccessToken: { value: string; expiresAt: number } | null = null;
 
-async function getAccessToken(): Promise<string> {
+function isInsideCatalyst(): boolean {
+  return Boolean(
+    process.env.X_ZOHO_CATALYST_LISTEN_PORT ||
+      process.env.CATALYST_PROJECT_KEY_NAME ||
+      process.env.X_ZC_PROJECT_KEY
+  );
+}
+
+function adminTokenFromReq(req: Request | undefined): string | null {
+  if (!req || !req.headers) return null;
+  const v =
+    (req.headers as Record<string, unknown>)['x-zc-admin-cred-token'] ||
+    (req.headers as Record<string, unknown>)['X-ZC-ADMIN-CRED-TOKEN'];
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+async function getAccessToken(req?: Request): Promise<string> {
+  // Inside AppSail — token comes in on the request itself.
+  if (isInsideCatalyst()) {
+    const fromHeader = adminTokenFromReq(req);
+    if (fromHeader) return fromHeader;
+    // Fall through if the request didn't carry the header (some AppSail
+    // routes only get user-cred headers); the env-var refresh below will
+    // try only if CATALYST_REFRESH_TOKEN is actually set.
+  }
+
   const now = Date.now();
   if (cachedAccessToken && cachedAccessToken.expiresAt > now + 60_000) {
     return cachedAccessToken.value;
@@ -65,8 +96,14 @@ async function getAccessToken(): Promise<string> {
     }
   } catch {}
 
+  if (!process.env.CATALYST_REFRESH_TOKEN) {
+    throw new Error(
+      'No Catalyst access token available — neither x-zc-admin-cred-token on the request nor CATALYST_REFRESH_TOKEN in the env.'
+    );
+  }
+
   const params = new URLSearchParams({
-    refresh_token: process.env.CATALYST_REFRESH_TOKEN!,
+    refresh_token: process.env.CATALYST_REFRESH_TOKEN,
     client_id: process.env.CATALYST_CLIENT_ID!,
     client_secret: process.env.CATALYST_CLIENT_SECRET!,
     grant_type: 'refresh_token',
@@ -95,9 +132,9 @@ async function getAccessToken(): Promise<string> {
 
 let warmupDone = false;
 
-async function warmupOnce(): Promise<void> {
+async function warmupOnce(req?: Request): Promise<void> {
   if (warmupDone) return;
-  const token = await getAccessToken();
+  const token = await getAccessToken(req);
   const url = `${API_DOMAIN}/baas/v1/project/${process.env.CATALYST_PROJECT_ID}/bucket/objects?bucket_name=${bucketName()}&folder_listing=false`;
   // bare Authorization is the most reliable shape — proven via raw probe
   const res = await fetch(url, {
@@ -113,7 +150,9 @@ async function warmupOnce(): Promise<void> {
 /**
  * Optional: call from app.ts startup so the very first user upload doesn't
  * pay the warmup latency. Safe to omit — uploadObject() will warm itself up
- * on first use.
+ * on first use. Inside AppSail this is a no-op without a request, since the
+ * admin token only arrives on incoming requests; the warmup will run on the
+ * first user upload instead.
  */
 export async function warmupStratus(): Promise<void> {
   try {
@@ -122,15 +161,15 @@ export async function warmupStratus(): Promise<void> {
     // best-effort; warmupOnce will run again on first uploadObject if it failed
     warmupDone = false;
     // eslint-disable-next-line no-console
-    console.warn('[stratus] warmup failed (will retry on first upload):', (err as Error)?.message);
+    console.warn('[stratus] warmup skipped (will retry on first upload):', (err as Error)?.message);
   }
 }
 
 // ─── /bucket/signature  →  per-bucket sts query params ─────────────────────
 
-async function fetchBucketSignatureQs(): Promise<string> {
-  await warmupOnce();
-  const token = await getAccessToken();
+async function fetchBucketSignatureQs(req?: Request): Promise<string> {
+  await warmupOnce(req);
+  const token = await getAccessToken(req);
   const env = process.env.CATALYST_ENVIRONMENT || 'Development';
   const url = `${API_DOMAIN}/baas/v1/project/${process.env.CATALYST_PROJECT_ID}/bucket/signature?bucket_name=${bucketName()}`;
 
@@ -168,12 +207,12 @@ async function fetchBucketSignatureQs(): Promise<string> {
  * Throws on failure. Returns void; callers persist the key/metadata themselves.
  */
 export async function uploadObject(
-  _req: Request,
+  req: Request,
   key: string,
   body: Buffer,
   contentType: string
 ): Promise<void> {
-  const qs = await fetchBucketSignatureQs();
+  const qs = await fetchBucketSignatureQs(req);
   const putUrl = `${bucketBaseUrl()}/_signed/${encodeURI(key)}?${qs}`;
   const res = await fetch(putUrl, {
     method: 'PUT',
@@ -189,9 +228,9 @@ export async function uploadObject(
 /**
  * Delete an object from Stratus. Idempotent — swallows 404.
  */
-export async function deleteObject(_req: Request, key: string): Promise<void> {
-  await warmupOnce();
-  const token = await getAccessToken();
+export async function deleteObject(req: Request, key: string): Promise<void> {
+  await warmupOnce(req);
+  const token = await getAccessToken(req);
   const env = process.env.CATALYST_ENVIRONMENT || 'Development';
   const url =
     `${API_DOMAIN}/baas/v1/project/${process.env.CATALYST_PROJECT_ID}` +
@@ -222,7 +261,7 @@ export async function deleteObject(_req: Request, key: string): Promise<void> {
  * short enough that leaked URLs expire fast.
  */
 export async function getSignedDownloadUrl(
-  _req: Request,
+  req: Request,
   key: string,
   _expirySeconds = 300
 ): Promise<string> {
@@ -232,7 +271,7 @@ export async function getSignedDownloadUrl(
   // ~1 hour, so the same query-string can sign downloads as well as
   // uploads. This avoids /bucket/object/signed-url, which on the IN DC
   // returns a Tomcat HTML 400 when called with full SDK admin headers.
-  const qs = await fetchBucketSignatureQs();
+  const qs = await fetchBucketSignatureQs(req);
   return `${bucketBaseUrl()}/_signed/${encodeURI(key)}?${qs}`;
 }
 
