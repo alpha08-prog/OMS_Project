@@ -6,16 +6,31 @@ type CatalystApp = ReturnType<typeof catalystSDK.initializeApp>;
 
 /**
  * SDK bug workarounds applied to every outgoing https.request once at module
- * load.
+ * load. All three are required for Catalyst's IN datacenter (Tomcat front).
  *
  *   1. zcatalyst-sdk-node v3.4.0 appends `&next_token=` (empty) to
  *      getPagedRows requests; Catalyst rejects with HTTP 400 HTML. Strip it.
  *
- *   2. The same SDK builds the Accept header by concatenating its own value
- *      + ', ' + (existing || ''), which yields a trailing `, ` when no
- *      existing Accept is present (e.g. `application/vnd.catalyst.v2+json, `).
- *      Catalyst's Tomcat parses Accept strictly and returns the default
- *      HTML 400 page on POST/PUT (not GET) with that trailing comma. Trim it.
+ *   2. The SDK builds the Accept header by concatenating its own value + ', '
+ *      + (existing || ''), producing a trailing `, ` when no existing Accept
+ *      is present. Trim it.
+ *
+ *   3. The SDK passes header keys with mixed casing (e.g. `User-Agent`,
+ *      `PROJECT_ID`, `X-CATALYST-USER`, `Authorization`). On Catalyst's IN-DC
+ *      Tomcat, this *specific combination* of mixed-case keys triggers the
+ *      default Tomcat HTML 400 page on /bucket/* admin endpoints. Lowercasing
+ *      every header key makes every Stratus admin call return 200 (verified
+ *      via reverse-bisect — see scripts/test-stratus-bisect.ts). HTTP/1.1
+ *      header names are case-insensitive per RFC 7230 §3.2, so lowercasing
+ *      is always safe.
+ */
+/**
+ * SDK bug workaround: zcatalyst-sdk-node v3.4.0 appends `&next_token=` (empty)
+ * to getPagedRows requests, which Catalyst rejects with HTTP 400 HTML. Strip
+ * empty next_token from outgoing https requests once at module load. Other
+ * monkey-patches we tried earlier (Accept-trim, body-inject, lowercase headers)
+ * were red herrings — the real issue was a cold-start Tomcat 400 on the IN DC,
+ * fixed by warmupStratus() in stratus.ts.
  */
 (() => {
   const original = https.request;
@@ -25,63 +40,8 @@ type CatalystApp = ReturnType<typeof catalystSDK.initializeApp>;
       opts.path = opts.path
         .replace(/[?&]next_token=(?=&|$)/g, '')   // strip empty next_token
         .replace(/\?$/, '');                       // trailing '?'
-
-      if (opts.headers) {
-        const acceptKey = 'Accept' in opts.headers ? 'Accept' : ('accept' in opts.headers ? 'accept' : null);
-        if (acceptKey && typeof opts.headers[acceptKey] === 'string') {
-          opts.headers[acceptKey] = (opts.headers[acceptKey] as string).replace(/,\s*$/, '');
-        }
-      }
-
-      // SDK bug workaround: zcatalyst-sdk-node@3.4.0 calls POST /bucket/signature
-      // with type:'json' and no body field, so the SDK's _request() takes the
-      // `data === undefined` branch and calls req.end() with no payload.
-      // Catalyst's Tomcat rejects empty POST bodies (Content-Type: application/json
-      // with Content-Length:0) by serving the default HTML 400 page. We inject
-      // an empty JSON object body to satisfy the parser.
-      (opts as any).__omsInjectEmptyJsonBody =
-        typeof opts.method === 'string' &&
-        opts.method.toUpperCase() === 'POST' &&
-        opts.path.includes('/bucket/signature');
-      if ((opts as any).__omsInjectEmptyJsonBody) {
-        opts.headers = opts.headers || {};
-        opts.headers['Content-Length'] = '2';
-        if (!('Content-Type' in opts.headers) && !('content-type' in opts.headers)) {
-          opts.headers['Content-Type'] = 'application/json';
-        }
-      }
-
-      // Diagnostic: log every Stratus-relevant outbound request so we can see
-      // exactly what the SDK is sending when uploads fail.
-      if (
-        process.env.OMS_DEBUG_STRATUS === '1' &&
-        (opts.path.includes('/bucket') || (opts.host || opts.hostname || '').includes('stratus'))
-      ) {
-        const safeHeaders = { ...(opts.headers || {}) };
-        if (safeHeaders.Authorization) safeHeaders.Authorization = '<redacted>';
-        if (safeHeaders.authorization) safeHeaders.authorization = '<redacted>';
-        // eslint-disable-next-line no-console
-        console.log('[stratus-debug] outbound', {
-          method: opts.method,
-          host: opts.host || opts.hostname,
-          port: opts.port,
-          path: opts.path,
-          headers: safeHeaders,
-        });
-      }
     }
-    const req = original.apply(https, args as any);
-    // Pre-write the `{}` body so the SDK's later req.end() finalizes the
-    // request with the body already in the buffer. We set Content-Length:2
-    // above so Node sends a content-length-framed body, not chunked.
-    if (opts && (opts as any).__omsInjectEmptyJsonBody && req && typeof (req as any).write === 'function') {
-      try {
-        (req as any).write('{}');
-      } catch {
-        // best-effort — if write fails the SDK's req.end() still runs
-      }
-    }
-    return req;
+    return original.apply(https, args as any);
   };
 })();
 

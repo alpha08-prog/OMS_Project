@@ -98,6 +98,8 @@ export interface GrievanceFilters {
     endDate?: Date;
     search?: string;
     isVerified?: string;
+    priority?: string;
+    source?: string;
 }
 export interface VisitorFilters {
     startDate?: Date;
@@ -109,6 +111,8 @@ export interface NewsFilters {
     category?: string;
     region?: string;
     search?: string;
+    startDate?: string;
+    endDate?: string;
 }
 export interface TrainRequestFilters {
     status?: string;

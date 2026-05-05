@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { FileDown, Info, Upload } from "lucide-react";
-import { tourProgramApi, pdfApi } from "@/lib/api";
+import { FileDown, Info, Upload, X } from "lucide-react";
+import { tourProgramApi, pdfApi, uploadsApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 export default function TourProgramCreate() {
@@ -15,6 +15,7 @@ export default function TourProgramCreate() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
 
   // Downloads the upcoming-week tour schedule PDF (every accepted tour event
   // from today through +7 days). Backend default window matches this — the
@@ -32,9 +33,6 @@ export default function TourProgramCreate() {
       setExporting(false);
     }
   };
-  // File-upload UI is gated as "Coming soon" — see Invitation Document
-  // section. Restore [file, setFile] tuple here to re-enable.
-
   const [formData, setFormData] = useState({
     eventName: "",
     organizer: "",
@@ -102,9 +100,17 @@ export default function TourProgramCreate() {
         referencedBy: formData.referencedBy || undefined,
       });
 
-      // File upload is gated behind a "Coming soon" placeholder until
-      // Stratus is restored. Created without an attachment.
-      void created;
+      // Upload invitation if the staff selected one. Non-fatal: the tour
+      // program row is already saved and queued for admin review, so a
+      // failed upload only surfaces a warning instead of rolling back.
+      if (file) {
+        try {
+          await uploadsApi.upload(file, 'TOUR', created.id);
+        } catch (uploadErr: unknown) {
+          const msg = uploadErr instanceof Error ? uploadErr.message : 'attachment upload failed';
+          setError(`Tour program saved, but invitation upload failed: ${msg}`);
+        }
+      }
 
       setSuccess(true);
       setTimeout(() => {
@@ -279,18 +285,50 @@ export default function TourProgramCreate() {
                       <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
                         Invitation Document
                       </h3>
-                      <div
-                        className="border border-dashed border-slate-300 bg-slate-50/70 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center cursor-not-allowed select-none"
-                        aria-disabled="true"
-                      >
-                        <Upload className="h-6 w-6 text-slate-400" />
-                        <p className="text-sm font-medium text-slate-600">
-                          File uploads — Coming soon
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          You can submit without an attachment for now.
-                        </p>
-                      </div>
+                      {file ? (
+                        <div className="border border-indigo-200 bg-indigo-50/70 rounded-xl p-4 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-indigo-900 truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(file.size / 1024).toFixed(1)} KB · {file.type || 'unknown type'}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-slate-500 hover:text-red-600"
+                            onClick={() => setFile(null)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <label className="border border-dashed border-slate-300 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/40 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-colors">
+                          <Upload className="h-6 w-6 text-slate-400" />
+                          <p className="text-sm font-medium text-slate-700">
+                            Click to attach the invitation
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Image or PDF, up to 10 MB. Optional.
+                          </p>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (!f) return;
+                              if (f.size > 10 * 1024 * 1024) {
+                                setError('File is larger than 10 MB.');
+                                return;
+                              }
+                              setFile(f);
+                              setError(null);
+                            }}
+                          />
+                        </label>
+                      )}
                     </section>
 
                     {/* Info about workflow */}

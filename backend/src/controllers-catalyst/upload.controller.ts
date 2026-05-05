@@ -190,7 +190,19 @@ export async function listAttachments(
   }
 }
 
-/** GET /api/uploads/:id -- redirect to a fresh pre-signed Stratus URL. */
+/**
+ * GET /api/uploads/:id
+ *
+ * Streams the attachment bytes to the client through this backend, instead
+ * of redirecting to a Stratus signed URL.
+ *
+ * Why proxy instead of redirect: Stratus signed URLs don't return
+ * Access-Control-Allow-Origin, so any XHR/fetch from the browser that
+ * follows the redirect is blocked by CORS. Workarounds via window.open
+ * are fragile (popup blockers, browser extensions hijacking about:blank,
+ * Stratus's Content-Disposition decisions). Streaming through the same
+ * origin makes axios `responseType: 'blob'` work cleanly on the frontend.
+ */
 export async function downloadFile(
   req: AuthenticatedRequest,
   res: Response
@@ -209,10 +221,48 @@ export async function downloadFile(
       return;
     }
 
+    const filename = String(row.filename ?? 'attachment');
+    const mimeType = String(row.mimeType ?? 'application/octet-stream');
+
     const signedUrl = await getSignedDownloadUrl(req as unknown as Request, stratusKey, 300);
-    res.redirect(302, signedUrl);
+
+    const upstream = await fetch(signedUrl);
+    if (!upstream.ok) {
+      const errBody = await upstream.text().catch(() => '');
+      console.error('[uploads] Stratus GET failed', {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        body: errBody.slice(0, 300),
+      });
+      sendError(
+        res,
+        `Stratus returned ${upstream.status} ${upstream.statusText}`,
+        502
+      );
+      return;
+    }
+
+    // Buffer the whole response. Files are capped at 10 MB by the upload
+    // path so memory pressure is bounded; buffering avoids streaming bugs
+    // (Readable.fromWeb dropping bytes, partial writes on socket close).
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    if (buf.length === 0) {
+      console.error('[uploads] Stratus returned 200 but body was empty', { stratusKey });
+      sendError(res, 'Stratus returned an empty body for this attachment', 502);
+      return;
+    }
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', String(buf.length));
+    // RFC 5987 — encode the filename so non-ASCII names round-trip safely.
+    const safeFilename = filename.replace(/[\\/?"*<>|]/g, '_');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`
+    );
+    res.send(buf);
   } catch (error) {
-    sendServerError(res, 'Failed to generate download URL', error);
+    sendServerError(res, 'Failed to download attachment', error);
   }
 }
 
