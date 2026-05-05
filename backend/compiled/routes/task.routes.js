@@ -13,7 +13,27 @@ const createTaskValidation = [
     (0, express_validator_1.body)('taskType')
         .isIn(['GRIEVANCE', 'TRAIN_REQUEST', 'TOUR_PROGRAM', 'GENERAL'])
         .withMessage('Valid task type is required'),
-    (0, express_validator_1.body)('assignedToId').matches(ID_PATTERN).withMessage('Valid staff ID is required'),
+    // Either single (legacy) or multi (preferred) — controller normalises.
+    (0, express_validator_1.body)('assignedToId')
+        .optional()
+        .matches(ID_PATTERN)
+        .withMessage('Valid staff ID is required'),
+    (0, express_validator_1.body)('assignedToIds')
+        .optional()
+        .isArray({ min: 1 })
+        .withMessage('assignedToIds must be a non-empty array'),
+    (0, express_validator_1.body)('assignedToIds.*')
+        .optional()
+        .matches(ID_PATTERN)
+        .withMessage('Each assignedToIds entry must be a valid staff ID'),
+    (0, express_validator_1.body)().custom((body) => {
+        const hasSingle = !!body.assignedToId;
+        const hasMulti = Array.isArray(body.assignedToIds) && body.assignedToIds.length > 0;
+        if (!hasSingle && !hasMulti) {
+            throw new Error('Either assignedToId or assignedToIds must be provided');
+        }
+        return true;
+    }),
     (0, express_validator_1.body)('referenceId').optional().matches(ID_PATTERN).withMessage('Invalid reference ID'),
     (0, express_validator_1.body)('dueDate').optional().isISO8601().withMessage('Due date must be valid'),
 ];
@@ -48,6 +68,9 @@ router.get('/staff', auth_1.adminOnly, task_controller_1.getStaffMembers);
 router.patch('/:id/status', auth_1.adminOnly, (0, validate_1.validate)([...idParamValidation, ...updateStatusValidation]), task_controller_1.updateTaskStatus);
 router.delete('/:id', auth_1.adminOnly, (0, validate_1.validate)(idParamValidation), task_controller_1.deleteTask);
 // Admin-only — full task list (staff use /my-tasks for their own tasks).
+// /groups returns the same data collapsed by groupId so the admin sees one
+// card per multi-assigned task instead of N near-duplicate rows.
+router.get('/groups', auth_1.adminOnly, task_controller_1.getTaskGroups);
 router.get('/', auth_1.adminOnly, task_controller_1.getTasks);
 router.get('/:id', (0, validate_1.validate)(idParamValidation), task_controller_1.getTaskById);
 exports.default = router;

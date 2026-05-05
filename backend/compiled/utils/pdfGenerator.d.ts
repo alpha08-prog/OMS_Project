@@ -11,6 +11,12 @@ interface LetterConfig {
     senderDesignation: string;
     senderOffice: string;
 }
+export interface TrainEQPassenger {
+    name: string;
+    gender?: string;
+    age?: number | string;
+    waitlist?: string;
+}
 interface TrainEQLetter {
     refNumber: string;
     date: string;
@@ -25,6 +31,8 @@ interface TrainEQLetter {
     senderName: string;
     senderDesignation: string;
     additionalPassengers?: string[];
+    passengerDetails?: TrainEQPassenger[];
+    numberOfPassengers?: number;
     documentId?: string;
 }
 interface GrievanceLetter {

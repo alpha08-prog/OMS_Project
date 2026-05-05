@@ -24,6 +24,10 @@ function pickIcon(mime: string) {
 }
 
 async function downloadAttachment(att: Attachment) {
+  // Backend streams the file bytes back through this same origin (it
+  // server-side fetches the Stratus signed URL and pipes the body to us),
+  // so axios + responseType:'blob' just works — no CORS, no redirect, no
+  // popup blocker. We then trigger a save via a temporary anchor.
   const res = await http.get(`/uploads/${att.id}`, { responseType: "blob" });
   const blobUrl = URL.createObjectURL(res.data as Blob);
   const a = document.createElement("a");
@@ -32,7 +36,8 @@ async function downloadAttachment(att: Attachment) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(blobUrl);
+  // Revoke after a tick so Chrome has time to start the download.
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
 export function AttachmentsList({

@@ -16,6 +16,8 @@ const birthday_routes_1 = __importDefault(require("./birthday.routes"));
 const history_routes_1 = __importDefault(require("./history.routes"));
 const task_routes_1 = __importDefault(require("./task.routes"));
 const google_routes_1 = __importDefault(require("./google.routes"));
+const upload_routes_1 = __importDefault(require("./upload.routes"));
+const notification_routes_1 = __importDefault(require("./notification.routes"));
 const router = (0, express_1.Router)();
 // Health check
 router.get('/health', (req, res) => {
@@ -39,5 +41,7 @@ router.use('/birthdays', birthday_routes_1.default);
 router.use('/history', history_routes_1.default);
 router.use('/tasks', task_routes_1.default);
 router.use('/google', google_routes_1.default);
+router.use('/uploads', upload_routes_1.default);
+router.use('/notifications', notification_routes_1.default);
 exports.default = router;
 //# sourceMappingURL=index.js.map
