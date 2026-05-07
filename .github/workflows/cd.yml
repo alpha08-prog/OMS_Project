@@ -341,16 +341,24 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Download frontend dist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies and build frontend
+        # Self-build instead of downloading the build-frontend job's artifact.
+        # The artifact path was brittle: retention-days:1 + the "Re-run failed
+        # jobs" UX skips the upstream upload-job, leaving deploy with nothing
+        # to download. Mirroring the backend deploy's inline-build pattern.
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          ls dist | head
 
       - name: Install Zoho Catalyst CLI
         run: npm install -g zcatalyst-cli

@@ -26,17 +26,38 @@ import * as path from 'path';
 
 const DEFAULT_BUCKET = 'oms-attachments';
 
+/**
+ * Read an env var with fallback names. Production AppSail uses the
+ * `OMS_CATALYST_*` prefix; local dev uses bare `CATALYST_*`. Try both so
+ * the same code path works in either environment without renaming vars.
+ */
+function readEnv(...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = process.env[k];
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return undefined;
+}
+
+function projectId(): string | undefined {
+  return readEnv('CATALYST_PROJECT_ID', 'OMS_CATALYST_PROJECT_ID');
+}
+
 function bucketName(): string {
-  const v = process.env.OMS_STRATUS_BUCKET ?? process.env.STRATUS_BUCKET;
+  const v = readEnv('OMS_STRATUS_BUCKET', 'STRATUS_BUCKET');
   return (v && v.trim()) || DEFAULT_BUCKET;
 }
 
 const API_DOMAIN = ((): string => {
-  const raw = (process.env.CATALYST_API_DOMAIN || 'api.catalyst.zoho.in').replace(/\/$/, '');
+  const raw = (readEnv('CATALYST_API_DOMAIN', 'OMS_CATALYST_API_DOMAIN') || 'api.catalyst.zoho.in').replace(/\/$/, '');
   return /^https?:\/\//.test(raw) ? raw : `https://${raw}`;
 })();
-const ACCOUNTS_DOMAIN = (process.env.X_ZOHO_CATALYST_ACCOUNTS_URL || 'https://accounts.zoho.in').replace(/\/$/, '');
-const STRATUS_SUFFIX = process.env.X_ZOHO_STRATUS_RESOURCE_SUFFIX || '.zohostratus.com';
+const ACCOUNTS_DOMAIN = (readEnv('X_ZOHO_CATALYST_ACCOUNTS_URL') || 'https://accounts.zoho.in').replace(/\/$/, '');
+// Default to the IN datacenter suffix because that's where this project lives.
+// Both `.zohostratus.in` (IN) and `.zohostratus.com` (US) work, but defaulting
+// to .com would silently produce 404s in IN if X_ZOHO_STRATUS_RESOURCE_SUFFIX
+// isn't set in the AppSail config.
+const STRATUS_SUFFIX = readEnv('X_ZOHO_STRATUS_RESOURCE_SUFFIX') || '.zohostratus.in';
 
 function bucketBaseUrl(): string {
   const env = process.env.CATALYST_ENVIRONMENT || 'Development';
@@ -96,16 +117,25 @@ async function getAccessToken(req?: Request): Promise<string> {
     }
   } catch {}
 
-  if (!process.env.CATALYST_REFRESH_TOKEN) {
+  // Read both prefixes — production AppSail uses OMS_CATALYST_*, local uses
+  // bare CATALYST_*. Either is acceptable as the fallback.
+  const refreshToken = readEnv('CATALYST_REFRESH_TOKEN', 'OMS_CATALYST_REFRESH_TOKEN');
+  const clientId     = readEnv('CATALYST_CLIENT_ID', 'OMS_CATALYST_CLIENT_ID');
+  const clientSecret = readEnv('CATALYST_CLIENT_SECRET', 'OMS_CATALYST_CLIENT_SECRET');
+
+  if (!refreshToken || !clientId || !clientSecret) {
     throw new Error(
-      'No Catalyst access token available — neither x-zc-admin-cred-token on the request nor CATALYST_REFRESH_TOKEN in the env.'
+      'No Catalyst access token available. ' +
+      'Need either x-zc-admin-cred-token on the incoming request, OR ' +
+      'CATALYST_REFRESH_TOKEN/CATALYST_CLIENT_ID/CATALYST_CLIENT_SECRET (or the OMS_CATALYST_* equivalents) in the env. ' +
+      `Found: refresh=${!!refreshToken} clientId=${!!clientId} clientSecret=${!!clientSecret}`
     );
   }
 
   const params = new URLSearchParams({
-    refresh_token: process.env.CATALYST_REFRESH_TOKEN,
-    client_id: process.env.CATALYST_CLIENT_ID!,
-    client_secret: process.env.CATALYST_CLIENT_SECRET!,
+    refresh_token: refreshToken,
+    client_id: clientId,
+    client_secret: clientSecret,
     grant_type: 'refresh_token',
   });
   const res = await fetch(`${ACCOUNTS_DOMAIN}/oauth/v2/token`, {
@@ -135,7 +165,7 @@ let warmupDone = false;
 async function warmupOnce(req?: Request): Promise<void> {
   if (warmupDone) return;
   const token = await getAccessToken(req);
-  const url = `${API_DOMAIN}/baas/v1/project/${process.env.CATALYST_PROJECT_ID}/bucket/objects?bucket_name=${bucketName()}&folder_listing=false`;
+  const url = `${API_DOMAIN}/baas/v1/project/${projectId()}/bucket/objects?bucket_name=${bucketName()}&folder_listing=false`;
   // bare Authorization is the most reliable shape — proven via raw probe
   const res = await fetch(url, {
     method: 'GET',
@@ -171,7 +201,7 @@ async function fetchBucketSignatureQs(req?: Request): Promise<string> {
   await warmupOnce(req);
   const token = await getAccessToken(req);
   const env = process.env.CATALYST_ENVIRONMENT || 'Development';
-  const url = `${API_DOMAIN}/baas/v1/project/${process.env.CATALYST_PROJECT_ID}/bucket/signature?bucket_name=${bucketName()}`;
+  const url = `${API_DOMAIN}/baas/v1/project/${projectId()}/bucket/signature?bucket_name=${bucketName()}`;
 
   // Without the X-Catalyst-Environment / Environment headers, Catalyst issues
   // a signature scoped to the bare bucket name (production), not the env-
@@ -179,7 +209,7 @@ async function fetchBucketSignatureQs(req?: Request): Promise<string> {
   // with "Qualified Resources doesn't meet the required resource for the action".
   const headers: Record<string, string> = {
     Authorization: `Zoho-oauthtoken ${token}`,
-    PROJECT_ID: process.env.CATALYST_PROJECT_ID!,
+    PROJECT_ID: projectId() || '',
     'X-Catalyst-Environment': env,
     Environment: env,
     'X-CATALYST-USER': 'admin',
@@ -233,13 +263,13 @@ export async function deleteObject(req: Request, key: string): Promise<void> {
   const token = await getAccessToken(req);
   const env = process.env.CATALYST_ENVIRONMENT || 'Development';
   const url =
-    `${API_DOMAIN}/baas/v1/project/${process.env.CATALYST_PROJECT_ID}` +
+    `${API_DOMAIN}/baas/v1/project/${projectId()}` +
     `/bucket/object?bucket_name=${bucketName()}&object_key=${encodeURIComponent(key)}`;
   const res = await fetch(url, {
     method: 'DELETE',
     headers: {
       Authorization: `Zoho-oauthtoken ${token}`,
-      PROJECT_ID: process.env.CATALYST_PROJECT_ID!,
+      PROJECT_ID: projectId() || '',
       'X-Catalyst-Environment': env,
       Environment: env,
       'X-CATALYST-USER': 'admin',
