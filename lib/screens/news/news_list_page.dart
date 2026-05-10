@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
@@ -24,12 +26,27 @@ class _NewsListPageState extends State<NewsListPage> {
   // Only ADMIN / SUPER_ADMIN see the chip row that controls this.
   String _priorityFilter = "ALL";
 
+  // Search + date filters (visible to admin/super admin)
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = "";
+  Timer? _searchDebounce;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  bool _showFilters = false;
+
   List<Map<String, dynamic>> newsList = [];
 
   bool get _canSeeFilter =>
       widget.role == Roles.admin || widget.role == Roles.superAdmin;
 
   bool get _canCreateNews => widget.role == Roles.staff;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -48,9 +65,28 @@ class _NewsListPageState extends State<NewsListPage> {
     });
 
     try {
-      final endpoint = _priorityFilter == "ALL"
-          ? "/api/news"
-          : "/api/news?priority=$_priorityFilter";
+      final params = <String, String>{};
+      if (_priorityFilter != "ALL") {
+        params['priority'] = _priorityFilter;
+      }
+      if (_searchQuery.isNotEmpty) {
+        params['search'] = _searchQuery;
+      }
+      if (_startDate != null) {
+        params['startDate'] = _startDate!.toIso8601String();
+      }
+      if (_endDate != null) {
+        params['endDate'] =
+            _endDate!.add(const Duration(days: 1)).toIso8601String();
+      }
+      final qs = params.isEmpty
+          ? ""
+          : "?" +
+              params.entries
+                  .map((e) =>
+                      "${e.key}=${Uri.encodeComponent(e.value)}")
+                  .join("&");
+      final endpoint = "/api/news$qs";
       final res = await HttpService.get(endpoint);
 
       if (res.statusCode == 200) {
@@ -200,7 +236,17 @@ class _NewsListPageState extends State<NewsListPage> {
                   padding: const EdgeInsets.all(16),
                   children: [
                     if (_canSeeFilter) ...[
+                      _buildSearchAndFilterToggle(),
+                      const SizedBox(height: 10),
+                      if (_showFilters) ...[
+                        _buildDateFilterRow(),
+                        const SizedBox(height: 10),
+                      ],
                       _buildPriorityFilterRow(),
+                      if (_hasActiveFilters()) ...[
+                        const SizedBox(height: 8),
+                        _buildActiveFiltersBar(),
+                      ],
                       const SizedBox(height: 12),
                     ],
                     if (newsList.isEmpty)
@@ -209,6 +255,224 @@ class _NewsListPageState extends State<NewsListPage> {
                       ...newsList.map((n) => _newsCard(n)).toList(),
                   ],
                 ),
+    );
+  }
+
+  bool _hasActiveFilters() =>
+      _searchQuery.isNotEmpty ||
+      _startDate != null ||
+      _endDate != null ||
+      _priorityFilter != "ALL";
+
+  Widget _buildSearchAndFilterToggle() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _searchController,
+            onChanged: (value) {
+              _searchDebounce?.cancel();
+              _searchDebounce = Timer(
+                  const Duration(milliseconds: 400), () {
+                if (_searchQuery == value) return;
+                setState(() => _searchQuery = value);
+                fetchNews();
+              });
+            },
+            decoration: InputDecoration(
+              hintText: "Search headline, description, source",
+              hintStyle: const TextStyle(fontSize: 13),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = "");
+                        fetchNews();
+                      },
+                    )
+                  : null,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                  vertical: 10, horizontal: 8),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    BorderSide(color: Colors.grey.shade300),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: kNewsPrimaryBlue),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: _showFilters || _startDate != null || _endDate != null
+                ? kNewsPrimaryBlue
+                : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: IconButton(
+            icon: Icon(
+              Icons.tune,
+              color: _showFilters || _startDate != null || _endDate != null
+                  ? Colors.white
+                  : kNewsPrimaryBlue,
+            ),
+            tooltip: "Date filter",
+            onPressed: () =>
+                setState(() => _showFilters = !_showFilters),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateFilterRow() {
+    return Row(
+      children: [
+        Expanded(child: _datePickerButton(isStart: true)),
+        const SizedBox(width: 8),
+        Expanded(child: _datePickerButton(isStart: false)),
+      ],
+    );
+  }
+
+  Widget _datePickerButton({required bool isStart}) {
+    final value = isStart ? _startDate : _endDate;
+    final label = isStart ? "Start date" : "End date";
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: kNewsPrimaryBlue,
+        side: BorderSide(color: Colors.grey.shade300),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 10, vertical: 12),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10)),
+        alignment: Alignment.centerLeft,
+      ),
+      icon: const Icon(Icons.calendar_today, size: 16),
+      label: Text(
+        value != null
+            ? DateFormat('d MMM yyyy').format(value)
+            : label,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color:
+              value != null ? const Color(0xFF0F172A) : Colors.grey.shade600,
+        ),
+        overflow: TextOverflow.ellipsis,
+      ),
+      onPressed: () => _pickDate(isStart),
+    );
+  }
+
+  Future<void> _pickDate(bool isStart) async {
+    final initial = isStart
+        ? (_startDate ?? DateTime.now())
+        : (_endDate ?? DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _startDate = picked;
+      } else {
+        _endDate = picked;
+      }
+    });
+    fetchNews();
+  }
+
+  Widget _buildActiveFiltersBar() {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (_startDate != null)
+          _filterChip(
+            "From: ${DateFormat('d MMM').format(_startDate!)}",
+            () {
+              setState(() => _startDate = null);
+              fetchNews();
+            },
+          ),
+        if (_endDate != null)
+          _filterChip(
+            "To: ${DateFormat('d MMM').format(_endDate!)}",
+            () {
+              setState(() => _endDate = null);
+              fetchNews();
+            },
+          ),
+        TextButton.icon(
+          icon: const Icon(Icons.clear_all, size: 16),
+          label: const Text("Clear all", style: TextStyle(fontSize: 12)),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            foregroundColor: Colors.red.shade700,
+          ),
+          onPressed: () {
+            _searchController.clear();
+            setState(() {
+              _searchQuery = "";
+              _startDate = null;
+              _endDate = null;
+              _priorityFilter = "ALL";
+            });
+            fetchNews();
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _filterChip(String label, VoidCallback onClear) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: kNewsPrimaryBlue)),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onClear,
+            child:
+                const Icon(Icons.close, size: 14, color: kNewsPrimaryBlue),
+          ),
+        ],
+      ),
     );
   }
 

@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../widgets/date_range_filter.dart';
 import 'train_request_add_page.dart';
 
 class TrainRequestListPage extends StatefulWidget {
@@ -27,6 +28,8 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
   String? error;
   String selectedStatus = "All";
   String _searchQuery = "";
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   final _searchController = TextEditingController();
 
   List<Map<String, dynamic>> requests = [];
@@ -375,13 +378,13 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
           );
         }
       }
-    } catch (e) {
+    } catch (_) {
       // Close loading dialog if still open
       if (mounted) Navigator.of(context).pop();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e")),
+          const SnackBar(content: Text("Something went wrong. Please try again.")),
         );
       }
     }
@@ -883,6 +886,26 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
             ),
           ),
 
+          const SizedBox(height: 8),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: DateRangeFilter(
+              from: _dateFrom,
+              to: _dateTo,
+              tint: primaryBlue,
+              onFromChanged: (d) => setState(() => _dateFrom = d),
+              onToChanged: (d) => setState(() => _dateTo = d),
+              onClear: () => setState(() {
+                _dateFrom = null;
+                _dateTo = null;
+              }),
+            ),
+          ),
+
           const SizedBox(height: 12),
 
           // List
@@ -906,7 +929,7 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
                           ],
                         ),
                       )
-                    : requests.isEmpty
+                    : _visibleRequests.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -924,9 +947,9 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
                             onRefresh: fetchRequests,
                             child: ListView.builder(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-                              itemCount: requests.length,
+                              itemCount: _visibleRequests.length,
                               itemBuilder: (context, index) {
-                                final r = requests[index];
+                                final r = _visibleRequests[index];
                                 return _buildRequestCard(r, isAdmin);
                               },
                             ),
@@ -959,6 +982,14 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
         ),
       ],
     );
+  }
+
+  List<Map<String, dynamic>> get _visibleRequests {
+    if (_dateFrom == null && _dateTo == null) return requests;
+    return requests.where((r) {
+      final dt = DateTime.tryParse(r['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
   }
 
   Widget _filterChip(String status) {

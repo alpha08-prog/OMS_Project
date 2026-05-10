@@ -4,6 +4,9 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_staff_history_detail_dialog.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoStaffHistoryPage extends StatefulWidget {
   const CupertinoStaffHistoryPage({super.key});
@@ -17,6 +20,8 @@ class _CupertinoStaffHistoryPageState
     extends State<CupertinoStaffHistoryPage> {
   bool _loading = true;
   String _selectedType = 'All';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   List<Map<String, dynamic>> _grievances = [];
   List<Map<String, dynamic>> _trainRequests = [];
@@ -104,6 +109,7 @@ class _CupertinoStaffHistoryPageState
           'date': g['createdAt'],
           'iconData': CupertinoIcons.doc_text,
           'color': const Color(0xFF4338CA),
+          'raw': g,
         });
       }
     }
@@ -118,6 +124,7 @@ class _CupertinoStaffHistoryPageState
           'date': t['createdAt'],
           'iconData': CupertinoIcons.train_style_one,
           'color': CupertinoColors.activeBlue,
+          'raw': t,
         });
       }
     }
@@ -131,6 +138,7 @@ class _CupertinoStaffHistoryPageState
           'date': tp['createdAt'],
           'iconData': CupertinoIcons.calendar,
           'color': const Color(0xFF9333EA),
+          'raw': tp,
         });
       }
     }
@@ -144,6 +152,7 @@ class _CupertinoStaffHistoryPageState
           'date': v['createdAt'],
           'iconData': CupertinoIcons.person_2,
           'color': const Color(0xFF0D9488),
+          'raw': v,
         });
       }
     }
@@ -154,6 +163,13 @@ class _CupertinoStaffHistoryPageState
       final bDate = DateTime.tryParse(b['date'] ?? '') ?? DateTime(2000);
       return bDate.compareTo(aDate);
     });
+
+    if (_dateFrom != null || _dateTo != null) {
+      items = items.where((i) {
+        final dt = DateTime.tryParse(i['date']?.toString() ?? '');
+        return dateInRange(dt, from: _dateFrom, to: _dateTo);
+      }).toList();
+    }
 
     return items;
   }
@@ -264,7 +280,19 @@ class _CupertinoStaffHistoryPageState
                 }).toList(),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
+            CupertinoDateRangeFilter(
+              from: _dateFrom,
+              to: _dateTo,
+              tint: AppTheme.primaryIndigo,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              onFromChanged: (d) => setState(() => _dateFrom = d),
+              onToChanged: (d) => setState(() => _dateTo = d),
+              onClear: () => setState(() {
+                _dateFrom = null;
+                _dateTo = null;
+              }),
+            ),
 
             // List
             Expanded(
@@ -332,74 +360,104 @@ class _CupertinoStaffHistoryPageState
           DateFormat('dd MMM yyyy').format(DateTime.parse(item['date']));
     } catch (_) {}
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: CupertinoColors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: AppTheme.shadowSm,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: (item['color'] as Color).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
+    final raw = item['raw'] is Map
+        ? Map<String, dynamic>.from(item['raw'] as Map)
+        : <String, dynamic>{};
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openDetail(item, raw),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: AppTheme.shadowSm,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: (item['color'] as Color).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(item['iconData'] as IconData,
+                  color: item['color'] as Color, size: 20),
             ),
-            child: Icon(item['iconData'] as IconData,
-                color: item['color'] as Color, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item['title'],
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.bold)),
-                Text(item['subtitle'],
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: CupertinoColors.systemGrey),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: _statusColor(item['status'])
-                            .withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        item['status']
-                            .toString()
-                            .replaceAll('_', ' '),
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: _statusColor(item['status']),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item['title'],
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.bold)),
+                  Text(item['subtitle'],
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: CupertinoColors.systemGrey),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _statusColor(item['status'])
+                              .withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          item['status']
+                              .toString()
+                              .replaceAll('_', ' '),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: _statusColor(item['status']),
+                          ),
                         ),
                       ),
-                    ),
-                    const Spacer(),
-                    Text(dateStr,
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: CupertinoColors.systemGrey)),
-                  ],
-                ),
-              ],
+                      const Spacer(),
+                      Text(dateStr,
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: CupertinoColors.systemGrey)),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            CupertinoButton(
+              padding: const EdgeInsets.all(6),
+              minSize: 0,
+              onPressed: () => _openDetail(item, raw),
+              child: const Icon(
+                CupertinoIcons.eye,
+                size: 20,
+                color: CupertinoColors.systemGrey,
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _openDetail(Map<String, dynamic> item, Map<String, dynamic> raw) {
+    CupertinoStaffHistoryDetailDialog.show(
+      context: context,
+      type: item['type']?.toString() ?? '',
+      title: item['title']?.toString() ?? '-',
+      status: item['status']?.toString() ?? '',
+      date: item['date'],
+      raw: raw,
     );
   }
 }

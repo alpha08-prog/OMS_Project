@@ -6,6 +6,8 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoTaskListPage extends StatefulWidget {
   final String role;
@@ -32,6 +34,12 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
   String _typeFilter = "All";
   String _statusFilter = "All";
   String? _staffFilterId;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  // Tracks which task cards are expanded to show Recent Activity. Cards are
+  // collapsed by default to match the web Task Tracker layout.
+  final Set<String> _expandedTaskIds = {};
 
   static const _types = [
     "All",
@@ -273,15 +281,34 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
                     _buildStaffWorkload(),
                     const SizedBox(height: 16),
                     _buildFilterBar(),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemBackground,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: CupertinoColors.systemGrey5),
+                      ),
+                      child: CupertinoDateRangeFilter(
+                        from: _dateFrom,
+                        to: _dateTo,
+                        tint: AppTheme.primaryIndigo,
+                        onFromChanged: (d) => setState(() => _dateFrom = d),
+                        onToChanged: (d) => setState(() => _dateTo = d),
+                        onClear: () => setState(() {
+                          _dateFrom = null;
+                          _dateTo = null;
+                        }),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     _buildTrackerHeader(),
                     const SizedBox(height: 12),
                     if (_error != null)
                       _buildError()
-                    else if (_tasks.isEmpty)
+                    else if (_visibleTasks.isEmpty)
                       _buildEmpty()
                     else
-                      ..._tasks.map(_buildTaskCard),
+                      ..._visibleTasks.map(_buildTaskCard),
                     const SizedBox(height: 24),
                   ],
                 ]),
@@ -385,48 +412,91 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
   Widget _buildWorkloadRow(Map<String, dynamic> w) {
     final staff = Map<String, dynamic>.from(w["staff"] ?? {});
     final name = staff["name"]?.toString() ?? "—";
+    final staffId = staff["id"]?.toString();
     final pending = w["pendingTasks"] ?? 0;
+    final isSelected = staffId != null && _staffFilterId == staffId;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppTheme.primaryIndigo50,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: const BoxDecoration(
-              color: CupertinoColors.white,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(CupertinoIcons.person,
-                color: AppTheme.primaryIndigo, size: 18),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: staffId == null ? null : () => _toggleStaffFilter(staffId),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppTheme.primaryIndigo.withOpacity(0.18)
+                : AppTheme.primaryIndigo50,
+            borderRadius: BorderRadius.circular(10),
+            border: isSelected
+                ? Border.all(color: AppTheme.primaryIndigo, width: 1.4)
+                : null,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.foreground),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                Text("$pending pending tasks",
-                    style: const TextStyle(
-                        fontSize: 11, color: CupertinoColors.systemGrey)),
-              ],
-            ),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                  color: CupertinoColors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                    isSelected
+                        ? CupertinoIcons.checkmark_alt
+                        : CupertinoIcons.person,
+                    color: AppTheme.primaryIndigo,
+                    size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.foreground),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    Text("$pending pending tasks",
+                        style: const TextStyle(
+                            fontSize: 11, color: CupertinoColors.systemGrey)),
+                  ],
+                ),
+              ),
+              Icon(
+                isSelected
+                    ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
+                    : CupertinoIcons.line_horizontal_3_decrease_circle,
+                size: 18,
+                color: isSelected
+                    ? AppTheme.primaryIndigo
+                    : CupertinoColors.systemGrey2,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  /// Tap a workload row → filter the task list to that staff. Tap again
+  /// (same staff) → clear the filter.
+  void _toggleStaffFilter(String staffId) {
+    setState(() {
+      _staffFilterId = _staffFilterId == staffId ? null : staffId;
+    });
+    _onFilterChanged();
+  }
+
+  List<Map<String, dynamic>> get _visibleTasks {
+    if (_dateFrom == null && _dateTo == null) return _tasks;
+    return _tasks.where((t) {
+      final dt = DateTime.tryParse(t['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
   }
 
   Widget _buildFilterBar() {
@@ -532,10 +602,37 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
     );
   }
 
+  /// Merge `_staffList` with any staff that show up in `_staffWorkload`
+  /// but aren't in `_staffList`. The /tasks/staff and /tasks/tracking
+  /// endpoints can return different IDs for the same person (legacyId vs
+  /// Catalyst ROWID), so this prevents a workload-row tap from leaving the
+  /// picker stuck on "All Staff" when its ID isn't in the staff list.
+  List<Map<String, dynamic>> _mergedStaffList() {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final s in _staffList) {
+      final id = s["id"]?.toString();
+      if (id != null && id.isNotEmpty) byId[id] = s;
+    }
+    for (final w in _staffWorkload) {
+      final s = (w["staff"] is Map)
+          ? Map<String, dynamic>.from(w["staff"])
+          : null;
+      final id = s?["id"]?.toString();
+      if (id != null && id.isNotEmpty && !byId.containsKey(id)) {
+        byId[id] = s!;
+      }
+    }
+    final merged = byId.values.toList();
+    merged.sort((a, b) => (a["name"]?.toString() ?? "")
+        .compareTo(b["name"]?.toString() ?? ""));
+    return merged;
+  }
+
   Widget _staffPicker() {
+    final mergedStaff = _mergedStaffList();
     final selected = _staffFilterId == null
         ? "All Staff"
-        : (_staffList.firstWhere(
+        : (mergedStaff.firstWhere(
               (s) => s["id"]?.toString() == _staffFilterId,
               orElse: () => {"name": "All Staff"},
             )["name"]?.toString() ??
@@ -544,7 +641,7 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
     return GestureDetector(
       onTap: () {
         final labels = ["All Staff"] +
-            _staffList.map((s) => s["name"]?.toString() ?? "—").toList();
+            mergedStaff.map((s) => s["name"]?.toString() ?? "—").toList();
         CupertinoFormHelpers.showPicker(
           context: context,
           items: labels,
@@ -554,7 +651,7 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
             if (name == "All Staff") {
               setState(() => _staffFilterId = null);
             } else {
-              final s = _staffList.firstWhere(
+              final s = mergedStaff.firstWhere(
                 (s) => s["name"]?.toString() == name,
                 orElse: () => {},
               );
@@ -598,7 +695,7 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
             color: AppTheme.primaryIndigo, size: 20),
         const SizedBox(width: 8),
         Text(
-          "Task Progress Tracker (${_tasks.length})",
+          "Task Progress Tracker (${_visibleTasks.length})",
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -610,6 +707,7 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
   }
 
   Widget _buildTaskCard(Map<String, dynamic> task) {
+    final id = task["id"]?.toString() ?? "";
     final title = task["title"]?.toString() ?? "—";
     final status = (task["status"] ?? "ASSIGNED").toString();
     final type = (task["taskType"] ?? "GENERAL").toString();
@@ -618,6 +716,18 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
         (assignedTo is Map) ? (assignedTo["name"]?.toString() ?? "—") : "—";
     final progress = task["progressNotes"]?.toString();
     final isCompleted = status == "COMPLETED";
+    final isExpanded = _expandedTaskIds.contains(id);
+
+    void toggleExpand() {
+      if (id.isEmpty) return;
+      setState(() {
+        if (isExpanded) {
+          _expandedTaskIds.remove(id);
+        } else {
+          _expandedTaskIds.add(id);
+        }
+      });
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -634,71 +744,91 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: toggleExpand,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 6, top: 1),
+                  child: Icon(
+                    isExpanded
+                        ? CupertinoIcons.chevron_down
+                        : CupertinoIcons.chevron_right,
+                    size: 18,
+                    color: AppTheme.primaryIndigoDark,
+                  ),
+                ),
+              ),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primaryIndigoDark),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        _statusPill(status),
-                        _typePill(type),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text("Assigned to: $assignedName",
-                        style: const TextStyle(
-                            fontSize: 12,
-                            color: CupertinoColors.systemGrey)),
-                  ],
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: toggleExpand,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primaryIndigoDark),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _statusPill(status),
+                          _typePill(type),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text("Assigned to: $assignedName",
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: CupertinoColors.systemGrey)),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               _cardActions(task, isCompleted),
             ],
           ),
-          const SizedBox(height: 10),
-          Container(height: 0.5, color: CupertinoColors.systemGrey4),
-          const SizedBox(height: 8),
-          Row(
-            children: const [
-              Icon(CupertinoIcons.clock,
-                  size: 13, color: CupertinoColors.systemGrey),
-              SizedBox(width: 6),
-              Text("Recent Activity",
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.foreground)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 19),
-            child: Text(
-              (progress == null || progress.isEmpty)
-                  ? "No activity yet"
-                  : progress,
-              style: TextStyle(
-                fontSize: 12,
-                color: CupertinoColors.systemGrey,
-                fontStyle: (progress == null || progress.isEmpty)
-                    ? FontStyle.italic
-                    : FontStyle.normal,
-              ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
+          if (isExpanded) ...[
+            const SizedBox(height: 10),
+            Container(height: 0.5, color: CupertinoColors.systemGrey4),
+            const SizedBox(height: 8),
+            Row(
+              children: const [
+                Icon(CupertinoIcons.clock,
+                    size: 13, color: CupertinoColors.systemGrey),
+                SizedBox(width: 6),
+                Text("Recent Activity",
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.foreground)),
+              ],
             ),
-          ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 19),
+              child: Text(
+                (progress == null || progress.isEmpty)
+                    ? "No activity yet"
+                    : progress,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: CupertinoColors.systemGrey,
+                  fontStyle: (progress == null || progress.isEmpty)
+                      ? FontStyle.italic
+                      : FontStyle.normal,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/date_range_filter.dart';
 
 class StaffTasksPage extends StatefulWidget {
   const StaffTasksPage({super.key});
@@ -16,6 +17,16 @@ class _StaffTasksPageState extends State<StaffTasksPage> {
   bool _loading = true;
   List<Map<String, dynamic>> _tasks = [];
   String _statusFilter = 'All';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  List<Map<String, dynamic>> get _visibleTasks {
+    if (_dateFrom == null && _dateTo == null) return _tasks;
+    return _tasks.where((t) {
+      final dt = DateTime.tryParse(t['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -257,10 +268,22 @@ class _StaffTasksPageState extends State<StaffTasksPage> {
               }).toList(),
             ),
           ),
+          DateRangeFilter(
+            from: _dateFrom,
+            to: _dateTo,
+            tint: AppTheme.primaryIndigo,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            onFromChanged: (d) => setState(() => _dateFrom = d),
+            onToChanged: (d) => setState(() => _dateTo = d),
+            onClear: () => setState(() {
+              _dateFrom = null;
+              _dateTo = null;
+            }),
+          ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : _tasks.isEmpty
+                : _visibleTasks.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -275,8 +298,8 @@ class _StaffTasksPageState extends State<StaffTasksPage> {
                         onRefresh: _fetchTasks,
                         child: ListView.builder(
                           padding: const EdgeInsets.all(16),
-                          itemCount: _tasks.length,
-                          itemBuilder: (_, i) => _buildTaskCard(_tasks[i]),
+                          itemCount: _visibleTasks.length,
+                          itemBuilder: (_, i) => _buildTaskCard(_visibleTasks[i]),
                         ),
                       ),
           ),

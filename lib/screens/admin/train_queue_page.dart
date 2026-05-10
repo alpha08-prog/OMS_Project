@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/date_range_filter.dart';
 
 /// Admin-only "Train EQ Requests" page.
 /// Shows all train EQ requests with status filter. Per-card actions vary by
@@ -27,6 +28,8 @@ class _TrainQueuePageState extends State<TrainQueuePage> {
   List<Map<String, dynamic>> _staffList = [];
 
   String _statusFilter = "All";
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   static const _statuses = ["All", "PENDING", "APPROVED", "RESOLVED", "REJECTED"];
 
   final Set<String> _busyIds = {};
@@ -270,8 +273,17 @@ class _TrainQueuePageState extends State<TrainQueuePage> {
     }
   }
 
+  List<Map<String, dynamic>> get _visibleRequests {
+    if (_dateFrom == null && _dateTo == null) return _requests;
+    return _requests.where((r) {
+      final dt = DateTime.tryParse(r['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final visible = _visibleRequests;
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -341,14 +353,33 @@ class _TrainQueuePageState extends State<TrainQueuePage> {
             : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    child: DateRangeFilter(
+                      from: _dateFrom,
+                      to: _dateTo,
+                      tint: AppTheme.primaryIndigo,
+                      onFromChanged: (d) => setState(() => _dateFrom = d),
+                      onToChanged: (d) => setState(() => _dateTo = d),
+                      onClear: () => setState(() {
+                        _dateFrom = null;
+                        _dateTo = null;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   _buildSectionHeader(),
                   const SizedBox(height: 12),
                   if (_error != null)
                     _buildError()
-                  else if (_requests.isEmpty)
+                  else if (visible.isEmpty)
                     _buildEmpty()
                   else
-                    ..._requests.map(_buildCard),
+                    ...visible.map(_buildCard),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -365,7 +396,7 @@ class _TrainQueuePageState extends State<TrainQueuePage> {
       _ => "All EQ Requests",
     };
     return Text(
-      "$label (${_requests.length})",
+      "$label (${_visibleRequests.length})",
       style: const TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.bold,

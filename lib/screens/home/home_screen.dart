@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -12,7 +13,7 @@ import 'package:anki_clone/screens/admin/train_queue_page.dart';
 import 'package:anki_clone/screens/admin/tour_queue_page.dart';
 import 'package:anki_clone/screens/admin/print_center_page.dart';
 import 'package:anki_clone/screens/admin/user_management_page.dart';
-import 'package:anki_clone/screens/profile/change_password_page.dart';
+import 'package:anki_clone/screens/profile/my_profile_page.dart';
 import 'package:anki_clone/screens/staff/staff_history_page.dart';
 
 import 'package:anki_clone/screens/admin/action_center_page.dart';
@@ -27,6 +28,7 @@ import '../../widgets/news_card.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/http_service.dart';
+import '../../services/notification_service.dart';
 
 import '../../utils/access_control.dart';
 import '../../utils/app_navigator.dart';
@@ -48,7 +50,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  // Notification bell — polled every 30s while the screen is mounted and
+  // the app is foregrounded. Updates re-rendered into AppBar Badge.
+  int _unreadNotifications = 0;
+  Timer? _notificationPollTimer;
+
   // 🎨 Saffron Govt Palette
   static const Color primarySaffron = Color(0xFFF59E0B);
   static const Color darkSaffron = Color(0xFF92400E);
@@ -78,9 +85,17 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> recentGrievances = [];
   List<dynamic> recentItems = [];
 
+  // Staff: combined recent entries (grievances, trains, tours, visitors, news)
+  List<Map<String, dynamic>> _staffRecentEntries = [];
+
+  // Staff: rejected grievances created by this staff member
+  List<Map<String, dynamic>> _staffRejectedGrievances = [];
+  bool _staffRejectedExpanded = true;
+
   // Admin dashboard data
   bool _loadingAdminDashboard = false;
   List<Map<String, dynamic>> _pendingApprovals = [];
+  bool _adminPendingExpanded = false;
   List<Map<String, dynamic>> _todayBirthdaysList = [];
 
   // Super Admin extra data
@@ -89,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fetchDashboardStats();
     _fetchDashboardWidgets();
     if (widget.role == Roles.admin) {
@@ -97,6 +113,163 @@ class _HomeScreenState extends State<HomeScreen> {
     if (widget.role == Roles.superAdmin) {
       _fetchSuperAdminExtras();
     }
+    if (widget.role == Roles.staff) {
+      _fetchStaffRecentEntries();
+      _fetchStaffRejectedGrievances();
+    }
+    _refreshUnreadCount();
+    _notificationPollTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _refreshUnreadCount(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _notificationPollTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshUnreadCount();
+    }
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    final count = await NotificationService.unreadCount();
+    if (!mounted) return;
+    if (count != _unreadNotifications) {
+      setState(() => _unreadNotifications = count);
+    }
+  }
+
+  Widget _buildNotificationBell({Color iconColor = Colors.white}) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: IconButton(
+        tooltip: 'Notifications',
+        icon: Badge(
+          isLabelVisible: _unreadNotifications > 0,
+          label: Text(
+            _unreadNotifications > 99 ? '99+' : '$_unreadNotifications',
+          ),
+          backgroundColor: Colors.redAccent,
+          child: Icon(
+            _unreadNotifications > 0
+                ? Icons.notifications_active
+                : Icons.notifications_none,
+            color: iconColor,
+          ),
+        ),
+        onPressed: () async {
+          await AppNavigator.toNotifications(context, role: widget.role);
+          _refreshUnreadCount();
+        },
+      ),
+    );
+  }
+
+  Future<void> _fetchStaffRejectedGrievances() async {
+    try {
+      final res = await HttpService.get(
+          "/api/grievances?status=REJECTED&limit=20");
+      if (res.statusCode != 200) return;
+      final decoded = jsonDecode(res.body);
+      final list = decoded is List ? decoded : (decoded["data"] ?? []);
+      final items = (list as List)
+          .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+          .toList();
+      if (mounted) {
+        setState(() => _staffRejectedGrievances = items);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchStaffRecentEntries() async {
+    try {
+      final futures = await Future.wait([
+        HttpService.get("/api/grievances?limit=10"),
+        HttpService.get("/api/train-requests?limit=10"),
+        HttpService.get("/api/tour-programs?limit=10"),
+        HttpService.get("/api/visitors?limit=10"),
+        HttpService.get("/api/news?limit=10"),
+      ]);
+
+      List<Map<String, dynamic>> _decodeList(dynamic body) {
+        try {
+          final d = jsonDecode(body);
+          final list = d is List ? d : (d["data"] ?? []);
+          return (list as List)
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+              .toList();
+        } catch (_) {
+          return [];
+        }
+      }
+
+      final combined = <Map<String, dynamic>>[];
+
+      if (futures[0].statusCode == 200) {
+        for (final g in _decodeList(futures[0].body)) {
+          final type = (g["grievanceType"] ?? "").toString().replaceAll("_", " ");
+          final name = (g["petitionerName"] ?? "").toString();
+          combined.add({
+            "label": "Grievance – $type${name.isEmpty ? "" : " - $name"}",
+            "date": g["createdAt"]?.toString(),
+          });
+        }
+      }
+      if (futures[1].statusCode == 200) {
+        for (final t in _decodeList(futures[1].body)) {
+          final pnr = (t["pnrNumber"] ?? "").toString();
+          combined.add({
+            "label": "Train EQ – PNR ${pnr.isEmpty ? "-" : pnr}",
+            "date": t["createdAt"]?.toString(),
+          });
+        }
+      }
+      if (futures[2].statusCode == 200) {
+        for (final tp in _decodeList(futures[2].body)) {
+          final ev = (tp["eventName"] ?? "-").toString();
+          combined.add({
+            "label": "Tour Program – $ev",
+            "date": tp["createdAt"]?.toString(),
+          });
+        }
+      }
+      if (futures[3].statusCode == 200) {
+        for (final v in _decodeList(futures[3].body)) {
+          final purpose = (v["purpose"] ?? "Public").toString();
+          final name = (v["name"] ?? "").toString();
+          combined.add({
+            "label": "Visitor – $purpose${name.isEmpty ? "" : " - $name"}",
+            "date": v["createdAt"]?.toString(),
+          });
+        }
+      }
+      if (futures[4].statusCode == 200) {
+        for (final n in _decodeList(futures[4].body)) {
+          final title = (n["title"] ?? "-").toString();
+          combined.add({
+            "label": "News – $title",
+            "date": n["createdAt"]?.toString(),
+          });
+        }
+      }
+
+      combined.sort((a, b) {
+        final aDate = DateTime.tryParse(a["date"] ?? "") ?? DateTime(2000);
+        final bDate = DateTime.tryParse(b["date"] ?? "") ?? DateTime(2000);
+        return bDate.compareTo(aDate);
+      });
+
+      if (mounted) {
+        setState(() => _staffRecentEntries = combined);
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchSuperAdminExtras() async {
@@ -402,11 +575,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        actions: const [
-          Icon(Icons.search, color: Colors.white),
-          SizedBox(width: 12),
-          Icon(Icons.notifications_none, color: Colors.white),
-          SizedBox(width: 12),
+        actions: [
+          const Icon(Icons.search, color: Colors.white),
+          const SizedBox(width: 12),
+          _buildNotificationBell(),
         ],
       ),
 
@@ -420,6 +592,10 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           if (widget.role == Roles.superAdmin) {
             await _fetchSuperAdminExtras();
+          }
+          if (widget.role == Roles.staff) {
+            await _fetchStaffRecentEntries();
+            await _fetchStaffRejectedGrievances();
           }
         },
         child: SingleChildScrollView(
@@ -441,8 +617,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildSaRecentGrievancesCard(),
                 const SizedBox(height: 16),
                 _buildSaTodaysBirthdaysCard(),
-                const SizedBox(height: 16),
-                _buildSaNewsIntelligenceCard(),
                 const SizedBox(height: 24),
               ],
 
@@ -458,46 +632,46 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 20),
               ],
 
-              // STAFF: Quick entry actions + recent items
+              // STAFF: Data Entry Portal layout
               if (widget.role == Roles.staff) ...[
-                _loadingStats ? _statsLoadingRow() : _statsRow(),
-                const SizedBox(height: 20),
-                _sectionTitle("Quick Actions"),
-                const SizedBox(height: 12),
-                _buildQuickActions(),
-                const SizedBox(height: 20),
-                if (recentGrievances.isNotEmpty) ...[
-                  _sectionTitle("Recently Entered"),
-                  const SizedBox(height: 12),
-                  _buildRecentItems(),
-                  const SizedBox(height: 20),
+                _buildStaffHero(),
+                const SizedBox(height: 16),
+                _buildStaffQuickEntry(),
+                const SizedBox(height: 16),
+                _buildStaffTodaysWork(),
+                if (_staffRejectedGrievances.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _buildStaffRejectedGrievances(),
                 ],
+                const SizedBox(height: 16),
+                _buildStaffRecentlyEntered(),
+                const SizedBox(height: 20),
               ],
 
-              // Dashboard Widgets - Today's Schedule (hidden for admin & super admin)
-              if (!isSuperAdmin && widget.role != Roles.admin && todaySchedule.isNotEmpty) ...[
+              // Dashboard Widgets - Today's Schedule (hidden for admin, super admin & staff)
+              if (!isSuperAdmin && widget.role != Roles.admin && widget.role != Roles.staff && todaySchedule.isNotEmpty) ...[
                 _sectionTitle("Today's Schedule"),
                 const SizedBox(height: 12),
                 _buildTodayScheduleWidget(),
                 const SizedBox(height: 20),
               ],
 
-              // Dashboard Widgets - News Alerts (hidden for admin & super admin)
-              if (!isSuperAdmin && widget.role != Roles.admin && criticalNews.isNotEmpty) ...[
+              // Dashboard Widgets - News Alerts (hidden for admin, super admin & staff)
+              if (!isSuperAdmin && widget.role != Roles.admin && widget.role != Roles.staff && criticalNews.isNotEmpty) ...[
                 _sectionTitle("News Alerts"),
                 const SizedBox(height: 12),
                 _buildNewsAlertsWidget(),
                 const SizedBox(height: 20),
               ],
 
-              // Birthday widget (admin and super admin have their own cards)
-              if (!isSuperAdmin && widget.role != Roles.admin && todayBirthdays > 0) ...[
+              // Birthday widget (admin, super admin & staff have their own layouts)
+              if (!isSuperAdmin && widget.role != Roles.admin && widget.role != Roles.staff && todayBirthdays > 0) ...[
                 _buildBirthdayWidget(),
                 const SizedBox(height: 20),
               ],
 
-              // Popular Stories (hidden for admin & super admin)
-              if (!isSuperAdmin && widget.role != Roles.admin) ...[
+              // Popular Stories (hidden for admin, super admin & staff)
+              if (!isSuperAdmin && widget.role != Roles.admin && widget.role != Roles.staff) ...[
                 _sectionTitle("Popular Stories"),
                 const SizedBox(height: 12),
                 SizedBox(
@@ -514,8 +688,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 18),
               ],
 
-              // News Updates (hidden for admin & super admin)
-              if (!isSuperAdmin && widget.role != Roles.admin) ...[
+              // News Updates (hidden for admin, super admin & staff)
+              if (!isSuperAdmin && widget.role != Roles.admin && widget.role != Roles.staff) ...[
                 _sectionTitle("News Updates"),
                 const SizedBox(height: 12),
                 ListView.separated(
@@ -578,6 +752,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      actions: [
+        _buildNotificationBell(iconColor: const Color(0xFF4338CA)),
+      ],
     );
   }
 
@@ -831,32 +1008,40 @@ class _HomeScreenState extends State<HomeScreen> {
             : "$pendingVerifications pending",
         color: const Color(0xFF6366F1),
         bgColor: const Color(0xFFEEF2FF),
+        onTap: () =>
+            AppNavigator.toGrievanceList(context, role: widget.role),
       ),
       _superStatCard(
-        icon: Icons.check_circle_outline,
-        value: "$resolvedGrievances",
-        label: "Resolved",
-        sub: "grievances closed",
-        color: const Color(0xFF16A34A),
-        bgColor: const Color(0xFFDCFCE7),
-      ),
-      _superStatCard(
-        icon: Icons.warning_amber_rounded,
-        value: "$alerts",
-        label: "Critical Alerts",
-        sub: "new items flagged",
+        icon: Icons.newspaper_outlined,
+        value: "${_newsItems.length}",
+        label: "News Intelligence",
+        sub: _newsItems.isEmpty ? "no news yet" : "news entries",
         color: const Color(0xFFD97706),
         bgColor: const Color(0xFFFEF3C7),
+        onTap: () =>
+            AppNavigator.toNewsList(context, role: widget.role),
+      ),
+      _superStatCard(
+        icon: Icons.event_note_outlined,
+        value: "$totalTourPrograms",
+        label: "Tour Program",
+        sub: pendingTourDecisions == 0
+            ? "all reviewed"
+            : "$pendingTourDecisions pending",
+        color: const Color(0xFF16A34A),
+        bgColor: const Color(0xFFDCFCE7),
+        onTap: () => AppNavigator.toSuperAdminTourHub(context),
       ),
       _superStatCard(
         icon: Icons.calendar_month_outlined,
         value: "$totalTourPrograms",
-        label: "Tour Programs",
+        label: "Events",
         sub: pendingTourDecisions == 0
             ? "all reviewed"
             : "$pendingTourDecisions upcoming",
         color: const Color(0xFF9333EA),
         bgColor: const Color(0xFFF3E8FF),
+        onTap: () => AppNavigator.toSuperAdminEventsHub(context),
       ),
     ];
 
@@ -878,8 +1063,9 @@ class _HomeScreenState extends State<HomeScreen> {
     required String sub,
     required Color color,
     required Color bgColor,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -934,6 +1120,17 @@ class _HomeScreenState extends State<HomeScreen> {
               overflow: TextOverflow.ellipsis,
             ),
         ],
+      ),
+    );
+
+    if (onTap == null) return card;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: card,
       ),
     );
   }
@@ -1254,6 +1451,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               );
             }),
+          if (recentGrievances.length > 5) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: InkWell(
+                onTap: () => AppNavigator.toGrievanceList(context,
+                    role: widget.role),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "Show all (${recentGrievances.length})",
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF6366F1),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.arrow_forward,
+                        size: 14,
+                        color: Color(0xFF6366F1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1344,12 +1574,30 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "News & Intelligence",
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF0F172A),
+          InkWell(
+            onTap: () =>
+                AppNavigator.toNewsList(context, role: widget.role),
+            borderRadius: BorderRadius.circular(6),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Text(
+                    "News & Intelligence",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  Spacer(),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 12,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -1795,6 +2043,523 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ================= STAFF: DATA ENTRY PORTAL =================
+  Widget _buildStaffHero() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Welcome, ${widget.userName}",
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Data Entry Portal",
+                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE0E7FF),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              "STAFF ACCESS",
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.6,
+                color: Color(0xFF4338CA),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _staffSurfaceCard({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _staffSectionTitle(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.bold,
+        color: Color(0xFF0F172A),
+      ),
+    );
+  }
+
+  Widget _buildStaffQuickEntry() {
+    final entries = <_StaffEntry>[
+      _StaffEntry(
+        icon: Icons.description_outlined,
+        label: "New Grievance",
+        color: const Color(0xFFF59E0B),
+        onTap: () =>
+            AppNavigator.toGrievanceEntry(context, role: widget.role),
+      ),
+      _StaffEntry(
+        icon: Icons.train,
+        label: "Train EQ",
+        color: const Color(0xFFF59E0B),
+        onTap: () =>
+            AppNavigator.toTrainRequestEntry(context, role: widget.role),
+      ),
+      _StaffEntry(
+        icon: Icons.people_outline,
+        label: "Visitor Entry",
+        color: const Color(0xFF1E293B),
+        onTap: () => AppNavigator.toVisitorEntry(context, role: widget.role),
+      ),
+      _StaffEntry(
+        icon: Icons.event_outlined,
+        label: "Tour Program",
+        color: const Color(0xFF0284C7),
+        onTap: () =>
+            AppNavigator.toTourProgramEntry(context, role: widget.role),
+      ),
+      _StaffEntry(
+        icon: Icons.article_outlined,
+        label: "News Entry",
+        color: const Color(0xFF0D9488),
+        onTap: () => AppNavigator.toNewsEntry(context, role: widget.role),
+      ),
+    ];
+
+    return _staffSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _staffSectionTitle("Quick Entry"),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 10.0;
+              final width = constraints.maxWidth;
+              final perRow = width >= 720 ? 5 : (width >= 480 ? 3 : 2);
+              final cardWidth =
+                  (width - spacing * (perRow - 1)) / perRow;
+
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: entries
+                    .map((e) => SizedBox(
+                          width: cardWidth,
+                          height: 88,
+                          child: _staffEntryTile(e),
+                        ))
+                    .toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _staffEntryTile(_StaffEntry e) {
+    return Material(
+      color: e.color,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: e.onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(e.icon, color: Colors.white, size: 22),
+              const SizedBox(height: 8),
+              Text(
+                e.label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStaffTodaysWork() {
+    return _staffSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _staffSectionTitle("Today's Work"),
+          const SizedBox(height: 10),
+          _staffBullet("Enter grievances received today"),
+          _staffBullet("Log walk-in visitors"),
+          _staffBullet("Record tour invitations"),
+        ],
+      ),
+    );
+  }
+
+  Widget _staffBullet(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 8, right: 8, left: 2),
+            child: Icon(Icons.circle, size: 5, color: Color(0xFF64748B)),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Color(0xFF475569),
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStaffRejectedGrievances() {
+    const accent = Color(0xFFDC2626);
+    const bg = Color(0xFFFEF2F2);
+    const border = Color(0xFFFECACA);
+    const pillBg = Color(0xFFFEE2E2);
+    const muted = Color(0xFF94A3B8);
+
+    final preview = _staffRejectedGrievances.take(3).toList();
+    final total = _staffRejectedGrievances.length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            children: [
+              InkWell(
+                onTap: () => setState(
+                    () => _staffRejectedExpanded = !_staffRejectedExpanded),
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(
+                    _staffRejectedExpanded
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_right,
+                    color: const Color(0xFF334155),
+                    size: 22,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.cancel_outlined, color: accent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                "Rejected Grievances",
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                "($total)",
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: muted,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              InkWell(
+                onTap: () => AppNavigator.toRejectedGrievances(context,
+                    role: widget.role),
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Text(
+                    "View all",
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: accent,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_staffRejectedExpanded) ...[
+            const SizedBox(height: 10),
+            ...preview.map((g) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _staffRejectedItem(g, accent, pillBg),
+                )),
+            const Padding(
+              padding: EdgeInsets.only(top: 4, left: 4),
+              child: Row(
+                children: [
+                  Text(
+                    "Check the bell ",
+                    style:
+                        TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                  Text("🔔", style: TextStyle(fontSize: 12)),
+                  Text(
+                    " in the top bar for the rejection reason.",
+                    style:
+                        TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _staffRejectedItem(
+      Map<String, dynamic> g, Color accent, Color pillBg) {
+    final petitioner = (g["petitionerName"] ?? "-").toString();
+    final type = (g["grievanceType"] ?? "-").toString().replaceAll("_", " ");
+    final dateStr = _fmtDayMonthYear(g["createdAt"]?.toString());
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => AppNavigator.toGrievanceView(
+          context,
+          grievanceData: g,
+          role: widget.role,
+        ),
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    RichText(
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: petitioner,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const TextSpan(
+                            text: "  —  ",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF94A3B8),
+                            ),
+                          ),
+                          TextSpan(
+                            text: type.toUpperCase(),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              color: accent,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      "Submitted $dateStr",
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: pillBg,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  "REJECTED",
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.6,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmtDayMonthYear(String? iso) {
+    if (iso == null || iso.isEmpty) return "-";
+    try {
+      return DateFormat('d MMM yyyy').format(DateTime.parse(iso));
+    } catch (_) {
+      return "-";
+    }
+  }
+
+  Widget _buildStaffRecentlyEntered() {
+    final preview = _staffRecentEntries.take(5).toList();
+    final total = _staffRecentEntries.length;
+
+    return _staffSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _staffSectionTitle("Recently Entered"),
+          const SizedBox(height: 10),
+          if (_staffRecentEntries.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Text(
+                "No recent entries yet",
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+              ),
+            )
+          else ...[
+            ...preview.map((e) {
+              final label = (e["label"] ?? "").toString();
+              final date = _shortDate(e["date"]?.toString());
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      date,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            if (total > 5) ...[
+              const SizedBox(height: 8),
+              Center(
+                child: InkWell(
+                  onTap: () => AppNavigator.toStaffHistory(context),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          "Show all ($total)",
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF6366F1),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.arrow_forward,
+                          size: 14,
+                          color: Color(0xFF6366F1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
   // ================= QUICK ACTIONS (Staff) =================
   Widget _buildQuickActions() {
     return SizedBox(
@@ -2136,8 +2901,49 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             )
-          else
-            ..._pendingApprovals.take(20).map(_buildPendingApprovalRow),
+          else ...[
+            ...(_adminPendingExpanded
+                    ? _pendingApprovals
+                    : _pendingApprovals.take(5))
+                .map(_buildPendingApprovalRow),
+            if (_pendingApprovals.length > 5) ...[
+              const SizedBox(height: 8),
+              Center(
+                child: InkWell(
+                  onTap: () => setState(
+                      () => _adminPendingExpanded = !_adminPendingExpanded),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _adminPendingExpanded
+                              ? "Show less"
+                              : "Show all (${_pendingApprovals.length})",
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF6366F1),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          _adminPendingExpanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          size: 16,
+                          color: const Color(0xFF6366F1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -2419,6 +3225,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _drawerItem(Icons.dashboard, "Dashboard", onTap: () {
         Navigator.pop(context);
       }),
+      _drawerItem(Icons.account_circle_outlined, "My Profile", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const MyProfilePage(),
+        ));
+      }),
+      _drawerItem(Icons.groups_outlined, "About Team", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const AboutPage(),
+        ));
+      }),
       const Divider(color: Colors.white30, indent: 16, endIndent: 16),
       _drawerItem(Icons.logout, "Logout", onTap: () async => _logout()),
     ];
@@ -2487,6 +3305,12 @@ class _HomeScreenState extends State<HomeScreen> {
         Navigator.pop(context);
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => const AboutPage(),
+        ));
+      }),
+      _drawerItem(Icons.account_circle_outlined, "My Profile", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const MyProfilePage(),
         ));
       }),
       const Divider(color: Colors.white30, indent: 16, endIndent: 16),
@@ -2559,6 +3383,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _drawerItem(Icons.history_toggle_off, "Action History", onTap: () {
         Navigator.pop(context);
         AppNavigator.toActionHistory(context);
+      }),
+      _drawerItem(Icons.groups_outlined, "About Team", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const AboutPage(),
+        ));
+      }),
+      _drawerItem(Icons.account_circle_outlined, "My Profile", onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const MyProfilePage(),
+        ));
       }),
       const Divider(color: Colors.white30, indent: 16, endIndent: 16),
       _drawerItem(Icons.logout, "Logout", onTap: () async => _logout()),
@@ -2719,10 +3555,10 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (_) => HistoryPage(role: widget.role),
         ));
       }),
-      _drawerItem(Icons.lock_reset, "Change Password", onTap: () {
+      _drawerItem(Icons.account_circle_outlined, "My Profile", onTap: () {
         Navigator.pop(context);
         Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const ChangePasswordPage(),
+          builder: (_) => const MyProfilePage(),
         ));
       }),
       _drawerItem(
@@ -2854,4 +3690,18 @@ class _DonutPainter extends CustomPainter {
         old.inProgress != inProgress ||
         old.open != open;
   }
+}
+
+class _StaffEntry {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  _StaffEntry({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
 }

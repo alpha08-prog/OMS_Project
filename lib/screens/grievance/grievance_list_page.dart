@@ -9,6 +9,7 @@ import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/widgets.dart';
+import '../../widgets/admin_grievance_detail_dialog.dart';
 import 'grievance_view_page.dart';
 import 'grievance_create_page.dart';
 
@@ -217,6 +218,26 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
       _constituencyController.clear();
       selectedStatus = "All";
     });
+    _fetchGrievances();
+  }
+
+  void _openGrievance(Map<String, dynamic> grievance) async {
+    if (widget.role == Roles.admin || widget.role == Roles.superAdmin) {
+      AdminGrievanceDetailDialog.show(
+        context: context,
+        grievance: grievance,
+      );
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GrievanceViewPage(
+          grievanceData: grievance,
+          role: widget.role,
+        ),
+      ),
+    );
     _fetchGrievances();
   }
 
@@ -781,6 +802,8 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
   Widget _buildGrievanceCard(Map<String, dynamic> grievance) {
     final status = grievance["uiStatus"] ?? "Open";
     final isLocked = grievance["isLocked"] == true;
+    final isOffice =
+        (grievance["source"] ?? "PUBLIC").toString().toUpperCase() == "OFFICE";
     final currentStage = grievance["currentStage"] ?? "RECEIVED";
     final createdAt = grievance["createdAt"];
 
@@ -794,19 +817,7 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
 
     return InkWell(
       borderRadius: BorderRadius.circular(16),
-      onTap: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => GrievanceViewPage(
-              grievanceData: grievance,
-              role: widget.role,
-            ),
-          ),
-        );
-        // Refresh on return
-        _fetchGrievances();
-      },
+      onTap: () => _openGrievance(grievance),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
@@ -861,6 +872,10 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
                             ),
                           ),
                           _statusChip(status),
+                          if (isOffice) ...[
+                            const SizedBox(width: 6),
+                            _officeChip(),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -939,18 +954,7 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => GrievanceViewPage(
-                            grievanceData: grievance,
-                            role: widget.role,
-                          ),
-                        ),
-                      );
-                      _fetchGrievances();
-                    },
+                    onPressed: () => _openGrievance(grievance),
                     icon: const Icon(Icons.visibility_outlined, size: 16),
                     label: const Text("View"),
                     style: OutlinedButton.styleFrom(
@@ -1046,6 +1050,24 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
           fontSize: 11,
           fontWeight: FontWeight.bold,
           color: text,
+        ),
+      ),
+    );
+  }
+
+  Widget _officeChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryIndigo,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Text(
+        "Office",
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
         ),
       ),
     );

@@ -163,7 +163,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
             isError: true);
       }
     } catch (e) {
-      CupertinoToast.show(context, "Error: $e", isError: true);
+      CupertinoToast.show(context, "Could not open WhatsApp", isError: true);
     }
   }
 
@@ -919,7 +919,13 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
   Widget _buildUpcomingCard(Map<String, dynamic> item) {
     final name = item["name"] ?? "Unknown";
     final phone = item["phone"] ?? "-";
-    final daysUntil = item["days_until"] ?? "-";
+    final daysRaw = item["days_until"];
+    final int? daysUntil = daysRaw is int
+        ? daysRaw
+        : daysRaw is num
+            ? daysRaw.toInt()
+            : int.tryParse(daysRaw?.toString() ?? '');
+    final daysLabel = daysUntil?.toString() ?? "-";
     final relation = item["relation"] ?? "";
     final dob = item["dob"];
 
@@ -959,7 +965,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  daysUntil.toString(),
+                  daysLabel,
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -1034,7 +1040,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
             decoration: BoxDecoration(
               color: daysUntil == 1
                   ? const Color(0xFFFEF2F2)
-                  : daysUntil <= 3
+                  : (daysUntil != null && daysUntil <= 3)
                       ? const Color(0xFFFFF7ED)
                       : const Color(0xFFEFF6FF),
               borderRadius: BorderRadius.circular(20),
@@ -1042,13 +1048,15 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
             child: Text(
               daysUntil == 1
                   ? "Tomorrow!"
-                  : "In $daysUntil days",
+                  : daysUntil == 0
+                      ? "Today!"
+                      : "In $daysLabel days",
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
                 color: daysUntil == 1
                     ? const Color(0xFFDC2626)
-                    : daysUntil <= 3
+                    : (daysUntil != null && daysUntil <= 3)
                         ? const Color(0xFFEA580C)
                         : const Color(0xFF2563EB),
               ),

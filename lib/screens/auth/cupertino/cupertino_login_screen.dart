@@ -1,14 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/gestures.dart';
 
 import '../../../services/auth_service.dart';
 import '../../../services/http_service.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../home/cupertino/cupertino_home_screen.dart';
 import '../login_screen.dart' show SmoothCurveClipper;
-import 'cupertino_register_screen.dart';
 
 class CupertinoLoginScreen extends StatefulWidget {
   const CupertinoLoginScreen({super.key});
@@ -46,7 +44,7 @@ class _CupertinoLoginScreenState extends State<CupertinoLoginScreen> {
       _emailError = null;
     }
 
-    if (_passwordController.text.trim().length < 6) {
+    if (_passwordController.text.length < 6) {
       _passwordError = 'Minimum 6 characters';
       valid = false;
     } else {
@@ -66,7 +64,7 @@ class _CupertinoLoginScreenState extends State<CupertinoLoginScreen> {
     try {
       final res = await HttpService.post("/api/auth/login", {
         "identifier": _emailController.text.trim(),
-        "password": _passwordController.text.trim(),
+        "password": _passwordController.text,
       });
 
       final Map<String, dynamic> json = jsonDecode(res.body);
@@ -337,33 +335,6 @@ class _CupertinoLoginScreenState extends State<CupertinoLoginScreen> {
             ),
           ),
 
-          const SizedBox(height: 22),
-
-          RichText(
-            text: TextSpan(
-              text: "Don't have an account? ",
-              style: const TextStyle(
-                fontSize: 14,
-                color: CupertinoColors.black,
-              ),
-              children: [
-                TextSpan(
-                  text: "Register",
-                  style: const TextStyle(
-                    color: CupertinoColors.activeBlue,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = () => Navigator.push(
-                          context,
-                          CupertinoPageRoute(
-                            builder: (_) => const CupertinoRegisterScreen(),
-                          ),
-                        ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );

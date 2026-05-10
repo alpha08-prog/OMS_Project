@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
@@ -56,8 +57,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
   Future<void> _fetchTrainRequests() async {
     setState(() => _loadingTrainRequests = true);
     try {
-      final res = await HttpService.get(
-          "/api/train-requests?status=APPROVED&limit=100");
+      final res = await HttpService.get("/api/train-requests?limit=100");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
@@ -94,9 +94,9 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
               isError: true);
         }
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
-        CupertinoToast.show(context, "Error: $e", isError: true);
+        CupertinoToast.show(context, "Download failed. Please try again.", isError: true);
       }
     }
   }
@@ -104,31 +104,47 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
   Future<void> _previewHTML(String endpoint, String title) async {
     try {
       final res = await HttpService.get(endpoint);
-      if (res.statusCode == 200) {
-        if (!mounted) return;
-        showCupertinoDialog(
-          context: context,
-          builder: (ctx) => CupertinoPageScaffold(
-            navigationBar: CupertinoNavigationBar(
-              middle: Text(title),
-              trailing: CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () => Navigator.pop(ctx),
-                child: const Icon(CupertinoIcons.xmark),
-              ),
+      if (res.statusCode != 200) {
+        if (mounted) {
+          CupertinoToast.show(context, "Preview failed (${res.statusCode})",
+              isError: true);
+        }
+        return;
+      }
+      if (!mounted) return;
+
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoPageScaffold(
+          backgroundColor: AppTheme.background,
+          navigationBar: CupertinoNavigationBar(
+            middle: Text(title),
+            backgroundColor: AppTheme.primaryIndigo,
+            brightness: Brightness.dark,
+            leading: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Icon(CupertinoIcons.xmark,
+                  color: CupertinoColors.white),
             ),
-            child: SafeArea(
+          ),
+          child: SafeArea(
+            child: Container(
+              color: CupertinoColors.white,
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
-                child: Text(res.body,
-                    style:
-                        const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                child: Html(data: res.body),
               ),
             ),
           ),
-        );
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        CupertinoToast.show(context, "Preview failed. Please try again.",
+            isError: true);
       }
-    } catch (_) {}
+    }
   }
 
   Future<void> _downloadTourProgramPDF() async {
@@ -246,7 +262,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
             Icon(CupertinoIcons.printer,
                 size: 64, color: CupertinoColors.systemGrey4),
             const SizedBox(height: 16),
-            Text("No approved requests to print",
+            Text("No train requests to print",
                 style: TextStyle(color: CupertinoColors.systemGrey)),
           ],
         ),

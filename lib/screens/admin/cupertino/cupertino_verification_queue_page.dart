@@ -7,9 +7,11 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
-import '../../../utils/app_navigator.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_admin_grievance_detail_dialog.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoVerificationQueuePage extends StatefulWidget {
   const CupertinoVerificationQueuePage({super.key});
@@ -33,6 +35,8 @@ class _CupertinoVerificationQueuePageState
   String _constituencyQuery = "";
   String _typeFilter = "All";
   String _statusFilter = "Pending";
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   bool _showFilters = false;
   final Set<String> _downloadingIds = {};
 
@@ -212,6 +216,13 @@ class _CupertinoVerificationQueuePageState
     }
   }
 
+  void _openDetailDialog(Map<String, dynamic> g) {
+    CupertinoAdminGrievanceDetailDialog.show(
+      context: context,
+      grievance: g,
+    );
+  }
+
   Future<void> _openVerifyAssign(Map<String, dynamic> g) async {
     if (_staffList.isEmpty) await _fetchStaff();
     if (_staffList.isEmpty) {
@@ -223,7 +234,7 @@ class _CupertinoVerificationQueuePageState
 
     final result = await showCupertinoModalPopup<bool>(
       context: context,
-      builder: (_) => _CupertinoVerifyAssignSheet(
+      builder: (_) => CupertinoVerifyAssignSheet(
         grievance: g,
         staffList: _staffList,
       ),
@@ -239,16 +250,29 @@ class _CupertinoVerificationQueuePageState
       _constituencyController.clear();
       _typeFilter = "All";
       _statusFilter = "Pending";
+      _dateFrom = null;
+      _dateTo = null;
     });
     _fetchGrievances();
   }
 
+  List<Map<String, dynamic>> get _visibleGrievances {
+    if (_dateFrom == null && _dateTo == null) return _grievances;
+    return _grievances.where((g) {
+      final dt = DateTime.tryParse(g['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final visible = _visibleGrievances;
     final hasFilters = _searchQuery.isNotEmpty ||
         _constituencyQuery.isNotEmpty ||
         _typeFilter != "All" ||
-        _statusFilter != "Pending";
+        _statusFilter != "Pending" ||
+        _dateFrom != null ||
+        _dateTo != null;
 
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
@@ -324,10 +348,10 @@ class _CupertinoVerificationQueuePageState
                     )
                   else if (_error != null)
                     _buildError()
-                  else if (_grievances.isEmpty)
+                  else if (visible.isEmpty)
                     _buildEmpty()
                   else
-                    ..._grievances.map(_buildCard),
+                    ...visible.map(_buildCard),
                   const SizedBox(height: 24),
                 ]),
               ),
@@ -346,7 +370,7 @@ class _CupertinoVerificationQueuePageState
       _ => "Pending Verification Queue",
     };
     return Text(
-      "$title (${_grievances.length})",
+      "$title (${_visibleGrievances.length})",
       style: const TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.bold,
@@ -459,6 +483,19 @@ class _CupertinoVerificationQueuePageState
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          CupertinoDateRangeFilter(
+            from: _dateFrom,
+            to: _dateTo,
+            tint: AppTheme.primaryIndigo,
+            padding: EdgeInsets.zero,
+            onFromChanged: (d) => setState(() => _dateFrom = d),
+            onToChanged: (d) => setState(() => _dateTo = d),
+            onClear: () => setState(() {
+              _dateFrom = null;
+              _dateTo = null;
+            }),
           ),
           if (hasFilters) ...[
             const SizedBox(height: 8),
@@ -578,6 +615,8 @@ class _CupertinoVerificationQueuePageState
 
   Widget _buildCard(Map<String, dynamic> g) {
     final status = (g["status"] ?? "OPEN").toString();
+    final isOffice =
+        (g["source"] ?? "PUBLIC").toString().toUpperCase() == "OFFICE";
     final petitioner = g["petitionerName"] ?? "-";
     final type = (g["grievanceType"] ?? "").toString();
     final constituency = g["constituency"] ?? "-";
@@ -633,6 +672,10 @@ class _CupertinoVerificationQueuePageState
                         ),
                         const SizedBox(width: 6),
                         _statusPill(status),
+                        if (isOffice) ...[
+                          const SizedBox(width: 6),
+                          _officeChip(),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 2),
@@ -689,8 +732,7 @@ class _CupertinoVerificationQueuePageState
             children: [
               Expanded(
                 child: CupertinoButton(
-                  onPressed: () => AppNavigator.toGrievanceView(context,
-                      grievanceData: g, role: 'ADMIN'),
+                  onPressed: () => _openDetailDialog(g),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   color: CupertinoColors.systemGrey6,
                   borderRadius: BorderRadius.circular(8),
@@ -838,34 +880,54 @@ class _CupertinoVerificationQueuePageState
               TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: fg)),
     );
   }
+
+  Widget _officeChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryIndigo,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        "Office",
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: CupertinoColors.white,
+        ),
+      ),
+    );
+  }
 }
 
 // =====================================================
 // CUPERTINO VERIFY & ASSIGN MODAL
 // =====================================================
-class _CupertinoVerifyAssignSheet extends StatefulWidget {
+class CupertinoVerifyAssignSheet extends StatefulWidget {
   final Map<String, dynamic> grievance;
   final List<Map<String, dynamic>> staffList;
-  const _CupertinoVerifyAssignSheet({
+  const CupertinoVerifyAssignSheet({
     required this.grievance,
     required this.staffList,
   });
 
   @override
-  State<_CupertinoVerifyAssignSheet> createState() =>
-      _CupertinoVerifyAssignSheetState();
+  State<CupertinoVerifyAssignSheet> createState() =>
+      CupertinoVerifyAssignSheetState();
 }
 
-class _CupertinoVerifyAssignSheetState
-    extends State<_CupertinoVerifyAssignSheet> {
+class CupertinoVerifyAssignSheetState
+    extends State<CupertinoVerifyAssignSheet> {
   late final TextEditingController titleController;
   late final TextEditingController descriptionController;
   String? _selectedStaffId;
-  String _selectedPriority = "NORMAL";
+  String? _selectedPriority;
   DateTime? _dueDate;
   bool _submitting = false;
   String? _staffError;
   String? _titleError;
+  String? _priorityError;
+  String? _dueDateError;
 
   @override
   void initState() {
@@ -899,7 +961,10 @@ class _CupertinoVerifyAssignSheetState
       initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 7)),
       minimumDate: DateTime.now(),
       maximumDate: DateTime.now().add(const Duration(days: 365)),
-      onDateSelected: (d) => setState(() => _dueDate = d),
+      onDateSelected: (d) => setState(() {
+        _dueDate = d;
+        _dueDateError = null;
+      }),
     );
   }
 
@@ -911,6 +976,11 @@ class _CupertinoVerifyAssignSheetState
     _titleError =
         titleController.text.trim().isEmpty ? "Required" : null;
     if (_titleError != null) ok = false;
+    _priorityError =
+        _selectedPriority == null ? "Please select a priority" : null;
+    if (_priorityError != null) ok = false;
+    _dueDateError = _dueDate == null ? "Please select a due date" : null;
+    if (_dueDateError != null) ok = false;
     setState(() {});
     return ok;
   }
@@ -941,12 +1011,10 @@ class _CupertinoVerifyAssignSheetState
         "assignedToId": _selectedStaffId,
         "description": descriptionController.text.trim(),
         "priority": _selectedPriority,
+        "dueDate": _dueDate!.toIso8601String(),
         "referenceId": id,
         "referenceType": "GRIEVANCE",
       };
-      if (_dueDate != null) {
-        taskBody["dueDate"] = _dueDate!.toIso8601String();
-      }
 
       final taskRes = await HttpService.post("/api/tasks", taskBody);
       if (!mounted) return;
@@ -1101,9 +1169,19 @@ class _CupertinoVerifyAssignSheetState
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _label("Priority"),
+                            _label("Priority *"),
                             const SizedBox(height: 4),
                             _priorityPicker(),
+                            if (_priorityError != null)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 4, left: 4),
+                                child: Text(_priorityError!,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: CupertinoColors
+                                            .destructiveRed)),
+                              ),
                           ],
                         ),
                       ),
@@ -1112,7 +1190,7 @@ class _CupertinoVerifyAssignSheetState
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _label("Due Date"),
+                            _label("Due Date *"),
                             const SizedBox(height: 4),
                             GestureDetector(
                               onTap: _pickDueDate,
@@ -1123,7 +1201,10 @@ class _CupertinoVerifyAssignSheetState
                                   color: CupertinoColors.systemGrey6,
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
-                                      color: CupertinoColors.systemGrey4),
+                                    color: _dueDateError != null
+                                        ? CupertinoColors.destructiveRed
+                                        : CupertinoColors.systemGrey4,
+                                  ),
                                 ),
                                 child: Text(
                                   _dueDate != null
@@ -1139,6 +1220,16 @@ class _CupertinoVerifyAssignSheetState
                                 ),
                               ),
                             ),
+                            if (_dueDateError != null)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 4, left: 4),
+                                child: Text(_dueDateError!,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: CupertinoColors
+                                            .destructiveRed)),
+                              ),
                           ],
                         ),
                       ),
@@ -1282,19 +1373,22 @@ class _CupertinoVerifyAssignSheetState
   Widget _priorityPicker() {
     final label = switch (_selectedPriority) {
       "LOW" => "Low",
+      "NORMAL" => "Normal",
       "HIGH" => "High",
-      _ => "Normal",
+      _ => "Select priority",
     };
+    final isPlaceholder = _selectedPriority == null;
     return GestureDetector(
       onTap: () {
         CupertinoFormHelpers.showPicker(
           context: context,
           items: const ["Low", "Normal", "High"],
-          currentValue: label,
+          currentValue: isPlaceholder ? "Normal" : label,
           title: "Priority",
           onSelected: (v) {
             setState(() {
               _selectedPriority = v.toUpperCase();
+              _priorityError = null;
             });
           },
         );
@@ -1304,12 +1398,24 @@ class _CupertinoVerifyAssignSheetState
         decoration: BoxDecoration(
           color: CupertinoColors.systemGrey6,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: CupertinoColors.systemGrey4),
+          border: Border.all(
+            color: _priorityError != null
+                ? CupertinoColors.destructiveRed
+                : CupertinoColors.systemGrey4,
+          ),
         ),
         child: Row(
           children: [
             Expanded(
-              child: Text(label, style: const TextStyle(fontSize: 14)),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isPlaceholder
+                      ? CupertinoColors.systemGrey
+                      : CupertinoColors.black,
+                ),
+              ),
             ),
             const Icon(CupertinoIcons.chevron_down,
                 size: 14, color: CupertinoColors.systemGrey),

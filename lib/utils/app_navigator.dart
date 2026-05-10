@@ -5,13 +5,13 @@ import 'platform_utils.dart';
 
 // --- Material screen imports ---
 import '../screens/auth/login_screen.dart';
-import '../screens/auth/register_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/grievance/grievance_list_page.dart';
 import '../screens/grievance/grievance_create_page.dart';
 import '../screens/grievance/grievance_view_page.dart';
 import '../screens/grievance/office_grievance_create_page.dart';
 import '../screens/grievance/grievance_hub_page.dart';
+import '../screens/grievance/rejected_grievances_page.dart';
 import '../screens/visitors/visitor_list_page.dart';
 import '../screens/visitors/visitor_log_page.dart';
 import '../screens/birthday_page.dart';
@@ -40,16 +40,20 @@ import '../screens/about/about_page.dart';
 import '../screens/calendar/calendar_page.dart';
 import '../screens/tour/events_page.dart';
 import '../screens/tour/cupertino/cupertino_events_page.dart';
+import '../screens/tour/super_admin_events_hub_page.dart';
+import '../screens/tour/cupertino/cupertino_super_admin_events_hub_page.dart';
+import '../screens/tour/super_admin_tour_hub_page.dart';
+import '../screens/tour/cupertino/cupertino_super_admin_tour_hub_page.dart';
 
 // --- Cupertino screen imports ---
 import '../screens/auth/cupertino/cupertino_login_screen.dart';
-import '../screens/auth/cupertino/cupertino_register_screen.dart';
 import '../screens/home/cupertino/cupertino_home_screen.dart';
 import '../screens/grievance/cupertino/cupertino_grievance_list_page.dart';
 import '../screens/grievance/cupertino/cupertino_grievance_create_page.dart';
 import '../screens/grievance/cupertino/cupertino_grievance_view_page.dart';
 import '../screens/grievance/cupertino/cupertino_office_grievance_create_page.dart';
 import '../screens/grievance/cupertino/cupertino_grievance_hub_page.dart';
+import '../screens/grievance/cupertino/cupertino_rejected_grievances_page.dart';
 import '../screens/visitors/cupertino/cupertino_visitor_list_page.dart';
 import '../screens/visitors/cupertino/cupertino_visitor_log_page.dart';
 import '../screens/cupertino/cupertino_birthday_page.dart';
@@ -75,6 +79,8 @@ import '../screens/profile/cupertino/cupertino_change_password_page.dart';
 import '../screens/staff/cupertino/cupertino_staff_history_page.dart';
 import '../screens/history/cupertino/cupertino_history_page.dart';
 import '../screens/about/cupertino/cupertino_about_page.dart';
+import '../screens/notifications/notifications_page.dart';
+import '../screens/notifications/cupertino/cupertino_notifications_page.dart';
 
 class AppNavigator {
   /// Creates a platform-appropriate route
@@ -133,14 +139,6 @@ class AppNavigator {
     );
   }
 
-  static void toRegister(BuildContext context) {
-    push(
-      context,
-      () => const RegisterScreen(),
-      () => const CupertinoRegisterScreen(),
-    );
-  }
-
   static void toGrievanceList(BuildContext context, {required String role}) {
     push(
       context,
@@ -183,6 +181,15 @@ class AppNavigator {
       () => GrievanceViewPage(grievanceData: grievanceData, role: role),
       () => CupertinoGrievanceViewPage(
           grievanceId: grievanceData['id']?.toString() ?? '', role: role),
+    );
+  }
+
+  static void toRejectedGrievances(BuildContext context,
+      {required String role}) {
+    push(
+      context,
+      () => RejectedGrievancesPage(role: role),
+      () => CupertinoRejectedGrievancesPage(role: role),
     );
   }
 
@@ -458,6 +465,36 @@ class AppNavigator {
       context,
       () => EventsPage(role: role),
       () => CupertinoEventsPage(role: role),
+    );
+  }
+
+  /// Super Admin Events hub: 3 tappable tiles -> Today / Upcoming / All Events.
+  static void toSuperAdminEventsHub(BuildContext context) {
+    push(
+      context,
+      () => const SuperAdminEventsHubPage(),
+      () => const CupertinoSuperAdminEventsHubPage(),
+    );
+  }
+
+  /// Super Admin Tour Programs hub: 3 tappable tiles -> Today / Upcoming /
+  /// All Programs. View-only — no add / edit / decision actions.
+  static void toSuperAdminTourHub(BuildContext context) {
+    push(
+      context,
+      () => const SuperAdminTourHubPage(),
+      () => const CupertinoSuperAdminTourHubPage(),
+    );
+  }
+
+  /// In-app notification list (bell). Returns when the user pops back so
+  /// the caller can refresh the unread badge.
+  static Future<T?> toNotifications<T>(BuildContext context,
+      {required String role}) {
+    return push<T>(
+      context,
+      () => NotificationsPage(role: role),
+      () => CupertinoNotificationsPage(role: role),
     );
   }
 }

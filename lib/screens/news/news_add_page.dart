@@ -320,6 +320,16 @@ class _NewsAddPageState extends State<NewsAddPage> {
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.link),
                   ),
+                  validator: (v) {
+                    final t = v?.trim() ?? "";
+                    if (t.isEmpty) return null;
+                    final uri = Uri.tryParse(t);
+                    if (uri == null || !uri.isAbsolute ||
+                        (uri.scheme != 'http' && uri.scheme != 'https')) {
+                      return "Enter a valid http(s):// URL";
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 6),
                 Text(

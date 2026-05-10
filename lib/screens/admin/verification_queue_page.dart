@@ -7,7 +7,8 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
-import '../grievance/grievance_view_page.dart';
+import '../../widgets/date_range_filter.dart';
+import '../../widgets/admin_grievance_detail_dialog.dart';
 
 class VerificationQueuePage extends StatefulWidget {
   const VerificationQueuePage({super.key});
@@ -31,6 +32,8 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
   String _constituencyQuery = "";
   String _typeFilter = "All";
   String _statusFilter = "Pending"; // Pending = isVerified=false
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   bool _showFilters = false;
   final Set<String> _downloadingIds = {};
 
@@ -144,6 +147,13 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
     } catch (_) {}
   }
 
+  void _openAdminDetailDialog(Map<String, dynamic> g) {
+    AdminGrievanceDetailDialog.show(
+      context: context,
+      grievance: g,
+    );
+  }
+
   Future<void> _downloadPdf(Map<String, dynamic> g) async {
     final id = g["id"]?.toString() ?? "";
     if (id.isEmpty || _downloadingIds.contains(id)) return;
@@ -248,7 +258,7 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _VerifyAssignSheet(
+      builder: (_) => VerifyAssignSheet(
         grievance: g,
         staffList: _staffList,
       ),
@@ -267,8 +277,18 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
       _constituencyController.clear();
       _typeFilter = "All";
       _statusFilter = "Pending";
+      _dateFrom = null;
+      _dateTo = null;
     });
     _fetchGrievances();
+  }
+
+  List<Map<String, dynamic>> get _visibleGrievances {
+    if (_dateFrom == null && _dateTo == null) return _grievances;
+    return _grievances.where((g) {
+      final dt = DateTime.tryParse(g['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
   }
 
   @override
@@ -276,7 +296,10 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
     final hasFilters = _searchQuery.isNotEmpty ||
         _constituencyQuery.isNotEmpty ||
         _typeFilter != "All" ||
-        _statusFilter != "Pending";
+        _statusFilter != "Pending" ||
+        _dateFrom != null ||
+        _dateTo != null;
+    final visible = _visibleGrievances;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -335,10 +358,10 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
               )
             else if (_error != null)
               _buildError()
-            else if (_grievances.isEmpty)
+            else if (visible.isEmpty)
               _buildEmpty()
             else
-              ..._grievances.map(_buildCard),
+              ...visible.map(_buildCard),
             const SizedBox(height: 24),
           ],
         ),
@@ -354,7 +377,7 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
       _ => "Pending Verification Queue",
     };
     return Text(
-      "$title (${_grievances.length})",
+      "$title (${_visibleGrievances.length})",
       style: const TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.bold,
@@ -493,6 +516,19 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          DateRangeFilter(
+            from: _dateFrom,
+            to: _dateTo,
+            tint: AppTheme.primaryIndigo,
+            padding: EdgeInsets.zero,
+            onFromChanged: (d) => setState(() => _dateFrom = d),
+            onToChanged: (d) => setState(() => _dateTo = d),
+            onClear: () => setState(() {
+              _dateFrom = null;
+              _dateTo = null;
+            }),
+          ),
           if (hasFilters) ...[
             const SizedBox(height: 8),
             SizedBox(
@@ -556,6 +592,8 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
 
   Widget _buildCard(Map<String, dynamic> g) {
     final status = (g["status"] ?? "OPEN").toString();
+    final isOffice =
+        (g["source"] ?? "PUBLIC").toString().toUpperCase() == "OFFICE";
     final petitioner = g["petitionerName"] ?? "-";
     final type = (g["grievanceType"] ?? "").toString();
     final constituency = g["constituency"] ?? "-";
@@ -611,6 +649,10 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
                         ),
                         const SizedBox(width: 6),
                         _statusPill(status),
+                        if (isOffice) ...[
+                          const SizedBox(width: 6),
+                          _officeChip(),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 2),
@@ -667,16 +709,7 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => GrievanceViewPage(
-                            grievanceData: g, role: 'ADMIN'),
-                      ),
-                    );
-                    _fetchGrievances();
-                  },
+                  onPressed: () => _openAdminDetailDialog(g),
                   icon: const Icon(Icons.visibility_outlined, size: 14),
                   label: const Text("View"),
                   style: OutlinedButton.styleFrom(
@@ -812,31 +845,50 @@ class _VerificationQueuePageState extends State<VerificationQueuePage> {
       ),
     );
   }
+
+  Widget _officeChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryIndigo,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        "Office",
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
 }
 
 // =====================================================
 // VERIFY & ASSIGN BOTTOM SHEET
 // =====================================================
-class _VerifyAssignSheet extends StatefulWidget {
+class VerifyAssignSheet extends StatefulWidget {
   final Map<String, dynamic> grievance;
   final List<Map<String, dynamic>> staffList;
-  const _VerifyAssignSheet({
+  const VerifyAssignSheet({
     required this.grievance,
     required this.staffList,
   });
 
   @override
-  State<_VerifyAssignSheet> createState() => _VerifyAssignSheetState();
+  State<VerifyAssignSheet> createState() => VerifyAssignSheetState();
 }
 
-class _VerifyAssignSheetState extends State<_VerifyAssignSheet> {
+class VerifyAssignSheetState extends State<VerifyAssignSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController titleController;
   late final TextEditingController descriptionController;
   String? _selectedStaffId;
-  String _selectedPriority = "NORMAL";
+  String? _selectedPriority;
   DateTime? _dueDate;
   bool _submitting = false;
+  String? _dueDateError;
 
   @override
   void initState() {
@@ -871,11 +923,21 @@ class _VerifyAssignSheetState extends State<_VerifyAssignSheet> {
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
-    if (picked != null) setState(() => _dueDate = picked);
+    if (picked != null) {
+      setState(() {
+        _dueDate = picked;
+        _dueDateError = null;
+      });
+    }
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    final formOk = _formKey.currentState?.validate() ?? false;
+    final dueOk = _dueDate != null;
+    if (!dueOk) {
+      setState(() => _dueDateError = "Please select a due date");
+    }
+    if (!formOk || !dueOk) return;
     if (_selectedStaffId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select a staff member")),
@@ -909,12 +971,10 @@ class _VerifyAssignSheetState extends State<_VerifyAssignSheet> {
         "assignedToId": _selectedStaffId,
         "description": descriptionController.text.trim(),
         "priority": _selectedPriority,
+        "dueDate": _dueDate!.toIso8601String(),
         "referenceId": id,
         "referenceType": "GRIEVANCE",
       };
-      if (_dueDate != null) {
-        taskBody["dueDate"] = _dueDate!.toIso8601String();
-      }
 
       final taskRes = await HttpService.post("/api/tasks", taskBody);
 
@@ -1115,12 +1175,14 @@ class _VerifyAssignSheetState extends State<_VerifyAssignSheet> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _label("Priority"),
+                              _label("Priority *"),
                               const SizedBox(height: 4),
                               DropdownButtonFormField<String>(
                                 value: _selectedPriority,
                                 isExpanded: true,
-                                decoration: _inputDecoration(),
+                                decoration: _inputDecoration().copyWith(
+                                  hintText: "Select priority",
+                                ),
                                 items: const [
                                   DropdownMenuItem(
                                       value: "LOW", child: Text("Low")),
@@ -1129,8 +1191,11 @@ class _VerifyAssignSheetState extends State<_VerifyAssignSheet> {
                                   DropdownMenuItem(
                                       value: "HIGH", child: Text("High")),
                                 ],
-                                onChanged: (v) => setState(
-                                    () => _selectedPriority = v ?? "NORMAL"),
+                                onChanged: (v) =>
+                                    setState(() => _selectedPriority = v),
+                                validator: (v) => v == null
+                                    ? "Please select a priority"
+                                    : null,
                               ),
                             ],
                           ),
@@ -1140,12 +1205,14 @@ class _VerifyAssignSheetState extends State<_VerifyAssignSheet> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _label("Due Date"),
+                              _label("Due Date *"),
                               const SizedBox(height: 4),
                               InkWell(
                                 onTap: _pickDueDate,
                                 child: InputDecorator(
-                                  decoration: _inputDecoration(),
+                                  decoration: _inputDecoration().copyWith(
+                                    errorText: _dueDateError,
+                                  ),
                                   child: Text(
                                     _dueDate != null
                                         ? DateFormat('dd/MM/yyyy')

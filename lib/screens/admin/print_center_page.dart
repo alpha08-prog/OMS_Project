@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
@@ -58,7 +59,7 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
   Future<void> _fetchTrainRequests() async {
     setState(() => _loadingTrainRequests = true);
     try {
-      final res = await HttpService.get("/api/train-requests?status=APPROVED&limit=100");
+      final res = await HttpService.get("/api/train-requests?limit=100");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
@@ -99,10 +100,10 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
           );
         }
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e")),
+          const SnackBar(content: Text("Download failed. Please try again.")),
         );
       }
     }
@@ -111,35 +112,72 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
   Future<void> _previewHTML(String endpoint, String title) async {
     try {
       final res = await HttpService.get(endpoint);
-      if (res.statusCode == 200) {
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          builder: (ctx) => Dialog(
-            child: Column(
-              children: [
-                AppBar(
-                  title: Text(title),
-                  automaticallyImplyLeading: false,
-                  actions: [
+      if (res.statusCode != 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Preview failed (${res.statusCode})")),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: const BoxDecoration(
+                  color: AppTheme.primaryIndigo,
+                  borderRadius:
+                      BorderRadius.vertical(top: Radius.circular(12)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                     IconButton(
-                      icon: const Icon(Icons.close),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                       onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
                 ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(res.body, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
-                  ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Html(data: res.body),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Preview failed. Please try again.")),
         );
       }
-    } catch (_) {}
+    }
   }
 
   Future<void> _downloadTourProgramPDF() async {
@@ -221,7 +259,7 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
           children: [
             Icon(Icons.print_disabled, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
-            Text("No approved requests to print", style: TextStyle(color: Colors.grey.shade500)),
+            Text("No train requests to print", style: TextStyle(color: Colors.grey.shade500)),
           ],
         ),
       );

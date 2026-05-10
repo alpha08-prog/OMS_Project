@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../widgets/date_range_filter.dart';
 import 'tour_program_create_page.dart';
 
 class TourProgramListPage extends StatefulWidget {
@@ -38,10 +39,27 @@ class _TourProgramListPageState extends State<TourProgramListPage>
   int approvedCount = 0;
   int rejectedCount = 0;
 
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  List<Map<String, dynamic>> _applyDate(List<Map<String, dynamic>> list) {
+    if (_dateFrom == null && _dateTo == null) return list;
+    return list.where((e) {
+      // Tour programs use `dateTime` (event date) more naturally than
+      // `createdAt`. Fall back to createdAt if dateTime is missing.
+      final raw = (e['dateTime'] ?? e['createdAt'])?.toString();
+      final dt = DateTime.tryParse(raw ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+      length: widget.role == Roles.superAdmin ? 1 : 3,
+      vsync: this,
+    );
     _loadAll();
   }
 
@@ -328,18 +346,19 @@ class _TourProgramListPageState extends State<TourProgramListPage>
                 ),
               ),
               // Tab Bar
-              TabBar(
-                controller: _tabController,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                indicatorColor: Colors.white,
-                indicatorWeight: 3,
-                tabs: [
-                  Tab(text: "All (${allList.length})"),
-                  Tab(text: "Today (${todayList.length})"),
-                  Tab(text: "Upcoming (${upcomingList.length})"),
-                ],
-              ),
+              if (widget.role != Roles.superAdmin)
+                TabBar(
+                  controller: _tabController,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white70,
+                  indicatorColor: Colors.white,
+                  indicatorWeight: 3,
+                  tabs: [
+                    Tab(text: "All (${allList.length})"),
+                    Tab(text: "Today (${todayList.length})"),
+                    Tab(text: "Upcoming (${upcomingList.length})"),
+                  ],
+                ),
             ],
           ),
         ),
@@ -352,12 +371,32 @@ class _TourProgramListPageState extends State<TourProgramListPage>
               label: const Text("New Program", style: TextStyle(color: Colors.white)),
             )
           : null,
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _listView(loadingAll, allList),
-          _listView(loadingToday, todayList),
-          _listView(loadingUpcoming, upcomingList),
+          DateRangeFilter(
+            from: _dateFrom,
+            to: _dateTo,
+            tint: primaryBlue,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            onFromChanged: (d) => setState(() => _dateFrom = d),
+            onToChanged: (d) => setState(() => _dateTo = d),
+            onClear: () => setState(() {
+              _dateFrom = null;
+              _dateTo = null;
+            }),
+          ),
+          Expanded(
+            child: widget.role == Roles.superAdmin
+                ? _categoriesView()
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _listView(loadingAll, _applyDate(allList)),
+                      _listView(loadingToday, _applyDate(todayList)),
+                      _listView(loadingUpcoming, _applyDate(upcomingList)),
+                    ],
+                  ),
+          ),
         ],
       ),
     );
@@ -382,6 +421,121 @@ class _TourProgramListPageState extends State<TourProgramListPage>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _categoriesView() {
+    if (loadingToday && loadingUpcoming) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final today = _applyDate(todayList);
+    final upcoming = _applyDate(upcomingList);
+
+    if (today.isEmpty && upcoming.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.event_busy, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              "No today's or upcoming programs",
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
+      children: [
+        _categorySectionHeader(
+          icon: Icons.wb_sunny,
+          color: accentOrange,
+          title: "Today's Programs",
+          count: today.length,
+        ),
+        if (today.isEmpty)
+          _emptyCategoryRow("No programs scheduled for today")
+        else
+          ...today.map((e) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _programCard(e),
+              )),
+        const SizedBox(height: 8),
+        _categorySectionHeader(
+          icon: Icons.calendar_month,
+          color: primaryBlue,
+          title: "Upcoming Programs",
+          count: upcoming.length,
+        ),
+        if (upcoming.isEmpty)
+          _emptyCategoryRow("No upcoming programs")
+        else
+          ...upcoming.map((e) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _programCard(e),
+              )),
+      ],
+    );
+  }
+
+  Widget _categorySectionHeader({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required int count,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              "$count",
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyCategoryRow(String text) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: bgLight,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+        ),
+      ),
     );
   }
 

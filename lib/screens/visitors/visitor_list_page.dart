@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../widgets/date_range_filter.dart';
 
 class VisitorListPage extends StatefulWidget {
   final String role;
@@ -18,8 +19,18 @@ class _VisitorListPageState extends State<VisitorListPage> {
 
   bool loading = true;
   String? error;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   List<Map<String, dynamic>> visitors = [];
+
+  List<Map<String, dynamic>> get _visibleVisitors {
+    if (_dateFrom == null && _dateTo == null) return visitors;
+    return visitors.where((v) {
+      final dt = DateTime.tryParse(v['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -136,7 +147,8 @@ class _VisitorListPageState extends State<VisitorListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
+    final canCreate = widget.role != Roles.admin &&
+        AccessControl.can(widget.role, ActionPermission.create);
 
     return Scaffold(
       backgroundColor: bgLight,
@@ -157,17 +169,32 @@ class _VisitorListPageState extends State<VisitorListPage> {
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : error != null
-              ? Center(child: Text(error!))
-              : visitors.isEmpty
-                  ? const Center(child: Text("No visitors found"))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: visitors.length,
-                      itemBuilder: (context, index) {
-                        final v = visitors[index];
+      body: Column(
+        children: [
+          DateRangeFilter(
+            from: _dateFrom,
+            to: _dateTo,
+            tint: primaryBlue,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            onFromChanged: (d) => setState(() => _dateFrom = d),
+            onToChanged: (d) => setState(() => _dateTo = d),
+            onClear: () => setState(() {
+              _dateFrom = null;
+              _dateTo = null;
+            }),
+          ),
+          Expanded(
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : error != null
+                    ? Center(child: Text(error!))
+                    : _visibleVisitors.isEmpty
+                        ? const Center(child: Text("No visitors found"))
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _visibleVisitors.length,
+                            itemBuilder: (context, index) {
+                              final v = _visibleVisitors[index];
 
                         final int? id = v["id"] is int
                             ? v["id"]
@@ -245,8 +272,11 @@ class _VisitorListPageState extends State<VisitorListPage> {
                             ],
                           ),
                         );
-                      },
-                    ),
+                            },
+                          ),
+          ),
+        ],
+      ),
     );
   }
 }

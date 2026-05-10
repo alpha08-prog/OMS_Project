@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/app_navigator.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import 'cupertino_verification_queue_page.dart' show CupertinoVerifyAssignSheet;
 
 class CupertinoActionCenterPage extends StatefulWidget {
   final String role;
@@ -25,6 +26,7 @@ class _CupertinoActionCenterPageState
   List<Map<String, dynamic>> _pendingGrievances = [];
   List<Map<String, dynamic>> _pendingTrainRequests = [];
   List<Map<String, dynamic>> _pendingTourPrograms = [];
+  List<Map<String, dynamic>> _staffList = [];
 
   final Set<String> _busyIds = {};
   String _selectedType = "GRIEVANCE";
@@ -45,6 +47,7 @@ class _CupertinoActionCenterPageState
         _fetchGrievances(),
         _fetchTrainRequests(),
         _fetchTourPrograms(),
+        _fetchStaff(),
       ]);
     } catch (_) {
       _error = "Server error / No internet";
@@ -91,6 +94,20 @@ class _CupertinoActionCenterPageState
     } catch (_) {}
   }
 
+  Future<void> _fetchStaff() async {
+    try {
+      final res = await HttpService.get("/api/tasks/staff");
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final List list =
+            decoded is List ? decoded : (decoded["data"] ?? []);
+        _staffList = list
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+  }
+
   int get _totalPending =>
       _pendingGrievances.length +
       _pendingTrainRequests.length +
@@ -99,26 +116,24 @@ class _CupertinoActionCenterPageState
   // ===== Inline actions =====
 
   Future<void> _verifyGrievance(Map<String, dynamic> g) async {
-    final id = g["id"]?.toString() ?? "";
-    if (id.isEmpty || _busyIds.contains(id)) return;
-    setState(() => _busyIds.add(id));
-    try {
-      final res = await HttpService.patch("/api/grievances/$id/verify", {});
-      if (!mounted) return;
-      if (res.statusCode == 200) {
-        CupertinoToast.show(context, "Grievance verified");
-        await _loadAll();
-      } else {
-        CupertinoToast.show(context, _errorMsg(res), isError: true);
-      }
-    } catch (_) {
-      if (mounted) {
-        CupertinoToast.show(context, "Server error / No internet",
+    if (_staffList.isEmpty) {
+      await _fetchStaff();
+      if (_staffList.isEmpty) {
+        if (!mounted) return;
+        CupertinoToast.show(context, "No staff available to assign",
             isError: true);
+        return;
       }
-    } finally {
-      if (mounted) setState(() => _busyIds.remove(id));
     }
+
+    final result = await showCupertinoModalPopup<bool>(
+      context: context,
+      builder: (_) => CupertinoVerifyAssignSheet(
+        grievance: g,
+        staffList: _staffList,
+      ),
+    );
+    if (result == true) await _loadAll();
   }
 
   Future<void> _approveTrain(Map<String, dynamic> t) async {

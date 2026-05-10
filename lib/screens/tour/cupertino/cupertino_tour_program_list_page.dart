@@ -7,6 +7,8 @@ import '../../../utils/access_control.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_tour_program_create_page.dart';
 
 class CupertinoTourProgramListPage extends StatefulWidget {
@@ -36,6 +38,18 @@ class _CupertinoTourProgramListPageState
   List<Map<String, dynamic>> allList = [];
   List<Map<String, dynamic>> todayList = [];
   List<Map<String, dynamic>> upcomingList = [];
+
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  List<Map<String, dynamic>> _applyDate(List<Map<String, dynamic>> list) {
+    if (_dateFrom == null && _dateTo == null) return list;
+    return list.where((e) {
+      final raw = (e['dateTime'] ?? e['createdAt'])?.toString();
+      final dt = DateTime.tryParse(raw ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
 
   // Stats
   int totalPrograms = 0;
@@ -636,66 +650,83 @@ class _CupertinoTourProgramListPageState
                           rejectedCount.toString(), accentRed),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  // Segmented Control replacing TabBar
-                  SizedBox(
-                    width: double.infinity,
-                    child: CupertinoSlidingSegmentedControl<String>(
-                      groupValue: _selectedTab,
-                      backgroundColor:
-                          CupertinoColors.white.withOpacity(0.2),
-                      thumbColor: CupertinoColors.white,
-                      children: {
-                        "All": Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 6),
-                          child: Text("All (${allList.length})",
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: _selectedTab == "All"
-                                      ? primaryBlue
-                                      : CupertinoColors.white)),
-                        ),
-                        "Today": Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 6),
-                          child: Text(
-                              "Today (${todayList.length})",
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: _selectedTab == "Today"
-                                      ? primaryBlue
-                                      : CupertinoColors.white)),
-                        ),
-                        "Upcoming": Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 6),
-                          child: Text(
-                              "Upcoming (${upcomingList.length})",
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: _selectedTab == "Upcoming"
-                                      ? primaryBlue
-                                      : CupertinoColors.white)),
-                        ),
-                      },
-                      onValueChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedTab = value);
-                        }
-                      },
+                  if (widget.role != Roles.superAdmin) ...[
+                    const SizedBox(height: 12),
+                    // Segmented Control replacing TabBar
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoSlidingSegmentedControl<String>(
+                        groupValue: _selectedTab,
+                        backgroundColor:
+                            CupertinoColors.white.withOpacity(0.2),
+                        thumbColor: CupertinoColors.white,
+                        children: {
+                          "All": Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 6),
+                            child: Text("All (${allList.length})",
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _selectedTab == "All"
+                                        ? primaryBlue
+                                        : CupertinoColors.white)),
+                          ),
+                          "Today": Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 6),
+                            child: Text(
+                                "Today (${todayList.length})",
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _selectedTab == "Today"
+                                        ? primaryBlue
+                                        : CupertinoColors.white)),
+                          ),
+                          "Upcoming": Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 6),
+                            child: Text(
+                                "Upcoming (${upcomingList.length})",
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _selectedTab == "Upcoming"
+                                        ? primaryBlue
+                                        : CupertinoColors.white)),
+                          ),
+                        },
+                        onValueChanged: (value) {
+                          if (value != null) {
+                            setState(() => _selectedTab = value);
+                          }
+                        },
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
 
+            CupertinoDateRangeFilter(
+              from: _dateFrom,
+              to: _dateTo,
+              tint: primaryBlue,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              onFromChanged: (d) => setState(() => _dateFrom = d),
+              onToChanged: (d) => setState(() => _dateTo = d),
+              onClear: () => setState(() {
+                _dateFrom = null;
+                _dateTo = null;
+              }),
+            ),
+
             // List
             Expanded(
-              child: _buildListForTab(),
+              child: widget.role == Roles.superAdmin
+                  ? _categoriesView()
+                  : _buildListForTab(),
             ),
           ],
         ),
@@ -706,12 +737,131 @@ class _CupertinoTourProgramListPageState
   Widget _buildListForTab() {
     switch (_selectedTab) {
       case "Today":
-        return _listView(loadingToday, todayList);
+        return _listView(loadingToday, _applyDate(todayList));
       case "Upcoming":
-        return _listView(loadingUpcoming, upcomingList);
+        return _listView(loadingUpcoming, _applyDate(upcomingList));
       default:
-        return _listView(loadingAll, allList);
+        return _listView(loadingAll, _applyDate(allList));
     }
+  }
+
+  Widget _categoriesView() {
+    if (loadingToday && loadingUpcoming) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+
+    final today = _applyDate(todayList);
+    final upcoming = _applyDate(upcomingList);
+
+    if (today.isEmpty && upcoming.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(CupertinoIcons.calendar_badge_minus,
+                size: 64, color: CupertinoColors.systemGrey3),
+            const SizedBox(height: 16),
+            const Text("No today's or upcoming programs",
+                style: TextStyle(
+                    fontSize: 16, color: CupertinoColors.systemGrey)),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
+      children: [
+        _categorySectionHeader(
+          icon: CupertinoIcons.sun_max_fill,
+          color: accentOrange,
+          title: "Today's Programs",
+          count: today.length,
+        ),
+        if (today.isEmpty)
+          _emptyCategoryRow("No programs scheduled for today")
+        else
+          ...today.map((e) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _programCard(e),
+              )),
+        const SizedBox(height: 8),
+        _categorySectionHeader(
+          icon: CupertinoIcons.calendar,
+          color: primaryBlue,
+          title: "Upcoming Programs",
+          count: upcoming.length,
+        ),
+        if (upcoming.isEmpty)
+          _emptyCategoryRow("No upcoming programs")
+        else
+          ...upcoming.map((e) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _programCard(e),
+              )),
+      ],
+    );
+  }
+
+  Widget _categorySectionHeader({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required int count,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.foreground,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              "$count",
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyCategoryRow(String text) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: bgLight,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            color: CupertinoColors.systemGrey,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _miniStat(String label, String value, Color color) {

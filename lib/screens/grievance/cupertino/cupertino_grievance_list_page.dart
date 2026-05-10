@@ -13,6 +13,7 @@ import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
+import '../../../widgets/cupertino/cupertino_admin_grievance_detail_dialog.dart';
 
 class CupertinoGrievanceListPage extends StatefulWidget {
   final String role;
@@ -249,6 +250,13 @@ class _CupertinoGrievanceListPageState
     } finally {
       if (mounted) setState(() => _downloadingIds.remove(id));
     }
+  }
+
+  void _openAdminDetailDialog(Map<String, dynamic> grievance) {
+    CupertinoAdminGrievanceDetailDialog.show(
+      context: context,
+      grievance: grievance,
+    );
   }
 
   void _openCreate() {
@@ -790,6 +798,8 @@ class _CupertinoGrievanceListPageState
   Widget _buildGrievanceCard(Map<String, dynamic> grievance) {
     final status = grievance["uiStatus"] ?? "Open";
     final isLocked = grievance["isLocked"] == true;
+    final isOffice =
+        (grievance["source"] ?? "PUBLIC").toString().toUpperCase() == "OFFICE";
     final currentStage = grievance["currentStage"] ?? "RECEIVED";
     final createdAt = grievance["createdAt"];
 
@@ -806,8 +816,13 @@ class _CupertinoGrievanceListPageState
 
     return GestureDetector(
       onTap: () async {
-        AppNavigator.toGrievanceView(context,
-            grievanceData: grievance, role: widget.role);
+        if (widget.role == Roles.admin ||
+            widget.role == Roles.superAdmin) {
+          _openAdminDetailDialog(grievance);
+        } else {
+          AppNavigator.toGrievanceView(context,
+              grievanceData: grievance, role: widget.role);
+        }
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -873,6 +888,10 @@ class _CupertinoGrievanceListPageState
                             ),
                           ),
                           _statusChip(status),
+                          if (isOffice) ...[
+                            const SizedBox(width: 6),
+                            _officeChip(),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -957,8 +976,13 @@ class _CupertinoGrievanceListPageState
                 Expanded(
                   child: CupertinoButton(
                     onPressed: () {
-                      AppNavigator.toGrievanceView(context,
-                          grievanceData: grievance, role: widget.role);
+                      if (widget.role == Roles.admin ||
+                          widget.role == Roles.superAdmin) {
+                        _openAdminDetailDialog(grievance);
+                      } else {
+                        AppNavigator.toGrievanceView(context,
+                            grievanceData: grievance, role: widget.role);
+                      }
                     },
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     color: CupertinoColors.systemGrey6,
@@ -1065,6 +1089,24 @@ class _CupertinoGrievanceListPageState
           fontSize: 11,
           fontWeight: FontWeight.bold,
           color: text,
+        ),
+      ),
+    );
+  }
+
+  Widget _officeChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryIndigo,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Text(
+        "Office",
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: CupertinoColors.white,
         ),
       ),
     );

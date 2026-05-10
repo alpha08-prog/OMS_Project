@@ -53,6 +53,7 @@ class _CupertinoTrainRequestAddPageState
   String? _pnrError;
   String? _fromError;
   String? _toError;
+  String? _passengersError;
 
   final List<Map<String, String>> bookingTypes = [
     {'value': 'GENERAL', 'label': 'General'},
@@ -85,9 +86,11 @@ class _CupertinoTrainRequestAddPageState
       passengers.add({
         'name': '',
         'age': '',
-        'gender': 'MALE',
+        'gender': '',
         'berthPreference': '',
+        'waitingList': '',
       });
+      _passengersError = null;
     });
   }
 
@@ -133,15 +136,19 @@ class _CupertinoTrainRequestAddPageState
 
           final passengerList = data["passengers"] as List? ?? [];
           passengers = passengerList.map<Map<String, dynamic>>((p) {
+            final cs = (p["currentStatus"] ?? '').toString();
+            final bs = (p["bookingStatus"] ?? '').toString();
             return {
               'name': p["name"] ?? '',
               'age': (p["age"] ?? '').toString(),
-              'gender': p["gender"] ?? 'MALE',
+              'gender': p["gender"] ?? '',
               'berthPreference': '',
-              'bookingStatus': p["bookingStatus"] ?? '',
-              'currentStatus': p["currentStatus"] ?? '',
+              'bookingStatus': bs,
+              'currentStatus': cs,
+              'waitingList': cs.isNotEmpty ? cs : bs,
             };
           }).toList();
+          _passengersError = null;
         });
 
         CupertinoToast.show(
@@ -186,12 +193,62 @@ class _CupertinoTrainRequestAddPageState
           : null;
       _toError =
           toStationController.text.trim().isEmpty ? "Required" : null;
+
+      if (passengers.isEmpty) {
+        _passengersError = "Add at least one passenger";
+      } else {
+        _passengersError = null;
+        for (final p in passengers) {
+          final name = (p['name'] ?? '').toString().trim();
+          final ageStr = (p['age'] ?? '').toString().trim();
+          final gender = (p['gender'] ?? '').toString().trim();
+          final wl = (p['waitingList'] ?? '').toString().trim();
+          final ageNum = int.tryParse(ageStr);
+
+          p['nameError'] = name.isEmpty ? "Required" : null;
+          p['ageError'] = ageStr.isEmpty
+              ? "Required"
+              : (ageNum == null || ageNum <= 0 ? "Invalid" : null);
+          p['genderError'] = gender.isEmpty ? "Required" : null;
+          p['waitingListError'] = wl.isEmpty ? "Required" : null;
+        }
+      }
     });
 
     if (_pnrError != null || _fromError != null || _toError != null) {
       valid = false;
     }
+    if (_passengersError != null) valid = false;
+    for (final p in passengers) {
+      if (p['nameError'] != null ||
+          p['ageError'] != null ||
+          p['genderError'] != null ||
+          p['waitingListError'] != null) {
+        valid = false;
+      }
+    }
     return valid;
+  }
+
+  /// Backend's express-validator on POST /api/train-requests requires a
+  /// non-empty top-level `passengerName`. Derive it from the first named
+  /// passenger; fall back to the PNR so the request still goes through
+  /// when the staff hasn't filled the passengers list.
+  String _leadPassengerName() {
+    for (final p in passengers) {
+      final n = (p['name'] ?? '').toString().trim();
+      if (n.isNotEmpty) return n;
+    }
+    final pnr = pnrController.text.trim();
+    return pnr.isNotEmpty ? 'PNR $pnr' : 'Not specified';
+  }
+
+  /// Backend allows an empty contact number, but if non-empty it MUST be
+  /// exactly 10 digits. Strip non-digits; only forward when valid.
+  String _sanitizedContactNumber() {
+    final raw = contactNumberController.text.trim();
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    return digits.length == 10 ? digits : '';
   }
 
   Future<void> _submit() async {
@@ -207,6 +264,7 @@ class _CupertinoTrainRequestAddPageState
 
     try {
       final body = {
+        "passengerName": _leadPassengerName(),
         "pnrNumber": pnrController.text.trim(),
         "trainName": trainNameController.text.trim(),
         "trainNumber": trainNumberController.text.trim(),
@@ -215,18 +273,21 @@ class _CupertinoTrainRequestAddPageState
         "dateOfJourney": dateOfJourney!.toIso8601String(),
         "fromStation": fromStationController.text.trim(),
         "toStation": toStationController.text.trim(),
-        "contactNumber": contactNumberController.text.trim(),
+        "contactNumber": _sanitizedContactNumber(),
         "referencedBy": referencedByController.text.trim(),
         "remarks": remarksController.text.trim(),
         "passengers": passengers
-            .where((p) => (p['name'] ?? '').toString().isNotEmpty)
             .map((p) => {
                   "name": p['name'],
                   "age": int.tryParse(p['age']?.toString() ?? '') ?? 30,
                   "gender": p['gender'] ?? 'MALE',
                   "berthPreference": p['berthPreference'] ?? '',
                   "bookingStatus": p['bookingStatus'] ?? '',
-                  "currentStatus": p['currentStatus'] ?? '',
+                  // UI's "Waiting List" maps to backend's currentStatus
+                  // column (no separate waitingList column in Catalyst).
+                  "currentStatus": (p['waitingList']?.toString().trim().isNotEmpty ?? false)
+                      ? p['waitingList']
+                      : (p['currentStatus'] ?? ''),
                 })
             .toList(),
       };
@@ -246,6 +307,14 @@ class _CupertinoTrainRequestAddPageState
         try {
           final data = jsonDecode(res.body);
           msg = data["message"] ?? msg;
+          // Surface the first specific field error for easier debugging.
+          final errs = data["errors"];
+          if (errs is List && errs.isNotEmpty) {
+            final first = errs.first;
+            if (first is Map && first["message"] != null) {
+              msg = "$msg: ${first["message"]}";
+            }
+          }
         } catch (_) {}
 
         CupertinoToast.show(context, msg, isError: true);
@@ -569,11 +638,16 @@ class _CupertinoTrainRequestAddPageState
               ),
               children: [
                 if (passengers.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
                     child: Text(
-                      "No passengers added. Click 'Add' to add passengers.",
-                      style: TextStyle(color: CupertinoColors.systemGrey),
+                      _passengersError ??
+                          "No passengers added. Click 'Add' to add passengers.",
+                      style: TextStyle(
+                        color: _passengersError != null
+                            ? AppTheme.destructiveRed
+                            : CupertinoColors.systemGrey,
+                      ),
                     ),
                   )
                 else
@@ -804,73 +878,163 @@ class _CupertinoTrainRequestAddPageState
             decoration: BoxDecoration(
               color: CupertinoColors.white,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(
+                color: passenger['nameError'] != null
+                    ? AppTheme.destructiveRed
+                    : AppTheme.border,
+              ),
             ),
             onChanged: (v) => passengers[index]['name'] = v,
           ),
+          if (passenger['nameError'] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 4),
+              child: Text(
+                passenger['nameError'],
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.destructiveRed),
+              ),
+            ),
           const SizedBox(height: 10),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: CupertinoTextField(
-                  placeholder: "Age *",
-                  controller: TextEditingController(
-                      text: passenger['age']?.toString() ?? ''),
-                  keyboardType: TextInputType.number,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  onChanged: (v) => passengers[index]['age'] = v,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CupertinoTextField(
+                      placeholder: "Age *",
+                      controller: TextEditingController(
+                          text: passenger['age']?.toString() ?? ''),
+                      keyboardType: TextInputType.number,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: passenger['ageError'] != null
+                              ? AppTheme.destructiveRed
+                              : AppTheme.border,
+                        ),
+                      ),
+                      onChanged: (v) => passengers[index]['age'] = v,
+                    ),
+                    if (passenger['ageError'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          passenger['ageError'],
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.destructiveRed),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: GestureDetector(
-                  onTap: () {
-                    CupertinoFormHelpers.showPicker(
-                      context: context,
-                      items: const ['Male', 'Female', 'Other'],
-                      currentValue: _genderLabel(
-                          passenger['gender'] ?? 'MALE'),
-                      title: "Gender",
-                      onSelected: (label) {
-                        final value = label.toUpperCase();
-                        setState(
-                            () => passengers[index]['gender'] = value);
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        CupertinoFormHelpers.showPicker(
+                          context: context,
+                          items: const ['Male', 'Female', 'Other'],
+                          currentValue: _genderLabel(
+                              passenger['gender'] ?? 'MALE'),
+                          title: "Sex / Gender",
+                          onSelected: (label) {
+                            final value = label.toUpperCase();
+                            setState(() {
+                              passengers[index]['gender'] = value;
+                              passengers[index]['genderError'] = null;
+                            });
+                          },
+                        );
                       },
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _genderLabel(
-                                passenger['gender'] ?? 'MALE'),
-                            style: const TextStyle(fontSize: 15),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: passenger['genderError'] != null
+                                ? AppTheme.destructiveRed
+                                : AppTheme.border,
                           ),
                         ),
-                        const Icon(CupertinoIcons.chevron_down,
-                            size: 14,
-                            color: CupertinoColors.systemGrey),
-                      ],
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                (passenger['gender']?.toString() ?? '')
+                                        .isEmpty
+                                    ? "Sex *"
+                                    : _genderLabel(passenger['gender']),
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: (passenger['gender']?.toString() ??
+                                              '')
+                                          .isEmpty
+                                      ? CupertinoColors.systemGrey
+                                      : CupertinoColors.black,
+                                ),
+                              ),
+                            ),
+                            const Icon(CupertinoIcons.chevron_down,
+                                size: 14,
+                                color: CupertinoColors.systemGrey),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                    if (passenger['genderError'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          passenger['genderError'],
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.destructiveRed),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          CupertinoTextField(
+            placeholder: "Waiting List * (e.g., CNF, RAC, WL/15)",
+            controller: TextEditingController(
+                text: passenger['waitingList'] ?? ''),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: CupertinoColors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: passenger['waitingListError'] != null
+                    ? AppTheme.destructiveRed
+                    : AppTheme.border,
+              ),
+            ),
+            onChanged: (v) => passengers[index]['waitingList'] = v,
+          ),
+          if (passenger['waitingListError'] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 4),
+              child: Text(
+                passenger['waitingListError'],
+                style: const TextStyle(
+                    fontSize: 12, color: AppTheme.destructiveRed),
+              ),
+            ),
           const SizedBox(height: 10),
           CupertinoTextField(
             placeholder: "Berth Preference (LB/MB/UB/SL/SU)",
@@ -961,8 +1125,9 @@ class _CupertinoTrainRequestAddPageState
     );
   }
 
-  String _genderLabel(String value) {
-    switch (value.toUpperCase()) {
+  String _genderLabel(dynamic value) {
+    final s = (value ?? '').toString().toUpperCase();
+    switch (s) {
       case 'MALE':
         return 'Male';
       case 'FEMALE':
@@ -970,7 +1135,7 @@ class _CupertinoTrainRequestAddPageState
       case 'OTHER':
         return 'Other';
       default:
-        return 'Male';
+        return '';
     }
   }
 }

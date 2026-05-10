@@ -10,72 +10,55 @@ class SpacedRepetitionService {
     int newInterval = interval;
     int newRepetitions = repetitions;
 
-    print('🧠 SM-2 Input: quality=$quality, reps=$repetitions, interval=$interval');
-
-    // Update ease factor based on quality
     if (quality >= 3) {
       // Correct response
       newEaseFactor = easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
       newEaseFactor = newEaseFactor.clamp(1.3, 2.5);
 
-      // ✅ MODIFIED: Respect button choice from first review
       if (repetitions == 0) {
-        // First review - button dependent
         switch (quality) {
-          case 3: // Good
+          case 3:
             newInterval = 1;
             break;
-          case 4: // Easy
+          case 4:
             newInterval = 4;
             break;
-          case 5: // Very Easy
+          case 5:
             newInterval = 7;
             break;
           default:
             newInterval = 1;
         }
-        print('   First review: quality=$quality → $newInterval days');
       } else if (repetitions == 1) {
-        // Second review - button dependent
         switch (quality) {
-          case 3: // Good
+          case 3:
             newInterval = 6;
             break;
-          case 4: // Easy
+          case 4:
             newInterval = 14;
             break;
-          case 5: // Very Easy
+          case 5:
             newInterval = 30;
             break;
           default:
             newInterval = 6;
         }
-        print('   Second review: quality=$quality → $newInterval days');
       } else {
-        // Third+ review - use SM-2 formula
         newInterval = (interval * newEaseFactor).round();
-        
-        // Boost for Easy button
         if (quality == 5) {
           newInterval = (newInterval * 1.5).round();
         } else if (quality == 4) {
           newInterval = (newInterval * 1.2).round();
         }
-        print('   Later review: formula → $newInterval days');
       }
-      
+
       newRepetitions = repetitions + 1;
     } else {
-      // Incorrect response - reset
       newRepetitions = 0;
       newInterval = 1;
-      print('   Failed: Reset to 1 day');
     }
 
     final nextReviewDate = DateTime.now().add(Duration(days: newInterval));
-
-    print('✅ SM-2 Output: interval=$newInterval days, reps=$newRepetitions');
-    print('   Next review: ${nextReviewDate.toString().split(' ')[0]}');
 
     return {
       'easeFactor': newEaseFactor,

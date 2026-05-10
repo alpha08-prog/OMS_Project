@@ -1,13 +1,11 @@
 import 'dart:convert';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/http_service.dart';
 import '../home/home_screen.dart';
-import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -41,13 +39,10 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final res = await HttpService.post("/api/auth/login", {
         "identifier": _emailController.text.trim(),
-        "password": _passwordController.text.trim(),
+        "password": _passwordController.text,
       });
 
       final Map<String, dynamic> json = jsonDecode(res.body);
-
-      print("LOGIN RESPONSE CODE: ${res.statusCode}");
-      print("LOGIN RESPONSE BODY: ${res.body}");
 
       // ✅ Success Case
       if (res.statusCode == 200 && json["success"] == true) {
@@ -93,7 +88,6 @@ class _LoginScreenState extends State<LoginScreen> {
         _showSnack(msg);
       }
     } catch (e) {
-      print("LOGIN ERROR: $e");
       _showSnack("Server error / No internet connection");
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -298,33 +292,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
 
-            const SizedBox(height: 22),
-
-            RichText(
-              text: TextSpan(
-                text: "Don't have an account? ",
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.black87,
-                ),
-                children: [
-                  TextSpan(
-                    text: "Register",
-                    style: GoogleFonts.poppins(
-                      color: Colors.blue,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    recognizer: TapGestureRecognizer()
-                      ..onTap = () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const RegisterScreen(),
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),

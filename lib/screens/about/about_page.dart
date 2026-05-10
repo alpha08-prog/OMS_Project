@@ -12,24 +12,28 @@ class AboutPage extends StatelessWidget {
       'role': 'Mentor & Guide',
       'description': 'Providing guidance and mentorship for the project development and implementation.',
       'linkedin': 'https://www.linkedin.com/in/manjunath-vanhalli',
+      'image': 'assets/images/manjunathsir.jpeg',
     },
     {
       'name': 'Shree Vats',
       'role': 'Team Leader, Backend Developer',
       'description': 'Leading the team and developing the backend infrastructure with Node.js and PostgreSQL.',
       'linkedin': 'https://www.linkedin.com/in/shreevats',
+      'image': 'assets/images/shreevats.jpeg',
     },
     {
       'name': 'Atharva Agrawal',
       'role': 'Frontend Developer',
       'description': 'Building the web frontend with React, Tailwind CSS, and modern UI/UX patterns.',
       'linkedin': 'https://www.linkedin.com/in/atharvaagrawal',
+      'image': 'assets/images/atharv.jpeg',
     },
     {
       'name': 'Om Pandey',
       'role': 'Mobile/App Developer',
       'description': 'Developing the Flutter mobile application for Android and iOS platforms.',
       'linkedin': 'https://www.linkedin.com/in/ompandey',
+      'image': 'assets/images/om.jpeg',
     },
   ];
 
@@ -145,14 +149,7 @@ class AboutPage extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: AppTheme.primaryIndigo.withOpacity(0.1),
-            child: Text(
-              member['name']!.split(' ').map((w) => w[0]).take(2).join(),
-              style: const TextStyle(color: AppTheme.primaryIndigo, fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ),
+          _avatar(member),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -182,6 +179,45 @@ class AboutPage extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _avatar(Map<String, String> member) {
+    final image = member['image'];
+    final fallbackInitials =
+        member['name']!.split(' ').map((w) => w.isEmpty ? '' : w[0]).take(2).join();
+    return ClipOval(
+      child: SizedBox(
+        width: 56,
+        height: 56,
+        child: image == null
+            ? Container(
+                color: AppTheme.primaryIndigo.withOpacity(0.1),
+                alignment: Alignment.center,
+                child: Text(
+                  fallbackInitials,
+                  style: const TextStyle(
+                      color: AppTheme.primaryIndigo,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16),
+                ),
+              )
+            : Image.asset(
+                image,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: AppTheme.primaryIndigo.withOpacity(0.1),
+                  alignment: Alignment.center,
+                  child: Text(
+                    fallbackInitials,
+                    style: const TextStyle(
+                        color: AppTheme.primaryIndigo,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16),
+                  ),
+                ),
+              ),
       ),
     );
   }

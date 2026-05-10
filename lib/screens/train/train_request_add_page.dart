@@ -40,6 +40,7 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
   bool submitting = false;
   bool fetchingPNR = false;
   bool _signatureAcknowledged = false;
+  String? _passengersError;
 
   final List<Map<String, String>> bookingTypes = [
     {'value': 'GENERAL', 'label': 'General'},
@@ -79,9 +80,11 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
       passengers.add({
         'name': '',
         'age': '',
-        'gender': 'MALE',
+        'gender': '',
         'berthPreference': '',
+        'waitingList': '',
       });
+      _passengersError = null;
     });
   }
 
@@ -133,15 +136,19 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
           // Fill passengers
           final passengerList = data["passengers"] as List? ?? [];
           passengers = passengerList.map<Map<String, dynamic>>((p) {
+            final cs = (p["currentStatus"] ?? '').toString();
+            final bs = (p["bookingStatus"] ?? '').toString();
             return {
               'name': p["name"] ?? '',
               'age': (p["age"] ?? '').toString(),
-              'gender': p["gender"] ?? 'MALE',
+              'gender': p["gender"] ?? '',
               'berthPreference': '',
-              'bookingStatus': p["bookingStatus"] ?? '',
-              'currentStatus': p["currentStatus"] ?? '',
+              'bookingStatus': bs,
+              'currentStatus': cs,
+              'waitingList': cs.isNotEmpty ? cs : bs,
             };
           }).toList();
+          _passengersError = null;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -178,8 +185,34 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
     }
   }
 
+  /// Backend's express-validator on POST /api/train-requests requires a
+  /// non-empty top-level `passengerName`. Derive it from the first named
+  /// passenger; fall back to the PNR so the request still goes through
+  /// when the staff hasn't filled the passengers list.
+  String _leadPassengerName() {
+    for (final p in passengers) {
+      final n = (p['name'] ?? '').toString().trim();
+      if (n.isNotEmpty) return n;
+    }
+    final pnr = pnrController.text.trim();
+    return pnr.isNotEmpty ? 'PNR $pnr' : 'Not specified';
+  }
+
+  /// Backend allows an empty contact number, but if non-empty it MUST be
+  /// exactly 10 digits. Strip non-digits; only forward when valid.
+  String _sanitizedContactNumber() {
+    final raw = contactNumberController.text.trim();
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    return digits.length == 10 ? digits : '';
+  }
+
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    final formOk = _formKey.currentState?.validate() ?? false;
+    final hasPassengers = passengers.isNotEmpty;
+    if (!hasPassengers) {
+      setState(() => _passengersError = "Add at least one passenger");
+    }
+    if (!formOk || !hasPassengers) return;
 
     if (dateOfJourney == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -192,6 +225,7 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
 
     try {
       final body = {
+        "passengerName": _leadPassengerName(),
         "pnrNumber": pnrController.text.trim(),
         "trainName": trainNameController.text.trim(),
         "trainNumber": trainNumberController.text.trim(),
@@ -200,18 +234,21 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
         "dateOfJourney": dateOfJourney!.toIso8601String(),
         "fromStation": fromStationController.text.trim(),
         "toStation": toStationController.text.trim(),
-        "contactNumber": contactNumberController.text.trim(),
+        "contactNumber": _sanitizedContactNumber(),
         "referencedBy": referencedByController.text.trim(),
         "remarks": remarksController.text.trim(),
         "passengers": passengers
-            .where((p) => (p['name'] ?? '').toString().isNotEmpty)
             .map((p) => {
                   "name": p['name'],
                   "age": int.tryParse(p['age']?.toString() ?? '') ?? 30,
                   "gender": p['gender'] ?? 'MALE',
                   "berthPreference": p['berthPreference'] ?? '',
                   "bookingStatus": p['bookingStatus'] ?? '',
-                  "currentStatus": p['currentStatus'] ?? '',
+                  // UI's "Waiting List" maps to backend's currentStatus
+                  // column (no separate waitingList column in Catalyst).
+                  "currentStatus": (p['waitingList']?.toString().trim().isNotEmpty ?? false)
+                      ? p['waitingList']
+                      : (p['currentStatus'] ?? ''),
                 })
             .toList(),
       };
@@ -233,6 +270,14 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
         try {
           final data = jsonDecode(res.body);
           msg = data["message"] ?? msg;
+          // Surface the first specific field error for easier debugging.
+          final errs = data["errors"];
+          if (errs is List && errs.isNotEmpty) {
+            final first = errs.first;
+            if (first is Map && first["message"] != null) {
+              msg = "$msg: ${first["message"]}";
+            }
+          }
         } catch (_) {}
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -426,11 +471,16 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
               ),
               children: [
                 if (passengers.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
                     child: Text(
-                      "No passengers added. Click 'Add' to add passengers.",
-                      style: TextStyle(color: Colors.grey),
+                      _passengersError ??
+                          "No passengers added. Click 'Add' to add passengers.",
+                      style: TextStyle(
+                        color: _passengersError != null
+                            ? Colors.red
+                            : Colors.grey,
+                      ),
                     ),
                   )
                 else
@@ -635,10 +685,13 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
               border: OutlineInputBorder(),
               isDense: true,
             ),
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? "Required" : null,
             onChanged: (v) => passengers[index]['name'] = v,
           ),
           const SizedBox(height: 10),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: TextFormField(
@@ -649,28 +702,59 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return "Required";
+                    final n = int.tryParse(v.trim());
+                    if (n == null || n <= 0) return "Invalid";
+                    return null;
+                  },
                   onChanged: (v) => passengers[index]['age'] = v,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: passenger['gender'] ?? 'MALE',
+                child: DropdownButtonFormField<String?>(
+                  value: () {
+                    final g = passenger['gender']?.toString() ?? '';
+                    return (g == 'MALE' || g == 'FEMALE' || g == 'OTHER')
+                        ? g
+                        : null;
+                  }(),
                   decoration: const InputDecoration(
-                    labelText: "Gender",
+                    labelText: "Sex *",
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'MALE', child: Text("Male")),
-                    DropdownMenuItem(value: 'FEMALE', child: Text("Female")),
-                    DropdownMenuItem(value: 'OTHER', child: Text("Other")),
+                    DropdownMenuItem<String?>(
+                        value: null, child: Text("Select sex")),
+                    DropdownMenuItem<String?>(
+                        value: 'MALE', child: Text("Male")),
+                    DropdownMenuItem<String?>(
+                        value: 'FEMALE', child: Text("Female")),
+                    DropdownMenuItem<String?>(
+                        value: 'OTHER', child: Text("Other")),
                   ],
-                  onChanged: (v) =>
-                      setState(() => passengers[index]['gender'] = v),
+                  onChanged: (v) => setState(
+                      () => passengers[index]['gender'] = v ?? ''),
+                  validator: (v) =>
+                      (v?.isEmpty ?? true) ? "Required" : null,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            initialValue: passenger['waitingList'],
+            decoration: const InputDecoration(
+              labelText: "Waiting List *",
+              hintText: "e.g., CNF, RAC, WL/15",
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? "Required" : null,
+            onChanged: (v) => passengers[index]['waitingList'] = v,
           ),
           const SizedBox(height: 10),
           TextFormField(

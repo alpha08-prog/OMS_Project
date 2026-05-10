@@ -37,13 +37,26 @@ dependencies:
   # File Picker (PDF / images)
   file_picker: ^8.1.2
 
+  # HTML rendering (in-app preview of letters)
+  flutter_html: ^3.0.0-beta.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^2.0.0
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
 
   assets:
     - assets/images/
+    - assets/icon/
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#E3ECF5"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"

@@ -4,6 +4,18 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/date_range_filter.dart';
+
+String? _validateOptionalUrl(String? v) {
+  final t = v?.trim() ?? "";
+  if (t.isEmpty) return null;
+  final uri = Uri.tryParse(t);
+  if (uri == null || !uri.isAbsolute ||
+      (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return "Enter a valid http(s):// URL";
+  }
+  return null;
+}
 
 class EventReportsPage extends StatefulWidget {
   const EventReportsPage({super.key});
@@ -16,6 +28,17 @@ class _EventReportsPageState extends State<EventReportsPage> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _pending = [];
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  List<Map<String, dynamic>> get _visiblePending {
+    if (_dateFrom == null && _dateTo == null) return _pending;
+    return _pending.where((e) {
+      final raw = (e['dateTime'] ?? e['createdAt'])?.toString();
+      final dt = DateTime.tryParse(raw ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -108,7 +131,26 @@ class _EventReportsPageState extends State<EventReportsPage> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
             _headerCard(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: AppTheme.shadowSm,
+              ),
+              child: DateRangeFilter(
+                from: _dateFrom,
+                to: _dateTo,
+                tint: AppTheme.saffronDark,
+                onFromChanged: (d) => setState(() => _dateFrom = d),
+                onToChanged: (d) => setState(() => _dateTo = d),
+                onClear: () => setState(() {
+                  _dateFrom = null;
+                  _dateTo = null;
+                }),
+              ),
+            ),
+            const SizedBox(height: 12),
             _pendingSection(),
           ],
         ),
@@ -196,7 +238,7 @@ class _EventReportsPageState extends State<EventReportsPage> {
               Icon(Icons.access_time, size: 18, color: AppTheme.saffronDark),
               const SizedBox(width: 8),
               Text(
-                "Pending Reports (${_pending.length})",
+                "Pending Reports (${_visiblePending.length})",
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -206,10 +248,10 @@ class _EventReportsPageState extends State<EventReportsPage> {
             ],
           ),
           const SizedBox(height: 12),
-          if (_pending.isEmpty)
+          if (_visiblePending.isEmpty)
             _emptyState()
           else
-            ..._pending.map(_eventCard),
+            ..._visiblePending.map(_eventCard),
         ],
       ),
     );
@@ -520,6 +562,7 @@ class _PostEventReportSheetState extends State<_PostEventReportSheet> {
                       controller: driveLinkController,
                       hint: "https://drive.google.com/...",
                       keyboardType: TextInputType.url,
+                      validator: _validateOptionalUrl,
                     ),
                     const SizedBox(height: 14),
                     _label("Media / Photos Link"),
@@ -528,6 +571,7 @@ class _PostEventReportSheetState extends State<_PostEventReportSheet> {
                       controller: mediaLinkController,
                       hint: "https://photos.google.com/... or Drive link",
                       keyboardType: TextInputType.url,
+                      validator: _validateOptionalUrl,
                     ),
                     const SizedBox(height: 14),
                     _label("Number of Attendees"),

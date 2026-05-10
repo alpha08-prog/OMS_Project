@@ -26,6 +26,7 @@ class _ActionCenterPageState extends State<ActionCenterPage> {
   List<Map<String, dynamic>> _pendingGrievances = [];
   List<Map<String, dynamic>> _pendingTrainRequests = [];
   List<Map<String, dynamic>> _pendingTourPrograms = [];
+  List<Map<String, dynamic>> _staffList = [];
 
   // Per-row busy ids
   final Set<String> _busyIds = {};
@@ -49,6 +50,7 @@ class _ActionCenterPageState extends State<ActionCenterPage> {
         _fetchGrievances(),
         _fetchTrainRequests(),
         _fetchTourPrograms(),
+        _fetchStaff(),
       ]);
     } catch (_) {
       _error = "Server error / No internet";
@@ -95,6 +97,20 @@ class _ActionCenterPageState extends State<ActionCenterPage> {
     } catch (_) {}
   }
 
+  Future<void> _fetchStaff() async {
+    try {
+      final res = await HttpService.get("/api/tasks/staff");
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final List list =
+            decoded is List ? decoded : (decoded["data"] ?? []);
+        _staffList = list
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+  }
+
   int get _totalPending =>
       _pendingGrievances.length +
       _pendingTrainRequests.length +
@@ -103,23 +119,26 @@ class _ActionCenterPageState extends State<ActionCenterPage> {
   // ===== Inline actions =====
 
   Future<void> _verifyGrievance(Map<String, dynamic> g) async {
-    final id = g["id"]?.toString() ?? "";
-    if (id.isEmpty || _busyIds.contains(id)) return;
-    setState(() => _busyIds.add(id));
-    try {
-      final res = await HttpService.patch("/api/grievances/$id/verify", {});
-      if (!mounted) return;
-      if (res.statusCode == 200) {
-        _toast("Grievance verified", AppTheme.successGreen);
-        await _loadAll();
-      } else {
-        _toastError(res);
+    if (_staffList.isEmpty) {
+      // Try to fetch staff once more before bailing.
+      await _fetchStaff();
+      if (_staffList.isEmpty) {
+        if (!mounted) return;
+        _toast("No staff available to assign", Colors.red);
+        return;
       }
-    } catch (_) {
-      if (mounted) _toast("Server error / No internet", Colors.red);
-    } finally {
-      if (mounted) setState(() => _busyIds.remove(id));
     }
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => VerifyAssignSheet(
+        grievance: g,
+        staffList: _staffList,
+      ),
+    );
+    if (result == true) await _loadAll();
   }
 
   Future<void> _approveTrain(Map<String, dynamic> t) async {

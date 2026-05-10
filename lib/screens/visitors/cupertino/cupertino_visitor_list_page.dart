@@ -6,6 +6,8 @@ import '../../../utils/access_control.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoVisitorListPage extends StatefulWidget {
   final String role;
@@ -23,8 +25,18 @@ class _CupertinoVisitorListPageState
 
   bool loading = true;
   String? error;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   List<Map<String, dynamic>> visitors = [];
+
+  List<Map<String, dynamic>> get _visibleVisitors {
+    if (_dateFrom == null && _dateTo == null) return visitors;
+    return visitors.where((v) {
+      final dt = DateTime.tryParse(v['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -137,7 +149,7 @@ class _CupertinoVisitorListPageState
 
   @override
   Widget build(BuildContext context) {
-    final canCreate =
+    final canCreate = widget.role != Roles.admin &&
         AccessControl.can(widget.role, ActionPermission.create);
 
     return CupertinoPageScaffold(
@@ -166,7 +178,22 @@ class _CupertinoVisitorListPageState
         ),
       ),
       child: SafeArea(
-        child: loading
+        child: Column(
+          children: [
+            CupertinoDateRangeFilter(
+              from: _dateFrom,
+              to: _dateTo,
+              tint: primaryBlue,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              onFromChanged: (d) => setState(() => _dateFrom = d),
+              onToChanged: (d) => setState(() => _dateTo = d),
+              onClear: () => setState(() {
+                _dateFrom = null;
+                _dateTo = null;
+              }),
+            ),
+            Expanded(
+              child: loading
             ? const Center(child: CupertinoActivityIndicator())
             : error != null
                 ? Center(
@@ -189,7 +216,7 @@ class _CupertinoVisitorListPageState
                       ],
                     ),
                   )
-                : visitors.isEmpty
+                : _visibleVisitors.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment:
@@ -219,7 +246,7 @@ class _CupertinoVisitorListPageState
                               delegate:
                                   SliverChildBuilderDelegate(
                                 (context, index) {
-                                  final v = visitors[index];
+                                  final v = _visibleVisitors[index];
 
                                   final int? id = v["id"] is int
                                       ? v["id"]
@@ -338,12 +365,15 @@ class _CupertinoVisitorListPageState
                                     ),
                                   );
                                 },
-                                childCount: visitors.length,
+                                childCount: _visibleVisitors.length,
                               ),
                             ),
                           ),
                         ],
                       ),
+            ),
+          ],
+        ),
       ),
     );
   }

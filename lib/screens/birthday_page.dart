@@ -173,9 +173,9 @@ Warm wishes! 🌟''';
           const SnackBar(content: Text("Could not open WhatsApp")),
         );
       }
-    } catch (e) {
+    } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
+        const SnackBar(content: Text("Could not open WhatsApp")),
       );
     }
   }
@@ -800,7 +800,13 @@ Warm wishes! 🌟''';
   Widget _buildUpcomingCard(Map<String, dynamic> item) {
     final name = item["name"] ?? "Unknown";
     final phone = item["phone"] ?? "-";
-    final daysUntil = item["days_until"] ?? "-";
+    final daysRaw = item["days_until"];
+    final int? daysUntil = daysRaw is int
+        ? daysRaw
+        : daysRaw is num
+            ? daysRaw.toInt()
+            : int.tryParse(daysRaw?.toString() ?? '');
+    final daysLabel = daysUntil?.toString() ?? "-";
     final relation = item["relation"] ?? "";
     final dob = item["dob"];
 
@@ -840,7 +846,7 @@ Warm wishes! 🌟''';
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  daysUntil.toString(),
+                  daysLabel,
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -904,19 +910,23 @@ Warm wishes! 🌟''';
             decoration: BoxDecoration(
               color: daysUntil == 1
                   ? Colors.red.shade50
-                  : daysUntil <= 3
+                  : (daysUntil != null && daysUntil <= 3)
                       ? Colors.orange.shade50
                       : Colors.blue.shade50,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              daysUntil == 1 ? "Tomorrow!" : "In $daysUntil days",
+              daysUntil == 1
+                  ? "Tomorrow!"
+                  : daysUntil == 0
+                      ? "Today!"
+                      : "In $daysLabel days",
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
                 color: daysUntil == 1
                     ? Colors.red.shade700
-                    : daysUntil <= 3
+                    : (daysUntil != null && daysUntil <= 3)
                         ? Colors.orange.shade700
                         : Colors.blue.shade700,
               ),

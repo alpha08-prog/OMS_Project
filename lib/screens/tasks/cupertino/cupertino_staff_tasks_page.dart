@@ -6,6 +6,8 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoStaffTasksPage extends StatefulWidget {
   const CupertinoStaffTasksPage({super.key});
@@ -19,6 +21,16 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
   bool _loading = true;
   List<Map<String, dynamic>> _tasks = [];
   String _statusFilter = 'All';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  List<Map<String, dynamic>> get _visibleTasks {
+    if (_dateFrom == null && _dateTo == null) return _tasks;
+    return _tasks.where((t) {
+      final dt = DateTime.tryParse(t['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -352,10 +364,22 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
                 }).toList(),
               ),
             ),
+            CupertinoDateRangeFilter(
+              from: _dateFrom,
+              to: _dateTo,
+              tint: AppTheme.primaryIndigo,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              onFromChanged: (d) => setState(() => _dateFrom = d),
+              onToChanged: (d) => setState(() => _dateTo = d),
+              onClear: () => setState(() {
+                _dateFrom = null;
+                _dateTo = null;
+              }),
+            ),
             Expanded(
               child: _loading
                   ? const Center(child: CupertinoActivityIndicator())
-                  : _tasks.isEmpty
+                  : _visibleTasks.isEmpty
                       ? Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -380,8 +404,8 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
                               sliver: SliverList(
                                 delegate: SliverChildBuilderDelegate(
                                   (_, i) =>
-                                      _buildTaskCard(_tasks[i]),
-                                  childCount: _tasks.length,
+                                      _buildTaskCard(_visibleTasks[i]),
+                                  childCount: _visibleTasks.length,
                                 ),
                               ),
                             ),

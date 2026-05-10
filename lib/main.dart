@@ -5,6 +5,7 @@ import 'screens/auth/cupertino/cupertino_login_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/home/cupertino/cupertino_home_screen.dart';
 import 'services/auth_service.dart';
+import 'services/http_service.dart';
 import 'services/theme_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/cupertino_theme.dart';
@@ -13,7 +14,24 @@ import 'utils/platform_utils.dart';
 // Global theme service instance
 final ThemeService themeService = ThemeService();
 
-void main() {
+// Root navigator so non-widget code (HTTP 401 handler) can push routes.
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // When any backend call returns 401, drop the session and bounce to login.
+  HttpService.onUnauthorized = () async {
+    await AuthService.logout();
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return;
+    navigator.pushAndRemoveUntil(
+      PlatformUtils.isCupertino
+          ? CupertinoPageRoute(builder: (_) => const CupertinoLoginScreen())
+          : MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  };
   runApp(const MyApp());
 }
 
@@ -39,6 +57,7 @@ class _MyAppState extends State<MyApp> {
       return CupertinoApp(
         title: 'OMS - Office Management',
         debugShowCheckedModeBanner: false,
+        navigatorKey: rootNavigatorKey,
         theme: CupertinoAppTheme.themeFor(themeService.isDark),
         home: const AuthCheck(),
       );
@@ -47,6 +66,7 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       title: 'OMS - Office Management',
       debugShowCheckedModeBanner: false,
+      navigatorKey: rootNavigatorKey,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeService.themeMode,

@@ -1,0 +1,11 @@
+# Copy this file to `android/key.properties` and fill in real values.
+# `android/key.properties` is gitignored — never commit it.
+#
+# Generate the keystore (one time, locally):
+#   keytool -genkey -v -keystore ~/keystores/oms-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias oms
+
+storeFile=/absolute/path/to/oms-release.jks
+storePassword=CHANGE_ME
+keyAlias=oms
+keyPassword=CHANGE_ME

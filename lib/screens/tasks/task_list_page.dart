@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/date_range_filter.dart';
 
 /// Admin-only Task Tracker page.
 /// Shows stats, staff workload, filterable list with View / Resolve / Delete
@@ -36,6 +37,16 @@ class _TaskListPageState extends State<TaskListPage> {
   String _typeFilter = "All";
   String _statusFilter = "All";
   String? _staffFilterId; // null = "All Staff"
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  // Tracks which task cards are expanded to show Recent Activity. Cards are
+  // collapsed by default to match the web Task Tracker layout.
+  final Set<String> _expandedTaskIds = {};
+
+  // Staff Workload list is collapsed into a dropdown by default to keep the
+  // top of the screen scannable when there are many staff.
+  bool _staffWorkloadExpanded = false;
 
   static const _types = [
     "All",
@@ -282,15 +293,34 @@ class _TaskListPageState extends State<TaskListPage> {
                   _buildStaffWorkload(),
                   const SizedBox(height: 16),
                   _buildFilterBar(),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: AppTheme.shadowSm,
+                    ),
+                    child: DateRangeFilter(
+                      from: _dateFrom,
+                      to: _dateTo,
+                      tint: AppTheme.primaryIndigo,
+                      onFromChanged: (d) => setState(() => _dateFrom = d),
+                      onToChanged: (d) => setState(() => _dateTo = d),
+                      onClear: () => setState(() {
+                        _dateFrom = null;
+                        _dateTo = null;
+                      }),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   _buildTrackerHeader(),
                   const SizedBox(height: 12),
                   if (_error != null)
                     _buildError()
-                  else if (_tasks.isEmpty)
+                  else if (_visibleTasks.isEmpty)
                     _buildEmpty()
                   else
-                    ..._tasks.map(_buildTaskCard),
+                    ..._visibleTasks.map(_buildTaskCard),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -365,31 +395,70 @@ class _TaskListPageState extends State<TaskListPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: const [
-              Icon(Icons.groups, color: AppTheme.primaryIndigo, size: 20),
-              SizedBox(width: 8),
-              Text(
-                "Staff Workload",
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.foreground,
-                ),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(
+                () => _staffWorkloadExpanded = !_staffWorkloadExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  const Icon(Icons.groups,
+                      color: AppTheme.primaryIndigo, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      "Staff Workload",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.foreground,
+                      ),
+                    ),
+                  ),
+                  if (_staffWorkload.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryIndigo50,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        "${_staffWorkload.length}",
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primaryIndigo,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _staffWorkloadExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: Colors.grey.shade600,
+                    size: 22,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 12),
-          if (_staffWorkload.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                "No active workload",
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-              ),
-            )
-          else
-            ..._staffWorkload.map(_buildWorkloadRow),
+          if (_staffWorkloadExpanded) ...[
+            const SizedBox(height: 12),
+            if (_staffWorkload.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  "No active workload",
+                  style:
+                      TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                ),
+              )
+            else
+              ..._staffWorkload.map(_buildWorkloadRow),
+          ],
         ],
       ),
     );
@@ -398,49 +467,94 @@ class _TaskListPageState extends State<TaskListPage> {
   Widget _buildWorkloadRow(Map<String, dynamic> w) {
     final staff = Map<String, dynamic>.from(w["staff"] ?? {});
     final name = staff["name"]?.toString() ?? "—";
+    final staffId = staff["id"]?.toString();
     final pending = w["pendingTasks"] ?? 0;
+    final isSelected = staffId != null && _staffFilterId == staffId;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppTheme.primaryIndigo50,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: isSelected
+            ? AppTheme.primaryIndigo.withOpacity(0.18)
+            : AppTheme.primaryIndigo50,
         borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.person,
-                color: AppTheme.primaryIndigo, size: 18),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: staffId == null ? null : () => _toggleStaffFilter(staffId),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: isSelected
+                  ? Border.all(color: AppTheme.primaryIndigo, width: 1.4)
+                  : null,
+            ),
+            child: Row(
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.foreground,
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.white,
+                  child: Icon(
+                    isSelected ? Icons.check : Icons.person,
+                    color: AppTheme.primaryIndigo,
+                    size: 18,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                Text(
-                  "$pending pending tasks",
-                  style: TextStyle(
-                      fontSize: 11, color: Colors.grey.shade700),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.foreground,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        "$pending pending tasks",
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey.shade700),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  isSelected
+                      ? Icons.filter_alt
+                      : Icons.filter_alt_outlined,
+                  size: 18,
+                  color: isSelected
+                      ? AppTheme.primaryIndigo
+                      : Colors.grey.shade500,
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  /// Tap a workload row → filter the task list to that staff. Tap again
+  /// (same staff) → clear the filter.
+  void _toggleStaffFilter(String staffId) {
+    setState(() {
+      _staffFilterId = _staffFilterId == staffId ? null : staffId;
+    });
+    _onFilterChanged();
+  }
+
+  List<Map<String, dynamic>> get _visibleTasks {
+    if (_dateFrom == null && _dateTo == null) return _tasks;
+    return _tasks.where((t) {
+      final dt = DateTime.tryParse(t['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
   }
 
   // ===================== FILTER BAR =====================
@@ -452,45 +566,48 @@ class _TaskListPageState extends State<TaskListPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: AppTheme.shadowSm,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.filter_list, size: 18, color: Colors.grey),
-          const SizedBox(width: 6),
-          const Text("Filter:",
-              style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _filterDropdown(
-              hint: "All types",
-              value: _typeFilter,
-              options: _types,
-              labelFor: (v) =>
-                  v == "All" ? "All types" : v.replaceAll('_', ' '),
-              onChanged: (v) {
-                setState(() => _typeFilter = v ?? "All");
-                _onFilterChanged();
-              },
-            ),
+          Row(
+            children: [
+              const Icon(Icons.filter_list, size: 18, color: Colors.grey),
+              const SizedBox(width: 6),
+              const Text("Filter:",
+                  style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _filterDropdown(
+                  hint: "All types",
+                  value: _typeFilter,
+                  options: _types,
+                  labelFor: (v) =>
+                      v == "All" ? "All types" : v.replaceAll('_', ' '),
+                  onChanged: (v) {
+                    setState(() => _typeFilter = v ?? "All");
+                    _onFilterChanged();
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _filterDropdown(
+                  hint: "All Status",
+                  value: _statusFilter,
+                  options: _statuses,
+                  labelFor: (v) =>
+                      v == "All" ? "All Status" : v.replaceAll('_', ' '),
+                  onChanged: (v) {
+                    setState(() => _statusFilter = v ?? "All");
+                    _onFilterChanged();
+                  },
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _filterDropdown(
-              hint: "All Status",
-              value: _statusFilter,
-              options: _statuses,
-              labelFor: (v) =>
-                  v == "All" ? "All Status" : v.replaceAll('_', ' '),
-              onChanged: (v) {
-                setState(() => _statusFilter = v ?? "All");
-                _onFilterChanged();
-              },
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _staffFilterDropdown(),
-          ),
+          const SizedBox(height: 8),
+          _staffFilterDropdown(),
         ],
       ),
     );
@@ -534,9 +651,41 @@ class _TaskListPageState extends State<TaskListPage> {
     );
   }
 
+  /// Merge `_staffList` with any staff that show up in `_staffWorkload`
+  /// but aren't in `_staffList`. The two endpoints can return different
+  /// staff IDs (legacyId vs Catalyst ROWID), so a workload row tap can
+  /// set `_staffFilterId` to a value that has no matching DropdownMenuItem
+  /// — which throws a Flutter assertion. Deduping by id makes the dropdown
+  /// resilient to that mismatch.
+  List<Map<String, dynamic>> _mergedStaffList() {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final s in _staffList) {
+      final id = s["id"]?.toString();
+      if (id != null && id.isNotEmpty) byId[id] = s;
+    }
+    for (final w in _staffWorkload) {
+      final s = (w["staff"] is Map)
+          ? Map<String, dynamic>.from(w["staff"])
+          : null;
+      final id = s?["id"]?.toString();
+      if (id != null && id.isNotEmpty && !byId.containsKey(id)) {
+        byId[id] = s!;
+      }
+    }
+    final merged = byId.values.toList();
+    merged.sort((a, b) => (a["name"]?.toString() ?? "")
+        .compareTo(b["name"]?.toString() ?? ""));
+    return merged;
+  }
+
   Widget _staffFilterDropdown() {
+    final items = _mergedStaffList();
+    final hasMatch = _staffFilterId == null ||
+        items.any((s) => s["id"]?.toString() == _staffFilterId);
+    final dropdownValue = hasMatch ? _staffFilterId : null;
+
     return DropdownButtonFormField<String?>(
-      value: _staffFilterId,
+      value: dropdownValue,
       isExpanded: true,
       isDense: true,
       decoration: InputDecoration(
@@ -556,7 +705,7 @@ class _TaskListPageState extends State<TaskListPage> {
         const DropdownMenuItem<String?>(
             value: null,
             child: Text("All Staff", style: TextStyle(fontSize: 12))),
-        ..._staffList.map((s) => DropdownMenuItem<String?>(
+        ...items.map((s) => DropdownMenuItem<String?>(
               value: s["id"]?.toString(),
               child: Text(
                 s["name"]?.toString() ?? "—",
@@ -580,7 +729,7 @@ class _TaskListPageState extends State<TaskListPage> {
             color: AppTheme.primaryIndigo, size: 20),
         const SizedBox(width: 8),
         Text(
-          "Task Progress Tracker (${_tasks.length})",
+          "Task Progress Tracker (${_visibleTasks.length})",
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -593,6 +742,7 @@ class _TaskListPageState extends State<TaskListPage> {
 
   // ===================== TASK CARD =====================
   Widget _buildTaskCard(Map<String, dynamic> task) {
+    final id = task["id"]?.toString() ?? "";
     final title = task["title"]?.toString() ?? "—";
     final status = (task["status"] ?? "ASSIGNED").toString();
     final type = (task["taskType"] ?? "GENERAL").toString();
@@ -602,6 +752,18 @@ class _TaskListPageState extends State<TaskListPage> {
         : "—";
     final progress = task["progressNotes"]?.toString();
     final isCompleted = status == "COMPLETED";
+    final isExpanded = _expandedTaskIds.contains(id);
+
+    void toggleExpand() {
+      if (id.isEmpty) return;
+      setState(() {
+        if (isExpanded) {
+          _expandedTaskIds.remove(id);
+        } else {
+          _expandedTaskIds.add(id);
+        }
+      });
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -618,81 +780,101 @@ class _TaskListPageState extends State<TaskListPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              InkWell(
+                onTap: toggleExpand,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 6, top: 1),
+                  child: Icon(
+                    isExpanded
+                        ? Icons.keyboard_arrow_down
+                        : Icons.chevron_right,
+                    size: 22,
+                    color: AppTheme.primaryIndigoDark,
+                  ),
+                ),
+              ),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.primaryIndigoDark,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: toggleExpand,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryIndigoDark,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        _statusPill(status),
-                        _typePill(type),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      "Assigned to: $assignedName",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _statusPill(status),
+                          _typePill(type),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      Text(
+                        "Assigned to: $assignedName",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               _cardActions(task, isCompleted),
             ],
           ),
-          const SizedBox(height: 10),
-          Divider(color: Colors.grey.shade200, height: 1),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.access_time,
-                  size: 13, color: Colors.grey.shade600),
-              const SizedBox(width: 6),
-              const Text(
-                "Recent Activity",
+          if (isExpanded) ...[
+            const SizedBox(height: 10),
+            Divider(color: Colors.grey.shade200, height: 1),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.access_time,
+                    size: 13, color: Colors.grey.shade600),
+                const SizedBox(width: 6),
+                const Text(
+                  "Recent Activity",
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.foreground,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 19),
+              child: Text(
+                (progress == null || progress.isEmpty)
+                    ? "No activity yet"
+                    : progress,
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.foreground,
+                  color: Colors.grey.shade600,
+                  fontStyle: (progress == null || progress.isEmpty)
+                      ? FontStyle.italic
+                      : FontStyle.normal,
                 ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
               ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 19),
-            child: Text(
-              (progress == null || progress.isEmpty)
-                  ? "No activity yet"
-                  : progress,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-                fontStyle: (progress == null || progress.isEmpty)
-                    ? FontStyle.italic
-                    : FontStyle.normal,
-              ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
+          ],
         ],
       ),
     );

@@ -130,7 +130,18 @@ class _CupertinoNewsAddPageState extends State<CupertinoNewsAddPage> {
       if (desc.isNotEmpty) body["description"] = desc;
 
       final imageUrl = imageUrlController.text.trim();
-      if (imageUrl.isNotEmpty) body["imageUrl"] = imageUrl;
+      if (imageUrl.isNotEmpty) {
+        final uri = Uri.tryParse(imageUrl);
+        if (uri == null || !uri.isAbsolute ||
+            (uri.scheme != 'http' && uri.scheme != 'https')) {
+          CupertinoToast.show(
+              context, "Image URL must start with http:// or https://",
+              isError: true);
+          if (mounted) setState(() => _submitting = false);
+          return;
+        }
+        body["imageUrl"] = imageUrl;
+      }
 
       final res = await HttpService.post("/api/news", body);
 

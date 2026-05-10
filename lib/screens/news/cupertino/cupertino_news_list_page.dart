@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
+import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
@@ -26,12 +28,27 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
   // Only ADMIN / SUPER_ADMIN see the chip row that controls this.
   String _priorityFilter = "ALL";
 
+  // Search + date filters
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = "";
+  Timer? _searchDebounce;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  bool _showFilters = false;
+
   List<Map<String, dynamic>> newsList = [];
 
   bool get _canSeeFilter =>
       widget.role == Roles.admin || widget.role == Roles.superAdmin;
 
   bool get _canCreateNews => widget.role == Roles.staff;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -50,9 +67,28 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
     });
 
     try {
-      final endpoint = _priorityFilter == "ALL"
-          ? "/api/news"
-          : "/api/news?priority=$_priorityFilter";
+      final params = <String, String>{};
+      if (_priorityFilter != "ALL") {
+        params['priority'] = _priorityFilter;
+      }
+      if (_searchQuery.isNotEmpty) {
+        params['search'] = _searchQuery;
+      }
+      if (_startDate != null) {
+        params['startDate'] = _startDate!.toIso8601String();
+      }
+      if (_endDate != null) {
+        params['endDate'] =
+            _endDate!.add(const Duration(days: 1)).toIso8601String();
+      }
+      final qs = params.isEmpty
+          ? ""
+          : "?" +
+              params.entries
+                  .map((e) =>
+                      "${e.key}=${Uri.encodeComponent(e.value)}")
+                  .join("&");
+      final endpoint = "/api/news$qs";
       final res = await HttpService.get(endpoint);
 
       if (res.statusCode == 200) {
@@ -192,7 +228,17 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
                     padding: const EdgeInsets.all(16),
                     children: [
                       if (_canSeeFilter) ...[
+                        _buildSearchAndFilterToggle(),
+                        const SizedBox(height: 10),
+                        if (_showFilters) ...[
+                          _buildDateFilterRow(),
+                          const SizedBox(height: 10),
+                        ],
                         _buildPriorityFilterRow(),
+                        if (_hasActiveFilters()) ...[
+                          const SizedBox(height: 8),
+                          _buildActiveFiltersBar(),
+                        ],
                         const SizedBox(height: 12),
                       ],
                       if (newsList.isEmpty)
@@ -201,6 +247,259 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
                         ...newsList.map((n) => _newsCard(n)),
                     ],
                   ),
+      ),
+    );
+  }
+
+  bool _hasActiveFilters() =>
+      _searchQuery.isNotEmpty ||
+      _startDate != null ||
+      _endDate != null ||
+      _priorityFilter != "ALL";
+
+  Widget _buildSearchAndFilterToggle() {
+    final hasDateFilter = _startDate != null || _endDate != null;
+    return Row(
+      children: [
+        Expanded(
+          child: CupertinoTextField(
+            controller: _searchController,
+            placeholder: "Search headline, description, source",
+            placeholderStyle: const TextStyle(
+                fontSize: 13, color: CupertinoColors.systemGrey),
+            style: const TextStyle(fontSize: 13),
+            prefix: const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Icon(CupertinoIcons.search,
+                  size: 18, color: CupertinoColors.systemGrey),
+            ),
+            suffix: _searchQuery.isNotEmpty
+                ? CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    minSize: 0,
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = "");
+                      fetchNews();
+                    },
+                    child: const Icon(CupertinoIcons.clear_circled_solid,
+                        size: 16, color: CupertinoColors.systemGrey),
+                  )
+                : null,
+            padding: const EdgeInsets.symmetric(
+                vertical: 10, horizontal: 8),
+            decoration: BoxDecoration(
+              color: CupertinoColors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: CupertinoColors.systemGrey4),
+            ),
+            onChanged: (value) {
+              _searchDebounce?.cancel();
+              _searchDebounce = Timer(
+                  const Duration(milliseconds: 400), () {
+                if (_searchQuery == value) return;
+                setState(() => _searchQuery = value);
+                fetchNews();
+              });
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () => setState(() => _showFilters = !_showFilters),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: _showFilters || hasDateFilter
+                  ? _kNewsPrimaryBlue
+                  : CupertinoColors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: CupertinoColors.systemGrey4),
+            ),
+            child: Icon(
+              CupertinoIcons.slider_horizontal_3,
+              size: 20,
+              color: _showFilters || hasDateFilter
+                  ? CupertinoColors.white
+                  : _kNewsPrimaryBlue,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateFilterRow() {
+    return Row(
+      children: [
+        Expanded(child: _datePickerButton(isStart: true)),
+        const SizedBox(width: 8),
+        Expanded(child: _datePickerButton(isStart: false)),
+      ],
+    );
+  }
+
+  Widget _datePickerButton({required bool isStart}) {
+    final value = isStart ? _startDate : _endDate;
+    final label = isStart ? "Start date" : "End date";
+    return GestureDetector(
+      onTap: () => _pickDate(isStart),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: CupertinoColors.systemGrey4),
+        ),
+        child: Row(
+          children: [
+            const Icon(CupertinoIcons.calendar,
+                size: 16, color: _kNewsPrimaryBlue),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                value != null
+                    ? DateFormat('d MMM yyyy').format(value)
+                    : label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: value != null
+                      ? const Color(0xFF0F172A)
+                      : CupertinoColors.systemGrey,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDate(bool isStart) async {
+    DateTime tempPicked = isStart
+        ? (_startDate ?? DateTime.now())
+        : (_endDate ?? DateTime.now());
+    final confirmed = await showCupertinoModalPopup<bool>(
+      context: context,
+      builder: (_) => Container(
+        height: 280,
+        color: CupertinoColors.systemBackground.resolveFrom(context),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                CupertinoButton(
+                  child: const Text("Cancel"),
+                  onPressed: () => Navigator.pop(context, false),
+                ),
+                CupertinoButton(
+                  child: const Text("Done"),
+                  onPressed: () => Navigator.pop(context, true),
+                ),
+              ],
+            ),
+            Expanded(
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.date,
+                initialDateTime: tempPicked,
+                minimumDate: DateTime(2020),
+                maximumDate:
+                    DateTime.now().add(const Duration(days: 365)),
+                onDateTimeChanged: (d) => tempPicked = d,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() {
+      if (isStart) {
+        _startDate = tempPicked;
+      } else {
+        _endDate = tempPicked;
+      }
+    });
+    fetchNews();
+  }
+
+  Widget _buildActiveFiltersBar() {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (_startDate != null)
+          _filterChip(
+            "From: ${DateFormat('d MMM').format(_startDate!)}",
+            () {
+              setState(() => _startDate = null);
+              fetchNews();
+            },
+          ),
+        if (_endDate != null)
+          _filterChip(
+            "To: ${DateFormat('d MMM').format(_endDate!)}",
+            () {
+              setState(() => _endDate = null);
+              fetchNews();
+            },
+          ),
+        CupertinoButton(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+          minSize: 0,
+          onPressed: () {
+            _searchController.clear();
+            setState(() {
+              _searchQuery = "";
+              _startDate = null;
+              _endDate = null;
+              _priorityFilter = "ALL";
+            });
+            fetchNews();
+          },
+          child: const Text(
+            "Clear all",
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: CupertinoColors.systemRed,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _filterChip(String label, VoidCallback onClear) {
+    return Container(
+      padding:
+          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _kNewsPrimaryBlue)),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onClear,
+            child: const Icon(CupertinoIcons.clear_circled_solid,
+                size: 14, color: _kNewsPrimaryBlue),
+          ),
+        ],
       ),
     );
   }

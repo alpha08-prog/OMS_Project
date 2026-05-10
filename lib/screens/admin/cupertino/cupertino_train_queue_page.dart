@@ -9,6 +9,8 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoTrainQueuePage extends StatefulWidget {
   const CupertinoTrainQueuePage({super.key});
@@ -26,6 +28,8 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
   List<Map<String, dynamic>> _staffList = [];
 
   String _statusFilter = "All";
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   static const _statuses = ["All", "PENDING", "APPROVED", "RESOLVED", "REJECTED"];
 
   final Set<String> _busyIds = {};
@@ -331,14 +335,33 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
                       child: Center(child: CupertinoActivityIndicator()),
                     )
                   else ...[
+                    Container(
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemBackground,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: CupertinoColors.systemGrey5),
+                      ),
+                      child: CupertinoDateRangeFilter(
+                        from: _dateFrom,
+                        to: _dateTo,
+                        tint: AppTheme.primaryIndigo,
+                        onFromChanged: (d) => setState(() => _dateFrom = d),
+                        onToChanged: (d) => setState(() => _dateTo = d),
+                        onClear: () => setState(() {
+                          _dateFrom = null;
+                          _dateTo = null;
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     _buildSectionHeader(),
                     const SizedBox(height: 12),
                     if (_error != null)
                       _buildError()
-                    else if (_requests.isEmpty)
+                    else if (_visibleRequests.isEmpty)
                       _buildEmpty()
                     else
-                      ..._requests.map(_buildCard),
+                      ..._visibleRequests.map(_buildCard),
                     const SizedBox(height: 24),
                   ],
                 ]),
@@ -350,6 +373,14 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
     );
   }
 
+  List<Map<String, dynamic>> get _visibleRequests {
+    if (_dateFrom == null && _dateTo == null) return _requests;
+    return _requests.where((r) {
+      final dt = DateTime.tryParse(r['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
   Widget _buildSectionHeader() {
     final label = switch (_statusFilter) {
       "PENDING" => "Pending EQ Requests",
@@ -359,7 +390,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
       _ => "All EQ Requests",
     };
     return Text(
-      "$label (${_requests.length})",
+      "$label (${_visibleRequests.length})",
       style: const TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.bold,

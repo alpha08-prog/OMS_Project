@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/date_range_filter.dart';
+import '../../widgets/staff_history_detail_dialog.dart';
 
 class StaffHistoryPage extends StatefulWidget {
   const StaffHistoryPage({super.key});
@@ -15,6 +17,8 @@ class StaffHistoryPage extends StatefulWidget {
 class _StaffHistoryPageState extends State<StaffHistoryPage> {
   bool _loading = true;
   String _selectedType = 'All';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   List<Map<String, dynamic>> _grievances = [];
   List<Map<String, dynamic>> _trainRequests = [];
@@ -89,6 +93,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           'date': g['createdAt'],
           'icon': Icons.assignment,
           'color': Colors.indigo,
+          'raw': g,
         });
       }
     }
@@ -102,6 +107,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           'date': t['createdAt'],
           'icon': Icons.train,
           'color': Colors.blue,
+          'raw': t,
         });
       }
     }
@@ -115,6 +121,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           'date': tp['createdAt'],
           'icon': Icons.event,
           'color': Colors.purple,
+          'raw': tp,
         });
       }
     }
@@ -128,6 +135,7 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
           'date': v['createdAt'],
           'icon': Icons.people,
           'color': Colors.teal,
+          'raw': v,
         });
       }
     }
@@ -138,6 +146,13 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
       final bDate = DateTime.tryParse(b['date'] ?? '') ?? DateTime(2000);
       return bDate.compareTo(aDate);
     });
+
+    if (_dateFrom != null || _dateTo != null) {
+      items = items.where((i) {
+        final dt = DateTime.tryParse(i['date']?.toString() ?? '');
+        return dateInRange(dt, from: _dateFrom, to: _dateTo);
+      }).toList();
+    }
 
     return items;
   }
@@ -219,7 +234,19 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
               }).toList(),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          DateRangeFilter(
+            from: _dateFrom,
+            to: _dateTo,
+            tint: AppTheme.primaryIndigo,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            onFromChanged: (d) => setState(() => _dateFrom = d),
+            onToChanged: (d) => setState(() => _dateTo = d),
+            onClear: () => setState(() {
+              _dateFrom = null;
+              _dateTo = null;
+            }),
+          ),
 
           // List
           Expanded(
@@ -265,50 +292,78 @@ class _StaffHistoryPageState extends State<StaffHistoryPage> {
       dateStr = DateFormat('dd MMM yyyy').format(DateTime.parse(item['date']));
     } catch (_) {}
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: AppTheme.shadowSm,
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: (item['color'] as Color).withOpacity(0.1),
-            child: Icon(item['icon'] as IconData, color: item['color'] as Color, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item['title'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                Text(item['subtitle'], style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: _statusColor(item['status']).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(item['status'].toString().replaceAll('_', ' '),
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _statusColor(item['status']))),
-                    ),
-                    const Spacer(),
-                    Text(dateStr, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-                  ],
-                ),
-              ],
+    final raw = item['raw'] is Map
+        ? Map<String, dynamic>.from(item['raw'] as Map)
+        : <String, dynamic>{};
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _openDetail(item, raw),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: AppTheme.shadowSm,
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: (item['color'] as Color).withOpacity(0.1),
+              child: Icon(item['icon'] as IconData, color: item['color'] as Color, size: 20),
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item['title'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  Text(item['subtitle'], style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _statusColor(item['status']).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(item['status'].toString().replaceAll('_', ' '),
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _statusColor(item['status']))),
+                      ),
+                      const Spacer(),
+                      Text(dateStr, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: Icon(Icons.visibility_outlined,
+                  size: 20, color: Colors.grey.shade600),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              tooltip: 'View details',
+              onPressed: () => _openDetail(item, raw),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _openDetail(Map<String, dynamic> item, Map<String, dynamic> raw) {
+    StaffHistoryDetailDialog.show(
+      context: context,
+      type: item['type']?.toString() ?? '',
+      title: item['title']?.toString() ?? '-',
+      status: item['status']?.toString() ?? '',
+      date: item['date'],
+      raw: raw,
     );
   }
 }

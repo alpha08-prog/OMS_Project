@@ -11,6 +11,8 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_train_request_add_page.dart';
 
 class CupertinoTrainRequestListPage extends StatefulWidget {
@@ -33,6 +35,8 @@ class _CupertinoTrainRequestListPageState
   String? error;
   String selectedStatus = "All";
   String _searchQuery = "";
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   final _searchController = TextEditingController();
 
   List<Map<String, dynamic>> requests = [];
@@ -301,10 +305,10 @@ class _CupertinoTrainRequestListPageState
               isError: true);
         }
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) Navigator.of(context).pop();
       if (mounted) {
-        CupertinoToast.show(context, "Error: $e", isError: true);
+        CupertinoToast.show(context, "Something went wrong. Please try again.", isError: true);
       }
     }
   }
@@ -802,6 +806,23 @@ class _CupertinoTrainRequestListPageState
               ),
             ),
 
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: CupertinoDateRangeFilter(
+                from: _dateFrom,
+                to: _dateTo,
+                tint: primaryBlue,
+                padding: EdgeInsets.zero,
+                onFromChanged: (d) => setState(() => _dateFrom = d),
+                onToChanged: (d) => setState(() => _dateTo = d),
+                onClear: () => setState(() {
+                  _dateFrom = null;
+                  _dateTo = null;
+                }),
+              ),
+            ),
+
             const SizedBox(height: 12),
 
             // List
@@ -829,7 +850,7 @@ class _CupertinoTrainRequestListPageState
                             ],
                           ),
                         )
-                      : requests.isEmpty
+                      : _visibleRequests.isEmpty
                           ? Center(
                               child: Column(
                                 mainAxisAlignment:
@@ -859,11 +880,11 @@ class _CupertinoTrainRequestListPageState
                                   sliver: SliverList(
                                     delegate: SliverChildBuilderDelegate(
                                       (context, index) {
-                                        final r = requests[index];
+                                        final r = _visibleRequests[index];
                                         return _buildRequestCard(
                                             r, isAdmin);
                                       },
-                                      childCount: requests.length,
+                                      childCount: _visibleRequests.length,
                                     ),
                                   ),
                                 ),
@@ -874,6 +895,14 @@ class _CupertinoTrainRequestListPageState
         ),
       ),
     );
+  }
+
+  List<Map<String, dynamic>> get _visibleRequests {
+    if (_dateFrom == null && _dateTo == null) return requests;
+    return requests.where((r) {
+      final dt = DateTime.tryParse(r['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
   }
 
   Widget _statItem(String label, int count, IconData icon,

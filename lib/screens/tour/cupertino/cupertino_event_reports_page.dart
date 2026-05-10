@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoEventReportsPage extends StatefulWidget {
   const CupertinoEventReportsPage({super.key});
@@ -16,6 +18,17 @@ class CupertinoEventReportsPage extends StatefulWidget {
 
 class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
   bool _loading = true;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  List<Map<String, dynamic>> get _visiblePending {
+    if (_dateFrom == null && _dateTo == null) return _pending;
+    return _pending.where((e) {
+      final raw = (e['dateTime'] ?? e['createdAt'])?.toString();
+      final dt = DateTime.tryParse(raw ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
   String? _error;
   List<Map<String, dynamic>> _pending = [];
 
@@ -111,7 +124,26 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   _headerCard(),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: AppTheme.shadowSm,
+                    ),
+                    child: CupertinoDateRangeFilter(
+                      from: _dateFrom,
+                      to: _dateTo,
+                      tint: AppTheme.saffronDark,
+                      onFromChanged: (d) => setState(() => _dateFrom = d),
+                      onToChanged: (d) => setState(() => _dateTo = d),
+                      onClear: () => setState(() {
+                        _dateFrom = null;
+                        _dateTo = null;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   _pendingSection(),
                 ]),
               ),
@@ -199,7 +231,7 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
                   size: 18, color: AppTheme.saffronDark),
               const SizedBox(width: 8),
               Text(
-                "Pending Reports (${_pending.length})",
+                "Pending Reports (${_visiblePending.length})",
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -209,10 +241,10 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
             ],
           ),
           const SizedBox(height: 12),
-          if (_pending.isEmpty)
+          if (_visiblePending.isEmpty)
             _emptyState()
           else
-            ..._pending.map(_eventCard),
+            ..._visiblePending.map(_eventCard),
         ],
       ),
     );
@@ -412,11 +444,35 @@ class _CupertinoPostEventReportSheetState
       final id = widget.event["id"]?.toString() ?? "";
       if (id.isEmpty) throw Exception("Missing event id");
 
+      bool isValidUrl(String s) {
+        final uri = Uri.tryParse(s);
+        return uri != null && uri.isAbsolute &&
+            (uri.scheme == 'http' || uri.scheme == 'https');
+      }
+
       final body = <String, dynamic>{};
       final drive = driveLinkController.text.trim();
-      if (drive.isNotEmpty) body["driveLink"] = drive;
+      if (drive.isNotEmpty) {
+        if (!isValidUrl(drive)) {
+          CupertinoToast.show(
+              context, "Drive link must start with http:// or https://",
+              isError: true);
+          if (mounted) setState(() => _submitting = false);
+          return;
+        }
+        body["driveLink"] = drive;
+      }
       final media = mediaLinkController.text.trim();
-      if (media.isNotEmpty) body["mediaLink"] = media;
+      if (media.isNotEmpty) {
+        if (!isValidUrl(media)) {
+          CupertinoToast.show(
+              context, "Media link must start with http:// or https://",
+              isError: true);
+          if (mounted) setState(() => _submitting = false);
+          return;
+        }
+        body["mediaLink"] = media;
+      }
       final attendees = attendeesController.text.trim();
       if (attendees.isNotEmpty) {
         final parsed = int.tryParse(attendees);

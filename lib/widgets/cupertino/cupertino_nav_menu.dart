@@ -232,6 +232,10 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toActionHistory(context);
           }),
+          _menuTile(context, CupertinoIcons.group, 'About Team', () {
+            Navigator.pop(context);
+            AppNavigator.toAbout(context);
+          }),
         ],
       ),
     ];
@@ -370,7 +374,7 @@ class CupertinoNavMenu extends StatelessWidget {
               },
             ),
           ),
-          _menuTile(context, CupertinoIcons.info, 'About Us', () {
+          _menuTile(context, CupertinoIcons.group, 'About Team', () {
             Navigator.pop(context);
             AppNavigator.toAbout(context);
           }),
