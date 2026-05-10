@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoChangePasswordPage extends StatefulWidget {
   const CupertinoChangePasswordPage({super.key});
@@ -141,13 +142,10 @@ class _CupertinoChangePasswordPageState
 
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Change Password"),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "Change Password"),
+          Expanded(child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             Container(
@@ -338,7 +336,8 @@ class _CupertinoChangePasswordPageState
               ),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

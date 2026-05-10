@@ -6,6 +6,7 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoHistoryPage extends StatefulWidget {
   final String role;
@@ -437,77 +438,79 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Activity History"),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _showFilterSheet,
-              child: Stack(
-                children: [
-                  const Icon(CupertinoIcons.line_horizontal_3_decrease,
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Activity History",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _showFilterSheet,
+                  child: Stack(
+                    children: [
+                      const Icon(CupertinoIcons.line_horizontal_3_decrease,
+                          color: CupertinoColors.white),
+                      if (hasFilters)
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: CupertinoColors.activeOrange,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _fetchHistory,
+                  child: const Icon(CupertinoIcons.refresh,
                       color: CupertinoColors.white),
-                  if (hasFilters)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: CupertinoColors.activeOrange,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+                ),
+              ],
             ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _fetchHistory,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
-            ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: loading
-            ? const Center(child: CupertinoActivityIndicator())
-            : error != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(error!,
-                            style: const TextStyle(
-                                color:
-                                    CupertinoColors.destructiveRed)),
-                        const SizedBox(height: 16),
-                        CupertinoButton.filled(
-                          onPressed: _fetchHistory,
-                          child: const Text("Retry"),
+          ),
+          Expanded(
+            child: loading
+                ? const Center(child: CupertinoActivityIndicator())
+                : error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(error!,
+                                style: const TextStyle(
+                                    color:
+                                        CupertinoColors.destructiveRed)),
+                            const SizedBox(height: 16),
+                            CupertinoButton.filled(
+                              onPressed: _fetchHistory,
+                              child: const Text("Retry"),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  )
-                : historyList.isEmpty
-                    ? const Center(
-                        child: Text("No activity found"),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: historyList.length,
-                        itemBuilder: (context, index) {
-                          final item = historyList[index];
-                          return _buildHistoryCard(item);
-                        },
-                      ),
+                    : historyList.isEmpty
+                        ? const Center(
+                            child: Text("No activity found"),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: historyList.length,
+                            itemBuilder: (context, index) {
+                              final item = historyList[index];
+                              return _buildHistoryCard(item);
+                            },
+                          ),
+          ),
+        ],
       ),
     );
   }
@@ -679,19 +682,19 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
       context: context,
       builder: (ctx) => CupertinoPageScaffold(
         backgroundColor: CupertinoColors.systemBackground,
-        navigationBar: CupertinoNavigationBar(
-          middle: Text(_formatAction(action)),
-          backgroundColor: primaryBlue,
-          brightness: Brightness.dark,
-          leading: CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () => Navigator.pop(ctx),
-            child: const Icon(CupertinoIcons.xmark,
-                color: CupertinoColors.white),
-          ),
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
+        child: Column(
+          children: [
+            OmsPageHeader(
+              title: _formatAction(action),
+              leading: CupertinoButton(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Icon(CupertinoIcons.xmark,
+                    color: CupertinoColors.white),
+              ),
+              showBack: false,
+            ),
+            Expanded(child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -766,7 +769,8 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                 ],
               ],
             ),
-          ),
+          )),
+          ],
         ),
       ),
     );

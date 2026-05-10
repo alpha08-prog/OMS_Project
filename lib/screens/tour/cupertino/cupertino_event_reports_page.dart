@@ -6,6 +6,7 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoEventReportsPage extends StatefulWidget {
@@ -97,59 +98,53 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.saffronSoft.withOpacity(0.4),
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.saffronDark,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Event Reports",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-        trailing: GestureDetector(
-          onTap: _fetch,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white, size: 22),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _fetch),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _headerCard(),
-                  const SizedBox(height: 12),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: AppTheme.shadowSm,
-                    ),
-                    child: CupertinoDateRangeFilter(
-                      from: _dateFrom,
-                      to: _dateTo,
-                      tint: AppTheme.saffronDark,
-                      onFromChanged: (d) => setState(() => _dateFrom = d),
-                      onToChanged: (d) => setState(() => _dateTo = d),
-                      onClear: () => setState(() {
-                        _dateFrom = null;
-                        _dateTo = null;
-                      }),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _pendingSection(),
-                ]),
-              ),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Event Reports",
+            trailing: GestureDetector(
+              onTap: _fetch,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white, size: 22),
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _fetch),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _headerCard(),
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: AppTheme.shadowSm,
+                        ),
+                        child: CupertinoDateRangeFilter(
+                          from: _dateFrom,
+                          to: _dateTo,
+                          tint: AppTheme.saffronDark,
+                          onFromChanged: (d) => setState(() => _dateFrom = d),
+                          onToChanged: (d) => setState(() => _dateTo = d),
+                          onClear: () => setState(() {
+                            _dateFrom = null;
+                            _dateTo = null;
+                          }),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _pendingSection(),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

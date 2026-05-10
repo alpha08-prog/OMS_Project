@@ -12,6 +12,7 @@ import '../../../services/notification_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
 import '../../../widgets/cupertino/cupertino_nav_menu.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../main.dart' show themeService;
 
@@ -135,6 +136,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
           Icon(
             hasUnread ? CupertinoIcons.bell_fill : CupertinoIcons.bell,
             size: 22,
+            color: CupertinoColors.white,
           ),
           if (hasUnread)
             Positioned(
@@ -604,26 +606,31 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     });
 
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(title),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 48, color: AppTheme.primaryIndigo),
-            const SizedBox(height: 16),
-            Text(
-              'Loading $title...',
-              style: const TextStyle(
-                fontSize: 16,
-                color: CupertinoColors.systemGrey,
+      backgroundColor: AppTheme.background,
+      child: Column(
+        children: [
+          OmsPageHeader(title: title, showBack: false),
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 48, color: AppTheme.primaryIndigo),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Loading $title...',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const CupertinoActivityIndicator(),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            const CupertinoActivityIndicator(),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -631,40 +638,48 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   // ================= DASHBOARD TAB =================
   Widget _buildDashboardTab() {
     final isSuperAdmin = widget.role == Roles.superAdmin;
+
+    final Widget header = isSuperAdmin
+        ? _buildSuperAdminHeader()
+        : OmsPageHeader(
+            title: 'OMS Dashboard',
+            showBack: false,
+            leading: CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              onPressed: _openNavMenu,
+              child: const Icon(CupertinoIcons.bars,
+                  color: CupertinoColors.white, size: 24),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () {},
+                  child: const Icon(CupertinoIcons.search,
+                      color: CupertinoColors.white, size: 22),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () async {
+                    await AppNavigator.toNotifications(context,
+                        role: widget.role);
+                    _refreshUnreadCount();
+                  },
+                  child: _buildBellWithBadge(),
+                ),
+              ],
+            ),
+          );
+
     return CupertinoPageScaffold(
       backgroundColor:
           isSuperAdmin ? const Color(0xFFF6F7FB) : null,
-      navigationBar: isSuperAdmin
-          ? _buildSuperAdminNavBar()
-          : CupertinoNavigationBar(
-              leading: CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openNavMenu,
-                child: const Icon(CupertinoIcons.bars, size: 26),
-              ),
-              middle: const Text('OMS Dashboard'),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () {},
-                    child: const Icon(CupertinoIcons.search, size: 22),
-                  ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () async {
-                      await AppNavigator.toNotifications(context,
-                          role: widget.role);
-                      _refreshUnreadCount();
-                    },
-                    child: _buildBellWithBadge(),
-                  ),
-                ],
-              ),
-            ),
-      child: SafeArea(
-        child: CustomScrollView(
+      child: Column(
+        children: [
+          header,
+          Expanded(
+            child: CustomScrollView(
           physics: const BouncingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
@@ -777,12 +792,14 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }
 
-  // ================= SUPER ADMIN NAV BAR =================
-  ObstructingPreferredSizeWidget _buildSuperAdminNavBar() {
+  // ================= SUPER ADMIN HEADER =================
+  Widget _buildSuperAdminHeader() {
     final hour = DateTime.now().hour;
     final greeting = hour < 12
         ? "Good Morning"
@@ -791,50 +808,29 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
             : "Good Evening";
     final dateStr = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
 
-    return CupertinoNavigationBar(
-      backgroundColor: CupertinoColors.white,
-      border: const Border(
-        bottom: BorderSide(
-          color: Color(0xFFE5E7EB),
-          width: 0.5,
+    return OmsPageHeader(
+      title: "$greeting, Super Admin",
+      subtitle: Text(
+        dateStr,
+        style: const TextStyle(
+          inherit: false,
+          color: CupertinoColors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w400,
+          decoration: TextDecoration.none,
         ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
+      showBack: false,
       leading: CupertinoButton(
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         onPressed: _openNavMenu,
-        child: const Icon(
-          CupertinoIcons.bars,
-          color: Color(0xFF4338CA),
-          size: 26,
-        ),
-      ),
-      middle: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            "$greeting, Super Administrator",
-            style: const TextStyle(
-              color: Color(0xFF4338CA),
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text(
-            dateStr,
-            style: const TextStyle(
-              fontSize: 10,
-              color: Color(0xFF6B7280),
-              fontWeight: FontWeight.w500,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+        child: const Icon(CupertinoIcons.bars,
+            color: CupertinoColors.white, size: 24),
       ),
       trailing: CupertinoButton(
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.only(right: 4),
         onPressed: () async {
           await AppNavigator.toNotifications(context, role: widget.role);
           _refreshUnreadCount();

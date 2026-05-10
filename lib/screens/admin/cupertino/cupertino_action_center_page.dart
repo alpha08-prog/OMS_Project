@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/app_navigator.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import 'cupertino_verification_queue_page.dart' show CupertinoVerifyAssignSheet;
 
 class CupertinoActionCenterPage extends StatefulWidget {
@@ -280,27 +281,17 @@ class _CupertinoActionCenterPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Action Center",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child:
-              const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-        trailing: GestureDetector(
-          onTap: _loadAll,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white, size: 22),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Action Center",
+            trailing: GestureDetector(
+              onTap: _loadAll,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white, size: 22),
+            ),
+          ),
+          Expanded(child: CustomScrollView(
           slivers: [
             CupertinoSliverRefreshControl(onRefresh: _loadAll),
             SliverPadding(
@@ -332,7 +323,8 @@ class _CupertinoActionCenterPageState
               ),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

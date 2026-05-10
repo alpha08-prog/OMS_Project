@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../super_admin_tour_list_page.dart' show TourCategory;
 
@@ -142,21 +143,21 @@ class _CupertinoSuperAdminTourListPageState
     final list = _visible;
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(_title,
-            style: const TextStyle(color: CupertinoColors.white)),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _load,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: _title,
+            showBack: false,
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _load,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              children: [
             // Status chips
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -220,9 +221,11 @@ class _CupertinoSuperAdminTourListPageState
                             ),
                           ],
                         ),
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          ),
+        ],
       ),
     );
   }

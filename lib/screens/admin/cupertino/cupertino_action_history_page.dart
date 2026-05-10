@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoActionHistoryPage extends StatefulWidget {
   const CupertinoActionHistoryPage({super.key});
@@ -320,27 +321,19 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        border: null,
-        middle: const Text(
-          'Action History',
-          style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.bold),
-        ),
-        leading: CupertinoNavigationBarBackButton(
-          color: CupertinoColors.white,
-          onPressed: () => Navigator.pop(context),
-        ),
-        trailing: GestureDetector(
-          onTap: _loadAll,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'Action History',
+            trailing: GestureDetector(
+              onTap: _loadAll,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
+              ),
+            ),
           ),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+          Expanded(child: CustomScrollView(
           slivers: [
             CupertinoSliverRefreshControl(onRefresh: _loadAll),
             SliverToBoxAdapter(child: _buildHeroBanner()),
@@ -373,7 +366,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
               ),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }
@@ -1353,12 +1347,14 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
                 child: SizedBox(
                   width: double.infinity,
                   child: CupertinoButton(
-                    color: AppTheme.primaryIndigo,
+                    color: CupertinoColors.systemGrey5,
                     borderRadius: BorderRadius.circular(10),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('Close',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.foreground)),
                   ),
                 ),
               ),

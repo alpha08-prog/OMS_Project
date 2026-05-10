@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoBirthdayViewPage extends StatefulWidget {
   const CupertinoBirthdayViewPage({super.key});
@@ -280,28 +281,19 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: _pinkDark,
-        border: null,
-        middle: const Text(
-          'View Birthdays',
-          style:
-              TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.bold),
-        ),
-        leading: CupertinoNavigationBarBackButton(
-          color: CupertinoColors.white,
-          onPressed: () => Navigator.pop(context),
-        ),
-        trailing: GestureDetector(
-          onTap: _fetch,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'View Birthdays',
+            trailing: GestureDetector(
+              onTap: _fetch,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
+              ),
+            ),
           ),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+          Expanded(child: CustomScrollView(
           slivers: [
             CupertinoSliverRefreshControl(onRefresh: _fetch),
             SliverToBoxAdapter(child: _buildHeroBanner()),
@@ -333,7 +325,8 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
               ),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

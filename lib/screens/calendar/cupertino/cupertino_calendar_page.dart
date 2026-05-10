@@ -6,6 +6,7 @@ import 'package:anki_clone/services/http_service.dart';
 import 'package:anki_clone/theme/app_theme.dart';
 import 'package:anki_clone/utils/access_control.dart';
 import 'package:anki_clone/widgets/cupertino/cupertino_toast.dart';
+import 'package:anki_clone/widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoCalendarPage extends StatefulWidget {
   final String role;
@@ -483,31 +484,32 @@ class _CupertinoCalendarPageState extends State<CupertinoCalendarPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('Calendar'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              minSize: 32,
-              onPressed: _goToToday,
-              child: const Icon(CupertinoIcons.today, size: 22),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'Calendar',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minSize: 32,
+                  onPressed: _goToToday,
+                  child: const Icon(CupertinoIcons.today, size: 22, color: CupertinoColors.white),
+                ),
+                if (_isAdmin)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 32,
+                    onPressed: _syncing ? null : _syncCalendar,
+                    child: _syncing
+                        ? const CupertinoActivityIndicator(radius: 10, color: CupertinoColors.white)
+                        : const Icon(CupertinoIcons.refresh_thick, size: 20, color: CupertinoColors.white),
+                  ),
+              ],
             ),
-            if (_isAdmin)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                minSize: 32,
-                onPressed: _syncing ? null : _syncCalendar,
-                child: _syncing
-                    ? const CupertinoActivityIndicator(radius: 10)
-                    : const Icon(CupertinoIcons.refresh_thick, size: 20),
-              ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Stack(
+          ),
+          Expanded(child: Stack(
           children: [
             CustomScrollView(
               physics: const BouncingScrollPhysics(
@@ -562,7 +564,8 @@ class _CupertinoCalendarPageState extends State<CupertinoCalendarPage> {
                 ),
               ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

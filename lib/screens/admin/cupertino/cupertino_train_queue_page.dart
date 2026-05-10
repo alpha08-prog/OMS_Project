@@ -10,6 +10,7 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoTrainQueuePage extends StatefulWidget {
@@ -264,65 +265,55 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Train EQ Requests",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back,
-              color: CupertinoColors.white),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GestureDetector(
-              onTap: () {
-                CupertinoFormHelpers.showPicker(
-                  context: context,
-                  items: _statuses,
-                  currentValue: _statusFilter,
-                  title: "Status",
-                  onSelected: (v) {
-                    setState(() => _statusFilter = v);
-                    _fetchRequests();
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Train EQ Requests",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    CupertinoFormHelpers.showPicker(
+                      context: context,
+                      items: _statuses,
+                      currentValue: _statusFilter,
+                      title: "Status",
+                      onSelected: (v) {
+                        setState(() => _statusFilter = v);
+                        _fetchRequests();
+                      },
+                    );
                   },
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: CupertinoColors.white.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(_statusFilter,
+                            style: const TextStyle(
+                                color: CupertinoColors.white, fontSize: 12)),
+                        const SizedBox(width: 4),
+                        const Icon(CupertinoIcons.chevron_down,
+                            color: CupertinoColors.white, size: 12),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Text(_statusFilter,
-                        style: const TextStyle(
-                            color: CupertinoColors.white, fontSize: 12)),
-                    const SizedBox(width: 4),
-                    const Icon(CupertinoIcons.chevron_down,
-                        color: CupertinoColors.white, size: 12),
-                  ],
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: _loadAll,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white, size: 22),
                 ),
-              ),
+              ],
             ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: _loadAll,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white, size: 22),
-            ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+          ),
+          Expanded(child: CustomScrollView(
           slivers: [
             CupertinoSliverRefreshControl(onRefresh: _fetchRequests),
             SliverPadding(
@@ -368,7 +359,8 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
               ),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

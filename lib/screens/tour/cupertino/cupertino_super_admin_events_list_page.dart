@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../super_admin_events_list_page.dart' show EventsCategory;
 
@@ -121,27 +122,20 @@ class _CupertinoSuperAdminEventsListPageState
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(_title,
-            style: const TextStyle(color: CupertinoColors.white)),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back,
-              color: CupertinoColors.white),
-        ),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _load,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: _title,
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _load,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              children: [
             if (_showFilters) ...[
               CupertinoDateRangeFilter(
                 from: _dateFrom,
@@ -194,9 +188,11 @@ class _CupertinoSuperAdminEventsListPageState
                           itemCount: list.length,
                           itemBuilder: (_, i) => _eventCard(list[i]),
                         ),
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          ),
+        ],
       ),
     );
   }

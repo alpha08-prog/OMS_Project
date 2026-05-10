@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_staff_history_detail_dialog.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 
@@ -202,20 +203,18 @@ class _CupertinoStaffHistoryPageState
 
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("My Submissions"),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _fetchAll,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "My Submissions",
+            showBack: false,
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _fetchAll,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white),
+            ),
+          ),
             // Stats
             Container(
               margin: const EdgeInsets.all(16),
@@ -333,7 +332,6 @@ class _CupertinoStaffHistoryPageState
             ),
           ],
         ),
-      ),
     );
   }
 

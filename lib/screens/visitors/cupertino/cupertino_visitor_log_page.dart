@@ -6,6 +6,7 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoVisitorLogPage extends StatefulWidget {
   const CupertinoVisitorLogPage({super.key});
@@ -154,21 +155,11 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Log Visitor",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "Log Visitor"),
+          Expanded(
+            child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _headerCard(),
@@ -273,6 +264,8 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
             const SizedBox(height: 24),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

@@ -280,112 +280,135 @@ class _CupertinoGrievanceListPageState
 
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Old Grievances",
-          style: TextStyle(
-            color: CupertinoColors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _showFilters = !_showFilters;
-                });
-              },
-              child: Stack(
+      child: Column(
+        children: [
+          // ================= PINNED PURPLE HEADER =================
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.primaryIndigo, Color(0xFF4F46E5)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    _showFilters
-                        ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
-                        : CupertinoIcons.line_horizontal_3_decrease_circle,
-                    color: CupertinoColors.white,
-                    size: 24,
-                  ),
-                  if (hasFilters)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: CupertinoColors.activeOrange,
-                          shape: BoxShape.circle,
+                  // Nav row
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
+                    child: Row(
+                      children: [
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 6),
+                          onPressed: () => Navigator.pop(context),
+                          child: const Icon(CupertinoIcons.chevron_left,
+                              color: CupertinoColors.white, size: 22),
                         ),
-                      ),
+                        const Expanded(
+                          child: Text(
+                            "Old Grievances",
+                            style: TextStyle(
+                              inherit: false,
+                              color: CupertinoColors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              decoration: TextDecoration.none,
+                              letterSpacing: -0.4,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () =>
+                                  setState(() => _showFilters = !_showFilters),
+                              child: Stack(
+                                children: [
+                                  Icon(
+                                    _showFilters
+                                        ? CupertinoIcons
+                                            .line_horizontal_3_decrease_circle_fill
+                                        : CupertinoIcons
+                                            .line_horizontal_3_decrease_circle,
+                                    color: CupertinoColors.white,
+                                    size: 24,
+                                  ),
+                                  if (hasFilters)
+                                    Positioned(
+                                      right: 0,
+                                      top: 0,
+                                      child: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          color: CupertinoColors.activeOrange,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            GestureDetector(
+                              onTap: _fetchGrievances,
+                              child: const Icon(CupertinoIcons.refresh,
+                                  color: CupertinoColors.white, size: 22),
+                            ),
+                            if (canCreate && widget.role != Roles.superAdmin) ...[
+                              const SizedBox(width: 12),
+                              GestureDetector(
+                                onTap: _openCreate,
+                                child: const Icon(
+                                    CupertinoIcons.add_circled_solid,
+                                    color: CupertinoColors.white,
+                                    size: 24),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                     ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: _fetchGrievances,
-              child: const Icon(
-                CupertinoIcons.refresh,
-                color: CupertinoColors.white,
-                size: 22,
-              ),
-            ),
-            if (canCreate) ...[
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: _openCreate,
-                child: const Icon(
-                  CupertinoIcons.add_circled_solid,
-                  color: CupertinoColors.white,
-                  size: 24,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            // ================= STATS CARD =================
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppTheme.primaryIndigo,
-                    AppTheme.primaryIndigo.withOpacity(0.8),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primaryIndigo.withOpacity(0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+                  ),
+                  // Stats card inside header
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: CupertinoColors.white.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _statItem(
+                            "Total", _totalCount, CupertinoIcons.folder, null),
+                        _statItem("Open", _openCount,
+                            CupertinoIcons.folder_open, const Color(0xFF10B981)),
+                        _statItem("Progress", _inProgressCount,
+                            CupertinoIcons.clock, const Color(0xFFF59E0B)),
+                        _statItem("Closed", _closedCount,
+                            CupertinoIcons.checkmark_circle,
+                            const Color(0xFF9CA3AF)),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _statItem("Total", _totalCount,
-                      CupertinoIcons.folder, null),
-                  _statItem("Open", _openCount,
-                      CupertinoIcons.folder_open, const Color(0xFF10B981)),
-                  _statItem("Progress", _inProgressCount,
-                      CupertinoIcons.clock, const Color(0xFFF59E0B)),
-                  _statItem("Closed", _closedCount,
-                      CupertinoIcons.checkmark_circle, const Color(0xFF9CA3AF)),
-                ],
-              ),
             ),
+          ),
+          // ================= SCROLLABLE BODY =================
+          Expanded(
+            child: Column(
+              children: [
 
             // ================= SEARCH & FILTERS =================
             if (_showFilters)
@@ -683,6 +706,8 @@ class _CupertinoGrievanceListPageState
             ),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

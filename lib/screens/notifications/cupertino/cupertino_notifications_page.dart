@@ -6,6 +6,7 @@ import '../../../models/notification_model.dart';
 import '../../../services/notification_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoNotificationsPage extends StatefulWidget {
   final String role;
@@ -133,18 +134,22 @@ class _CupertinoNotificationsPageState
   Widget build(BuildContext context) {
     final unread = _items.where((n) => !n.isRead).length;
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('Notifications'),
-        trailing: unread > 0
-            ? CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _busyMarkingAll ? null : _markAllRead,
-                child: Text(_busyMarkingAll ? 'Marking…' : 'Mark all read'),
-              )
-            : null,
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'Notifications',
+            trailing: unread > 0
+                ? CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _busyMarkingAll ? null : _markAllRead,
+                    child: Text(
+                      _busyMarkingAll ? 'Marking…' : 'Mark all read',
+                      style: const TextStyle(color: CupertinoColors.white),
+                    ),
+                  )
+                : null,
+          ),
+          Expanded(child: CustomScrollView(
           physics: const BouncingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
@@ -174,7 +179,8 @@ class _CupertinoNotificationsPageState
                 ),
               ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

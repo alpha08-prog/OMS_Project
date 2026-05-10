@@ -11,6 +11,7 @@ import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_admin_grievance_detail_dialog.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoVerificationQueuePage extends StatefulWidget {
@@ -276,59 +277,50 @@ class _CupertinoVerificationQueuePageState
 
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Verify Grievance",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GestureDetector(
-              onTap: () => setState(() => _showFilters = !_showFilters),
-              child: Stack(
-                children: [
-                  Icon(
-                    _showFilters
-                        ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
-                        : CupertinoIcons.line_horizontal_3_decrease_circle,
-                    color: CupertinoColors.white,
-                    size: 24,
-                  ),
-                  if (hasFilters)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: CupertinoColors.activeOrange,
-                          shape: BoxShape.circle,
-                        ),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Verify Grievance",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () => setState(() => _showFilters = !_showFilters),
+                  child: Stack(
+                    children: [
+                      Icon(
+                        _showFilters
+                            ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
+                            : CupertinoIcons.line_horizontal_3_decrease_circle,
+                        color: CupertinoColors.white,
+                        size: 24,
                       ),
-                    ),
-                ],
-              ),
+                      if (hasFilters)
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: CupertinoColors.activeOrange,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: _fetchAll,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white, size: 22),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: _fetchAll,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white, size: 22),
-            ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+          ),
+          Expanded(child: CustomScrollView(
           slivers: [
             CupertinoSliverRefreshControl(onRefresh: _fetchGrievances),
             SliverPadding(
@@ -357,7 +349,8 @@ class _CupertinoVerificationQueuePageState
               ),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

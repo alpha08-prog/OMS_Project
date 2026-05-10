@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoUserManagementPage extends StatefulWidget {
   const CupertinoUserManagementPage({super.key});
@@ -268,51 +269,51 @@ class _CupertinoUserManagementPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text(
-          "User Management",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _fetchUsers,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: _loading
-            ? const Center(child: CupertinoActivityIndicator(radius: 14))
-            : _error != null
-                ? _buildErrorView()
-                : CustomScrollView(
-                    physics: const BouncingScrollPhysics(
-                        parent: AlwaysScrollableScrollPhysics()),
-                    slivers: [
-                      CupertinoSliverRefreshControl(onRefresh: _fetchUsers),
-                      SliverPadding(
-                        padding: const EdgeInsets.all(16),
-                        sliver: SliverList(
-                          delegate: SliverChildListDelegate([
-                            _buildStatsRow(),
-                            const SizedBox(height: 16),
-                            _buildSearchBar(),
-                            const SizedBox(height: 12),
-                            _buildRoleFilterChips(),
-                            const SizedBox(height: 16),
-                            _buildResultCount(),
-                            const SizedBox(height: 8),
-                            if (_filteredUsers.isEmpty)
-                              _buildEmptyState()
-                            else
-                              ..._filteredUsers.map(_buildUserCard),
-                          ]),
-                        ),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "User Management",
+            showBack: false,
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _fetchUsers,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white),
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CupertinoActivityIndicator(radius: 14))
+                : _error != null
+                    ? _buildErrorView()
+                    : CustomScrollView(
+                        physics: const BouncingScrollPhysics(
+                            parent: AlwaysScrollableScrollPhysics()),
+                        slivers: [
+                          CupertinoSliverRefreshControl(onRefresh: _fetchUsers),
+                          SliverPadding(
+                            padding: const EdgeInsets.all(16),
+                            sliver: SliverList(
+                              delegate: SliverChildListDelegate([
+                                _buildStatsRow(),
+                                const SizedBox(height: 16),
+                                _buildSearchBar(),
+                                const SizedBox(height: 12),
+                                _buildRoleFilterChips(),
+                                const SizedBox(height: 16),
+                                _buildResultCount(),
+                                const SizedBox(height: 8),
+                                if (_filteredUsers.isEmpty)
+                                  _buildEmptyState()
+                                else
+                                  ..._filteredUsers.map(_buildUserCard),
+                              ]),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+          ),
+        ],
       ),
     );
   }

@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# CocoaPods (also covered by ios/.gitignore and macos/.gitignore)
+ios/Pods/
+macos/Pods/

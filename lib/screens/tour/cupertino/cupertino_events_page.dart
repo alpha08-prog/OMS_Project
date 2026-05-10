@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoEventsPage extends StatefulWidget {
   final String role;
@@ -174,102 +175,95 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
 
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Events",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back,
-              color: CupertinoColors.white),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isAllMode) ...[
-              GestureDetector(
-                onTap: () => setState(() => _showFilters = !_showFilters),
-                child: Stack(
-                  children: [
-                    Icon(
-                      _showFilters
-                          ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
-                          : CupertinoIcons.line_horizontal_3_decrease_circle,
-                      color: CupertinoColors.white,
-                      size: 24,
-                    ),
-                    if (hasFilters)
-                      Positioned(
-                        right: 0,
-                        top: 0,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: CupertinoColors.activeOrange,
-                            shape: BoxShape.circle,
-                          ),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Events",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isAllMode) ...[
+                  GestureDetector(
+                    onTap: () => setState(() => _showFilters = !_showFilters),
+                    child: Stack(
+                      children: [
+                        Icon(
+                          _showFilters
+                              ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
+                              : CupertinoIcons.line_horizontal_3_decrease_circle,
+                          color: CupertinoColors.white,
+                          size: 24,
                         ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-            ],
-            GestureDetector(
-              onTap: _fetch,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white, size: 22),
-            ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _fetch),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildViewModeToggle(),
-                  const SizedBox(height: 14),
-                  if (isAllMode && _showFilters) ...[
-                    _buildFilters(hasFilters),
-                    const SizedBox(height: 12),
-                  ],
-                  Text(
-                    isAllMode
-                        ? "All Events (${_filtered.length})"
-                        : "Today's Events (${_filtered.length})",
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.foreground,
+                        if (hasFilters)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: CupertinoColors.activeOrange,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Center(child: CupertinoActivityIndicator()),
-                    )
-                  else if (_error != null)
-                    _buildError()
-                  else if (_filtered.isEmpty)
-                    _buildEmpty()
-                  else
-                    ..._filtered.map(_buildCard),
-                  const SizedBox(height: 24),
-                ]),
-              ),
+                  const SizedBox(width: 12),
+                ],
+                GestureDetector(
+                  onTap: _fetch,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white, size: 22),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _fetch),
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildViewModeToggle(),
+                      const SizedBox(height: 14),
+                      if (isAllMode && _showFilters) ...[
+                        _buildFilters(hasFilters),
+                        const SizedBox(height: 12),
+                      ],
+                      Text(
+                        isAllMode
+                            ? "All Events (${_filtered.length})"
+                            : "Today's Events (${_filtered.length})",
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.foreground,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_loading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 60),
+                          child: Center(child: CupertinoActivityIndicator()),
+                        )
+                      else if (_error != null)
+                        _buildError()
+                      else if (_filtered.isEmpty)
+                        _buildEmpty()
+                      else
+                        ..._filtered.map(_buildCard),
+                      const SizedBox(height: 24),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

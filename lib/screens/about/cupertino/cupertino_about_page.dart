@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoAboutPage extends StatelessWidget {
   const CupertinoAboutPage({super.key});
@@ -52,13 +53,10 @@ class CupertinoAboutPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("About Us"),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "About Us"),
+          Expanded(child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,8 +157,8 @@ class CupertinoAboutPage extends StatelessWidget {
 
               ..._teamMembers.map((member) => _buildTeamCard(member)),
             ],
-          ),
-        ),
+          ))),
+        ],
       ),
     );
   }

@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoStaffTasksPage extends StatefulWidget {
@@ -303,20 +304,18 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("My Tasks"),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _fetchTasks,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "My Tasks",
+            showBack: false,
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _fetchTasks,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white),
+            ),
+          ),
             // Filter chips
             Container(
               height: 56,
@@ -414,7 +413,6 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
             ),
           ],
         ),
-      ),
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import 'cupertino_grievance_view_page.dart';
 
 class CupertinoRejectedGrievancesPage extends StatefulWidget {
@@ -71,33 +72,22 @@ class _CupertinoRejectedGrievancesPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoColors.white,
-        middle: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(CupertinoIcons.xmark_circle, color: _accent, size: 20),
-            const SizedBox(width: 6),
-            const Text(
-              "Rejected Grievances",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            if (!_loading) ...[
-              const SizedBox(width: 6),
-              Text(
-                "(${_items.length})",
-                style: const TextStyle(
-                  color: _muted,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Rejected Grievances",
+            subtitle: !_loading
+                ? Text(
+                    "(${_items.length})",
+                    style: const TextStyle(
+                      color: CupertinoColors.white,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  )
+                : null,
+          ),
+          Expanded(child: CustomScrollView(
           slivers: [
             CupertinoSliverRefreshControl(onRefresh: _fetch),
             SliverFillRemaining(
@@ -111,7 +101,8 @@ class _CupertinoRejectedGrievancesPageState
                           : _buildList(),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

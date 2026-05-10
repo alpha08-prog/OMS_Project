@@ -8,6 +8,7 @@ import '../../utils/access_control.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/cupertino/cupertino_toast.dart';
 import '../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoBirthdayPage extends StatefulWidget {
   final String role;
@@ -273,31 +274,30 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Birthday Wishes"),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _loadAll,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Birthday Wishes",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _loadAll,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+                if (canCreate)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openAddBirthdaySheet,
+                    child: const Icon(CupertinoIcons.add,
+                        color: CupertinoColors.white),
+                  ),
+              ],
             ),
-            if (canCreate)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openAddBirthdaySheet,
-                child: const Icon(CupertinoIcons.add,
-                    color: CupertinoColors.white),
-              ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
+          ),
+          Expanded(child: Column(
           children: [
             // Stats Card
             if (totalBirthdays > 0)
@@ -512,7 +512,8 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                   : _upcomingListView(),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

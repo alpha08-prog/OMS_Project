@@ -12,6 +12,7 @@ import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_train_request_add_page.dart';
 
@@ -689,33 +690,33 @@ class _CupertinoTrainRequestListPageState
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Train EQ Requests",
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (canCreate)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openCreate,
-                child: const Icon(CupertinoIcons.add,
-                    color: CupertinoColors.white),
-              ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: fetchRequests,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Train EQ Requests",
+            showBack: false,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (canCreate)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openCreate,
+                    child: const Icon(CupertinoIcons.add,
+                        color: CupertinoColors.white),
+                  ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: fetchRequests,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
+          ),
+          Expanded(
+            child: Column(
+              children: [
             // Stats Card
             Container(
               margin: const EdgeInsets.all(16),
@@ -890,9 +891,11 @@ class _CupertinoTrainRequestListPageState
                                 ),
                               ],
                             ),
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          ),
+        ],
       ),
     );
   }

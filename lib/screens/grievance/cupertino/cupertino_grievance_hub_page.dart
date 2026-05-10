@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import 'cupertino_grievance_create_page.dart';
 import 'cupertino_office_grievance_create_page.dart';
 import 'cupertino_grievance_list_page.dart';
@@ -13,25 +14,10 @@ class CupertinoGrievanceHubPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Grievance",
-          style: TextStyle(
-            color: CupertinoColors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child:
-              const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "Grievance"),
+          Expanded(child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _headerCard(),
@@ -88,7 +74,8 @@ class CupertinoGrievanceHubPage extends StatelessWidget {
               },
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

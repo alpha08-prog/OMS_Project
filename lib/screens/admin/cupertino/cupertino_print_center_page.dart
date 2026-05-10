@@ -10,6 +10,7 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoPrintCenterPage extends StatefulWidget {
   const CupertinoPrintCenterPage({super.key});
@@ -161,13 +162,10 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Print Center"),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: Column(
+      child: Column(
+        children: [
+          const OmsPageHeader(title: "Print Center", showBack: false),
+          Expanded(child: Column(
           children: [
             const SizedBox(height: 16),
             Padding(
@@ -205,7 +203,8 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
                       : _buildTourTab(),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

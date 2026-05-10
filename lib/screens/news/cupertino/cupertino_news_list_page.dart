@@ -8,6 +8,7 @@ import '../../../utils/access_control.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 const Color _kNewsPrimaryBlue = Color(0xFF0A2E5C);
 const Color _kNewsBgLight = Color(0xFFF4F6FB);
@@ -198,55 +199,58 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: _kNewsBgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("News & Intelligence"),
-        backgroundColor: _kNewsPrimaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _loadAll,
-              child: const Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
-            ),
-            if (_canCreateNews)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openCreateSheet,
-                child: const Icon(CupertinoIcons.add, color: CupertinoColors.white),
-              ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: loading
-            ? const Center(child: CupertinoActivityIndicator())
-            : error != null
-                ? Center(child: Text(error!))
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      if (_canSeeFilter) ...[
-                        _buildSearchAndFilterToggle(),
-                        const SizedBox(height: 10),
-                        if (_showFilters) ...[
-                          _buildDateFilterRow(),
-                          const SizedBox(height: 10),
-                        ],
-                        _buildPriorityFilterRow(),
-                        if (_hasActiveFilters()) ...[
-                          const SizedBox(height: 8),
-                          _buildActiveFiltersBar(),
-                        ],
-                        const SizedBox(height: 12),
-                      ],
-                      if (newsList.isEmpty)
-                        const Center(child: Text("No news available"))
-                      else
-                        ...newsList.map((n) => _newsCard(n)),
-                    ],
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "News & Intelligence",
+            showBack: false,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _loadAll,
+                  child: const Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
+                ),
+                if (_canCreateNews)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openCreateSheet,
+                    child: const Icon(CupertinoIcons.add, color: CupertinoColors.white),
                   ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: loading
+                ? const Center(child: CupertinoActivityIndicator())
+                : error != null
+                    ? Center(child: Text(error!))
+                    : ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          if (_canSeeFilter) ...[
+                            _buildSearchAndFilterToggle(),
+                            const SizedBox(height: 10),
+                            if (_showFilters) ...[
+                              _buildDateFilterRow(),
+                              const SizedBox(height: 10),
+                            ],
+                            _buildPriorityFilterRow(),
+                            if (_hasActiveFilters()) ...[
+                              const SizedBox(height: 8),
+                              _buildActiveFiltersBar(),
+                            ],
+                            const SizedBox(height: 12),
+                          ],
+                          if (newsList.isEmpty)
+                            const Center(child: Text("No news available"))
+                          else
+                            ...newsList.map((n) => _newsCard(n)),
+                        ],
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -704,36 +708,36 @@ class _CupertinoNewsDetailPage extends StatelessWidget {
 
     return CupertinoPageScaffold(
       backgroundColor: _kNewsBgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("News Details"),
-        backgroundColor: _kNewsPrimaryBlue,
-        brightness: Brightness.dark,
-        trailing: (canEdit && id != null)
-            ? CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () {
-                  showCupertinoModalPopup(
-                    context: context,
-                    builder: (_) => _CupertinoEditNewsSheet(
-                      id: id,
-                      oldNews: news,
-                      onSaved: () async {
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                        await onUpdated();
-                      },
-                    ),
-                  );
-                },
-                child: const Icon(CupertinoIcons.pencil,
-                    color: CupertinoColors.white),
-              )
-            : null,
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Container(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "News Details",
+            trailing: (canEdit && id != null)
+                ? CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () {
+                      showCupertinoModalPopup(
+                        context: context,
+                        builder: (_) => _CupertinoEditNewsSheet(
+                          id: id,
+                          oldNews: news,
+                          onSaved: () async {
+                            Navigator.pop(context);
+                            Navigator.pop(context);
+                            await onUpdated();
+                          },
+                        ),
+                      );
+                    },
+                    child: const Icon(CupertinoIcons.pencil,
+                        color: CupertinoColors.white),
+                  )
+                : null,
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: CupertinoColors.white,
@@ -767,7 +771,9 @@ class _CupertinoNewsDetailPage extends StatelessWidget {
               ],
             ),
           ),
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }

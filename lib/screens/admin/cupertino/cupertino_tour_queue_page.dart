@@ -6,6 +6,7 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoTourQueuePage extends StatefulWidget {
   const CupertinoTourQueuePage({super.key});
@@ -158,27 +159,17 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Tour Invitations",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back,
-              color: CupertinoColors.white),
-        ),
-        trailing: GestureDetector(
-          onTap: _loadAll,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white, size: 22),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Tour Invitations",
+            trailing: GestureDetector(
+              onTap: _loadAll,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white, size: 22),
+            ),
+          ),
+          Expanded(child: CustomScrollView(
           slivers: [
             CupertinoSliverRefreshControl(onRefresh: _fetchPending),
             SliverPadding(
@@ -212,7 +203,8 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
               ),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

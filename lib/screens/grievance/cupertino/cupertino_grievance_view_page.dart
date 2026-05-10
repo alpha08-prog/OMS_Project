@@ -8,6 +8,7 @@ import '../../../utils/access_control.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoGrievanceViewPage extends StatefulWidget {
   final String grievanceId;
@@ -350,21 +351,12 @@ class _CupertinoGrievanceViewPageState
     if (_loading) {
       return CupertinoPageScaffold(
         backgroundColor: const Color(0xFFF4F6FB),
-        navigationBar: CupertinoNavigationBar(
-          backgroundColor: primaryBlue,
-          brightness: Brightness.dark,
-          middle: const Text("Grievance Details",
-              style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: CupertinoColors.white)),
-          leading: CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () => Navigator.pop(context),
-            child: const Icon(CupertinoIcons.back,
-                color: CupertinoColors.white),
-          ),
+        child: Column(
+          children: [
+            OmsPageHeader(title: "Grievance Details"),
+            const Expanded(child: Center(child: CupertinoActivityIndicator())),
+          ],
         ),
-        child: const Center(child: CupertinoActivityIndicator()),
       );
     }
 
@@ -373,31 +365,34 @@ class _CupertinoGrievanceViewPageState
         AccessControl.can(widget.role, ActionPermission.approve);
     final isLocked = grievanceData["isLocked"] == true;
 
+    // Staff: details only — no tabs, no action buttons
+    if (widget.role == Roles.staff) {
+      return CupertinoPageScaffold(
+        backgroundColor: const Color(0xFFF4F6FB),
+        child: Column(
+          children: [
+            OmsPageHeader(title: "Grievance Details"),
+            Expanded(child: _buildDetailsTab()),
+          ],
+        ),
+      );
+    }
+
     return CupertinoPageScaffold(
       backgroundColor: const Color(0xFFF4F6FB),
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        middle: const Text("Grievance Details",
-            style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: CupertinoColors.white)),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back,
-              color: CupertinoColors.white),
-        ),
-        trailing: _updating
-            ? const Padding(
-                padding: EdgeInsets.only(right: 8),
-                child: CupertinoActivityIndicator(
-                    color: CupertinoColors.white),
-              )
-            : null,
-      ),
-      child: SafeArea(
-        child: Column(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Grievance Details",
+            trailing: _updating
+                ? const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: CupertinoActivityIndicator(
+                        color: CupertinoColors.white),
+                  )
+                : null,
+          ),
+          Expanded(child: Column(
           children: [
             // Segmented Control (replaces TabBar)
             Padding(
@@ -592,7 +587,8 @@ class _CupertinoGrievanceViewPageState
                 ),
               ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }

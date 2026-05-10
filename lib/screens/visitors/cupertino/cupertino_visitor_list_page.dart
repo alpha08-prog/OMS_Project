@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoVisitorListPage extends StatefulWidget {
@@ -154,32 +155,33 @@ class _CupertinoVisitorListPageState
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Visitors"),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (canCreate)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openAddVisitor,
-                child: const Icon(CupertinoIcons.add,
-                    color: CupertinoColors.white),
-              ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: fetchVisitors,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Visitors",
+            showBack: false,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (canCreate)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openAddVisitor,
+                    child: const Icon(CupertinoIcons.add,
+                        color: CupertinoColors.white),
+                  ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: fetchVisitors,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
+          ),
+          Expanded(
+            child: Column(
+              children: [
             CupertinoDateRangeFilter(
               from: _dateFrom,
               to: _dateTo,
@@ -371,9 +373,11 @@ class _CupertinoVisitorListPageState
                           ),
                         ],
                       ),
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          ),
+        ],
       ),
     );
   }

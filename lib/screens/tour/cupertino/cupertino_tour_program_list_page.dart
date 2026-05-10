@@ -8,6 +8,7 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_tour_program_create_page.dart';
 
@@ -603,32 +604,33 @@ class _CupertinoTourProgramListPageState
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Tour Programs"),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (canCreate)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openCreateSheet,
-                child: const Icon(CupertinoIcons.add,
-                    color: CupertinoColors.white),
-              ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _loadAll,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Tour Programs",
+            showBack: false,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (canCreate)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openCreateSheet,
+                    child: const Icon(CupertinoIcons.add,
+                        color: CupertinoColors.white),
+                  ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _loadAll,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
+          ),
+          Expanded(
+            child: Column(
+              children: [
             // Stats Row
             Container(
               padding: const EdgeInsets.all(16),
@@ -730,6 +732,8 @@ class _CupertinoTourProgramListPageState
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoTrainRequestAddPage extends StatefulWidget {
   final String role;
@@ -330,13 +331,11 @@ class _CupertinoTrainRequestAddPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("New Train Request"),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "New Train Request", showBack: false),
+          Expanded(
+            child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             // PNR Section
@@ -779,6 +778,8 @@ class _CupertinoTrainRequestAddPageState
             const SizedBox(height: 24),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

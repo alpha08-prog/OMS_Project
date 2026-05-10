@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show CircleAvatar;
 import '../../theme/app_theme.dart';
 import '../../utils/access_control.dart';
 import '../../utils/app_navigator.dart';
+import 'cupertino_page_header.dart';
 
 /// Full-screen menu page replacing Material Drawer for iOS
 class CupertinoNavMenu extends StatelessWidget {
@@ -27,16 +28,27 @@ class CupertinoNavMenu extends StatelessWidget {
     final isStaff = role == Roles.staff;
     final isSuperAdmin = role == Roles.superAdmin;
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('Menu'),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          child: const Text('Close'),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Menu",
+            leading: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Close",
+                style: TextStyle(
+                  inherit: false,
+                  color: CupertinoColors.white,
+                  fontSize: 17,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+            showBack: false,
+          ),
+          Expanded(
+            child: ListView(
           children: [
             // User profile header
             Container(
@@ -114,18 +126,27 @@ class CupertinoNavMenu extends StatelessWidget {
             const SizedBox(height: 32),
           ],
         ),
+          ),
+        ],
       ),
     );
   }
 
-  // SUPER_ADMIN: dashboard-only — drawer reduced to Dashboard + Logout.
-  // (Logout button is rendered separately below the menu sections.)
+  // SUPER_ADMIN: Dashboard + profile + about.
   List<Widget> _buildSuperAdminMenu(BuildContext context) {
     return [
       CupertinoListSection.insetGrouped(
         children: [
           _menuTile(context, CupertinoIcons.square_grid_2x2_fill, 'Dashboard',
               () => Navigator.pop(context)),
+          _menuTile(context, CupertinoIcons.person_circle, 'My Profile', () {
+            Navigator.pop(context);
+            AppNavigator.toMyProfile(context);
+          }),
+          _menuTile(context, CupertinoIcons.group, 'About Team', () {
+            Navigator.pop(context);
+            AppNavigator.toAbout(context);
+          }),
         ],
       ),
     ];
@@ -182,6 +203,10 @@ class CupertinoNavMenu extends StatelessWidget {
           _menuTile(context, CupertinoIcons.printer, 'Print Center', () {
             Navigator.pop(context);
             AppNavigator.toPrintCenter(context);
+          }),
+          _menuTile(context, CupertinoIcons.person_circle, 'My Profile', () {
+            Navigator.pop(context);
+            AppNavigator.toMyProfile(context);
           }),
           _menuTile(context, CupertinoIcons.group, 'About Team', () {
             Navigator.pop(context);
@@ -247,6 +272,10 @@ class CupertinoNavMenu extends StatelessWidget {
           _menuTile(context, CupertinoIcons.time, 'Action History', () {
             Navigator.pop(context);
             AppNavigator.toActionHistory(context);
+          }),
+          _menuTile(context, CupertinoIcons.person_circle, 'My Profile', () {
+            Navigator.pop(context);
+            AppNavigator.toMyProfile(context);
           }),
           _menuTile(context, CupertinoIcons.group, 'About Team', () {
             Navigator.pop(context);
