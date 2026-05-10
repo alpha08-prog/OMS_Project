@@ -34,10 +34,12 @@ import '../screens/admin/user_management_page.dart';
 import '../screens/admin/action_history_page.dart';
 import '../screens/admin/birthday_view_page.dart';
 import '../screens/profile/change_password_page.dart';
+import '../screens/profile/my_profile_page.dart';
 import '../screens/staff/staff_history_page.dart';
 import '../screens/history/history_page.dart';
 import '../screens/about/about_page.dart';
 import '../screens/calendar/calendar_page.dart';
+import '../screens/calendar/cupertino/cupertino_calendar_page.dart';
 import '../screens/tour/events_page.dart';
 import '../screens/tour/cupertino/cupertino_events_page.dart';
 import '../screens/tour/super_admin_events_hub_page.dart';
@@ -76,6 +78,7 @@ import '../screens/admin/cupertino/cupertino_user_management_page.dart';
 import '../screens/admin/cupertino/cupertino_action_history_page.dart';
 import '../screens/admin/cupertino/cupertino_birthday_view_page.dart';
 import '../screens/profile/cupertino/cupertino_change_password_page.dart';
+import '../screens/profile/cupertino/cupertino_my_profile_page.dart';
 import '../screens/staff/cupertino/cupertino_staff_history_page.dart';
 import '../screens/history/cupertino/cupertino_history_page.dart';
 import '../screens/about/cupertino/cupertino_about_page.dart';
@@ -456,7 +459,15 @@ class AppNavigator {
     push(
       context,
       () => CalendarPage(role: role),
-      () => CalendarPage(role: role), // Material-only for now
+      () => CupertinoCalendarPage(role: role),
+    );
+  }
+
+  static void toMyProfile(BuildContext context) {
+    push(
+      context,
+      () => const MyProfilePage(),
+      () => const CupertinoMyProfilePage(),
     );
   }
 

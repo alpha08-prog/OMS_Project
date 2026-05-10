@@ -25,6 +25,7 @@ class CupertinoNavMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAdmin = role == Roles.admin;
     final isStaff = role == Roles.staff;
+    final isSuperAdmin = role == Roles.superAdmin;
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('Menu'),
@@ -79,7 +80,9 @@ class CupertinoNavMenu extends StatelessWidget {
               ),
             ),
 
-            if (isAdmin)
+            if (isSuperAdmin)
+              ..._buildSuperAdminMenu(context)
+            else if (isAdmin)
               ..._buildAdminMenu(context)
             else if (isStaff)
               ..._buildStaffMenu(context)
@@ -113,6 +116,19 @@ class CupertinoNavMenu extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // SUPER_ADMIN: dashboard-only — drawer reduced to Dashboard + Logout.
+  // (Logout button is rendered separately below the menu sections.)
+  List<Widget> _buildSuperAdminMenu(BuildContext context) {
+    return [
+      CupertinoListSection.insetGrouped(
+        children: [
+          _menuTile(context, CupertinoIcons.square_grid_2x2_fill, 'Dashboard',
+              () => Navigator.pop(context)),
+        ],
+      ),
+    ];
   }
 
   // Curated staff menu — only the items shown in the spec.

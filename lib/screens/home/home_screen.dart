@@ -13,7 +13,6 @@ import 'package:anki_clone/screens/admin/train_queue_page.dart';
 import 'package:anki_clone/screens/admin/tour_queue_page.dart';
 import 'package:anki_clone/screens/admin/print_center_page.dart';
 import 'package:anki_clone/screens/admin/user_management_page.dart';
-import 'package:anki_clone/screens/profile/my_profile_page.dart';
 import 'package:anki_clone/screens/staff/staff_history_page.dart';
 
 import 'package:anki_clone/screens/admin/action_center_page.dart';
@@ -25,6 +24,7 @@ import '../../data/top_stories.dart';
 import '../../data/news_data.dart';
 import '../../widgets/story_card.dart';
 import '../../widgets/news_card.dart';
+import '../../widgets/grievance_donut_painter.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/http_service.dart';
@@ -1260,7 +1260,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 width: 110,
                 height: 110,
                 child: CustomPaint(
-                  painter: _DonutPainter(
+                  painter: GrievanceDonutPainter(
                     resolved: resolved.toDouble(),
                     inProgress: inProgress.toDouble(),
                     open: open.toDouble(),
@@ -3227,9 +3227,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }),
       _drawerItem(Icons.account_circle_outlined, "My Profile", onTap: () {
         Navigator.pop(context);
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const MyProfilePage(),
-        ));
+        AppNavigator.toMyProfile(context);
       }),
       _drawerItem(Icons.groups_outlined, "About Team", onTap: () {
         Navigator.pop(context);
@@ -3309,9 +3307,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }),
       _drawerItem(Icons.account_circle_outlined, "My Profile", onTap: () {
         Navigator.pop(context);
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const MyProfilePage(),
-        ));
+        AppNavigator.toMyProfile(context);
       }),
       const Divider(color: Colors.white30, indent: 16, endIndent: 16),
       _drawerItem(Icons.logout, "Logout", onTap: () async => _logout()),
@@ -3392,9 +3388,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }),
       _drawerItem(Icons.account_circle_outlined, "My Profile", onTap: () {
         Navigator.pop(context);
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const MyProfilePage(),
-        ));
+        AppNavigator.toMyProfile(context);
       }),
       const Divider(color: Colors.white30, indent: 16, endIndent: 16),
       _drawerItem(Icons.logout, "Logout", onTap: () async => _logout()),
@@ -3557,9 +3551,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }),
       _drawerItem(Icons.account_circle_outlined, "My Profile", onTap: () {
         Navigator.pop(context);
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const MyProfilePage(),
-        ));
+        AppNavigator.toMyProfile(context);
       }),
       _drawerItem(
         themeService.isDark ? Icons.light_mode : Icons.dark_mode,
@@ -3635,61 +3627,6 @@ class _AdminCardData {
     required this.buttonLabel,
     required this.onTap,
   });
-}
-
-class _DonutPainter extends CustomPainter {
-  final double resolved;
-  final double inProgress;
-  final double open;
-
-  _DonutPainter({
-    required this.resolved,
-    required this.inProgress,
-    required this.open,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final total = resolved + inProgress + open;
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width / 2) - 8;
-    final stroke = 14.0;
-
-    final bgPaint = Paint()
-      ..color = const Color(0xFFF1F5F9)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke;
-    canvas.drawCircle(center, radius, bgPaint);
-
-    if (total == 0) return;
-
-    final rect = Rect.fromCircle(center: center, radius: radius);
-    const startBase = -1.5708; // -90° in radians
-    double start = startBase;
-
-    void drawArc(double value, Color color) {
-      if (value <= 0) return;
-      final sweep = (value / total) * 6.2831853; // 2π
-      final paint = Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke
-        ..strokeCap = StrokeCap.butt;
-      canvas.drawArc(rect, start, sweep, false, paint);
-      start += sweep;
-    }
-
-    drawArc(resolved, const Color(0xFF16A34A));
-    drawArc(inProgress, const Color(0xFFD97706));
-    drawArc(open, const Color(0xFFEF4444));
-  }
-
-  @override
-  bool shouldRepaint(covariant _DonutPainter old) {
-    return old.resolved != resolved ||
-        old.inProgress != inProgress ||
-        old.open != open;
-  }
 }
 
 class _StaffEntry {
