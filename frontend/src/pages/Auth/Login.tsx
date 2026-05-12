@@ -190,10 +190,9 @@ export default function Login() {
               <div className="space-y-2.5">
                 <TextInput
                   id="identifier"
-                  label="Email / Employee ID"
+                  label="Email"
                   value={identifier}
                   onChange={setIdentifier}
-                  placeholder="you@domain.gov.in or EMP12345"
                   autoComplete="username"
                   error={errors.identifier}
                   className="bg-gray-50 border-gray-200 placeholder:text-gray-400 focus:bg-white focus:ring-amber-600 focus:border-amber-600"

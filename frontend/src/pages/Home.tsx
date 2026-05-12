@@ -132,14 +132,21 @@ const Home = () => {
             <div className="flex items-center gap-8">
               <div className="text-center">
                 <p className="text-2xl font-semibold text-white leading-none">
-                  {loading ? "—" : stats?.grievances.inProgress ?? 0}
+                  {loading
+                    ? "—"
+                    : (stats?.grievances.inProgress ?? 0) +
+                      (stats?.grievances.verified ?? 0)}
                 </p>
                 <p className="text-xs text-indigo-200 mt-2">In Progress</p>
               </div>
               <div className="w-px h-10 bg-white/20" />
               <div className="text-center">
                 <p className="text-2xl font-semibold text-white leading-none">
-                  {loading ? "—" : (stats?.tourPrograms.pending ?? 0) + (stats?.trainRequests.pending ?? 0)}
+                  {loading
+                    ? "—"
+                    : (stats?.grievances.pendingVerification ?? 0) +
+                      (stats?.tourPrograms.pending ?? 0) +
+                      (stats?.trainRequests.pending ?? 0)}
                 </p>
                 <p className="text-xs text-indigo-200 mt-2">Pending Actions</p>
               </div>

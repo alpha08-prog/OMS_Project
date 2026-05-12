@@ -13,8 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Upload } from "lucide-react";
-import { newsApi, type NewsPriority } from "@/lib/api";
+import { Upload, X } from "lucide-react";
+import { newsApi, uploadsApi, type NewsPriority } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 export default function NewsIntelligenceCreate() {
@@ -22,8 +22,7 @@ export default function NewsIntelligenceCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  // File-upload UI is gated as "Coming soon" — see upload section.
-  // Restore [file, setFile] tuple here to re-enable.
+  const [file, setFile] = useState<File | null>(null);
 
   const [formData, setFormData] = useState({
     headline: "",
@@ -85,9 +84,14 @@ export default function NewsIntelligenceCreate() {
         imageUrl: formData.imageUrl || undefined,
       });
 
-      // File upload is gated behind a "Coming soon" placeholder until
-      // Stratus is restored. Created without an attachment.
-      void created;
+      if (file) {
+        try {
+          await uploadsApi.upload(file, 'NEWS', created.id);
+        } catch (uploadErr: unknown) {
+          const msg = uploadErr instanceof Error ? uploadErr.message : 'attachment upload failed';
+          setError(`Intelligence saved, but attachment upload failed: ${msg}`);
+        }
+      }
 
       setSuccess(true);
       setTimeout(() => {
@@ -311,18 +315,50 @@ export default function NewsIntelligenceCreate() {
                         </p>
                       </div>
 
-                      <div
-                        className="border border-dashed border-slate-300 bg-slate-50/70 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center cursor-not-allowed select-none"
-                        aria-disabled="true"
-                      >
-                        <Upload className="h-6 w-6 text-slate-400" />
-                        <p className="text-sm font-medium text-slate-600">
-                          File uploads — Coming soon
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          You can submit without an attachment for now.
-                        </p>
-                      </div>
+                      {file ? (
+                        <div className="border border-indigo-200 bg-indigo-50/70 rounded-xl p-4 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-indigo-900 truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(file.size / 1024).toFixed(1)} KB · {file.type || 'unknown type'}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-slate-500 hover:text-red-600"
+                            onClick={() => setFile(null)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <label className="border border-dashed border-slate-300 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/40 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-colors">
+                          <Upload className="h-6 w-6 text-slate-400" />
+                          <p className="text-sm font-medium text-slate-700">
+                            Click to attach evidence
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Image or PDF, up to 10 MB. Optional.
+                          </p>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (!f) return;
+                              if (f.size > 10 * 1024 * 1024) {
+                                setError('File is larger than 10 MB.');
+                                return;
+                              }
+                              setFile(f);
+                              setError(null);
+                            }}
+                          />
+                        </label>
+                      )}
                     </section>
                   </div>
 
