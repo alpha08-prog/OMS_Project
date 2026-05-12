@@ -22,14 +22,45 @@ export function GrievanceChart() {
       try {
         const stats = await statsApi.getSummary();
         const grievances = stats.grievances;
-        const totalCount = grievances.total || 1; // Avoid division by zero
+
+        // Chart denominator excludes REJECTED and any other status not in the
+        // three visible buckets, so the percentages reflect 100% of what's
+        // shown rather than 100% of all-time records.
+        const completed = grievances.resolved;
+        const inProgress = grievances.inProgress + grievances.verified;
+        const open = grievances.open;
+        const shownTotal = completed + inProgress + open;
 
         setTotal(grievances.total);
-        setData([
-          { name: "Completed", value: Math.round((grievances.resolved / totalCount) * 100), color: "#22c55e" },
-          { name: "In Progress", value: Math.round(((grievances.inProgress + grievances.verified) / totalCount) * 100), color: "#f59e0b" },
-          { name: "Open", value: Math.round((grievances.open / totalCount) * 100), color: "#6366f1" },
-        ]);
+
+        const buckets = [
+          { name: "Completed", raw: completed, color: "#22c55e" },
+          { name: "In Progress", raw: inProgress, color: "#f59e0b" },
+          { name: "Open", raw: open, color: "#6366f1" },
+        ];
+
+        // Largest-remainder method: floor each share, then hand the leftover
+        // points to the buckets with the biggest fractional parts so the
+        // displayed percentages always sum to exactly 100.
+        const percentages = (() => {
+          if (shownTotal === 0) return buckets.map(() => 0);
+          const shares = buckets.map((b) => (b.raw / shownTotal) * 100);
+          const floors = shares.map((s) => Math.floor(s));
+          let remainder = 100 - floors.reduce((a, b) => a + b, 0);
+          const order = shares
+            .map((s, i) => ({ i, frac: s - Math.floor(s) }))
+            .sort((a, b) => b.frac - a.frac);
+          for (const { i } of order) {
+            if (remainder <= 0) break;
+            floors[i] += 1;
+            remainder -= 1;
+          }
+          return floors;
+        })();
+
+        setData(
+          buckets.map((b, i) => ({ name: b.name, value: percentages[i], color: b.color }))
+        );
       } catch (error) {
         console.error('Failed to fetch grievance stats:', error);
       } finally {

@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { FileDown, Info, Upload, X } from "lucide-react";
-import { tourProgramApi, pdfApi, uploadsApi } from "@/lib/api";
+import { Info, Upload, X } from "lucide-react";
+import { tourProgramApi, uploadsApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 
 export default function TourProgramCreate() {
@@ -14,25 +14,8 @@ export default function TourProgramCreate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
-  // Downloads the upcoming-week tour schedule PDF (every accepted tour event
-  // from today through +7 days). Backend default window matches this — the
-  // generated PDF won't include the entry currently being typed because that
-  // entry isn't saved/accepted yet.
-  const handleExportPdf = async () => {
-    setError(null);
-    setExporting(true);
-    try {
-      await pdfApi.downloadTourProgram();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to export tour program PDF';
-      setError(msg.includes('404') ? 'No accepted events found for the next 7 days.' : msg);
-    } finally {
-      setExporting(false);
-    }
-  };
   const [formData, setFormData] = useState({
     eventName: "",
     organizer: "",
@@ -362,18 +345,6 @@ export default function TourProgramCreate() {
                     {/* Action Buttons */}
                     <div className="border-t pt-4 space-y-3">
                       <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full flex items-center gap-2"
-                        onClick={handleExportPdf}
-                        disabled={exporting}
-                        title="Downloads the schedule of every accepted tour event in the next 7 days. The entry you're typing right now isn't included until it's saved and accepted."
-                      >
-                        <FileDown className="h-4 w-4" />
-                        {exporting ? 'Generating PDF...' : 'Export Tour Program PDF'}
-                      </Button>
-
-                      <Button 
                         type="button" 
                         variant="outline" 
                         className="w-full"
