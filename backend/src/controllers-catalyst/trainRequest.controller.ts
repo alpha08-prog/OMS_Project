@@ -42,8 +42,6 @@ const PASSENGER_TABLE = 'TrainPassenger';
 
 const VALID_BOOKING_TYPES = new Set([
   'GENERAL',
-  'TATKAL',
-  'PREMIUM_TATKAL',
   'LADIES',
   'LOWER_BERTH',
   'DUTY_PASS',

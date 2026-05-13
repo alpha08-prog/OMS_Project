@@ -28,7 +28,7 @@ import {
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
 import { getCachedTableList, isHiddenTestUser } from '../lib/catalyst-user-lookup';
-import { emitNotifications } from './notification.controller';
+import { emitNotification, emitNotifications } from './notification.controller';
 import {
   sendSuccess,
   sendError,
@@ -836,6 +836,28 @@ export async function updateTaskProgress(
     }
 
     const updated = await updateRow(TASK_TABLE, updateData as any);
+
+    // Staff just resolved the task -> notify the admin who assigned it so they
+    // know it's done without having to poll the tracker. Best-effort, like the
+    // assignment notification: emit helper swallows errors.
+    if (
+      status === 'COMPLETED' &&
+      req.user.role === 'STAFF' &&
+      existing.assignedById
+    ) {
+      const resolverName = req.user.name || 'A staff member';
+      const taskTitle = String(existing.title ?? 'Task');
+      await emitNotification({
+        recipientId: String(existing.assignedById),
+        type: 'TASK_RESOLVED',
+        title: `Task resolved: ${taskTitle}`,
+        body: `${resolverName} marked "${taskTitle}" as resolved.`,
+        link: '/admin/tasks',
+        referenceId: id,
+        referenceType: 'TASK',
+      });
+    }
+
     const [shaped] = await attachUsers([updated]);
     const historyMap = await recentHistoryByTaskId([id], 10);
     shaped.progressHistory = historyMap.get(id) ?? [];

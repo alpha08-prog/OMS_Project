@@ -97,7 +97,7 @@ async function main() {
     toStation: 'HWH (Howrah)',
     route: 'NDLS-HWH',
     boardingPoint: 'NDLS',
-    bookingType: 'TATKAL',
+    bookingType: 'GENERAL',
     contactNumber: '9876543210',
     referencedBy: 'MLA Office',
     remarks: 'Urgent travel for family',
@@ -109,7 +109,7 @@ async function main() {
   check('Create returns 201', create.status === 201, `got ${create.status}, body: ${JSON.stringify(create.body).substring(0, 200)}`);
   check('Has Catalyst-style ROWID', typeof create.body?.data?.id === 'string' && /^\d+$/.test(create.body.data.id));
   check('Default status = PENDING', create.body?.data?.status === 'PENDING');
-  check('bookingType = TATKAL', create.body?.data?.bookingType === 'TATKAL');
+  check('bookingType = GENERAL', create.body?.data?.bookingType === 'GENERAL');
   check('route mapped (frontend↔Catalyst)', create.body?.data?.route === 'NDLS-HWH');
   check('createdById = STAFF', create.body?.data?.createdById === STAFF.id);
   check('Has 2 passengers', Array.isArray(create.body?.data?.train_passengers) && create.body.data.train_passengers.length === 2);

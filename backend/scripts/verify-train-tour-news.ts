@@ -70,7 +70,7 @@ function header(label: string) {
     toStation: 'BPL (Bhopal)',
     route: 'NDLS-BPL',
     boardingPoint: 'NDLS',
-    bookingType: 'TATKAL',
+    bookingType: 'GENERAL',
     contactNumber: '9876543210',
     referencedBy: 'MLA Office',
     remarks: 'Family travel for medical emergency',

@@ -167,6 +167,29 @@ export default function StaffTasks() {
     }
   };
 
+  // Resolve Task flips an IN_PROGRESS (or ON_HOLD) task straight to COMPLETED
+  // without opening the Update Progress dialog. Confirms first so a stray
+  // click doesn't accidentally close out a task. Backend stamps completedAt
+  // and notifies the admin who assigned the task.
+  const handleResolveTask = async (task: TaskAssignment) => {
+    const ok = window.confirm(
+      `Mark "${task.title}" as resolved? The admin will be notified.`
+    );
+    if (!ok) return;
+    setUpdating(true);
+    try {
+      await taskApi.updateProgress(task.id, {
+        status: 'COMPLETED',
+        progressNotes: 'Task resolved by staff',
+      });
+      await fetchTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resolve task');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const formatDateTime = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('en-IN', {
       day: 'numeric',
@@ -469,12 +492,15 @@ export default function StaffTasks() {
 
                         <div className="flex flex-col gap-2">
                           {/*
-                            Action button is mutually exclusive based on status:
+                            Action buttons by status:
                             - ASSIGNED  -> Start Task (Update Progress is intentionally
                               hidden until the task is actually started, so progress
                               entries always belong to a started task).
-                            - IN_PROGRESS / ON_HOLD -> Update Progress.
-                            - COMPLETED -> neither (no further action available).
+                            - IN_PROGRESS / ON_HOLD -> Update Progress + Resolve.
+                              Resolve flips status to COMPLETED in one click and
+                              fires a TASK_RESOLVED notification to the admin who
+                              assigned the task.
+                            - COMPLETED -> no further action available.
                           */}
                           {task.status === 'ASSIGNED' ? (
                             <Button
@@ -486,13 +512,25 @@ export default function StaffTasks() {
                               {updating ? 'Starting…' : 'Start Task'}
                             </Button>
                           ) : task.status !== 'COMPLETED' && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleOpenUpdate(task)}
-                            >
-                              Update Progress
-                              <ArrowRight className="h-4 w-4 ml-1" />
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                onClick={() => handleOpenUpdate(task)}
+                              >
+                                Update Progress
+                                <ArrowRight className="h-4 w-4 ml-1" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={updating}
+                                onClick={() => handleResolveTask(task)}
+                                className="border-green-300 bg-green-50 text-green-800 hover:bg-green-100 hover:text-green-900"
+                              >
+                                <CheckCircle2 className="h-4 w-4 mr-1" />
+                                {updating ? 'Resolving…' : 'Resolve'}
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -573,25 +611,33 @@ export default function StaffTasks() {
                 />
               </div>
               
-              <div className="flex gap-2 pt-4 border-t">
-                <Button variant="outline" onClick={() => setUpdateDialogOpen(false)} className="flex-1">
+              <div className="flex flex-wrap gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => setUpdateDialogOpen(false)} className="flex-1 min-w-[100px]">
                   Cancel
                 </Button>
-                <Button 
+                <Button
                   variant="outline"
                   onClick={() => handleUpdateProgress('ON_HOLD')}
                   disabled={updating}
-                  className="flex-1"
+                  className="flex-1 min-w-[100px]"
                 >
                   <PauseCircle className="h-4 w-4 mr-1" />
                   Put On Hold
                 </Button>
-                <Button 
+                <Button
                   onClick={() => handleUpdateProgress()}
                   disabled={updating || !progressNotes.trim()}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                  className="flex-1 min-w-[100px] bg-indigo-600 hover:bg-indigo-700"
                 >
                   {updating ? "Saving..." : "Add Update"}
+                </Button>
+                <Button
+                  onClick={() => handleUpdateProgress('COMPLETED')}
+                  disabled={updating}
+                  className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700"
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                  {updating ? "Resolving..." : "Mark Resolved"}
                 </Button>
               </div>
             </div>
