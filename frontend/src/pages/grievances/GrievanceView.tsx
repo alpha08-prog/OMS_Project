@@ -148,6 +148,7 @@ export default function GrievanceView() {
         g.petitionerName.toLowerCase().includes(query) ||
         g.mobileNumber.includes(query) ||
         g.constituency.toLowerCase().includes(query) ||
+        (g.wardVillage || '').toLowerCase().includes(query) ||
         g.grievanceType.toLowerCase().includes(query)
       );
     }
@@ -225,7 +226,7 @@ export default function GrievanceView() {
             <Card className="rounded-2xl border border-indigo-100">
               <CardContent className="flex flex-wrap items-center gap-4 py-4">
                 <Input
-                  placeholder="Search by name, phone, constituency..."
+                  placeholder="Search by name, phone, constituency, ward/village..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="max-w-sm"
@@ -302,7 +303,8 @@ export default function GrievanceView() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {g.grievanceType} • {g.constituency} • {formatCurrency(g.monetaryValue)}
+                            {g.grievanceType} • {g.constituency}
+                            {g.wardVillage ? ` / ${g.wardVillage}` : ''} • {formatCurrency(g.monetaryValue)}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
                             📞 {g.mobileNumber} • Created: {formatDate(g.createdAt)}
@@ -389,6 +391,10 @@ export default function GrievanceView() {
                   <div>
                     <p className="text-sm text-muted-foreground">Constituency</p>
                     <p className="font-medium">{selectedGrievance.constituency}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Ward / Village</p>
+                    <p className="font-medium">{selectedGrievance.wardVillage || 'Not provided'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Grievance Type</p>

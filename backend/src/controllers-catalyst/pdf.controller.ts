@@ -440,6 +440,7 @@ export async function generateGrievancePDF(
         petitionerName: String(row.petitionerName),
         mobileNumber: String(row.mobileNumber),
         constituency: String(row.constituency),
+        wardVillage: row.wardVillage ? String(row.wardVillage) : undefined,
         grievanceType: grievanceType.replace(/_/g, ' '),
         description: String(row.description),
         actionRequired: ACTION_MAP[actionRequired] || actionRequired,
@@ -540,6 +541,7 @@ export async function previewGrievance(
       <li>Name: ${String(row.petitionerName)}</li>
       <li>Mobile: ${String(row.mobileNumber)}</li>
       <li>Constituency: ${String(row.constituency)}</li>
+      ${row.wardVillage ? `<li>Ward/Village: ${String(row.wardVillage)}</li>` : ''}
     </ul>
 
     <p><strong>Grievance Details:</strong></p>

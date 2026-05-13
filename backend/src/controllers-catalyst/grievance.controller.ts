@@ -115,6 +115,7 @@ function shapeGrievance(
     petitionerName: row.petitionerName,
     mobileNumber: row.mobileNumber,
     constituency: row.constituency,
+    wardVillage: row.wardVillage ?? null,
     grievanceType: row.grievanceType,
     description: row.description,
     monetaryValue: parseNumber(row.monetaryValue),
@@ -193,6 +194,7 @@ export async function createGrievance(
       petitionerName,
       mobileNumber,
       constituency,
+      wardVillage,
       grievanceType,
       description,
       monetaryValue,
@@ -223,7 +225,7 @@ export async function createGrievance(
       return;
     }
 
-    const row = await insertRow(GRIEVANCE_TABLE, {
+    const grievancePayload: Record<string, unknown> = {
       petitionerName,
       mobileNumber,
       constituency,
@@ -250,7 +252,12 @@ export async function createGrievance(
       // `priorities`. Translate frontend `priority` -> stored `priorities`.
       priorities: finalPriority,
       source: finalSource,
-    });
+    };
+    if (typeof wardVillage === 'string' && wardVillage.trim()) {
+      grievancePayload.wardVillage = wardVillage.trim();
+    }
+
+    const row = await insertRow(GRIEVANCE_TABLE, grievancePayload);
 
     invalidateStatCaches();
     const [shaped] = await attachUsers([row]);

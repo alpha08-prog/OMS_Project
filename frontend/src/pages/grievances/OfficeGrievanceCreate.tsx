@@ -29,6 +29,7 @@ export default function OfficeGrievanceCreate() {
     petitionerName: "",
     mobileNumber: "",
     constituency: "",
+    wardVillage: "",
     grievanceType: "" as GrievanceType | "",
     description: "",
     monetaryValue: "",
@@ -85,6 +86,7 @@ export default function OfficeGrievanceCreate() {
         petitionerName: formData.petitionerName,
         mobileNumber: formData.mobileNumber,
         constituency: formData.constituency,
+        wardVillage: formData.wardVillage.trim() || undefined,
         grievanceType: formData.grievanceType as GrievanceType,
         description: formData.description,
         monetaryValue: formData.monetaryValue ? parseFloat(formData.monetaryValue) : undefined,
@@ -259,6 +261,15 @@ export default function OfficeGrievanceCreate() {
                               <SelectItem value="OTHER">Other</SelectItem>
                             </SelectContent>
                           </Select>
+                        </div>
+
+                        <div>
+                          <Label>Ward / Village</Label>
+                          <Input
+                            placeholder="Enter ward or village"
+                            value={formData.wardVillage}
+                            onChange={(e) => handleChange("wardVillage", e.target.value)}
+                          />
                         </div>
 
                         <div>

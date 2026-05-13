@@ -52,6 +52,8 @@ function shapeVisitor(
     dob: row.dob ?? null,
     purpose: row.purpose,
     referencedBy: row.referencedBy,
+    constituency: row.constituency ?? null,
+    wardVillage: row.wardVillage ?? null,
     visitDate: row.visitDate,
     createdById: row.createdById,
     createdAt: row.CREATEDTIME,
@@ -103,9 +105,9 @@ export async function createVisitor(
       return;
     }
 
-    const { name, designation, phone, dob, purpose, referencedBy, visitDate } = req.body;
+    const { name, designation, phone, dob, purpose, referencedBy, visitDate, constituency, wardVillage } = req.body;
 
-    const row = await insertRow(VISITOR_TABLE, {
+    const payload: Record<string, unknown> = {
       name,
       designation,
       phone,
@@ -114,7 +116,11 @@ export async function createVisitor(
       referencedBy,
       visitDate: toCatalystDate(visitDate) || toCatalystDate(new Date()),
       createdById: req.user.id,
-    });
+    };
+    if (constituency) payload.constituency = constituency;
+    if (wardVillage) payload.wardVillage = wardVillage;
+
+    const row = await insertRow(VISITOR_TABLE, payload);
 
     const [shaped] = await attachCreators([row]);
     sendSuccess(res, shaped, 'Visitor logged successfully', 201);
@@ -276,7 +282,7 @@ export async function updateVisitor(
 ): Promise<void> {
   try {
     const { id } = req.params;
-    const { name, designation, phone, dob, purpose, referencedBy, visitDate } = req.body;
+    const { name, designation, phone, dob, purpose, referencedBy, visitDate, constituency, wardVillage } = req.body;
 
     const updateData: Record<string, unknown> = { ROWID: id };
     if (name !== undefined) updateData.name = name;
@@ -286,6 +292,8 @@ export async function updateVisitor(
     if (purpose !== undefined) updateData.purpose = purpose;
     if (referencedBy !== undefined) updateData.referencedBy = referencedBy;
     if (visitDate !== undefined) updateData.visitDate = toCatalystDate(visitDate);
+    if (constituency !== undefined) updateData.constituency = constituency;
+    if (wardVillage !== undefined) updateData.wardVillage = wardVillage;
 
     const updated = await updateRow(VISITOR_TABLE, updateData as any);
     const [shaped] = await attachCreators([updated]);

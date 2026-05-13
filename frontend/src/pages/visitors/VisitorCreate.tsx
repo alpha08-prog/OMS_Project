@@ -28,6 +28,8 @@ export default function VisitorCreate() {
     dob: "",
     purpose: "",
     referencedBy: "",
+    constituency: "",
+    wardVillage: "",
   });
 
   const handleChange = (field: string, value: string) => {
@@ -70,6 +72,8 @@ export default function VisitorCreate() {
         dob: formData.dob || undefined,
         purpose: formData.purpose,
         referencedBy: formData.referencedBy || undefined,
+        constituency: formData.constituency || undefined,
+        wardVillage: formData.wardVillage.trim() || undefined,
       });
 
       setSuccess(true);
@@ -171,12 +175,52 @@ export default function VisitorCreate() {
 
                       <div>
                         <Label>Phone Number</Label>
-                        <Input 
-                          placeholder="10-digit mobile number" 
+                        <Input
+                          placeholder="10-digit mobile number"
                           value={formData.phone}
                           onChange={(e) => handleChange("phone", e.target.value)}
                           maxLength={10}
                         />
+                      </div>
+                    </section>
+
+                    {/* Location */}
+                    <section className="space-y-4">
+                      <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
+                        Location
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Constituency</Label>
+                          <Select
+                            value={formData.constituency}
+                            onValueChange={(v) => handleChange("constituency", v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select constituency" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Navalgund">Navalgund</SelectItem>
+                              <SelectItem value="Kundgol">Kundgol</SelectItem>
+                              <SelectItem value="Hubli-Dharwad East">Hubli-Dharwad East</SelectItem>
+                              <SelectItem value="Hubli-Dharwad Central">Hubli-Dharwad Central</SelectItem>
+                              <SelectItem value="Dharwad West">Dharwad West</SelectItem>
+                              <SelectItem value="Kalaghatagi">Kalaghatagi</SelectItem>
+                              <SelectItem value="Shiggaon">Shiggaon</SelectItem>
+                              <SelectItem value="Out of Constituency">Out of Constituency</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <Label>Ward / Village</Label>
+                          <Input
+                            placeholder="Enter ward or village"
+                            value={formData.wardVillage}
+                            onChange={(e) => handleChange("wardVillage", e.target.value)}
+                          />
+                        </div>
                       </div>
                     </section>
 

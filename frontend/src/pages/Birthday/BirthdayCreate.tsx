@@ -28,6 +28,8 @@ export default function BirthdayCreate() {
     dob: "",
     relation: "",
     notes: "",
+    constituency: "",
+    wardVillage: "",
   });
 
   const handleChange = (field: string, value: string) => {
@@ -64,6 +66,8 @@ export default function BirthdayCreate() {
         dob: formData.dob,
         relation: formData.relation,
         notes: formData.notes || undefined,
+        constituency: formData.constituency || undefined,
+        wardVillage: formData.wardVillage.trim() || undefined,
       });
 
       setSuccess(true);
@@ -196,6 +200,40 @@ export default function BirthdayCreate() {
                         <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  {/* Constituency */}
+                  <div className="space-y-2">
+                    <Label>Constituency</Label>
+                    <Select
+                      value={formData.constituency}
+                      onValueChange={(v) => handleChange("constituency", v)}
+                    >
+                      <SelectTrigger className="border-pink-200 focus:border-pink-400">
+                        <SelectValue placeholder="Select constituency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Navalgund">Navalgund</SelectItem>
+                        <SelectItem value="Kundgol">Kundgol</SelectItem>
+                        <SelectItem value="Hubli-Dharwad East">Hubli-Dharwad East</SelectItem>
+                        <SelectItem value="Hubli-Dharwad Central">Hubli-Dharwad Central</SelectItem>
+                        <SelectItem value="Dharwad West">Dharwad West</SelectItem>
+                        <SelectItem value="Kalaghatagi">Kalaghatagi</SelectItem>
+                        <SelectItem value="Shiggaon">Shiggaon</SelectItem>
+                        <SelectItem value="Out of Constituency">Out of Constituency</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Ward / Village */}
+                  <div className="space-y-2">
+                    <Label>Ward / Village</Label>
+                    <Input
+                      placeholder="Enter ward or village"
+                      value={formData.wardVillage}
+                      onChange={(e) => handleChange("wardVillage", e.target.value)}
+                      className="border-pink-200 focus:border-pink-400"
+                    />
                   </div>
 
                   {/* Notes */}

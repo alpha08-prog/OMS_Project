@@ -30,6 +30,7 @@ export default function GrievanceCreate() {
     petitionerName: "",
     mobileNumber: "",
     constituency: "",
+    wardVillage: "",
     grievanceType: "" as GrievanceType | "",
     description: "",
     monetaryValue: "",
@@ -85,6 +86,7 @@ export default function GrievanceCreate() {
         petitionerName: formData.petitionerName,
         mobileNumber: formData.mobileNumber,
         constituency: formData.constituency,
+        wardVillage: formData.wardVillage.trim() || undefined,
         grievanceType: formData.grievanceType as GrievanceType,
         description: formData.description,
         monetaryValue: formData.monetaryValue ? parseFloat(formData.monetaryValue) : undefined,
@@ -213,23 +215,34 @@ export default function GrievanceCreate() {
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <Label>Constituency / Ward <span className="text-red-500">*</span></Label>
-                          <Select 
-                            value={formData.constituency} 
+                          <Label>Constituency <span className="text-red-500">*</span></Label>
+                          <Select
+                            value={formData.constituency}
                             onValueChange={(v) => handleChange("constituency", v)}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select constituency" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Central">Central</SelectItem>
-                              <SelectItem value="West Zone">West Zone</SelectItem>
-                              <SelectItem value="East Division">East Division</SelectItem>
-                              <SelectItem value="Ward 5">Ward 5</SelectItem>
-                              <SelectItem value="Ward 12">Ward 12</SelectItem>
-                              <SelectItem value="Ward 15">Ward 15</SelectItem>
+                              <SelectItem value="Navalgund">Navalgund</SelectItem>
+                              <SelectItem value="Kundgol">Kundgol</SelectItem>
+                              <SelectItem value="Hubli-Dharwad East">Hubli-Dharwad East</SelectItem>
+                              <SelectItem value="Hubli-Dharwad Central">Hubli-Dharwad Central</SelectItem>
+                              <SelectItem value="Dharwad West">Dharwad West</SelectItem>
+                              <SelectItem value="Kalaghatagi">Kalaghatagi</SelectItem>
+                              <SelectItem value="Shiggaon">Shiggaon</SelectItem>
+                              <SelectItem value="Out of Constituency">Out of Constituency</SelectItem>
                             </SelectContent>
                           </Select>
+                        </div>
+
+                        <div>
+                          <Label>Ward / Village</Label>
+                          <Input
+                            placeholder="Enter ward or village"
+                            value={formData.wardVillage}
+                            onChange={(e) => handleChange("wardVillage", e.target.value)}
+                          />
                         </div>
 
                         <div>
@@ -413,10 +426,6 @@ export default function GrievanceCreate() {
                         <div className="inline-flex items-center px-4 py-2 rounded-lg bg-green-100 text-green-800 text-sm font-semibold border border-green-200">
                           OPEN
                         </div>
-
-                        <p className="text-xs text-muted-foreground">
-                          Status is automatically set and managed by Admin
-                        </p>
                       </section>
 
                       {/* Actions */}

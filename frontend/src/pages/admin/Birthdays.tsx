@@ -369,6 +369,12 @@ export default function Birthdays() {
                               <Phone className="h-3 w-3" /> {b.phone}
                             </p>
                           )}
+                          {(b.constituency || b.wardVillage) && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {b.constituency || 'N/A'}
+                              {b.wardVillage ? ` / ${b.wardVillage}` : ''}
+                            </p>
+                          )}
                           {b.notes && (
                             <p className="text-sm text-muted-foreground mt-1 break-words">{b.notes}</p>
                           )}

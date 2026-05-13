@@ -90,6 +90,7 @@ interface GrievanceLetter {
   petitionerName: string;
   mobileNumber: string;
   constituency: string;
+  wardVillage?: string;
   grievanceType: string;
   description: string;
   actionRequired: string;
@@ -608,12 +609,13 @@ export function generateGrievanceLetter(data: GrievanceLetter, res: Response): v
 
   y += 20;
 
+  const wardVillageLine = data.wardVillage ? `\n• Ward/Village: ${data.wardVillage}` : '';
   const bodyText = `I am writing to bring to your attention a grievance received at our office that requires your immediate attention and action.
 
 Petitioner Details:
 • Name: ${data.petitionerName}
 • Mobile: ${data.mobileNumber}
-• Constituency: ${data.constituency}
+• Constituency: ${data.constituency}${wardVillageLine}
 
 Grievance Details:
 • Type: ${data.grievanceType}

@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { trainRequestApi, pdfApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { Plus, X, AlertTriangle, Users, Download, Eye } from "lucide-react";
@@ -797,21 +796,7 @@ export default function TrainEQCreate() {
                         Letter Options
                       </h3>
 
-                      <div className="flex items-start gap-3">
-                        <Checkbox 
-                          id="digital-sign" 
-                          checked={formData.attachSignature}
-                          onCheckedChange={(checked) => handleChange("attachSignature", checked as boolean)}
-                        />
-                        <div className="text-sm">
-                          <Label htmlFor="digital-sign">
-                            Attach Digital Signature
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Appends Minister's stored digital signature to the PDF
-                          </p>
-                        </div>
-                      </div>
+                      
                     </section>
 
                     <section className="text-xs text-muted-foreground">

@@ -9,7 +9,7 @@ import {
   previewTrainEQ,
   previewGrievance,
 } from '../controllers-catalyst/pdf.controller';
-import { authenticate, adminOnly, staffOnly } from '../middleware/auth';
+import { authenticate, staffOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
 const router = Router();
@@ -27,8 +27,8 @@ router.get('/train-eq/:id', staffOnly, validate(idParamValidation), generateTrai
 router.get('/train-eq/:id/preview', staffOnly, validate(idParamValidation), previewTrainEQ);
 router.get('/grievance/:id', staffOnly, validate(idParamValidation), generateGrievancePDF);
 router.get('/grievance/:id/preview', staffOnly, validate(idParamValidation), previewGrievance);
-router.get('/tour-program', adminOnly, generateTourProgramPDFController);
-router.get('/tour-program/:id', adminOnly, validate(idParamValidation), generateTourProgramSinglePDF);
-router.get('/tour-program/:id/preview', adminOnly, validate(idParamValidation), previewTourProgram);
+router.get('/tour-program', staffOnly, generateTourProgramPDFController);
+router.get('/tour-program/:id', staffOnly, validate(idParamValidation), generateTourProgramSinglePDF);
+router.get('/tour-program/:id/preview', staffOnly, validate(idParamValidation), previewTourProgram);
 
 export default router;
