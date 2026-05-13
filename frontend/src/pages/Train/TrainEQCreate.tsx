@@ -15,11 +15,8 @@ import { trainRequestApi, pdfApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { Plus, X, AlertTriangle, Users, Download, Eye } from "lucide-react";
 
-// Passenger limit constants
+// Passenger limit constant
 const MAX_PASSENGERS_GENERAL = 6;
-const MAX_PASSENGERS_TATKAL = 4;
-
-type BookingType = 'GENERAL' | 'TATKAL';
 
 export default function TrainEQCreate() {
   const navigate = useNavigate();
@@ -31,9 +28,6 @@ export default function TrainEQCreate() {
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pnrLoading, setPnrLoading] = useState(false);
-  
-  // Booking type for passenger limit
-  const [bookingType, setBookingType] = useState<BookingType>('GENERAL');
 
   // Per-passenger row capturing the fields the EQ letter needs.
   // Gender/Age populate the Sex/Age column; waitlist populates W/L.
@@ -60,19 +54,13 @@ export default function TrainEQCreate() {
     attachSignature: false,
   });
   
-  // Get max passengers based on booking type
-  const getMaxPassengers = () => {
-    return bookingType === 'TATKAL' ? MAX_PASSENGERS_TATKAL : MAX_PASSENGERS_GENERAL;
-  };
-  
   // Add new passenger
   const addPassenger = () => {
-    const maxPassengers = getMaxPassengers();
-    if (passengers.length < maxPassengers) {
+    if (passengers.length < MAX_PASSENGERS_GENERAL) {
       setPassengers([...passengers, emptyPassenger()]);
       setError(null);
     } else {
-      setError(`Maximum ${maxPassengers} passengers allowed for ${bookingType === 'TATKAL' ? 'Tatkal' : 'General'} bookings`);
+      setError(`Maximum ${MAX_PASSENGERS_GENERAL} passengers allowed for General bookings`);
     }
   };
 
@@ -98,18 +86,6 @@ export default function TrainEQCreate() {
     setError(null);
   };
   
-  // Handle booking type change
-  const handleBookingTypeChange = (type: BookingType) => {
-    const maxPassengers = type === 'TATKAL' ? MAX_PASSENGERS_TATKAL : MAX_PASSENGERS_GENERAL;
-    setBookingType(type);
-    
-    // Trim passengers if exceeding new limit
-    if (passengers.length > maxPassengers) {
-      setPassengers(passengers.slice(0, maxPassengers));
-      setError(`Passenger list reduced to ${maxPassengers} for ${type === 'TATKAL' ? 'Tatkal' : 'General'} bookings`);
-    }
-  };
-
   const handleChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setError(null);
@@ -266,9 +242,8 @@ export default function TrainEQCreate() {
     }
 
     // Check passenger limit
-    const maxPassengers = getMaxPassengers();
-    if (validPassengers.length > maxPassengers) {
-      setError(`Maximum ${maxPassengers} passengers allowed for ${bookingType === 'TATKAL' ? 'Tatkal' : 'General'} bookings`);
+    if (validPassengers.length > MAX_PASSENGERS_GENERAL) {
+      setError(`Maximum ${MAX_PASSENGERS_GENERAL} passengers allowed for General bookings`);
       setLoading(false);
       return;
     }
@@ -462,95 +437,31 @@ export default function TrainEQCreate() {
                   {/* LEFT COLUMN — FORM */}
                   <div className="xl:col-span-2 space-y-8">
 
-                    {/* Booking Type Selection */}
-                    <section className="space-y-4">
-                      <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
-                        Booking Type
-                      </h3>
-                      
-                      <div className="flex gap-4">
-                        <div 
-                          className={`flex-1 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                            bookingType === 'GENERAL' 
-                              ? 'border-indigo-500 bg-indigo-50' 
-                              : 'border-gray-200 hover:border-indigo-200'
-                          }`}
-                          onClick={() => handleBookingTypeChange('GENERAL')}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded-full border-2 ${
-                              bookingType === 'GENERAL' ? 'border-indigo-500 bg-indigo-500' : 'border-gray-400'
-                            }`}>
-                              {bookingType === 'GENERAL' && (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-medium">General Booking</p>
-                              <p className="text-xs text-muted-foreground">Up to {MAX_PASSENGERS_GENERAL} passengers per PNR</p>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div 
-                          className={`flex-1 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                            bookingType === 'TATKAL' 
-                              ? 'border-amber-500 bg-amber-50' 
-                              : 'border-gray-200 hover:border-amber-200'
-                          }`}
-                          onClick={() => handleBookingTypeChange('TATKAL')}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded-full border-2 ${
-                              bookingType === 'TATKAL' ? 'border-amber-500 bg-amber-500' : 'border-gray-400'
-                            }`}>
-                              {bookingType === 'TATKAL' && (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-medium">Tatkal Booking</p>
-                              <p className="text-xs text-muted-foreground">Up to {MAX_PASSENGERS_TATKAL} passengers per PNR</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </section>
-
                     {/* Passenger Information */}
                     <section className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-2">
                           <Users className="h-4 w-4" />
-                          Passenger Information ({passengers.length}/{getMaxPassengers()})
+                          Passenger Information ({passengers.length}/{MAX_PASSENGERS_GENERAL})
                         </h3>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           onClick={addPassenger}
-                          disabled={passengers.length >= getMaxPassengers()}
+                          disabled={passengers.length >= MAX_PASSENGERS_GENERAL}
                           className="gap-1"
                         >
                           <Plus className="h-4 w-4" />
                           Add Passenger
                         </Button>
                       </div>
-                      
+
                       {/* Passenger limit info */}
-                      <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${
-                        bookingType === 'TATKAL' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'
-                      }`}>
+                      <div className="flex items-center gap-2 text-sm p-3 rounded-lg bg-blue-50 text-blue-800">
                         <AlertTriangle className="h-4 w-4" />
                         <span>
-                          {bookingType === 'TATKAL' 
-                            ? `Tatkal bookings allow maximum ${MAX_PASSENGERS_TATKAL} passengers per PNR`
-                            : `General bookings (AC/Non-AC) allow maximum ${MAX_PASSENGERS_GENERAL} passengers per PNR`
-                          }
+                          General bookings (AC/Non-AC) allow maximum {MAX_PASSENGERS_GENERAL} passengers per PNR
                         </span>
                       </div>
                       
