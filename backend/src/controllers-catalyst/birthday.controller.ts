@@ -45,6 +45,8 @@ function shapeBirthday(
     relation: row.relation,
     notes: row.notes ?? null,
     designation: row.designation ?? null,
+    constituency: row.constituency ?? null,
+    wardVillage: row.wardVillage ?? null,
     createdAt: row.CREATEDTIME,
     updatedAt: row.MODIFIEDTIME,
     createdById: row.createdById,
@@ -100,7 +102,7 @@ export async function createBirthday(
       sendError(res, 'Not authenticated', 401);
       return;
     }
-    const { name, phone, dob, relation, notes, designation } = req.body;
+    const { name, phone, dob, relation, notes, designation, constituency, wardVillage } = req.body;
 
     // Duplicate check (case-insensitive name match) — done in JS.
     const all = await listAllRows(BIRTHDAY_TABLE);
@@ -110,7 +112,7 @@ export async function createBirthday(
       return;
     }
 
-    const row = await insertRow(BIRTHDAY_TABLE, {
+    const payload: Record<string, unknown> = {
       name,
       phone: phone?.trim() || null,
       dob: toCatalystDate(dob),
@@ -118,7 +120,11 @@ export async function createBirthday(
       notes: notes?.trim() || null,
       designation: designation?.trim() || null,
       createdById: req.user.id,
-    });
+    };
+    if (constituency?.trim()) payload.constituency = constituency.trim();
+    if (wardVillage?.trim()) payload.wardVillage = wardVillage.trim();
+
+    const row = await insertRow(BIRTHDAY_TABLE, payload);
 
     const [shaped] = await hydrate([row]);
     sendSuccess(res, shaped, 'Birthday entry created successfully', 201);
@@ -289,7 +295,7 @@ export async function updateBirthday(
 ): Promise<void> {
   try {
     const { id } = req.params;
-    const { name, phone, dob, relation, notes, designation } = req.body;
+    const { name, phone, dob, relation, notes, designation, constituency, wardVillage } = req.body;
 
     const existing = await getRow(BIRTHDAY_TABLE, id);
     if (!existing) {
@@ -305,6 +311,10 @@ export async function updateBirthday(
     if (notes !== undefined) updateData.notes = notes?.trim() || null;
     if (designation !== undefined)
       updateData.designation = designation?.trim() || null;
+    if (constituency !== undefined)
+      updateData.constituency = constituency?.trim() || null;
+    if (wardVillage !== undefined)
+      updateData.wardVillage = wardVillage?.trim() || null;
 
     const updated = await updateRow(BIRTHDAY_TABLE, updateData as any);
     const [shaped] = await hydrate([updated]);

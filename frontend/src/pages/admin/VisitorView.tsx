@@ -299,6 +299,12 @@ export default function VisitorView() {
                               <Clock className="h-3.5 w-3.5" />
                               {formatTime(visitor.createdAt)}
                             </span>
+                            {(visitor.constituency || visitor.wardVillage) && (
+                              <span>
+                                {visitor.constituency || 'N/A'}
+                                {visitor.wardVillage ? ` / ${visitor.wardVillage}` : ''}
+                              </span>
+                            )}
                           </div>
                           
                           <p className="text-sm">
@@ -380,6 +386,14 @@ export default function VisitorView() {
                     <p className="font-medium">
                       {selectedVisitor.dob ? formatDate(selectedVisitor.dob) : 'Not provided'}
                     </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Constituency</p>
+                    <p className="font-medium">{selectedVisitor.constituency || 'Not provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Ward / Village</p>
+                    <p className="font-medium">{selectedVisitor.wardVillage || 'Not provided'}</p>
                   </div>
                   {selectedVisitor.referencedBy && (
                     <div className="col-span-2">

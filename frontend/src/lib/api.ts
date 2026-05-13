@@ -42,6 +42,7 @@ export type Grievance = {
   petitionerName: string
   mobileNumber: string
   constituency: string
+  wardVillage?: string
   grievanceType: GrievanceType
   description: string
   monetaryValue?: number
@@ -64,6 +65,7 @@ export type CreateGrievanceRequest = {
   petitionerName: string
   mobileNumber: string
   constituency: string
+  wardVillage?: string
   grievanceType: GrievanceType
   description: string
   monetaryValue?: number
@@ -83,6 +85,8 @@ export type Visitor = {
   dob?: string
   purpose: string
   referencedBy?: string
+  constituency?: string
+  wardVillage?: string
   visitDate: string
   createdAt: string
   createdBy: { id: string; name: string; email: string }
@@ -95,6 +99,8 @@ export type CreateVisitorRequest = {
   dob?: string
   purpose: string
   referencedBy?: string
+  constituency?: string
+  wardVillage?: string
 }
 
 // News Types
@@ -236,6 +242,8 @@ export type Birthday = {
   dob: string
   relation: string
   notes?: string
+  constituency?: string
+  wardVillage?: string
   createdAt: string
   createdBy?: { id: string; name: string; email: string }
 }
@@ -246,6 +254,8 @@ export type CreateBirthdayRequest = {
   dob: string
   relation: string
   notes?: string
+  constituency?: string
+  wardVillage?: string
 }
 
 // History Types

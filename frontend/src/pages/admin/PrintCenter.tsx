@@ -43,16 +43,6 @@ export default function PrintCenter() {
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Determine role for feature gating
-  const userRole = (() => {
-    const s = sessionStorage.getItem('user_role') || localStorage.getItem('user_role');
-    if (s) return s;
-    const u = sessionStorage.getItem('user') || localStorage.getItem('user');
-    if (u) { try { return JSON.parse(u).role; } catch { /* ignore */ } }
-    return null;
-  })();
-  const isStaff = userRole === 'STAFF';
-
   const fetchPrintableItems = async () => {
     setLoading(true);
     setError(null);
@@ -101,27 +91,25 @@ export default function PrintCenter() {
         });
       });
 
-      // Fetch accepted tour programs (admin-only feature, mirrors the
-      // adminOnly /pdf/tour-program/:id route on the backend)
-      if (!isStaff) {
-        const tourParams: Record<string, string> = { decision: 'ACCEPTED', limit: '50' };
-        if (startDate) tourParams.startDate = startDate;
-        if (endDate) tourParams.endDate = endDate;
-        const tourRes = await tourProgramApi.getAll(tourParams);
-        console.log('PrintCenter - Tour programs response:', tourRes);
-        const tours = Array.isArray(tourRes?.data) ? tourRes.data : [];
-        tours.forEach((t: TourProgram) => {
-          items.push({
-            id: t.id,
-            type: 'tour',
-            title: `Tour Program - ${t.eventName}`,
-            subtitle: `${t.organizer} • ${t.venue}`,
-            date: t.dateTime || t.createdAt,
-            status: 'Accepted',
-            data: t,
-          });
+      // Fetch accepted tour programs (tour invitations) — available to
+      // staff and admins, matching the staffOnly /pdf/tour-program/:id route.
+      const tourParams: Record<string, string> = { decision: 'ACCEPTED', limit: '50' };
+      if (startDate) tourParams.startDate = startDate;
+      if (endDate) tourParams.endDate = endDate;
+      const tourRes = await tourProgramApi.getAll(tourParams);
+      console.log('PrintCenter - Tour programs response:', tourRes);
+      const tours = Array.isArray(tourRes?.data) ? tourRes.data : [];
+      tours.forEach((t: TourProgram) => {
+        items.push({
+          id: t.id,
+          type: 'tour',
+          title: `Tour Invitation - ${t.eventName}`,
+          subtitle: `${t.organizer} • ${t.venue}`,
+          date: t.dateTime || t.createdAt,
+          status: 'Accepted',
+          data: t,
         });
-      }
+      });
 
       console.log('PrintCenter - Printable items:', items);
       setPrintableItems(items);
@@ -168,7 +156,7 @@ export default function PrintCenter() {
   const filenameFor = (item: PrintableItem): string => {
     if (item.type === 'grievance') return `Grievance_Letter_${item.id}.pdf`;
     if (item.type === 'train') return `TrainEQ_Letter_${item.id}.pdf`;
-    return `TourProgram_${item.id}.pdf`;
+    return `Tour_Invitation_${item.id}.pdf`;
   };
 
   const handleDownloadPDF = async (item: PrintableItem) => {
@@ -316,16 +304,14 @@ export default function PrintCenter() {
                     <Train className="h-4 w-4 mr-2" />
                     Train EQ ({printableItems.filter(i => i.type === 'train').length})
                   </Button>
-                  {!isStaff && (
-                    <Button
-                      variant={filter === "tour" ? "default" : "outline"}
-                      onClick={() => setFilter("tour")}
-                      className="h-10 w-full justify-center"
-                    >
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Tour Program ({printableItems.filter(i => i.type === 'tour').length})
-                    </Button>
-                  )}
+                  <Button
+                    variant={filter === "tour" ? "default" : "outline"}
+                    onClick={() => setFilter("tour")}
+                    className="h-10 w-full justify-center"
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Tour Invitation ({printableItems.filter(i => i.type === 'tour').length})
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -357,9 +343,7 @@ export default function PrintCenter() {
                     <Printer className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-muted-foreground">No letters ready for printing</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {isStaff
-                        ? 'Your verified grievances and approved train EQ requests will appear here'
-                        : 'Verify grievances or approve train requests to generate letters'}
+                      Verified grievances, approved train EQ requests, and accepted tour invitations will appear here.
                     </p>
                   </div>
                 ) : (
@@ -390,7 +374,7 @@ export default function PrintCenter() {
                       {/* Right */}
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-shrink-0 relative z-20">
                         <Badge className={getItemBadgeColor(item.type)}>
-                          {item.type === 'grievance' ? 'Grievance' : item.type === 'train' ? 'Train EQ' : 'Tour'}
+                          {item.type === 'grievance' ? 'Grievance' : item.type === 'train' ? 'Train EQ' : 'Tour Invitation'}
                         </Badge>
 
                         {(item.type === 'train' || item.type === 'grievance' || item.type === 'tour') && (

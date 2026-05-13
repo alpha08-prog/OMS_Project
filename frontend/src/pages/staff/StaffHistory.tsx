@@ -466,48 +466,60 @@ export default function StaffHistory() {
         </div>
 
         {/* Detail Dialog */}
-        {selectedItem && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedItem(null)}>
-            <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">{selectedItem.title}</h3>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedItem(null)}>×</Button>
-              </div>
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                  {getStatusBadge(selectedItem.status)}
-                  <span className="text-muted-foreground text-sm">
-                    {formatDate(selectedItem.createdAt)}
-                  </span>
+        {selectedItem && (() => {
+          const HIDDEN_KEYS = new Set([
+            "id",
+            "createdAt",
+            "updatedAt",
+            "createdBy",
+            "createdById",
+            "approvedBy",
+            "approvedById",
+            "train_passengers",
+            "trainPassengers",
+            "passengers",
+          ]);
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedItem(null)}>
+              <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">{selectedItem.title}</h3>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedItem(null)}>×</Button>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                  {Object.entries(selectedItem.details).map(([key, value]) => {
-                    if (!value || key === "createdBy" || key === "id" || key === "createdAt" || key === "updatedAt") return null;
-                    const label = key
-                      .replace(/([A-Z])/g, " $1")
-                      .replace(/^./, (str) => str.toUpperCase());
-                    const isLikelyIsoDateString = (val: unknown): val is string =>
-                      typeof val === 'string' && /\d{4}-\d{2}-\d{2}T/.test(val);
-                    const displayValue =
-                      typeof value === "object"
-                        ? JSON.stringify(value)
-                        : isLikelyIsoDateString(value)
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    {getStatusBadge(selectedItem.status)}
+                    <span className="text-muted-foreground text-sm">
+                      {formatDate(selectedItem.createdAt)}
+                    </span>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3">
+                    {Object.entries(selectedItem.details).map(([key, value]) => {
+                      if (value === null || value === undefined || value === "" || HIDDEN_KEYS.has(key)) return null;
+                      if (typeof value === "object") return null;
+                      const label = key
+                        .replace(/([A-Z])/g, " $1")
+                        .replace(/^./, (str) => str.toUpperCase());
+                      const isLikelyIsoDateString = (val: unknown): val is string =>
+                        typeof val === 'string' && /\d{4}-\d{2}-\d{2}T/.test(val);
+                      const displayValue = isLikelyIsoDateString(value)
                         ? formatDate(value)
                         : String(value);
-                    return (
-                      <div key={key}>
-                        <p className="text-muted-foreground text-xs uppercase tracking-wider">
-                          {label}
-                        </p>
-                        <p className="font-medium">{displayValue}</p>
-                      </div>
-                    );
-                  })}
+                      return (
+                        <div key={key} className="min-w-0">
+                          <p className="text-muted-foreground text-xs uppercase tracking-wider">
+                            {label}
+                          </p>
+                          <p className="font-medium break-words">{displayValue}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </main>
     </div>
   );
