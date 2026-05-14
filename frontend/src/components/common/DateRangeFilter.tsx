@@ -28,26 +28,29 @@ export function DateRangeFilter({
 }: DateRangeFilterProps) {
   const hasValue = Boolean(startDate || endDate);
 
+  // Labels render inline (prefix) instead of stacked above so the overall
+  // control is a single h-9 row. Lets the filter sit on the same baseline as
+  // the search bar / status dropdown wherever it's placed.
   return (
-    <div className={`flex flex-wrap items-end gap-2 ${className}`}>
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground block">{fromLabel}</label>
+    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+      <label className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">{fromLabel}</span>
         <Input
           type="date"
           value={startDate}
           onChange={(e) => onStartDateChange(e.target.value)}
           className="h-9 w-40"
         />
-      </div>
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground block">{toLabel}</label>
+      </label>
+      <label className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">{toLabel}</span>
         <Input
           type="date"
           value={endDate}
           onChange={(e) => onEndDateChange(e.target.value)}
           className="h-9 w-40"
         />
-      </div>
+      </label>
       {hasValue && (
         <Button
           type="button"

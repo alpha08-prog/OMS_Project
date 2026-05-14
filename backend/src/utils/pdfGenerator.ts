@@ -920,9 +920,11 @@ export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Resp
     }
 
     // ── Reference number + Date row ───────────────────────────────────────
+    // Date is hard-right-aligned to the page margin — the text's right edge
+    // sits at (pageWidth - margin) regardless of how short the date string is.
     doc.font('Helvetica').fontSize(10).fillColor(COLORS.black)
       .text(data.refNumber, margin, y, { lineBreak: false });
-    doc.text(`Date: ${data.date}`, pageWidth - margin - 180, y, { width: 180, align: 'left', lineBreak: false });
+    doc.text(`Date: ${data.date}`, margin, y, { width: innerWidth, align: 'right', lineBreak: false });
     y += 28;
 
     // ── Salutation + Subject ──────────────────────────────────────────────
@@ -959,13 +961,16 @@ export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Resp
     });
 
     // ── Closing + signature ───────────────────────────────────────────────
+    // Closing ("Thanking you,") stays on the left; "Yours sincerely" and the
+    // signer's name are centered across the full inner width. Drawing the
+    // centered text in a full-width box means PDFKit centers it relative to
+    // the page, not relative to whatever the closing text occupies.
     y += 6;
     doc.text(data.closing, margin, y, { lineBreak: false });
-    // "Yours sincerely" — right-aligned
-    doc.text('Yours sincerely', pageWidth - margin - 200, y, { width: 200, align: 'right', lineBreak: false });
+    doc.text('Yours sincerely', margin, y, { width: innerWidth, align: 'center', lineBreak: false });
     y += 48;
     doc.font('Helvetica-Bold').fontSize(11)
-      .text(data.signerName, pageWidth - margin - 200, y, { width: 200, align: 'right', lineBreak: false });
+      .text(data.signerName, margin, y, { width: innerWidth, align: 'center', lineBreak: false });
     y += 28;
 
     // ── Recipient block (bottom-left, like a footer address) ──────────────

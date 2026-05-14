@@ -1108,11 +1108,17 @@ export async function previewTempleVisit(
           rgba(148, 163, 184, 0.05) 8px 16px
         );
     }
-    .meta { display: flex; justify-content: space-between; margin: 0 0 18px 0; font-size: 11px; }
+    .meta { display: flex; margin: 0 0 18px 0; font-size: 11px; }
+    .meta .ref { flex: 1; text-align: left; }
+    .meta .date { flex: 1; text-align: right; }
     .subject { font-weight: bold; margin: 12px 0 18px 0; font-size: 12px; }
     .body { font-size: 12px; line-height: 1.9; text-align: justify; }
-    .closing { margin-top: 24px; display: flex; justify-content: space-between; font-size: 12px; }
-    .signer { margin-top: 40px; text-align: right; font-weight: bold; color: #000080; font-size: 13px; }
+    /* Closing row uses a 3-column grid so the centre column stays centred on
+       the page regardless of the closing text's length. */
+    .closing { margin-top: 24px; display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: 12px; }
+    .closing .left { text-align: left; }
+    .closing .center { text-align: center; }
+    .signer { margin-top: 40px; text-align: center; font-weight: bold; color: #000080; font-size: 13px; }
     .recipient { margin-top: 28px; font-size: 12px; line-height: 1.5; }
   </style>
 </head>
@@ -1126,8 +1132,8 @@ export async function previewTempleVisit(
   <div class="letterhead-zone">Reserved for pre-printed letterhead</div>
 
   <div class="meta">
-    <span>${escapeHtml(d.refNumber)}</span>
-    <span>Date: ${escapeHtml(d.date)}</span>
+    <span class="ref">${escapeHtml(d.refNumber)}</span>
+    <span class="date">Date: ${escapeHtml(d.date)}</span>
   </div>
 
   <p style="font-size:12px;">Dear Sir,</p>
@@ -1141,8 +1147,9 @@ export async function previewTempleVisit(
   </div>
 
   <div class="closing">
-    <span>${escapeHtml(d.closing)}</span>
-    <span>Yours sincerely</span>
+    <span class="left">${escapeHtml(d.closing)}</span>
+    <span class="center">Yours sincerely</span>
+    <span></span>
   </div>
   <div class="signer">${escapeHtml(d.signerName)}</div>
 
