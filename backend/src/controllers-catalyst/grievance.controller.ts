@@ -53,7 +53,17 @@ const VALID_TYPES = new Set([
   'ELECTRICITY',
   'EDUCATION',
   'HOUSING',
+  'TEMPLE_VISIT',
   'OTHER',
+]);
+const VALID_TEMPLE_SERVICES = new Set([
+  'SPECIAL_DARSHAN',
+  'DARSHAN',
+  'SPARSH_DARSHAN',
+  'MANGALARATI',
+  'BHASMARATI',
+  'POOJA',
+  'ACCOMMODATION',
 ]);
 const VALID_STATUS = new Set(['OPEN', 'IN_PROGRESS', 'VERIFIED', 'RESOLVED', 'REJECTED']);
 const VALID_ACTIONS = new Set([
@@ -136,9 +146,32 @@ function shapeGrievance(
     // the frontend can treat them as ('MEDIUM' / 'PUBLIC') without nulls.
     priority: (row.priorities as string) ?? 'MEDIUM',
     source: (row.source as string) ?? 'PUBLIC',
+    // Temple-visit fields — present only when grievanceType === 'TEMPLE_VISIT'.
+    // All optional, so legacy rows return null here.
+    templeKey: row.templeKey ?? null,
+    memberCount:
+      row.memberCount === null || row.memberCount === undefined || row.memberCount === ''
+        ? null
+        : Number(row.memberCount),
+    originDistrict: row.originDistrict ?? null,
+    originState: row.originState ?? null,
+    visitDateFrom: row.visitDateFrom ?? null,
+    visitDateTo: row.visitDateTo ?? null,
+    servicesRequested: parseServicesRequested(row.servicesRequested),
+    showMobileOnLetter: parseBool(row.showMobileOnLetter),
     createdBy: createdBy ?? null,
     verifiedBy: verifiedBy ?? null,
   };
+}
+
+/** servicesRequested stores as comma-separated TEXT — split + trim on read. */
+function parseServicesRequested(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((s) => String(s).trim()).filter(Boolean);
+  if (typeof v !== 'string' || !v.trim()) return [];
+  return v
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -203,6 +236,15 @@ export async function createGrievance(
       referencedBy,
       priority,
       source,
+      // Temple-visit specific (optional for every other grievanceType).
+      templeKey,
+      memberCount,
+      originDistrict,
+      originState,
+      visitDateFrom,
+      visitDateTo,
+      servicesRequested,
+      showMobileOnLetter,
     } = req.body;
 
     if (!VALID_TYPES.has(grievanceType)) {
@@ -255,6 +297,50 @@ export async function createGrievance(
     };
     if (typeof wardVillage === 'string' && wardVillage.trim()) {
       grievancePayload.wardVillage = wardVillage.trim();
+    }
+
+    // Temple-visit fields — only persisted when the staff actually supplied
+    // them. We validate enum-ish fields here so an invalid value never reaches
+    // Catalyst, but we don't require them for TEMPLE_VISIT (the staff can
+    // also save a draft and fill these in later via PUT /grievances/:id).
+    if (grievanceType === 'TEMPLE_VISIT' || templeKey) {
+      if (templeKey) grievancePayload.templeKey = String(templeKey).trim();
+      if (memberCount !== undefined && memberCount !== null && memberCount !== '') {
+        const n = Number(memberCount);
+        if (!Number.isInteger(n) || n < 1) {
+          sendError(res, 'memberCount must be a positive integer');
+          return;
+        }
+        grievancePayload.memberCount = n;
+      }
+      if (typeof originDistrict === 'string' && originDistrict.trim()) {
+        grievancePayload.originDistrict = originDistrict.trim();
+      }
+      if (typeof originState === 'string' && originState.trim()) {
+        grievancePayload.originState = originState.trim();
+      }
+      if (visitDateFrom) {
+        const v = toCatalystDate(visitDateFrom);
+        if (v) grievancePayload.visitDateFrom = v;
+      }
+      if (visitDateTo) {
+        const v = toCatalystDate(visitDateTo);
+        if (v) grievancePayload.visitDateTo = v;
+      }
+      if (Array.isArray(servicesRequested) && servicesRequested.length > 0) {
+        const clean = servicesRequested
+          .map((s) => String(s).trim().toUpperCase())
+          .filter(Boolean);
+        const bad = clean.find((s) => !VALID_TEMPLE_SERVICES.has(s));
+        if (bad) {
+          sendError(res, `Invalid temple service: ${bad}`);
+          return;
+        }
+        grievancePayload.servicesRequested = clean.join(',');
+      }
+      if (showMobileOnLetter !== undefined) {
+        grievancePayload.showMobileOnLetter = Boolean(showMobileOnLetter);
+      }
     }
 
     const row = await insertRow(GRIEVANCE_TABLE, grievancePayload);
@@ -494,6 +580,32 @@ export async function updateGrievance(
     if (body.verifiedAt !== undefined) body.verifiedAt = toCatalystDate(body.verifiedAt);
     if (body.resolvedAt !== undefined) body.resolvedAt = toCatalystDate(body.resolvedAt);
 
+    // Temple-visit fields — validate when present so PUT can't store junk.
+    if (body.memberCount !== undefined && body.memberCount !== null && body.memberCount !== '') {
+      const n = Number(body.memberCount);
+      if (!Number.isInteger(n) || n < 1) {
+        sendError(res, 'memberCount must be a positive integer');
+        return;
+      }
+      body.memberCount = n;
+    }
+    if (body.visitDateFrom !== undefined) body.visitDateFrom = toCatalystDate(body.visitDateFrom);
+    if (body.visitDateTo !== undefined) body.visitDateTo = toCatalystDate(body.visitDateTo);
+    if (Array.isArray(body.servicesRequested)) {
+      const clean = body.servicesRequested
+        .map((s: unknown) => String(s).trim().toUpperCase())
+        .filter(Boolean);
+      const bad = clean.find((s: string) => !VALID_TEMPLE_SERVICES.has(s));
+      if (bad) {
+        sendError(res, `Invalid temple service: ${bad}`);
+        return;
+      }
+      body.servicesRequested = clean.join(',');
+    }
+    if (body.showMobileOnLetter !== undefined) {
+      body.showMobileOnLetter = Boolean(body.showMobileOnLetter);
+    }
+
     const updated = await updateRow(GRIEVANCE_TABLE, { ROWID: id, ...body });
     const [shaped] = await attachUsers([updated]);
     sendSuccess(res, shaped, 'Grievance updated successfully');
@@ -614,8 +726,14 @@ export async function getVerificationQueue(
     );
 
     let rows = await listAllRows(GRIEVANCE_TABLE);
+    // TEMPLE_VISIT is a self-service flow — staff generate the darshan letter
+    // directly, which closes the grievance. They bypass admin verification
+    // entirely, so they should not appear in this queue.
     rows = rows.filter(
-      (r) => r.status === 'OPEN' && Boolean(r.isVerified) === false
+      (r) =>
+        r.status === 'OPEN' &&
+        Boolean(r.isVerified) === false &&
+        r.grievanceType !== 'TEMPLE_VISIT'
     );
     rows.sort((a, b) => {
       const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;

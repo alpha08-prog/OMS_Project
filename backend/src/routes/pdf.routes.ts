@@ -3,6 +3,9 @@ import { param } from 'express-validator';
 import {
   generateTrainEQPDF,
   generateGrievancePDF,
+  generateTempleVisitPDF,
+  previewTempleVisit,
+  getTempleRegistry,
   generateTourProgramPDFController,
   generateTourProgramSinglePDF,
   previewTourProgram,
@@ -27,6 +30,9 @@ router.get('/train-eq/:id', staffOnly, validate(idParamValidation), generateTrai
 router.get('/train-eq/:id/preview', staffOnly, validate(idParamValidation), previewTrainEQ);
 router.get('/grievance/:id', staffOnly, validate(idParamValidation), generateGrievancePDF);
 router.get('/grievance/:id/preview', staffOnly, validate(idParamValidation), previewGrievance);
+router.get('/grievance/:id/temple-visit', staffOnly, validate(idParamValidation), generateTempleVisitPDF);
+router.get('/grievance/:id/temple-visit/preview', staffOnly, validate(idParamValidation), previewTempleVisit);
+router.get('/temple-registry', staffOnly, getTempleRegistry);
 router.get('/tour-program', staffOnly, generateTourProgramPDFController);
 router.get('/tour-program/:id', staffOnly, validate(idParamValidation), generateTourProgramSinglePDF);
 router.get('/tour-program/:id/preview', staffOnly, validate(idParamValidation), previewTourProgram);

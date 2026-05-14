@@ -31,11 +31,19 @@ export type LoginRequest = { identifier: string; password: string }
 export type LoginResponse = { user: User; token: string }
 
 // Grievance Types
-export type GrievanceType = 'WATER' | 'ROAD' | 'POLICE' | 'HEALTH' | 'TRANSFER' | 'FINANCIAL_AID' | 'ELECTRICITY' | 'EDUCATION' | 'HOUSING' | 'OTHER'
+export type GrievanceType = 'WATER' | 'ROAD' | 'POLICE' | 'HEALTH' | 'TRANSFER' | 'FINANCIAL_AID' | 'ELECTRICITY' | 'EDUCATION' | 'HOUSING' | 'TEMPLE_VISIT' | 'OTHER'
 export type GrievanceStatus = 'OPEN' | 'IN_PROGRESS' | 'VERIFIED' | 'RESOLVED' | 'REJECTED'
 export type ActionRequired = 'GENERATE_LETTER' | 'CALL_OFFICIAL' | 'FORWARD_TO_DEPT' | 'SCHEDULE_MEETING' | 'NO_ACTION'
 export type GrievancePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type GrievanceSource = 'PUBLIC' | 'OFFICE'
+export type TempleServiceCode =
+  | 'SPECIAL_DARSHAN'
+  | 'DARSHAN'
+  | 'SPARSH_DARSHAN'
+  | 'MANGALARATI'
+  | 'BHASMARATI'
+  | 'POOJA'
+  | 'ACCOMMODATION'
 
 export type Grievance = {
   id: string
@@ -54,11 +62,21 @@ export type Grievance = {
   isVerified: boolean
   createdAt: string
   verifiedAt?: string
+  resolvedAt?: string | null
   createdBy: { id: string; name: string; email: string }
   createdById?: string
   verifiedBy?: { id: string; name: string; email: string }
   priority?: GrievancePriority
   source?: GrievanceSource
+  // Temple-visit specific. Present only when grievanceType === 'TEMPLE_VISIT'.
+  templeKey?: string | null
+  memberCount?: number | null
+  originDistrict?: string | null
+  originState?: string | null
+  visitDateFrom?: string | null
+  visitDateTo?: string | null
+  servicesRequested?: TempleServiceCode[]
+  showMobileOnLetter?: boolean
 }
 
 export type CreateGrievanceRequest = {
@@ -74,6 +92,22 @@ export type CreateGrievanceRequest = {
   referencedBy?: string
   priority?: GrievancePriority
   source?: GrievanceSource
+  // Temple-visit fields — all optional; ignored when grievanceType !== TEMPLE_VISIT
+  templeKey?: string
+  memberCount?: number
+  originDistrict?: string
+  originState?: string
+  visitDateFrom?: string
+  visitDateTo?: string
+  servicesRequested?: TempleServiceCode[]
+  showMobileOnLetter?: boolean
+}
+
+export type TempleRegistryEntry = {
+  key: string
+  deity: string
+  recipient: string[]
+  defaultServices: TempleServiceCode[]
 }
 
 // Visitor Types
@@ -900,6 +934,28 @@ export const pdfApi = {
     return res.data
   },
 
+  // Fetch the static temple registry (deity / recipient / default services).
+  // Used by the GrievanceCreate UI to populate the temple dropdown.
+  getTempleRegistry: async () => {
+    const res = await http.get<ApiResponse<{
+      temples: TempleRegistryEntry[]
+      services: Record<TempleServiceCode, string>
+    }>>('/pdf/temple-registry')
+    return res.data.data
+  },
+
+  // Download Temple-Visit letter — backend also auto-closes the grievance
+  // (status -> RESOLVED, currentStage -> LETTER_GENERATED) after a successful
+  // download, unless it was already RESOLVED.
+  downloadTempleVisitLetter: async (id: string) => {
+    await pdfApi.downloadPDF(`/pdf/grievance/${id}/temple-visit`, `TempleVisit_Letter_${id}.pdf`)
+  },
+
+  previewTempleVisit: async (id: string) => {
+    const res = await http.get(`/pdf/grievance/${id}/temple-visit/preview`, { responseType: 'text' })
+    return res.data as string
+  },
+
   // Preview Train EQ Letter (HTML). Backend route is staffOnly, so we
   // can't `window.open(...)` the URL directly — that fires off a no-auth
   // GET. Fetch via the authed axios client, then materialise an HTML blob
@@ -1275,7 +1331,13 @@ export const uploadsApi = {
 }
 
 // Notifications (in-app bell)
-export type NotificationType = 'TASK_ASSIGNED' | 'TOUR_DECIDED' | 'NEWS_CRITICAL'
+export type NotificationType =
+  | 'TASK_ASSIGNED'
+  | 'TASK_RESOLVED'
+  | 'TOUR_DECIDED'
+  | 'NEWS_CRITICAL'
+  | 'GRIEVANCE_REJECTED'
+  | 'TEMPLE_VISIT_LETTER_GENERATED'
 
 export type Notification = {
   id: string

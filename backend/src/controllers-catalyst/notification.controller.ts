@@ -40,7 +40,8 @@ export type NotificationType =
   | 'TASK_RESOLVED'
   | 'TOUR_DECIDED'
   | 'NEWS_CRITICAL'
-  | 'GRIEVANCE_REJECTED';
+  | 'GRIEVANCE_REJECTED'
+  | 'TEMPLE_VISIT_LETTER_GENERATED';
 
 function parseBool(v: unknown): boolean {
   if (typeof v === 'boolean') return v;

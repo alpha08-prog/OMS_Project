@@ -17,8 +17,11 @@ router.get('/train-eq/:id', auth_1.staffOnly, (0, validate_1.validate)(idParamVa
 router.get('/train-eq/:id/preview', auth_1.staffOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.previewTrainEQ);
 router.get('/grievance/:id', auth_1.staffOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.generateGrievancePDF);
 router.get('/grievance/:id/preview', auth_1.staffOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.previewGrievance);
-router.get('/tour-program', auth_1.adminOnly, pdf_controller_1.generateTourProgramPDFController);
-router.get('/tour-program/:id', auth_1.adminOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.generateTourProgramSinglePDF);
-router.get('/tour-program/:id/preview', auth_1.adminOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.previewTourProgram);
+router.get('/grievance/:id/temple-visit', auth_1.staffOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.generateTempleVisitPDF);
+router.get('/grievance/:id/temple-visit/preview', auth_1.staffOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.previewTempleVisit);
+router.get('/temple-registry', auth_1.staffOnly, pdf_controller_1.getTempleRegistry);
+router.get('/tour-program', auth_1.staffOnly, pdf_controller_1.generateTourProgramPDFController);
+router.get('/tour-program/:id', auth_1.staffOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.generateTourProgramSinglePDF);
+router.get('/tour-program/:id/preview', auth_1.staffOnly, (0, validate_1.validate)(idParamValidation), pdf_controller_1.previewTourProgram);
 exports.default = router;
 //# sourceMappingURL=pdf.routes.js.map

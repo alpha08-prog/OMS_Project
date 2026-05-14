@@ -71,11 +71,39 @@ export default function GrievanceView() {
     setDetailsOpen(true);
   };
 
-  const handleDownloadPDF = async (id: string) => {
+  const handleDownloadPDF = async (g: Grievance) => {
     try {
-      await pdfApi.downloadPDF(`/pdf/grievance/${id}`, `Grievance_Letter_${id}.pdf`);
+      if (g.grievanceType === "TEMPLE_VISIT") {
+        // Temple-visit endpoint also flips status -> RESOLVED on the server.
+        // Refresh the list so the badge updates without a page reload.
+        await pdfApi.downloadTempleVisitLetter(g.id);
+        await fetchGrievances();
+      } else {
+        await pdfApi.downloadPDF(`/pdf/grievance/${g.id}`, `Grievance_Letter_${g.id}.pdf`);
+      }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to download PDF";
+      setError(errorMessage);
+    }
+  };
+
+  // Preview = HTML render in a new tab. Does NOT close the grievance, so
+  // staff can sanity-check formatting before committing to the PDF (which
+  // auto-resolves the ticket on download).
+  const handlePreviewTempleLetter = async (id: string) => {
+    try {
+      const html = await pdfApi.previewTempleVisit(id);
+      const blob = new Blob([html], { type: "text/html" });
+      const url = window.URL.createObjectURL(blob);
+      const w = window.open(url, "_blank");
+      // Release the blob URL once the new tab takes ownership of the document.
+      // 60s is overkill but cheap — the tab has loaded the bytes long before.
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+      if (!w) {
+        setError("Please allow pop-ups for this site to preview the letter.");
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to preview letter";
       setError(errorMessage);
     }
   };
@@ -324,14 +352,24 @@ export default function GrievanceView() {
                           <Eye className="h-4 w-4 mr-1" />
                           View
                         </Button>
-                        {g.isVerified && (
+                        {g.grievanceType === "TEMPLE_VISIT" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handlePreviewTempleLetter(g.id)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Preview
+                          </Button>
+                        )}
+                        {(g.isVerified || g.grievanceType === "TEMPLE_VISIT") && (
                           <Button
                             size="sm"
                             className="bg-indigo-600 hover:bg-indigo-700"
-                            onClick={() => handleDownloadPDF(g.id)}
+                            onClick={() => handleDownloadPDF(g)}
                           >
                             <Download className="h-4 w-4 mr-1" />
-                            PDF
+                            {g.grievanceType === "TEMPLE_VISIT" ? "Letter" : "PDF"}
                           </Button>
                         )}
                       </div>
@@ -439,13 +477,25 @@ export default function GrievanceView() {
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Close
                   </Button>
-                  {selectedGrievance.isVerified && (
+                  {selectedGrievance.grievanceType === "TEMPLE_VISIT" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => handlePreviewTempleLetter(selectedGrievance.id)}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      Preview
+                    </Button>
+                  )}
+                  {(selectedGrievance.isVerified ||
+                    selectedGrievance.grievanceType === "TEMPLE_VISIT") && (
                     <Button
                       className="bg-indigo-600 hover:bg-indigo-700"
-                      onClick={() => handleDownloadPDF(selectedGrievance.id)}
+                      onClick={() => handleDownloadPDF(selectedGrievance)}
                     >
                       <Download className="h-4 w-4 mr-1" />
-                      Download PDF
+                      {selectedGrievance.grievanceType === "TEMPLE_VISIT"
+                        ? "Download Letter"
+                        : "Download PDF"}
                     </Button>
                   )}
                 </div>

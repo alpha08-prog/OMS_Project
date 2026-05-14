@@ -11,7 +11,7 @@ const createGrievanceValidation = [
     (0, express_validator_1.body)('mobileNumber').matches(/^\d{10}$/).withMessage('Valid 10-digit mobile number is required'),
     (0, express_validator_1.body)('constituency').trim().notEmpty().withMessage('Constituency is required'),
     (0, express_validator_1.body)('grievanceType')
-        .isIn(['WATER', 'ROAD', 'POLICE', 'HEALTH', 'TRANSFER', 'FINANCIAL_AID', 'ELECTRICITY', 'EDUCATION', 'HOUSING', 'OTHER'])
+        .isIn(['WATER', 'ROAD', 'POLICE', 'HEALTH', 'TRANSFER', 'FINANCIAL_AID', 'ELECTRICITY', 'EDUCATION', 'HOUSING', 'TEMPLE_VISIT', 'OTHER'])
         .withMessage('Valid grievance type is required'),
     (0, express_validator_1.body)('description').trim().notEmpty().withMessage('Description is required'),
     (0, express_validator_1.body)('monetaryValue')
