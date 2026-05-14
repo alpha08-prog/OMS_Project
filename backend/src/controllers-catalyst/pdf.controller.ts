@@ -14,8 +14,9 @@
  * the new ROWID-based ids that the frontend now receives.
  */
 import { Response } from 'express';
-import { getRow, listAllRows, CatalystRow } from '../lib/catalyst-client';
+import { getRow, listAllRows, updateRow, toCatalystDate, CatalystRow } from '../lib/catalyst-client';
 import {
+  sendSuccess,
   sendError,
   sendNotFound,
   sendServerError,
@@ -24,9 +25,13 @@ import {
 import {
   generateTrainEQLetter,
   generateGrievanceLetter,
+  generateTempleVisitLetter,
   generateTourProgramPDF,
   type TrainEQPassenger,
 } from '../utils/pdfGenerator';
+import { cacheClear } from '../lib/cache';
+import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { emitNotifications } from './notification.controller';
 import type { AuthenticatedRequest } from '../types';
 
 const TRAIN_TABLE = 'TrainRequest';
@@ -574,6 +579,598 @@ export async function previewGrievance(
   } catch (error) {
     sendServerError(res, 'Failed to preview letter', error);
   }
+}
+
+// ── Temple Visit ───────────────────────────────────────────────────────────
+
+/**
+ * Static registry of temples / accommodation offices the MGP minister's office
+ * regularly issues darshan letters to. Keyed by the templeKey value stored on
+ * the Grievance row.
+ *
+ * `defaultServices` lets the staff submit a minimal create form (no services
+ * picked → we fall back to the temple's typical service set).
+ */
+type TempleEntry = {
+  deity: string;
+  recipient: string[]; // multi-line address — rendered as the bottom address block
+  defaultServices: TempleServiceCode[];
+};
+type TempleServiceCode =
+  | 'SPECIAL_DARSHAN'
+  | 'DARSHAN'
+  | 'SPARSH_DARSHAN'
+  | 'MANGALARATI'
+  | 'BHASMARATI'
+  | 'POOJA'
+  | 'ACCOMMODATION';
+
+export const TEMPLE_REGISTRY: Record<string, TempleEntry> = {
+  TIRUMALA_TTD: {
+    deity: 'Lord Shri Venkateshwar',
+    recipient: [
+      'The Joint Executive Officer',
+      'Shri Tirumala Tirupati Devastanam Trust,',
+      'Tirumala, Andhra Pradesh.',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN', 'ACCOMMODATION'],
+  },
+  KASHI_VISHWANATH: {
+    deity: 'Lord Shri Kashi Vishwanatheswara',
+    recipient: ['A.D.M. Protocol', 'Varanasi.', 'Uttar Pradesh.'],
+    defaultServices: ['SPARSH_DARSHAN', 'MANGALARATI'],
+  },
+  YALLAMMA_SAVADATTI: {
+    deity: 'Renuka Yallamma Devi temple, Shreekshetra Savadatti',
+    recipient: [
+      'The Executive Officer',
+      'Renuka Yallamma Devastan Trust,',
+      'Savadatti, Dist: Belagavi.',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN', 'ACCOMMODATION'],
+  },
+  KUKKE_SUBRAMANYA: {
+    deity: 'Lord Shri. Kukke Subramanyam Swamy',
+    recipient: [
+      'Executive Officer',
+      'Kukke Shree Subrahamanya Temple,',
+      'Subrahamanya Post, Sullia Taluk,',
+      'Dakshina Kannada District, Karnataka - 574238.',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN', 'POOJA', 'ACCOMMODATION'],
+  },
+  DHARMASTHALA: {
+    deity: 'Lord Shri. Dharmasthala Manjunath Swamy',
+    recipient: [
+      'The Public Relation Office,',
+      'Shri. Dharmasthal Devastan Trust,',
+      'Dharmasthala.',
+    ],
+    defaultServices: ['DARSHAN', 'ACCOMMODATION'],
+  },
+  MANTRALAYAM: {
+    deity: 'Lord Shri Raghavendra Swami',
+    recipient: [
+      'The Public Relation Office,',
+      'Mantralayam Temple Trust,',
+      'Mantralayam.',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN', 'ACCOMMODATION'],
+  },
+  KARNATAKA_BHAVAN_TIRUMALA: {
+    deity: 'Lord Shri Venkateshwar',
+    recipient: [
+      'The Resident Commissioner',
+      'Karnataka Bhavan,',
+      'Tirumala, Tirupati,',
+      'Andhra Pradesh.',
+    ],
+    defaultServices: ['ACCOMMODATION'],
+  },
+  SRISAILAM_MALLIKARJUNA: {
+    deity: 'Lord Shri Mallikarjuna',
+    recipient: ['The Executive Officer', 'SBMS Temple,', 'Shrishailam (A.P)'],
+    defaultServices: ['SPECIAL_DARSHAN', 'ACCOMMODATION'],
+  },
+  BADRINATH: {
+    deity: 'Lord Shri Badrinath',
+    recipient: [
+      'The Chief Executive Officer',
+      'Shri Badrinath Kedarnath Temple Committee,',
+      'Saket, Lane Number 07, Canal Road Dehradun',
+      'Uttarakhand-248001',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN'],
+  },
+  KEDARNATH: {
+    deity: 'Lord Shri Kedarnath',
+    recipient: [
+      'The Chief Executive Officer',
+      'Shri Kedarnath Temple Trust,',
+      'Kedarnath, Uttarakhand -246445',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN'],
+  },
+  MAHAKALESHWAR: {
+    deity: 'Lord Shri Mahakaleshwar',
+    recipient: [
+      'Dist. Protocol Officer',
+      'Shri. Mahakaleshwar Temple,',
+      'Jaisinghpura, Ujjain,',
+      'Madhya Pradesh.',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN', 'BHASMARATI'],
+  },
+  OMKARESHWAR: {
+    deity: 'Lord Shri Omkareshwar',
+    recipient: [
+      'The Administrative Officer',
+      'Shri. Omkareshwar Temple,',
+      'Ujjain,',
+      'Madhya Pradesh - 456006',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN', 'ACCOMMODATION'],
+  },
+  JAGANNATH_PURI: {
+    deity: 'Shri Jagannath',
+    recipient: [
+      'The Chief Administrator',
+      'Shri Jagannath Temple,',
+      'Puri, Odisha.',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN', 'ACCOMMODATION'],
+  },
+  SHIRDI_SAI: {
+    deity: 'Lord Shri Shiradi Sai Baba',
+    recipient: [
+      'Chief Executive Officer',
+      'Shri Saibaba Sansthan Trust,',
+      'Po. Shiradi, Tq: Rahata, Dist: Ahmednagar,',
+      'Maharashtra.',
+    ],
+    defaultServices: ['SPECIAL_DARSHAN', 'ACCOMMODATION'],
+  },
+};
+
+const SERVICE_LABEL: Record<TempleServiceCode, string> = {
+  SPECIAL_DARSHAN: 'Special Darshan',
+  DARSHAN: 'Darshan',
+  SPARSH_DARSHAN: 'Sparsh Darshan',
+  MANGALARATI: 'Mangalarati',
+  BHASMARATI: 'Bhasmarati',
+  POOJA: 'Pooja',
+  ACCOMMODATION: 'Accommodation',
+};
+
+/** Render an ordered service list into the natural-English form used in the
+ *  template: "Special Darshan & Accommodation" or "Darshan, Pooja & Accommodation". */
+function formatServiceList(codes: TempleServiceCode[]): string {
+  const labels = codes.map((c) => SERVICE_LABEL[c]).filter(Boolean);
+  if (labels.length === 0) return 'Special Darshan';
+  if (labels.length === 1) return labels[0];
+  return labels.slice(0, -1).join(', ') + ' & ' + labels[labels.length - 1];
+}
+
+/** Build the origin line. Falls back gracefully if some pieces are missing. */
+function formatOriginLine(district?: string, state?: string): string {
+  const parts: string[] = [];
+  if (district) parts.push(`Dist: ${district}`);
+  if (state) parts.push(`State: ${state}`);
+  return parts.length > 0 ? parts.join(', ') : 'India';
+}
+
+/** Format YYYY-MM-DD (or ISO) → "DD-MM-YYYY" matching the docx layout. */
+function formatDDMMYYYY(value: unknown): string | null {
+  if (!value) return null;
+  const d = new Date(String(value));
+  if (isNaN(d.getTime())) return null;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(d.getFullYear());
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+/** Closing line — Kashi/Yallamma/Kukke historically use "With regards,", the
+ *  rest use "Thanking you,". Matches the docx exactly. */
+function closingFor(templeKey: string): string {
+  return new Set(['KASHI_VISHWANATH', 'YALLAMMA_SAVADATTI', 'KUKKE_SUBRAMANYA']).has(templeKey)
+    ? 'With regards,'
+    : 'Thanking you,';
+}
+
+/** Stable 4-digit-ish sequence derived from the row id — keeps the ref number
+ *  consistent across reprints. Catalyst ROWIDs are long numerics; UUIDs hash
+ *  through Number(). */
+function refSeqForId(id: string): string {
+  const last = id.replace(/[^0-9]/g, '').slice(-4);
+  return last.padStart(4, '0') || '0001';
+}
+
+/** Discover all admin/super-admin recipient IDs from the cached AppUser
+ *  table. Best-effort: returns [] on lookup failure so the parent operation
+ *  (letter generation) never blocks on a missing notification. */
+async function listAdminRecipientIds(): Promise<string[]> {
+  try {
+    const users = await getCachedTableList('AppUser');
+    return users
+      .filter((u) => {
+        const role = String(u.role || '').toUpperCase();
+        return role === 'ADMIN' || role === 'SUPER_ADMIN';
+      })
+      .map((u) => String(u.ROWID))
+      .filter(Boolean);
+  } catch (err) {
+    console.error('[temple-visit] admin lookup failed:', err);
+    return [];
+  }
+}
+
+/** Fan-out the "letter generated + grievance resolved" notification to every
+ *  admin. The notification doubles as a persistent action-history entry — its
+ *  type, referenceId, body, and createdAt give admins a scrollable trail. */
+async function notifyAdminsTempleVisitIssued(
+  grievanceId: string,
+  row: CatalystRow,
+  letter: Parameters<typeof generateTempleVisitLetter>[0]
+): Promise<void> {
+  const adminIds = await listAdminRecipientIds();
+  if (adminIds.length === 0) return;
+
+  const petitionerName = String(row.petitionerName || 'a petitioner');
+  const title = `Temple-visit letter issued — ${petitionerName}`;
+  const body =
+    `${petitionerName} and ${letter.memberCount} members on pilgrimage to ` +
+    `${letter.deityLine}. Letter generated by staff, grievance auto-resolved.`;
+
+  await emitNotifications(adminIds, {
+    type: 'TEMPLE_VISIT_LETTER_GENERATED',
+    title,
+    body,
+    // Deep-link search uses petitionerName, mirroring the GRIEVANCE_REJECTED
+    // notification's link pattern — opens the grievance list filtered to this
+    // entry.
+    link: `/grievances/view?search=${encodeURIComponent(petitionerName)}`,
+    referenceId: String(grievanceId),
+    referenceType: 'GRIEVANCE',
+  });
+}
+
+/** Map status + currentStage to {status:'RESOLVED', currentStage:'LETTER_GENERATED'}
+ *  only for grievances that are still open. Returns null if the row is already
+ *  resolved (so reprints don't re-stamp resolvedAt). */
+function statusUpdateForLetterIssue(row: CatalystRow): Record<string, unknown> | null {
+  if (String(row.status) === 'RESOLVED') return null;
+  return {
+    currentStage: 'LETTER_GENERATED',
+    status: 'RESOLVED',
+    resolvedAt: toCatalystDate(new Date()),
+    isVerified: true,
+    verifiedAt: row.verifiedAt ?? toCatalystDate(new Date()),
+  };
+}
+
+/** Build the {data} object handed to generateTempleVisitLetter, given a row
+ *  from Catalyst. Throws Error if templeKey is missing/unknown. */
+function buildTempleLetterData(row: CatalystRow, id: string): {
+  data: Parameters<typeof generateTempleVisitLetter>[0];
+} {
+  const templeKey = String(row.templeKey || '').trim();
+  const temple = TEMPLE_REGISTRY[templeKey];
+  if (!temple) {
+    throw new Error(
+      `Unknown or missing templeKey on grievance ${id}: "${templeKey}". ` +
+        `Allowed keys: ${Object.keys(TEMPLE_REGISTRY).join(', ')}`
+    );
+  }
+
+  // services: prefer what the staff stored on the row, else temple defaults.
+  const storedServices =
+    typeof row.servicesRequested === 'string' && row.servicesRequested.trim()
+      ? row.servicesRequested
+          .split(',')
+          .map((s) => s.trim().toUpperCase())
+          .filter(Boolean)
+      : [];
+  const services = (storedServices.length > 0 ? storedServices : temple.defaultServices) as TempleServiceCode[];
+  const servicesRequestedText = formatServiceList(services);
+
+  const visitFrom = formatDDMMYYYY(row.visitDateFrom);
+  const visitTo = formatDDMMYYYY(row.visitDateTo);
+  const visitDateLine =
+    visitFrom && visitTo && visitTo !== visitFrom
+      ? `from ${visitFrom} to ${visitTo}`
+      : visitFrom
+      ? `on ${visitFrom}`
+      : 'on the above said date';
+
+  const memberCount =
+    row.memberCount !== null && row.memberCount !== undefined && row.memberCount !== ''
+      ? Math.max(1, Number(row.memberCount))
+      : 1;
+
+  const showMobile = (() => {
+    const v = row.showMobileOnLetter;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'string') return v.toLowerCase() === 'true';
+    return false;
+  })();
+  const mobileLine = showMobile && row.mobileNumber ? `Mob No:-${String(row.mobileNumber)}` : undefined;
+
+  const refSeq = refSeqForId(id);
+  const refNumber = `No.M(CA,F&D and MNRE)/Addl.PS/${refSeq}`;
+  const date = formatDDMMYYYY(new Date()) || new Date().toLocaleDateString('en-IN');
+
+  return {
+    data: {
+      refNumber,
+      date,
+      subject: `Request for ${servicesRequestedText}.`,
+      petitionerName: String(row.petitionerName || ''),
+      memberCount,
+      originLine: formatOriginLine(
+        row.originDistrict ? String(row.originDistrict) : undefined,
+        row.originState ? String(row.originState) : undefined
+      ),
+      deityLine: temple.deity,
+      visitDateLine,
+      mobileLine,
+      servicesRequestedText,
+      closing: closingFor(templeKey),
+      signerName: '(Mallikarjunagouda Patil)',
+      recipientLines: temple.recipient,
+      documentId: `TPL${id.replace(/-/g, '').slice(-12).toUpperCase()}`,
+      // Downloadable PDF is meant to be printed onto pre-printed letterhead
+      // stationery — suppress the digital letterhead/footer/watermark and
+      // leave the corresponding zones blank. The HTML preview still shows
+      // the full digital rendering for sanity-checking.
+      letterheadMode: true,
+    },
+  };
+}
+
+/** GET /api/pdf/temple-registry — frontend uses this to populate the temple
+ *  dropdown and pre-fill default services. */
+export async function getTempleRegistry(
+  _req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  const list = Object.entries(TEMPLE_REGISTRY).map(([key, t]) => ({
+    key,
+    deity: t.deity,
+    recipient: t.recipient,
+    defaultServices: t.defaultServices,
+  }));
+  sendSuccess(
+    res,
+    { temples: list, services: SERVICE_LABEL },
+    'Temple registry retrieved'
+  );
+}
+
+/**
+ * GET /api/pdf/grievance/:id/temple-visit
+ *
+ * Streams the temple-visit letter as a PDF, then atomically marks the
+ * underlying grievance RESOLVED + LETTER_GENERATED (unless it was already
+ * RESOLVED — reprints don't re-stamp the resolvedAt timestamp).
+ *
+ * The auto-close happens AFTER the PDF bytes are sent so a failure during
+ * rendering doesn't accidentally close the ticket.
+ */
+export async function generateTempleVisitPDF(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const row = await getRow(GRIEVANCE_TABLE, id);
+    if (!row) {
+      sendNotFound(res, 'Grievance not found');
+      return;
+    }
+
+    if (req.user?.role === 'STAFF' && String(row.createdById) !== req.user.id) {
+      sendForbidden(res, 'You can only download your own grievance letters');
+      return;
+    }
+
+    if (String(row.grievanceType) !== 'TEMPLE_VISIT') {
+      sendError(res, 'This grievance is not a temple visit', 400);
+      return;
+    }
+
+    let built;
+    try {
+      built = buildTempleLetterData(row, id);
+    } catch (e) {
+      sendError(res, e instanceof Error ? e.message : 'Failed to build letter data', 400);
+      return;
+    }
+
+    // Capture the close-out work BEFORE streaming so we can run it once the
+    // response finishes. res.on('finish', ...) fires after the last byte goes
+    // out — that's our signal the PDF was actually delivered.
+    const closeOut = statusUpdateForLetterIssue(row);
+    const wasFirstIssue = closeOut !== null; // false on a reprint of an already-resolved grievance
+    res.once('finish', () => {
+      // Fire-and-forget; the PDF is already on its way to the client. Each
+      // step is wrapped so one failure doesn't block the others (e.g. cache
+      // clear shouldn't depend on Catalyst, notifications shouldn't depend
+      // on the cache).
+      void (async () => {
+        if (closeOut) {
+          try {
+            await updateRow(GRIEVANCE_TABLE, { ROWID: id, ...closeOut });
+            cacheClear('dashboard_stats');
+            cacheClear('stats_by_type');
+            cacheClear('stats_by_status');
+            cacheClear('stats_by_constituency');
+          } catch (err) {
+            console.error('[temple-visit] failed to auto-close grievance', id, err);
+          }
+        }
+        // Notify admins on the first issue only — reprints are routine and
+        // would otherwise spam the bell. The notification doubles as the
+        // action-history record (recipientId + referenceId + createdAt).
+        if (wasFirstIssue) {
+          try {
+            await notifyAdminsTempleVisitIssued(id, row, built.data);
+          } catch (err) {
+            console.error('[temple-visit] failed to notify admins', id, err);
+          }
+        }
+      })();
+    });
+
+    generateTempleVisitLetter(built.data, res);
+  } catch (error) {
+    sendServerError(res, 'Failed to generate temple-visit PDF', error);
+  }
+}
+
+/** GET /api/pdf/grievance/:id/temple-visit/preview — HTML preview that mirrors
+ *  the PDF layout. Does NOT close the grievance. */
+export async function previewTempleVisit(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const row = await getRow(GRIEVANCE_TABLE, id);
+    if (!row) {
+      sendNotFound(res, 'Grievance not found');
+      return;
+    }
+    if (req.user?.role === 'STAFF' && String(row.createdById) !== req.user.id) {
+      sendForbidden(res, 'You can only preview your own grievance letters');
+      return;
+    }
+    if (String(row.grievanceType) !== 'TEMPLE_VISIT') {
+      sendError(res, 'This grievance is not a temple visit', 400);
+      return;
+    }
+
+    let built;
+    try {
+      built = buildTempleLetterData(row, id);
+    } catch (e) {
+      sendError(res, e instanceof Error ? e.message : 'Failed to build letter data', 400);
+      return;
+    }
+    const d = built.data;
+    const memberWord = d.memberCount === 1 ? 'member' : 'members';
+    const dateWord = d.visitDateLine.startsWith('from') ? 'dates' : 'date';
+
+    // Preview matches the PDF: letterhead-mode rendering. The pre-printed
+    // physical letterhead/footer zones are shown as dashed placeholders so
+    // the staff understands what will actually get printed onto the
+    // letterhead stationery vs. what is provided by the paper itself.
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Georgia, serif; max-width: 820px; margin: 30px auto; padding: 20px; color: #000; }
+    .notice { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 8px 12px; border-radius: 6px; font-size: 11px; margin-bottom: 14px; }
+    .letterhead-zone {
+      border: 1px dashed #cbd5e1;
+      height: 140px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      font-size: 11px;
+      font-style: italic;
+      letter-spacing: 0.05em;
+      margin-bottom: 30px;
+      background:
+        repeating-linear-gradient(
+          45deg,
+          transparent 0 8px,
+          rgba(148, 163, 184, 0.05) 8px 16px
+        );
+    }
+    .footer-zone {
+      border: 1px dashed #cbd5e1;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      font-size: 11px;
+      font-style: italic;
+      letter-spacing: 0.05em;
+      margin-top: 36px;
+      background:
+        repeating-linear-gradient(
+          45deg,
+          transparent 0 8px,
+          rgba(148, 163, 184, 0.05) 8px 16px
+        );
+    }
+    .meta { display: flex; justify-content: space-between; margin: 0 0 18px 0; font-size: 11px; }
+    .subject { font-weight: bold; margin: 12px 0 18px 0; font-size: 12px; }
+    .body { font-size: 12px; line-height: 1.9; text-align: justify; }
+    .closing { margin-top: 24px; display: flex; justify-content: space-between; font-size: 12px; }
+    .signer { margin-top: 40px; text-align: right; font-weight: bold; color: #000080; font-size: 13px; }
+    .recipient { margin-top: 28px; font-size: 12px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="notice">
+    <strong>Preview:</strong> This is what the downloaded PDF will contain.
+    The dashed zones are intentionally blank — your printer should be loaded
+    with the office's pre-printed letterhead, which fills those zones on paper.
+  </div>
+
+  <div class="letterhead-zone">Reserved for pre-printed letterhead</div>
+
+  <div class="meta">
+    <span>${escapeHtml(d.refNumber)}</span>
+    <span>Date: ${escapeHtml(d.date)}</span>
+  </div>
+
+  <p style="font-size:12px;">Dear Sir,</p>
+  <div class="subject">Sub: ${escapeHtml(d.subject)}</div>
+
+  <div class="body">
+    <p>The Bearer of this letter ${escapeHtml(d.petitionerName)} and ${d.memberCount} ${memberWord}
+       from ${escapeHtml(d.originLine)} are on pilgrimage to the Holy Shrine of ${escapeHtml(d.deityLine)}
+       ${escapeHtml(d.visitDateLine)}.${d.mobileLine ? ' ' + escapeHtml(d.mobileLine) : ''}</p>
+    <p>I am directed by Hon'ble Minister to request you to kindly arrange ${escapeHtml(d.servicesRequestedText)} on above said ${dateWord} for them and oblige.</p>
+  </div>
+
+  <div class="closing">
+    <span>${escapeHtml(d.closing)}</span>
+    <span>Yours sincerely</span>
+  </div>
+  <div class="signer">${escapeHtml(d.signerName)}</div>
+
+  <div class="recipient">
+    ${d.recipientLines.map((l) => escapeHtml(l)).join('<br>')}
+  </div>
+
+  <div class="footer-zone">Reserved for pre-printed footer</div>
+</body>
+</html>
+    `;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (error) {
+    sendServerError(res, 'Failed to preview temple-visit letter', error);
+  }
+}
+
+/** Minimal HTML escape — sufficient because letter data has already been
+ *  validated at write time and we never inline scripts/styles from user input. */
+function escapeHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ── Tour Program ───────────────────────────────────────────────────────────

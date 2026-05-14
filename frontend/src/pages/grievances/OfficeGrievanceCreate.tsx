@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Upload, X } from "lucide-react";
-import { grievanceApi, uploadsApi, type GrievanceType, type ActionRequired } from "@/lib/api";
+import {
+  grievanceApi,
+  pdfApi,
+  uploadsApi,
+  type GrievanceType,
+  type ActionRequired,
+  type TempleRegistryEntry,
+  type TempleServiceCode,
+} from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { useFormDraft } from "@/hooks/useFormDraft";
 
@@ -37,11 +45,68 @@ export default function OfficeGrievanceCreate() {
     letterTemplate: "",
     referencedBy: "",
     priority: "MEDIUM" as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+    // Temple-visit specific — ignored at submit time when grievanceType
+    // isn't TEMPLE_VISIT.
+    templeKey: "",
+    memberCount: "",
+    originDistrict: "",
+    originState: "",
+    visitDateFrom: "",
+    visitDateTo: "",
+    showMobileOnLetter: false,
   });
 
-  const handleChange = (field: string, value: string) => {
+  // Selected service codes for the temple letter — kept outside useFormDraft
+  // because that hook serialises a key→string map. Defaults seed from the
+  // temple registry the first time a temple is picked.
+  const [servicesRequested, setServicesRequested] = useState<TempleServiceCode[]>([]);
+
+  const [templeRegistry, setTempleRegistry] = useState<TempleRegistryEntry[]>([]);
+  const [serviceLabels, setServiceLabels] = useState<Record<TempleServiceCode, string>>(
+    {} as Record<TempleServiceCode, string>
+  );
+  const [registryLoaded, setRegistryLoaded] = useState(false);
+
+  const isTempleVisit = formData.grievanceType === "TEMPLE_VISIT";
+
+  useEffect(() => {
+    if (!isTempleVisit || registryLoaded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await pdfApi.getTempleRegistry();
+        if (cancelled) return;
+        setTempleRegistry(data.temples);
+        setServiceLabels(data.services);
+      } catch {
+        // Non-fatal — dropdown stays empty, staff can retry later.
+      } finally {
+        if (!cancelled) setRegistryLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isTempleVisit, registryLoaded]);
+
+  const handleChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setError(null);
+  };
+
+  const handleTempleChange = (key: string) => {
+    setFormData((prev) => ({ ...prev, templeKey: key }));
+    const t = templeRegistry.find((x) => x.key === key);
+    if (t && servicesRequested.length === 0) {
+      setServicesRequested(t.defaultServices);
+    }
+    setError(null);
+  };
+
+  const toggleService = (code: TempleServiceCode) => {
+    setServicesRequested((prev) =>
+      prev.includes(code) ? prev.filter((s) => s !== code) : [...prev, code]
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,7 +135,7 @@ export default function OfficeGrievanceCreate() {
       setLoading(false);
       return;
     }
-    if (!formData.description.trim()) {
+    if (!isTempleVisit && !formData.description.trim()) {
       setError("Description is required");
       setLoading(false);
       return;
@@ -81,22 +146,70 @@ export default function OfficeGrievanceCreate() {
       return;
     }
 
+    if (isTempleVisit) {
+      if (!formData.templeKey) {
+        setError("Please select a temple");
+        setLoading(false);
+        return;
+      }
+      if (!formData.visitDateFrom) {
+        setError("Please select a visit date");
+        setLoading(false);
+        return;
+      }
+      const n = Number(formData.memberCount);
+      if (!Number.isInteger(n) || n < 1) {
+        setError("Number of members must be a positive integer");
+        setLoading(false);
+        return;
+      }
+      if (
+        formData.visitDateTo &&
+        new Date(formData.visitDateTo) < new Date(formData.visitDateFrom)
+      ) {
+        setError("Visit end date cannot be before the start date");
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
+      // Synthesize a description for temple visits — the server requires
+      // a non-empty description, and the list/search benefits from one.
+      const synthDescription = isTempleVisit
+        ? `Temple visit letter for ${formData.petitionerName} and ${formData.memberCount} members to ${
+            templeRegistry.find((t) => t.key === formData.templeKey)?.deity || formData.templeKey
+          }`
+        : formData.description;
+
       const created = await grievanceApi.create({
         petitionerName: formData.petitionerName,
         mobileNumber: formData.mobileNumber,
         constituency: formData.constituency,
         wardVillage: formData.wardVillage.trim() || undefined,
         grievanceType: formData.grievanceType as GrievanceType,
-        description: formData.description,
+        description: synthDescription,
         monetaryValue: formData.monetaryValue ? parseFloat(formData.monetaryValue) : undefined,
-        actionRequired: formData.actionRequired as ActionRequired || undefined,
+        // Force GENERATE_LETTER for temple visits — that's the only sensible action.
+        actionRequired: (isTempleVisit
+          ? "GENERATE_LETTER"
+          : (formData.actionRequired as ActionRequired) || undefined) as ActionRequired | undefined,
         letterTemplate: formData.letterTemplate || undefined,
         referencedBy: formData.referencedBy || undefined,
         priority: formData.priority,
         // Marks this entry as filed by an office staffer rather than a public
         // walk-in. Admin views show a separate badge + can filter on it.
         source: 'OFFICE',
+        ...(isTempleVisit && {
+          templeKey: formData.templeKey,
+          memberCount: Number(formData.memberCount),
+          originDistrict: formData.originDistrict.trim() || undefined,
+          originState: formData.originState.trim() || undefined,
+          visitDateFrom: formData.visitDateFrom || undefined,
+          visitDateTo: formData.visitDateTo || undefined,
+          servicesRequested: servicesRequested.length > 0 ? servicesRequested : undefined,
+          showMobileOnLetter: Boolean(formData.showMobileOnLetter),
+        }),
       });
 
       // Upload attachment if the staff selected one. Non-fatal: parent row
@@ -258,6 +371,7 @@ export default function OfficeGrievanceCreate() {
                               <SelectItem value="ELECTRICITY">Electricity</SelectItem>
                               <SelectItem value="EDUCATION">Education</SelectItem>
                               <SelectItem value="HOUSING">Housing</SelectItem>
+                              <SelectItem value="TEMPLE_VISIT">Temple Visit (Darshan Letter)</SelectItem>
                               <SelectItem value="OTHER">Other</SelectItem>
                             </SelectContent>
                           </Select>
@@ -294,15 +408,20 @@ export default function OfficeGrievanceCreate() {
                         </div>
                       </div>
 
-                      <div>
-                        <Label>Description <span className="text-red-500">*</span></Label>
-                        <Textarea
-                          placeholder="Enter detailed description of the grievance"
-                          className="min-h-[140px]"
-                          value={formData.description}
-                          onChange={(e) => handleChange("description", e.target.value)}
-                        />
-                      </div>
+                      {/* Description hidden for TEMPLE_VISIT — body is generated
+                          from the structured fields below; a description is
+                          synthesized at submit time so server validation passes. */}
+                      {!isTempleVisit && (
+                        <div>
+                          <Label>Description <span className="text-red-500">*</span></Label>
+                          <Textarea
+                            placeholder="Enter detailed description of the grievance"
+                            className="min-h-[140px]"
+                            value={formData.description}
+                            onChange={(e) => handleChange("description", e.target.value)}
+                          />
+                        </div>
+                      )}
 
                       <div>
                         <Label>Monetary Value (₹)</Label>
@@ -317,6 +436,138 @@ export default function OfficeGrievanceCreate() {
                         </p>
                       </div>
                     </section>
+
+                    {/* Temple Visit (only when grievanceType === TEMPLE_VISIT). */}
+                    {isTempleVisit && (
+                      <section className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+                        <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wide">
+                          Temple Visit Details
+                        </h3>
+                        <p className="text-xs text-muted-foreground -mt-2">
+                          These fields populate the darshan / accommodation letter sent to the temple.
+                          The grievance will be auto-resolved once the PDF is downloaded.
+                          Type the full name (with honorific, e.g. "Sri. Amit Solanki") into
+                          the Petitioner Name field above — it prints verbatim on the letter.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="md:col-span-2">
+                            <Label>
+                              Temple <span className="text-red-500">*</span>
+                            </Label>
+                            <Select
+                              value={formData.templeKey}
+                              onValueChange={handleTempleChange}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select temple / accommodation office" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {templeRegistry.map((t) => (
+                                  <SelectItem key={t.key} value={t.key}>
+                                    {t.deity}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <Label>
+                              Total Members <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              placeholder="e.g. 4"
+                              value={formData.memberCount}
+                              onChange={(e) => handleChange("memberCount", e.target.value)}
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Total people including the petitioner. Letter prints "{"<name>"} and N members".
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label>Origin District</Label>
+                            <Input
+                              placeholder="e.g. Dharwad"
+                              value={formData.originDistrict}
+                              onChange={(e) => handleChange("originDistrict", e.target.value)}
+                            />
+                          </div>
+
+                          <div>
+                            <Label>Origin State</Label>
+                            <Input
+                              placeholder="e.g. Karnataka"
+                              value={formData.originState}
+                              onChange={(e) => handleChange("originState", e.target.value)}
+                            />
+                          </div>
+
+                          <div>
+                            <Label>
+                              Visit From <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              type="date"
+                              value={formData.visitDateFrom}
+                              onChange={(e) => handleChange("visitDateFrom", e.target.value)}
+                            />
+                          </div>
+
+                          <div>
+                            <Label>Visit To (optional)</Label>
+                            <Input
+                              type="date"
+                              value={formData.visitDateTo}
+                              onChange={(e) => handleChange("visitDateTo", e.target.value)}
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Leave empty for a single-day visit.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label>Services Requested</Label>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {(Object.keys(serviceLabels) as TempleServiceCode[]).map((code) => {
+                              const active = servicesRequested.includes(code);
+                              return (
+                                <button
+                                  key={code}
+                                  type="button"
+                                  onClick={() => toggleService(code)}
+                                  className={`px-3 py-1 rounded-full text-xs border transition ${
+                                    active
+                                      ? "bg-amber-500 text-black border-amber-500"
+                                      : "bg-white text-slate-600 border-slate-300 hover:border-amber-400"
+                                  }`}
+                                >
+                                  {serviceLabels[code]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Defaults are auto-selected based on the temple. Click to toggle.
+                          </p>
+                        </div>
+
+                        <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(formData.showMobileOnLetter)}
+                            onChange={(e) =>
+                              handleChange("showMobileOnLetter", e.target.checked)
+                            }
+                          />
+                          Include the petitioner's mobile number on the letter
+                        </label>
+                      </section>
+                    )}
 
                     {/* File Upload */}
                     <section className="space-y-4">

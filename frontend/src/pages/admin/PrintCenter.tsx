@@ -8,6 +8,7 @@ import {
   Train,
   Calendar,
   RefreshCw,
+  Landmark,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ import {
 
 type PrintableItem = {
   id: string;
-  type: 'grievance' | 'train' | 'tour';
+  type: 'grievance' | 'temple' | 'train' | 'tour';
   title: string;
   subtitle: string;
   date: string;
@@ -58,7 +59,22 @@ export default function PrintCenter() {
       console.log('PrintCenter - Grievances response:', grievanceRes);
       const grievances = Array.isArray(grievanceRes?.data) ? grievanceRes.data : [];
       grievances.forEach((g: Grievance) => {
-        // Include verified grievances (can be VERIFIED, IN_PROGRESS, or RESOLVED status)
+        // Temple-visit grievances are a self-service flow — they never go
+        // through admin verification, so they're always printable from the
+        // moment they're created. Listed as a separate type/chip.
+        if (g.grievanceType === 'TEMPLE_VISIT') {
+          items.push({
+            id: g.id,
+            type: 'temple',
+            title: `Temple Visit Letter - ${g.petitionerName}`,
+            subtitle: `${g.memberCount ?? '?'} member(s) • ${g.constituency}`,
+            date: g.resolvedAt || g.createdAt,
+            status: g.status === 'RESOLVED' ? 'Resolved' : 'Open',
+            data: g,
+          });
+          return;
+        }
+        // Other grievances: only listed after admin verification.
         if (g.isVerified || g.status === 'RESOLVED' || g.status === 'IN_PROGRESS') {
           items.push({
             id: g.id,
@@ -148,6 +164,7 @@ export default function PrintCenter() {
 
   const endpointFor = (item: PrintableItem): string | null => {
     if (item.type === 'grievance') return `/pdf/grievance/${item.id}`;
+    if (item.type === 'temple') return `/pdf/grievance/${item.id}/temple-visit`;
     if (item.type === 'train') return `/pdf/train-eq/${item.id}`;
     if (item.type === 'tour') return `/pdf/tour-program/${item.id}`;
     return null;
@@ -155,6 +172,7 @@ export default function PrintCenter() {
 
   const filenameFor = (item: PrintableItem): string => {
     if (item.type === 'grievance') return `Grievance_Letter_${item.id}.pdf`;
+    if (item.type === 'temple') return `TempleVisit_Letter_${item.id}.pdf`;
     if (item.type === 'train') return `TrainEQ_Letter_${item.id}.pdf`;
     return `Tour_Invitation_${item.id}.pdf`;
   };
@@ -165,6 +183,11 @@ export default function PrintCenter() {
       const endpoint = endpointFor(item);
       if (!endpoint) return;
       await pdfApi.downloadPDF(endpoint, filenameFor(item));
+      // Temple-visit download flips the grievance to RESOLVED on the server.
+      // Refresh so the row's status badge updates without a manual refresh.
+      if (item.type === 'temple') {
+        await fetchPrintableItems();
+      }
     } catch (error: unknown) {
       console.error('Failed to download PDF:', error);
       const e = error as Record<string, unknown> | null;
@@ -182,6 +205,8 @@ export default function PrintCenter() {
         html = await pdfApi.previewTrainEQLetter(item.id) as string;
       } else if (item.type === 'grievance') {
         html = await pdfApi.previewGrievanceLetter(item.id) as string;
+      } else if (item.type === 'temple') {
+        html = await pdfApi.previewTempleVisit(item.id);
       } else if (item.type === 'tour') {
         html = await pdfApi.previewTourProgram(item.id);
       } else {
@@ -216,6 +241,11 @@ export default function PrintCenter() {
           printWindow.print();
         };
       }
+      // Printing a temple-visit letter resolves the grievance server-side;
+      // refresh so the list reflects the new status.
+      if (item.type === 'temple') {
+        await fetchPrintableItems();
+      }
     } catch (error: unknown) {
       console.error('Failed to print:', error);
       const e = error as Record<string, unknown> | null;
@@ -230,6 +260,8 @@ export default function PrintCenter() {
         return <Train className="h-5 w-5 text-indigo-700" />;
       case 'tour':
         return <Calendar className="h-5 w-5 text-indigo-700" />;
+      case 'temple':
+        return <Landmark className="h-5 w-5 text-orange-700" />;
       default:
         return <FileText className="h-5 w-5 text-indigo-700" />;
     }
@@ -241,6 +273,8 @@ export default function PrintCenter() {
         return 'bg-blue-100 text-blue-800';
       case 'tour':
         return 'bg-green-100 text-green-800';
+      case 'temple':
+        return 'bg-orange-100 text-orange-800';
       default:
         return 'bg-amber-100 text-amber-800';
     }
@@ -279,7 +313,7 @@ export default function PrintCenter() {
                   onStartDateChange={setStartDate}
                   onEndDateChange={setEndDate}
                 />
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   <Button
                     variant={filter === "all" ? "default" : "outline"}
                     onClick={() => setFilter("all")}
@@ -295,6 +329,14 @@ export default function PrintCenter() {
                   >
                     <FileText className="h-4 w-4 mr-2" />
                     Grievance Letters ({printableItems.filter(i => i.type === 'grievance').length})
+                  </Button>
+                  <Button
+                    variant={filter === "temple" ? "default" : "outline"}
+                    onClick={() => setFilter("temple")}
+                    className="h-10 w-full justify-center"
+                  >
+                    <Landmark className="h-4 w-4 mr-2" />
+                    Temple Visit ({printableItems.filter(i => i.type === 'temple').length})
                   </Button>
                   <Button
                     variant={filter === "train" ? "default" : "outline"}
@@ -343,7 +385,7 @@ export default function PrintCenter() {
                     <Printer className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-muted-foreground">No letters ready for printing</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Verified grievances, approved train EQ requests, and accepted tour invitations will appear here.
+                      Verified grievances, temple-visit letters, approved train EQ requests, and accepted tour invitations will appear here.
                     </p>
                   </div>
                 ) : (
@@ -374,10 +416,16 @@ export default function PrintCenter() {
                       {/* Right */}
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-shrink-0 relative z-20">
                         <Badge className={getItemBadgeColor(item.type)}>
-                          {item.type === 'grievance' ? 'Grievance' : item.type === 'train' ? 'Train EQ' : 'Tour Invitation'}
+                          {item.type === 'grievance'
+                            ? 'Grievance'
+                            : item.type === 'temple'
+                            ? 'Temple Visit'
+                            : item.type === 'train'
+                            ? 'Train EQ'
+                            : 'Tour Invitation'}
                         </Badge>
 
-                        {(item.type === 'train' || item.type === 'grievance' || item.type === 'tour') && (
+                        {(item.type === 'train' || item.type === 'grievance' || item.type === 'temple' || item.type === 'tour') && (
                           <Button 
                             size="icon" 
                             variant="ghost" 

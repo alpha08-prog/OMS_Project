@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateTrainEQLetter = generateTrainEQLetter;
 exports.generateGrievanceLetter = generateGrievanceLetter;
 exports.generateTourProgramPDF = generateTourProgramPDF;
+exports.generateTempleVisitLetter = generateTempleVisitLetter;
 exports.generateGenericLetter = generateGenericLetter;
 const pdfkit_1 = __importDefault(require("pdfkit"));
 const fs_1 = __importDefault(require("fs"));
@@ -470,12 +471,13 @@ function generateGrievanceLetter(data, res) {
             .fontSize(11)
             .text('Sir/Madam,', margin, y);
         y += 20;
+        const wardVillageLine = data.wardVillage ? `\n• Ward/Village: ${data.wardVillage}` : '';
         const bodyText = `I am writing to bring to your attention a grievance received at our office that requires your immediate attention and action.
 
 Petitioner Details:
 • Name: ${data.petitionerName}
 • Mobile: ${data.mobileNumber}
-• Constituency: ${data.constituency}
+• Constituency: ${data.constituency}${wardVillageLine}
 
 Grievance Details:
 • Type: ${data.grievanceType}
@@ -595,6 +597,153 @@ function generateTourProgramPDF(events, dateRange, res) {
             .font('Helvetica')
             .fillColor('#888888')
             .text(`This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`, margin, doc.page.height - 40, { width: doc.page.width - margin * 2, align: 'center' });
+    });
+}
+// Generate Temple Visit (darshan / accommodation) letter. Uses the
+// Addl. PS letterhead — three-column header identical to the Train EQ form
+// (officer details + emblem + contact block), then a narrative body and a
+// per-temple recipient block at the bottom.
+function generateTempleVisitLetter(data, res) {
+    const documentId = data.documentId ||
+        `TPL${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const filename = `TempleVisit_${data.refNumber.replace(/[^A-Za-z0-9]/g, '_')}_${documentId.slice(0, 6)}.pdf`;
+    streamPdfToResponse(res, filename, 'TempleVisit', (doc) => {
+        doc.page.margins.bottom = 15;
+        const letterheadMode = !!data.letterheadMode;
+        // Watermark is for digital-only copies. On letterhead stationery the
+        // physical paper itself is the source of truth; a diagonal watermark
+        // would just clash with the pre-printed letterhead visually.
+        if (!letterheadMode) {
+            doc.on('pageAdded', () => createWatermark(doc, documentId, data.refNumber));
+            createWatermark(doc, documentId, data.refNumber);
+        }
+        const pageWidth = doc.page.width;
+        const margin = 50;
+        const innerWidth = pageWidth - margin * 2;
+        const headerTop = 50;
+        const officerW = 220;
+        // Body start Y. In letterhead mode we shift down to ~180pt (≈ 2.5") so
+        // the pre-printed letterhead occupies the blank zone above. In normal
+        // mode we draw the digital letterhead in that zone and start the body
+        // right below it.
+        let y;
+        if (letterheadMode) {
+            y = 180;
+        }
+        else {
+            // ── Letterhead — left officer block ────────────────────────────────
+            doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.navy)
+                .text('MALLIKARJUNGOUDA PATIL', margin, headerTop, { width: officerW, lineBreak: false });
+            const descLines = [
+                'ADDITIONAL PRIVATE SECRETARY TO MINISTER OF',
+                'FOOD & PUBLIC DISTRIBUTION AND CONSUMER AFFAIRS',
+                'NEW & RENEWABLE ENERGY',
+                'GOVERNMENT OF INDIA, NEW DELHI',
+            ];
+            const descLineGap = 11;
+            doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.black);
+            descLines.forEach((line, i) => {
+                doc.text(line, margin, headerTop + 22 + i * descLineGap, { width: officerW, lineBreak: false });
+            });
+            // Center emblem
+            const centerX = margin + officerW + 5;
+            const centerW = 65;
+            const emblem = getEmblemBuffer();
+            if (emblem) {
+                try {
+                    doc.image(emblem, centerX, headerTop, { fit: [centerW, 75], align: 'center' });
+                }
+                catch {
+                    doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+                        .text('GOVT. OF INDIA', centerX, headerTop + 30, { width: centerW, align: 'center', lineBreak: false });
+                }
+            }
+            else {
+                doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+                    .text('GOVT. OF INDIA', centerX, headerTop + 30, { width: centerW, align: 'center', lineBreak: false });
+            }
+            // Right contact block
+            const rightX = margin + officerW + 5 + centerW + 5;
+            const rightLabelW = 55;
+            const rightValueX = rightX + rightLabelW;
+            const rightValueW = pageWidth - margin - rightValueX;
+            let rightY = headerTop;
+            const rowGap = 12;
+            const writeRow = (label, value) => {
+                doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+                    .text(label, rightX, rightY, { width: rightLabelW, lineBreak: false });
+                doc.text(': ' + value, rightValueX, rightY, { width: rightValueW, lineBreak: false });
+                rightY += rowGap;
+            };
+            const writeContinuation = (value) => {
+                doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+                    .text('  ' + value, rightValueX, rightY, { width: rightValueW, lineBreak: false });
+                rightY += rowGap;
+            };
+            writeRow('OFF', 'CHITAGUPPI HOSPITAL COMPOUND,');
+            writeContinuation('LAMINGTON ROAD, HUBLI- 580 020.');
+            writeRow('TEL', '(0) 2251055   FAX : 2258955');
+            writeRow('E-MAIL', 'patil.nimmav@gmail.com');
+            writeRow('DELHI OFF', 'Room No. 179 "G" Wing, 1st Floor');
+            writeContinuation('Krishi Bhawan, New Delhi - 110 001');
+            writeRow('TEL', '23070637, 23070642');
+            y = Math.max(headerTop + 85, rightY + 10);
+        }
+        // ── Reference number + Date row ───────────────────────────────────────
+        doc.font('Helvetica').fontSize(10).fillColor(COLORS.black)
+            .text(data.refNumber, margin, y, { lineBreak: false });
+        doc.text(`Date: ${data.date}`, pageWidth - margin - 180, y, { width: 180, align: 'left', lineBreak: false });
+        y += 28;
+        // ── Salutation + Subject ──────────────────────────────────────────────
+        doc.font('Helvetica').fontSize(11).text('Dear Sir,', margin, y, { lineBreak: false });
+        y += 22;
+        doc.font('Helvetica-Bold').text(`Sub: ${data.subject}`, margin, y, { width: innerWidth, lineBreak: false });
+        y += 24;
+        // ── Body ──────────────────────────────────────────────────────────────
+        doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
+        // "The Bearer of this letter <Name> and <N> members from <originLine> are
+        //  on pilgrimage to the Holy Shrine of <Deity> <visitDateLine>."
+        const bodyParas = [];
+        const memberWord = data.memberCount === 1 ? 'member' : 'members';
+        bodyParas.push(`The Bearer of this letter ${data.petitionerName} and ${data.memberCount} ${memberWord} ` +
+            `from ${data.originLine} are on pilgrimage to the Holy Shrine of ${data.deityLine} ` +
+            `${data.visitDateLine}.` +
+            (data.mobileLine ? ` ${data.mobileLine}` : ''));
+        bodyParas.push(`I am directed by Hon'ble Minister to request you to kindly arrange ${data.servicesRequestedText} ` +
+            `on above said ${data.visitDateLine.startsWith('from') ? 'dates' : 'date'} for them and oblige.`);
+        bodyParas.forEach((p) => {
+            doc.text(p, margin, y, {
+                width: innerWidth,
+                align: 'justify',
+                lineGap: 4,
+            });
+            y = doc.y + 12;
+        });
+        // ── Closing + signature ───────────────────────────────────────────────
+        y += 6;
+        doc.text(data.closing, margin, y, { lineBreak: false });
+        // "Yours sincerely" — right-aligned
+        doc.text('Yours sincerely', pageWidth - margin - 200, y, { width: 200, align: 'right', lineBreak: false });
+        y += 48;
+        doc.font('Helvetica-Bold').fontSize(11)
+            .text(data.signerName, pageWidth - margin - 200, y, { width: 200, align: 'right', lineBreak: false });
+        y += 28;
+        // ── Recipient block (bottom-left, like a footer address) ──────────────
+        doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
+        data.recipientLines.forEach((line) => {
+            doc.text(line, margin, y, { width: innerWidth, lineBreak: false });
+            y += 14;
+        });
+        // ── Bottom footer line ─ skipped in letterhead mode so the pre-printed
+        // physical footer (Delhi residence + tel) stays clean.
+        if (!letterheadMode) {
+            const footerLineY = doc.page.height - 55;
+            doc.moveTo(margin, footerLineY).lineTo(pageWidth - margin, footerLineY).strokeColor(COLORS.black).stroke();
+            doc.font('Helvetica').fontSize(9).fillColor(COLORS.black)
+                .text('DELHI RESIDENCE : #11, AKBAR ROAD, NEW DELHI - 110001, TEL : 011 23014097, 23094098', margin, footerLineY + 6, { align: 'center', width: innerWidth, lineBreak: false });
+            doc.fontSize(7).fillColor('#888888')
+                .text(`This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`, margin, footerLineY + 22, { width: innerWidth, align: 'center', lineBreak: false });
+        }
     });
 }
 // Generate generic letter
