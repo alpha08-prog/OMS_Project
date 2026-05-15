@@ -157,7 +157,9 @@ export async function createNews(
             type: 'NEWS_CRITICAL',
             title: `🚨 Critical news: ${headline}`,
             body: description ? String(description).slice(0, 200) : '',
-            link: '/admin/news',
+            // News list is at /news/view (admin + super-admin). Pass the row
+            // id so the page can highlight or expand the matching card.
+            link: `/news/view?id=${encodeURIComponent(String(row.ROWID))}`,
             referenceId: String(row.ROWID),
             referenceType: 'NEWS',
           });

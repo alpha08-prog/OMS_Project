@@ -960,25 +960,59 @@ export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Resp
       y = doc.y + 12;
     });
 
-    // ── Closing + signature ───────────────────────────────────────────────
-    // Closing ("Thanking you,") stays on the left; "Yours sincerely" and the
-    // signer's name are centered across the full inner width. Drawing the
-    // centered text in a full-width box means PDFKit centers it relative to
-    // the page, not relative to whatever the closing text occupies.
+    // ── Closing + signature + recipient ───────────────────────────────────
+    // The recipient address block is anchored near the page bottom so the
+    // pre-printed footer zone (letterhead mode) or rendered footer line
+    // (digital mode) has the breathing room the office expects. The
+    // signature block is then vertically centred in the gap between the
+    // body and the recipient block, instead of being bunched up directly
+    // under the body with a sea of whitespace below.
     y += 6;
-    doc.text(data.closing, margin, y, { lineBreak: false });
-    doc.text('Yours sincerely', margin, y, { width: innerWidth, align: 'center', lineBreak: false });
-    y += 48;
-    doc.font('Helvetica-Bold').fontSize(11)
-      .text(data.signerName, margin, y, { width: innerWidth, align: 'center', lineBreak: false });
-    y += 28;
+    const bodyEndY = y;
+    const recipientLineHeight = 14;
+    const recipientLineCount = Math.max(1, data.recipientLines.length);
+    // Anchor the recipient block roughly two-thirds down the page — high
+    // enough to leave a comfortable margin above the (pre-printed or
+    // rendered) footer, but not so low that there's a sea of whitespace
+    // between the signature and the address. Tuned by eye against the
+    // sample letter; bump the reserve to push the block higher.
+    const bottomReserve = letterheadMode ? 230 : 250;
+    const recipientStartY = Math.max(
+      bodyEndY + 90,
+      doc.page.height - bottomReserve - recipientLineCount * recipientLineHeight
+    );
 
-    // ── Recipient block (bottom-left, like a footer address) ──────────────
+    // Signature block layout (relative to its top):
+    //   0   : closing (left)
+    //   +20 : "Yours sincerely" (centred)
+    //   +50 : signer name (centred, bold)
+    // Total block height ≈ 50pt; centre it in the available gap.
+    const sigBlockHeight = 50;
+    const gapMid = (bodyEndY + recipientStartY) / 2;
+    const closingY = Math.max(bodyEndY + 18, gapMid - sigBlockHeight / 2);
+
     doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
-    data.recipientLines.forEach((line) => {
-      doc.text(line, margin, y, { width: innerWidth, lineBreak: false });
-      y += 14;
+    doc.text(data.closing, margin, closingY, { lineBreak: false });
+    doc.text('Yours sincerely', margin, closingY + 20, {
+      width: innerWidth,
+      align: 'center',
+      lineBreak: false,
     });
+    doc.font('Helvetica-Bold').fontSize(11).text(data.signerName, margin, closingY + 50, {
+      width: innerWidth,
+      align: 'center',
+      lineBreak: false,
+    });
+
+    // Recipient block (bottom-left, like a footer address). Anchored to the
+    // page bottom so it visually balances the header zone above the body.
+    doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
+    let recipY = recipientStartY;
+    data.recipientLines.forEach((line) => {
+      doc.text(line, margin, recipY, { width: innerWidth, lineBreak: false });
+      recipY += recipientLineHeight;
+    });
+    y = recipY;
 
     // ── Bottom footer line ─ skipped in letterhead mode so the pre-printed
     // physical footer (Delhi residence + tel) stays clean.

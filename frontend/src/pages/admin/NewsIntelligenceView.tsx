@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { 
-  Newspaper, 
+import { useSearchParams } from "react-router-dom";
+import {
+  Newspaper,
   AlertTriangle, 
   RefreshCw, 
   Filter,
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/select";
 
 export default function NewsIntelligenceView() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [news, setNews] = useState<NewsIntelligence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +79,22 @@ export default function NewsIntelligenceView() {
     setSelectedNews(item);
     setDetailsOpen(true);
   };
+
+  // Deep-link: critical-news notifications carry /news/view?id=<row>. Open
+  // the details dialog for the linked story once the list has loaded, then
+  // strip the param so dismissing the dialog doesn't keep re-opening it.
+  const targetNewsId = searchParams.get("id");
+  useEffect(() => {
+    if (!targetNewsId || news.length === 0) return;
+    const match = news.find((n) => n.id === targetNewsId);
+    if (match) {
+      setSelectedNews(match);
+      setDetailsOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("id");
+      setSearchParams(next, { replace: true });
+    }
+  }, [targetNewsId, news, searchParams, setSearchParams]);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this news item?")) return;

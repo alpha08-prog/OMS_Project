@@ -70,12 +70,14 @@ export type Grievance = {
   source?: GrievanceSource
   // Temple-visit specific. Present only when grievanceType === 'TEMPLE_VISIT'.
   templeKey?: string | null
+  // Newline-separated address block for off-registry ("Other") temples.
+  templeRecipient?: string | null
   memberCount?: number | null
   originDistrict?: string | null
   originState?: string | null
   visitDateFrom?: string | null
   visitDateTo?: string | null
-  servicesRequested?: TempleServiceCode[]
+  servicesRequested?: Array<TempleServiceCode | `OTHER:${string}`>
   showMobileOnLetter?: boolean
 }
 
@@ -94,12 +96,16 @@ export type CreateGrievanceRequest = {
   source?: GrievanceSource
   // Temple-visit fields — all optional; ignored when grievanceType !== TEMPLE_VISIT
   templeKey?: string
+  // Newline-separated recipient/address lines for off-registry ("Other") temples.
+  templeRecipient?: string
   memberCount?: number
   originDistrict?: string
   originState?: string
   visitDateFrom?: string
   visitDateTo?: string
-  servicesRequested?: TempleServiceCode[]
+  // Each entry is either a TempleServiceCode (predefined) or a freeform
+  // "OTHER:<text>" string that staff entered via the "Other" option.
+  servicesRequested?: Array<TempleServiceCode | `OTHER:${string}`>
   showMobileOnLetter?: boolean
 }
 

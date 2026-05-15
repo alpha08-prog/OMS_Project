@@ -12,28 +12,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArrowLeft, ChevronDown, Upload, X } from "lucide-react";
 import {
   grievanceApi,
   pdfApi,
   uploadsApi,
   type GrievanceType,
-  type ActionRequired,
   type TempleRegistryEntry,
   type TempleServiceCode,
 } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { useFormDraft } from "@/hooks/useFormDraft";
 
+// Sentinel templeKey for the "Other" dropdown option. When chosen, the staff
+// member supplies the temple name via a text input and we send that name as
+// the templeKey on submit.
+const OTHER_TEMPLE_KEY = "OTHER";
+
+type Step = "type" | "form";
+
 export default function GrievanceCreate() {
   const navigate = useNavigate();
+  // Two-step flow: pick the grievance type first, then show the right form.
+  const [step, setStep] = useState<Step>("type");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
-  // Form state — persisted to sessionStorage so a refresh / back-button trip
-  // doesn't wipe everything the staff member has typed. Cleared on success.
   const [formData, setFormData, clearFormDraft] = useFormDraft("grievance:create", {
     petitionerName: "",
     mobileNumber: "",
@@ -42,29 +54,28 @@ export default function GrievanceCreate() {
     grievanceType: "" as GrievanceType | "",
     description: "",
     monetaryValue: "",
-    actionRequired: "" as ActionRequired | "",
-    letterTemplate: "",
     referencedBy: "",
     // Temple-visit specific. Persisted alongside the rest so a refresh doesn't
     // wipe what the staff typed. Ignored at submit time when grievanceType is
     // anything other than TEMPLE_VISIT.
     templeKey: "",
+    customTempleName: "",
+    customTempleRecipient: "",
     memberCount: "",
     originDistrict: "",
     originState: "",
     visitDateFrom: "",
     visitDateTo: "",
     showMobileOnLetter: false,
+    customService: "",
   });
 
-  // Multi-select for temple services. Not in the persisted draft because
-  // useFormDraft is a key→string map; we keep it in plain state and re-derive
-  // defaults from the registry when the temple changes.
+  // Selected registry service codes. Kept outside useFormDraft (which serialises
+  // a key→string map) and re-seeded from the temple registry when a temple is
+  // first picked.
   const [servicesRequested, setServicesRequested] = useState<TempleServiceCode[]>([]);
+  const [otherServiceChecked, setOtherServiceChecked] = useState(false);
 
-  // Temple registry (deity + recipient + default services per temple). Loaded
-  // once on first mount of the temple form — failures are non-fatal, the user
-  // will just see an empty dropdown.
   const [templeRegistry, setTempleRegistry] = useState<TempleRegistryEntry[]>([]);
   const [serviceLabels, setServiceLabels] = useState<Record<TempleServiceCode, string>>(
     {} as Record<TempleServiceCode, string>
@@ -72,6 +83,7 @@ export default function GrievanceCreate() {
   const [registryLoaded, setRegistryLoaded] = useState(false);
 
   const isTempleVisit = formData.grievanceType === "TEMPLE_VISIT";
+  const isOtherTemple = formData.templeKey === OTHER_TEMPLE_KEY;
 
   useEffect(() => {
     if (!isTempleVisit || registryLoaded) return;
@@ -98,14 +110,14 @@ export default function GrievanceCreate() {
     setError(null);
   };
 
-  // Picking a temple — auto-fill default services so single-temple visits need
-  // zero extra clicks. Only applied when the user hasn't already chosen
-  // services manually (so we don't clobber their selection on revisit).
   const handleTempleChange = (key: string) => {
     setFormData((prev) => ({ ...prev, templeKey: key }));
-    const t = templeRegistry.find((x) => x.key === key);
-    if (t && servicesRequested.length === 0) {
-      setServicesRequested(t.defaultServices);
+    // Auto-seed default services only when a registry temple is picked.
+    if (key !== OTHER_TEMPLE_KEY) {
+      const t = templeRegistry.find((x) => x.key === key);
+      if (t && servicesRequested.length === 0) {
+        setServicesRequested(t.defaultServices);
+      }
     }
     setError(null);
   };
@@ -116,12 +128,21 @@ export default function GrievanceCreate() {
     );
   };
 
+  // Step 1 → Step 2: validate type was picked and advance.
+  const handleContinue = () => {
+    if (!formData.grievanceType) {
+      setError("Please select a grievance type to continue");
+      return;
+    }
+    setError(null);
+    setStep("form");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    // Validation
     if (!formData.petitionerName.trim()) {
       setError("Petitioner name is required");
       setLoading(false);
@@ -142,9 +163,6 @@ export default function GrievanceCreate() {
       setLoading(false);
       return;
     }
-    // For TEMPLE_VISIT the description is auto-derived from the structured
-    // fields, so we synthesize one rather than require manual entry. Other
-    // types still need a real description.
     if (!isTempleVisit && !formData.description.trim()) {
       setError("Description is required");
       setLoading(false);
@@ -156,12 +174,19 @@ export default function GrievanceCreate() {
       return;
     }
 
-    // Temple-visit-specific validation: temple + visit-from + member count are
-    // load-bearing (used in every paragraph of the letter). The rest are
-    // strongly recommended but not blockers — the PDF renderer has fallbacks.
     if (isTempleVisit) {
       if (!formData.templeKey) {
         setError("Please select a temple");
+        setLoading(false);
+        return;
+      }
+      if (isOtherTemple && !formData.customTempleName.trim()) {
+        setError("Please specify the temple name");
+        setLoading(false);
+        return;
+      }
+      if (isOtherTemple && !formData.customTempleRecipient.trim()) {
+        setError("Please specify who the letter should be addressed to");
         setLoading(false);
         return;
       }
@@ -184,16 +209,34 @@ export default function GrievanceCreate() {
         setLoading(false);
         return;
       }
+      if (otherServiceChecked && !formData.customService.trim()) {
+        setError("Please specify the requested service");
+        setLoading(false);
+        return;
+      }
     }
 
     try {
-      // Synthesize a description for temple visits so server-side validation
-      // (description required, see grievance.routes.ts) still passes and the
-      // grievance list / search renders something useful.
+      const finalTempleKey = isOtherTemple
+        ? formData.customTempleName.trim()
+        : formData.templeKey;
+
+      // Predefined registry codes ride alongside an optional OTHER:<text>
+      // entry that the backend stores as-is. Commas would collide with the
+      // CSV separator backend-side, so we strip them.
+      const finalServices: string[] = [...servicesRequested];
+      if (otherServiceChecked && formData.customService.trim()) {
+        const note = formData.customService.trim().replace(/,/g, " ");
+        finalServices.push(`OTHER:${note}`);
+      }
+
+      const templeNameForDesc = isOtherTemple
+        ? formData.customTempleName.trim()
+        : templeRegistry.find((t) => t.key === formData.templeKey)?.deity ||
+          formData.templeKey;
+
       const synthDescription = isTempleVisit
-        ? `Temple visit letter for ${formData.petitionerName} and ${formData.memberCount} members to ${
-            templeRegistry.find((t) => t.key === formData.templeKey)?.deity || formData.templeKey
-          }`
+        ? `Temple visit letter for ${formData.petitionerName} and ${formData.memberCount} members to ${templeNameForDesc}`
         : formData.description;
 
       const created = await grievanceApi.create({
@@ -203,34 +246,37 @@ export default function GrievanceCreate() {
         wardVillage: formData.wardVillage.trim() || undefined,
         grievanceType: formData.grievanceType as GrievanceType,
         description: synthDescription,
-        monetaryValue: formData.monetaryValue ? parseFloat(formData.monetaryValue) : undefined,
-        // For TEMPLE_VISIT the only sensible action is "generate the letter" — force it.
-        actionRequired: (isTempleVisit
-          ? "GENERATE_LETTER"
-          : (formData.actionRequired as ActionRequired) || undefined) as ActionRequired | undefined,
-        letterTemplate: formData.letterTemplate || undefined,
+        monetaryValue:
+          !isTempleVisit && formData.monetaryValue
+            ? parseFloat(formData.monetaryValue)
+            : undefined,
+        // For TEMPLE_VISIT the only sensible action is "generate the letter".
+        actionRequired: isTempleVisit ? "GENERATE_LETTER" : undefined,
         referencedBy: formData.referencedBy || undefined,
         ...(isTempleVisit && {
-          templeKey: formData.templeKey,
+          templeKey: finalTempleKey,
+          templeRecipient: isOtherTemple
+            ? formData.customTempleRecipient.trim()
+            : undefined,
           memberCount: Number(formData.memberCount),
           originDistrict: formData.originDistrict.trim() || undefined,
           originState: formData.originState.trim() || undefined,
           visitDateFrom: formData.visitDateFrom || undefined,
           visitDateTo: formData.visitDateTo || undefined,
-          servicesRequested: servicesRequested.length > 0 ? servicesRequested : undefined,
+          servicesRequested:
+            finalServices.length > 0
+              ? (finalServices as Array<TempleServiceCode | `OTHER:${string}`>)
+              : undefined,
           showMobileOnLetter: Boolean(formData.showMobileOnLetter),
         }),
       });
 
-      // Upload attachment if the staff selected one. Non-fatal: if the
-      // upload fails, the grievance row is already saved; we surface the
-      // error but let the redirect-to-home still run so they can retry by
-      // editing the grievance later.
       if (file) {
         try {
-          await uploadsApi.upload(file, 'GRIEVANCE', created.id);
+          await uploadsApi.upload(file, "GRIEVANCE", created.id);
         } catch (uploadErr: unknown) {
-          const msg = uploadErr instanceof Error ? uploadErr.message : 'attachment upload failed';
+          const msg =
+            uploadErr instanceof Error ? uploadErr.message : "attachment upload failed";
           setError(`Grievance saved, but attachment failed: ${msg}`);
         }
       }
@@ -248,50 +294,139 @@ export default function GrievanceCreate() {
     }
   };
 
+  const pageHeader = (
+    <div>
+      <h1 className="text-2xl font-semibold text-indigo-900">
+        Register New Grievance
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        Public Grievance & Letter Tracking
+      </p>
+    </div>
+  );
+
+  const errorBanner = error ? (
+    <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
+      ❌ {error}
+    </div>
+  ) : null;
+
+  const successBanner = success ? (
+    <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
+      ✅ Grievance created successfully! Redirecting...
+    </div>
+  ) : null;
+
+  // ----- Step 1: just the type picker -----
+  if (step === "type") {
+    return (
+      <div className="flex min-h-screen bg-background relative">
+        <DashboardSidebar />
+        <main className="flex-1 overflow-auto relative z-0">
+          <div className="w-full min-h-screen bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
+            <div className="max-w-2xl mx-auto space-y-6">
+              {pageHeader}
+              {errorBanner}
+              <Card className="rounded-2xl shadow-sm bg-white/90 backdrop-blur border border-indigo-100">
+                <CardHeader>
+                  <CardTitle className="text-lg">Choose Grievance Type</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <p className="text-sm text-muted-foreground">
+                    Select the type first — we will only ask the fields relevant
+                    to that type.
+                  </p>
+                  <div>
+                    <Label>
+                      Grievance Type <span className="text-red-500">*</span>
+                    </Label>
+                    <Select
+                      value={formData.grievanceType}
+                      onValueChange={(v) => handleChange("grievanceType", v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select grievance type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="WATER">Water</SelectItem>
+                        <SelectItem value="ROAD">Road</SelectItem>
+                        <SelectItem value="POLICE">Police</SelectItem>
+                        <SelectItem value="HEALTH">Health</SelectItem>
+                        <SelectItem value="TRANSFER">Transfer</SelectItem>
+                        <SelectItem value="FINANCIAL_AID">Financial Aid</SelectItem>
+                        <SelectItem value="ELECTRICITY">Electricity</SelectItem>
+                        <SelectItem value="EDUCATION">Education</SelectItem>
+                        <SelectItem value="HOUSING">Housing</SelectItem>
+                        <SelectItem value="TEMPLE_VISIT">
+                          Temple Visit (Darshan Letter)
+                        </SelectItem>
+                        <SelectItem value="OTHER">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => navigate(-1)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      className="bg-amber-500 text-black hover:bg-amber-600"
+                      onClick={handleContinue}
+                    >
+                      Continue
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // ----- Step 2: the appropriate form (temple vs default) -----
   return (
     <div className="flex min-h-screen bg-background relative">
       <DashboardSidebar />
-      
+
       <main className="flex-1 overflow-auto relative z-0">
         <div className="w-full min-h-screen bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
           <div className="max-w-7xl mx-auto space-y-6">
+            {pageHeader}
 
-            {/* Page Header */}
-            <div>
-              <h1 className="text-2xl font-semibold text-indigo-900">
-                Register New Grievance
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Public Grievance & Letter Tracking
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setStep("type");
+                setError(null);
+              }}
+              className="inline-flex items-center gap-1.5 text-sm text-indigo-700 hover:text-indigo-900"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Change grievance type (
+              {formData.grievanceType.replace(/_/g, " ").toLowerCase()})
+            </button>
 
-            {/* Success Message */}
-            {success && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-                ✅ Grievance created successfully! Redirecting...
-              </div>
-            )}
+            {successBanner}
+            {errorBanner}
 
-            {/* Error Message */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
-                ❌ {error}
-              </div>
-            )}
-
-            {/* Main Card */}
             <form onSubmit={handleSubmit}>
               <Card className="rounded-2xl shadow-sm bg-white/90 backdrop-blur border border-indigo-100">
                 <CardHeader>
-                  <CardTitle className="text-lg">Grievance Details</CardTitle>
+                  <CardTitle className="text-lg">
+                    {isTempleVisit ? "Temple Visit Letter" : "Grievance Details"}
+                  </CardTitle>
                 </CardHeader>
 
                 <CardContent className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-
                   {/* LEFT COLUMN */}
                   <div className="xl:col-span-2 space-y-8">
-
                     {/* Petitioner Info */}
                     <section className="space-y-4">
                       <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
@@ -303,8 +438,8 @@ export default function GrievanceCreate() {
                           <Label>
                             Petitioner Name <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            placeholder="Enter full name" 
+                          <Input
+                            placeholder="Enter full name"
                             value={formData.petitionerName}
                             onChange={(e) => handleChange("petitionerName", e.target.value)}
                           />
@@ -321,10 +456,6 @@ export default function GrievanceCreate() {
                             onChange={(e) =>
                               handleChange(
                                 "mobileNumber",
-                                // Strip every non-digit as the user types and
-                                // hard-cap at 10 digits, so pasting "+91 98765..."
-                                // or accidentally typing a letter is silently
-                                // sanitised instead of rejected at submit.
                                 e.target.value.replace(/\D/g, "").slice(0, 10)
                               )
                             }
@@ -334,15 +465,17 @@ export default function GrievanceCreate() {
                       </div>
                     </section>
 
-                    {/* Grievance Info */}
+                    {/* Location — common to both flows */}
                     <section className="space-y-4">
                       <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
-                        Grievance Information
+                        Location
                       </h3>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <Label>Constituency <span className="text-red-500">*</span></Label>
+                          <Label>
+                            Constituency <span className="text-red-500">*</span>
+                          </Label>
                           <Select
                             value={formData.constituency}
                             onValueChange={(v) => handleChange("constituency", v)}
@@ -371,64 +504,11 @@ export default function GrievanceCreate() {
                             onChange={(e) => handleChange("wardVillage", e.target.value)}
                           />
                         </div>
-
-                        <div>
-                          <Label>Grievance Type <span className="text-red-500">*</span></Label>
-                          <Select 
-                            value={formData.grievanceType} 
-                            onValueChange={(v) => handleChange("grievanceType", v)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select grievance type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="WATER">Water</SelectItem>
-                              <SelectItem value="ROAD">Road</SelectItem>
-                              <SelectItem value="POLICE">Police</SelectItem>
-                              <SelectItem value="HEALTH">Health</SelectItem>
-                              <SelectItem value="TRANSFER">Transfer</SelectItem>
-                              <SelectItem value="FINANCIAL_AID">Financial Aid</SelectItem>
-                              <SelectItem value="ELECTRICITY">Electricity</SelectItem>
-                              <SelectItem value="EDUCATION">Education</SelectItem>
-                              <SelectItem value="HOUSING">Housing</SelectItem>
-                              <SelectItem value="TEMPLE_VISIT">Temple Visit (Darshan Letter)</SelectItem>
-                              <SelectItem value="OTHER">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      {/* Description is hidden for TEMPLE_VISIT — the body of
-                          the letter is generated from the structured fields
-                          below, and we synthesize a description at submit time. */}
-                      {!isTempleVisit && (
-                        <div>
-                          <Label>Description <span className="text-red-500">*</span></Label>
-                          <Textarea
-                            placeholder="Enter detailed description of the grievance"
-                            className="min-h-[140px]"
-                            value={formData.description}
-                            onChange={(e) => handleChange("description", e.target.value)}
-                          />
-                        </div>
-                      )}
-
-                      <div>
-                        <Label>Monetary Value (₹)</Label>
-                        <Input 
-                          placeholder="Estimated cost / aid amount" 
-                          type="number"
-                          value={formData.monetaryValue}
-                          onChange={(e) => handleChange("monetaryValue", e.target.value)}
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Monetised value of work or aid requested
-                        </p>
                       </div>
                     </section>
 
-                    {/* Temple Visit (only when grievanceType === TEMPLE_VISIT). */}
-                    {isTempleVisit && (
+                    {/* Either the temple section OR the generic grievance fields */}
+                    {isTempleVisit ? (
                       <section className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-4">
                         <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wide">
                           Temple Visit Details
@@ -458,9 +538,52 @@ export default function GrievanceCreate() {
                                     {t.deity}
                                   </SelectItem>
                                 ))}
+                                <SelectItem value={OTHER_TEMPLE_KEY}>
+                                  Other (specify)
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
+
+                          {isOtherTemple && (
+                            <>
+                              <div className="md:col-span-2">
+                                <Label>
+                                  Temple Name <span className="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                  placeholder="e.g. Shri Kashi Vishwanath"
+                                  value={formData.customTempleName}
+                                  onChange={(e) =>
+                                    handleChange("customTempleName", e.target.value)
+                                  }
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Name prints on the letter as the deity / temple line.
+                                </p>
+                              </div>
+                              <div className="md:col-span-2">
+                                <Label>
+                                  Letter Addressed To <span className="text-red-500">*</span>
+                                </Label>
+                                <Textarea
+                                  className="min-h-[110px] font-mono text-sm"
+                                  placeholder={"A.D.M. Protocol\nVaranasi.\nUttar Pradesh."}
+                                  value={formData.customTempleRecipient}
+                                  onChange={(e) =>
+                                    handleChange(
+                                      "customTempleRecipient",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  One line per row, exactly as it should appear on the letter.
+                                  This block prints verbatim at the bottom (e.g. designation, city, state).
+                                </p>
+                              </div>
+                            </>
+                          )}
 
                           <div>
                             <Label>
@@ -520,29 +643,83 @@ export default function GrievanceCreate() {
                           </div>
                         </div>
 
+                        {/* Services Requested — multi-select dropdown with Other. */}
                         <div>
                           <Label>Services Requested</Label>
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {(Object.keys(serviceLabels) as TempleServiceCode[]).map((code) => {
-                              const active = servicesRequested.includes(code);
-                              return (
-                                <button
-                                  key={code}
-                                  type="button"
-                                  onClick={() => toggleService(code)}
-                                  className={`px-3 py-1 rounded-full text-xs border transition ${
-                                    active
-                                      ? "bg-amber-500 text-black border-amber-500"
-                                      : "bg-white text-slate-600 border-slate-300 hover:border-amber-400"
-                                  }`}
-                                >
-                                  {serviceLabels[code]}
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                className="mt-1 flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm hover:border-amber-400"
+                              >
+                                <span className="truncate text-left">
+                                  {servicesRequested.length === 0 && !otherServiceChecked
+                                    ? "Select services..."
+                                    : [
+                                        ...servicesRequested.map(
+                                          (code) => serviceLabels[code] || code
+                                        ),
+                                        ...(otherServiceChecked
+                                          ? [
+                                              formData.customService.trim()
+                                                ? `Other: ${formData.customService.trim()}`
+                                                : "Other (specify)",
+                                            ]
+                                          : []),
+                                      ].join(", ")}
+                                </span>
+                                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-[--radix-popover-trigger-width] p-2"
+                              align="start"
+                            >
+                              <div className="space-y-1 max-h-60 overflow-auto">
+                                {(Object.keys(serviceLabels) as TempleServiceCode[]).map(
+                                  (code) => {
+                                    const checked = servicesRequested.includes(code);
+                                    return (
+                                      <label
+                                        key={code}
+                                        className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-amber-50 cursor-pointer"
+                                      >
+                                        <Checkbox
+                                          checked={checked}
+                                          onCheckedChange={() => toggleService(code)}
+                                        />
+                                        <span>{serviceLabels[code]}</span>
+                                      </label>
+                                    );
+                                  }
+                                )}
+                                <label className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-amber-50 cursor-pointer border-t mt-1 pt-2">
+                                  <Checkbox
+                                    checked={otherServiceChecked}
+                                    onCheckedChange={(c) =>
+                                      setOtherServiceChecked(c === true)
+                                    }
+                                  />
+                                  <span>Other (specify)</span>
+                                </label>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+
+                          {otherServiceChecked && (
+                            <div className="mt-2">
+                              <Input
+                                placeholder="Describe the requested service"
+                                value={formData.customService}
+                                onChange={(e) =>
+                                  handleChange("customService", e.target.value)
+                                }
+                              />
+                            </div>
+                          )}
+
                           <p className="text-xs text-muted-foreground mt-2">
-                            Defaults are auto-selected based on the temple. Click to toggle.
+                            Defaults are auto-selected based on the temple. Pick more or add a custom request.
                           </p>
                         </div>
 
@@ -557,6 +734,37 @@ export default function GrievanceCreate() {
                           Include the petitioner's mobile number on the letter
                         </label>
                       </section>
+                    ) : (
+                      <section className="space-y-4">
+                        <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
+                          Grievance Information
+                        </h3>
+
+                        <div>
+                          <Label>
+                            Description <span className="text-red-500">*</span>
+                          </Label>
+                          <Textarea
+                            placeholder="Enter detailed description of the grievance"
+                            className="min-h-[140px]"
+                            value={formData.description}
+                            onChange={(e) => handleChange("description", e.target.value)}
+                          />
+                        </div>
+
+                        <div>
+                          <Label>Monetary Value (₹)</Label>
+                          <Input
+                            placeholder="Estimated cost / aid amount"
+                            type="number"
+                            value={formData.monetaryValue}
+                            onChange={(e) => handleChange("monetaryValue", e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Monetised value of work or aid requested
+                          </p>
+                        </div>
+                      </section>
                     )}
 
                     {/* File Upload */}
@@ -569,7 +777,7 @@ export default function GrievanceCreate() {
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-indigo-900 truncate">{file.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {(file.size / 1024).toFixed(1)} KB · {file.type || 'unknown type'}
+                              {(file.size / 1024).toFixed(1)} KB · {file.type || "unknown type"}
                             </p>
                           </div>
                           <Button
@@ -599,7 +807,7 @@ export default function GrievanceCreate() {
                               const f = e.target.files?.[0];
                               if (!f) return;
                               if (f.size > 10 * 1024 * 1024) {
-                                setError('File is larger than 10 MB.');
+                                setError("File is larger than 10 MB.");
                                 return;
                               }
                               setFile(f);
@@ -609,66 +817,17 @@ export default function GrievanceCreate() {
                         </label>
                       )}
                     </section>
-
-                    {/* Action & Letter */}
-                    <section className="space-y-4">
-                      <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
-                        Action & Letter Processing
-                      </h3>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label>Action Required</Label>
-                          <Select 
-                            value={formData.actionRequired} 
-                            onValueChange={(v) => handleChange("actionRequired", v)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select action" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="GENERATE_LETTER">Generate Letter</SelectItem>
-                              <SelectItem value="CALL_OFFICIAL">Call Official</SelectItem>
-                              <SelectItem value="FORWARD_TO_DEPT">Forward to Department</SelectItem>
-                              <SelectItem value="SCHEDULE_MEETING">Schedule Meeting</SelectItem>
-                              <SelectItem value="NO_ACTION">No Action</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div>
-                          <Label>Letter Template</Label>
-                          <Select 
-                            value={formData.letterTemplate} 
-                            onValueChange={(v) => handleChange("letterTemplate", v)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select template" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="To DC">To DC</SelectItem>
-                              <SelectItem value="To Police Commissioner">To Police Commissioner</SelectItem>
-                              <SelectItem value="To PWD">To PWD</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </section>
                   </div>
 
                   {/* RIGHT COLUMN */}
                   <div className="space-y-6">
-
-                    {/* Reference */}
                     <section className="space-y-4">
-                      <h3 className="font-medium text-indigo-800">
-                        Reference Information
-                      </h3>
+                      <h3 className="font-medium text-indigo-800">Reference Information</h3>
                       <div className="space-y-1">
                         <Label>
                           Referenced By <span className="text-red-500">*</span>
                         </Label>
-                        <Input 
+                        <Input
                           placeholder="Eg: Hon. MLA, Party President, DC Office"
                           value={formData.referencedBy}
                           onChange={(e) => handleChange("referencedBy", e.target.value)}
@@ -679,31 +838,26 @@ export default function GrievanceCreate() {
                       </div>
                     </section>
 
-                    {/* Status + Actions */}
                     <div className="space-y-6 bg-indigo-50/60 rounded-xl p-5 border border-indigo-100">
-
-                      {/* Ticket Status (READ ONLY) */}
                       <section className="space-y-2">
                         <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
                           Ticket Status
                         </h3>
-
                         <div className="inline-flex items-center px-4 py-2 rounded-lg bg-green-100 text-green-800 text-sm font-semibold border border-green-200">
                           OPEN
                         </div>
                       </section>
 
-                      {/* Actions */}
                       <div className="border-t pt-4 space-y-3">
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           className="w-full"
                           onClick={() => navigate(-1)}
                         >
                           Cancel
                         </Button>
-                        <Button 
+                        <Button
                           type="submit"
                           className="w-full bg-amber-500 text-black hover:bg-amber-600"
                           disabled={loading}
@@ -711,10 +865,8 @@ export default function GrievanceCreate() {
                           {loading ? "Submitting..." : "Register Grievance"}
                         </Button>
                       </div>
-
                     </div>
                   </div>
-
                 </CardContent>
               </Card>
             </form>

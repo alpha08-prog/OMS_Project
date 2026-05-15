@@ -743,9 +743,16 @@ const SERVICE_LABEL: Record<TempleServiceCode, string> = {
 };
 
 /** Render an ordered service list into the natural-English form used in the
- *  template: "Special Darshan & Accommodation" or "Darshan, Pooja & Accommodation". */
-function formatServiceList(codes: TempleServiceCode[]): string {
-  const labels = codes.map((c) => SERVICE_LABEL[c]).filter(Boolean);
+ *  template: "Special Darshan & Accommodation" or "Darshan, Pooja & Accommodation".
+ *  Freeform "OTHER:<text>" codes render as the text after the colon. */
+function formatServiceList(codes: Array<TempleServiceCode | string>): string {
+  const labels = codes
+    .map((c) => {
+      const s = String(c);
+      if (s.toUpperCase().startsWith('OTHER:')) return s.slice('OTHER:'.length).trim();
+      return SERVICE_LABEL[s as TempleServiceCode];
+    })
+    .filter((s): s is string => Boolean(s));
   if (labels.length === 0) return 'Special Darshan';
   if (labels.length === 1) return labels[0];
   return labels.slice(0, -1).join(', ') + ' & ' + labels[labels.length - 1];
@@ -826,10 +833,9 @@ async function notifyAdminsTempleVisitIssued(
     type: 'TEMPLE_VISIT_LETTER_GENERATED',
     title,
     body,
-    // Deep-link search uses petitionerName, mirroring the GRIEVANCE_REJECTED
-    // notification's link pattern — opens the grievance list filtered to this
-    // entry.
-    link: `/grievances/view?search=${encodeURIComponent(petitionerName)}`,
+    // Deep-link to the specific grievance — GrievanceView opens the details
+    // dialog when ?id=<row> is present.
+    link: `/grievances/view?id=${encodeURIComponent(String(grievanceId))}`,
     referenceId: String(grievanceId),
     referenceType: 'GRIEVANCE',
   });
@@ -855,24 +861,44 @@ function buildTempleLetterData(row: CatalystRow, id: string): {
   data: Parameters<typeof generateTempleVisitLetter>[0];
 } {
   const templeKey = String(row.templeKey || '').trim();
-  const temple = TEMPLE_REGISTRY[templeKey];
-  if (!temple) {
+  if (!templeKey) {
     throw new Error(
       `Unknown or missing templeKey on grievance ${id}: "${templeKey}". ` +
         `Allowed keys: ${Object.keys(TEMPLE_REGISTRY).join(', ')}`
     );
   }
+  // Off-registry temples ("Other" flow) — staff supplied the temple name as the
+  // templeKey and the recipient address block via templeRecipient. Treat the
+  // typed templeKey as the deity line and split the recipient on newlines.
+  const customRecipient =
+    typeof row.templeRecipient === 'string' && row.templeRecipient.trim()
+      ? row.templeRecipient
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+  const temple: TempleEntry =
+    TEMPLE_REGISTRY[templeKey] ?? {
+      deity: templeKey,
+      recipient: customRecipient.length > 0 ? customRecipient : [templeKey],
+      defaultServices: ['SPECIAL_DARSHAN'],
+    };
 
   // services: prefer what the staff stored on the row, else temple defaults.
+  // Predefined codes are uppercased; freeform "OTHER:<text>" entries are
+  // preserved as-is and rendered as their post-colon text in the letter.
   const storedServices =
     typeof row.servicesRequested === 'string' && row.servicesRequested.trim()
       ? row.servicesRequested
           .split(',')
-          .map((s) => s.trim().toUpperCase())
+          .map((s) => s.trim())
           .filter(Boolean)
+          .map((s) => (s.toUpperCase().startsWith('OTHER:') ? s : s.toUpperCase()))
       : [];
-  const services = (storedServices.length > 0 ? storedServices : temple.defaultServices) as TempleServiceCode[];
-  const servicesRequestedText = formatServiceList(services);
+  const serviceCodes = (storedServices.length > 0
+    ? storedServices
+    : temple.defaultServices) as Array<TempleServiceCode | string>;
+  const servicesRequestedText = formatServiceList(serviceCodes);
 
   const visitFrom = formatDDMMYYYY(row.visitDateFrom);
   const visitTo = formatDDMMYYYY(row.visitDateTo);
@@ -1070,7 +1096,27 @@ export async function previewTempleVisit(
 <html>
 <head>
   <style>
-    body { font-family: Georgia, serif; max-width: 820px; margin: 30px auto; padding: 20px; color: #000; }
+    /* Preview matches the PDF: recipient anchored ~two-thirds down, signature
+       centred in the gap above. Smaller min-height keeps the address block
+       from being pushed all the way to the page bottom. */
+    body {
+      font-family: Georgia, serif;
+      max-width: 820px;
+      min-height: 880px;
+      margin: 30px auto;
+      padding: 20px;
+      color: #000;
+      display: flex;
+      flex-direction: column;
+    }
+    .main { flex: 0 0 auto; }
+    .sig-group {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .recipient-group { flex: 0 0 auto; }
     .notice { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 8px 12px; border-radius: 6px; font-size: 11px; margin-bottom: 14px; }
     .letterhead-zone {
       border: 1px dashed #cbd5e1;
@@ -1113,51 +1159,57 @@ export async function previewTempleVisit(
     .meta .date { flex: 1; text-align: right; }
     .subject { font-weight: bold; margin: 12px 0 18px 0; font-size: 12px; }
     .body { font-size: 12px; line-height: 1.9; text-align: justify; }
-    /* Closing row uses a 3-column grid so the centre column stays centred on
-       the page regardless of the closing text's length. */
-    .closing { margin-top: 24px; display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: 12px; }
-    .closing .left { text-align: left; }
-    .closing .center { text-align: center; }
-    .signer { margin-top: 40px; text-align: center; font-weight: bold; color: #000080; font-size: 13px; }
+    /* Closing sits left-aligned; "Yours sincerely" wraps to the next line and
+       is centred across the page. Stacking them keeps the centred line on
+       the page midline rather than the right-hand half. */
+    .closing { margin-top: 24px; font-size: 12px; }
+    .closing .left { display: block; text-align: left; }
+    .closing .center { display: block; text-align: center; margin-top: 10px; }
+    .signer { margin-top: 26px; text-align: center; font-weight: bold; color: #000080; font-size: 13px; }
     .recipient { margin-top: 28px; font-size: 12px; line-height: 1.5; }
   </style>
 </head>
 <body>
-  <div class="notice">
-    <strong>Preview:</strong> This is what the downloaded PDF will contain.
-    The dashed zones are intentionally blank — your printer should be loaded
-    with the office's pre-printed letterhead, which fills those zones on paper.
+  <div class="main">
+    <div class="notice">
+      <strong>Preview:</strong> This is what the downloaded PDF will contain.
+      The dashed zones are intentionally blank — your printer should be loaded
+      with the office's pre-printed letterhead, which fills those zones on paper.
+    </div>
+
+    <div class="letterhead-zone">Reserved for pre-printed letterhead</div>
+
+    <div class="meta">
+      <span class="ref">${escapeHtml(d.refNumber)}</span>
+      <span class="date">Date: ${escapeHtml(d.date)}</span>
+    </div>
+
+    <p style="font-size:12px;">Dear Sir,</p>
+    <div class="subject">Sub: ${escapeHtml(d.subject)}</div>
+
+    <div class="body">
+      <p>The Bearer of this letter ${escapeHtml(d.petitionerName)} and ${d.memberCount} ${memberWord}
+         from ${escapeHtml(d.originLine)} are on pilgrimage to the Holy Shrine of ${escapeHtml(d.deityLine)}
+         ${escapeHtml(d.visitDateLine)}.${d.mobileLine ? ' ' + escapeHtml(d.mobileLine) : ''}</p>
+      <p>I am directed by Hon'ble Minister to request you to kindly arrange ${escapeHtml(d.servicesRequestedText)} on above said ${dateWord} for them and oblige.</p>
+    </div>
   </div>
 
-  <div class="letterhead-zone">Reserved for pre-printed letterhead</div>
-
-  <div class="meta">
-    <span class="ref">${escapeHtml(d.refNumber)}</span>
-    <span class="date">Date: ${escapeHtml(d.date)}</span>
+  <div class="sig-group">
+    <div class="closing">
+      <span class="left">${escapeHtml(d.closing)}</span>
+      <span class="center">Yours sincerely</span>
+    </div>
+    <div class="signer">${escapeHtml(d.signerName)}</div>
   </div>
 
-  <p style="font-size:12px;">Dear Sir,</p>
-  <div class="subject">Sub: ${escapeHtml(d.subject)}</div>
+  <div class="recipient-group">
+    <div class="recipient">
+      ${d.recipientLines.map((l) => escapeHtml(l)).join('<br>')}
+    </div>
 
-  <div class="body">
-    <p>The Bearer of this letter ${escapeHtml(d.petitionerName)} and ${d.memberCount} ${memberWord}
-       from ${escapeHtml(d.originLine)} are on pilgrimage to the Holy Shrine of ${escapeHtml(d.deityLine)}
-       ${escapeHtml(d.visitDateLine)}.${d.mobileLine ? ' ' + escapeHtml(d.mobileLine) : ''}</p>
-    <p>I am directed by Hon'ble Minister to request you to kindly arrange ${escapeHtml(d.servicesRequestedText)} on above said ${dateWord} for them and oblige.</p>
+    <div class="footer-zone">Reserved for pre-printed footer</div>
   </div>
-
-  <div class="closing">
-    <span class="left">${escapeHtml(d.closing)}</span>
-    <span class="center">Yours sincerely</span>
-    <span></span>
-  </div>
-  <div class="signer">${escapeHtml(d.signerName)}</div>
-
-  <div class="recipient">
-    ${d.recipientLines.map((l) => escapeHtml(l)).join('<br>')}
-  </div>
-
-  <div class="footer-zone">Reserved for pre-printed footer</div>
 </body>
 </html>
     `;

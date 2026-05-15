@@ -26,18 +26,23 @@ import {
 } from "@/components/ui/select";
 
 export default function GrievanceView() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [grievances, setGrievances] = useState<Grievance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
-  
+
   // Filters (search from URL for header search)
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") ?? "");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+
+  // Deep-link target. Notifications carry ?id=<grievance> so we can open the
+  // details dialog for that specific row once the list has loaded. We drop
+  // the param after consuming it so a manual refresh doesn't re-open it.
+  const targetId = searchParams.get("id");
 
   const fetchGrievances = async () => {
     setLoading(true);
@@ -65,6 +70,48 @@ export default function GrievanceView() {
   useEffect(() => {
     fetchGrievances();
   }, []);
+
+  // Once a ?id= deep-link target is present, open that grievance's details
+  // dialog. We try the in-memory list first (cheap, no network). If the row
+  // is older than the first 200 we fall back to fetching it directly by id.
+  // Either way we drop the param after consuming it so dismissing the dialog
+  // doesn't re-open it on a re-render.
+  useEffect(() => {
+    if (!targetId) return;
+    let cancelled = false;
+    const clearParam = () => {
+      const next = new URLSearchParams(searchParams);
+      next.delete("id");
+      setSearchParams(next, { replace: true });
+    };
+    const inList = grievances.find((g) => g.id === targetId);
+    if (inList) {
+      setSelectedGrievance(inList);
+      setDetailsOpen(true);
+      clearParam();
+      return;
+    }
+    // Still loading the list — wait for it to finish before attempting a
+    // direct fetch, otherwise we'd race and fire both.
+    if (loading) return;
+    (async () => {
+      try {
+        const g = await grievanceApi.getById(targetId);
+        if (cancelled || !g) return;
+        setSelectedGrievance(g);
+        setDetailsOpen(true);
+      } catch (err: unknown) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : "Failed to open the linked grievance";
+        setError(msg);
+      } finally {
+        if (!cancelled) clearParam();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [targetId, grievances, loading, searchParams, setSearchParams]);
 
   const handleViewDetails = (grievance: Grievance) => {
     setSelectedGrievance(grievance);

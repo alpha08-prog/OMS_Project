@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npx eslint *)"
     ]
   }
 }

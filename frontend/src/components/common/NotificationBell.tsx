@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, Check, CheckCheck } from "lucide-react";
@@ -8,6 +9,40 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { notificationsApi, type Notification } from "@/lib/api";
+
+/**
+ * Resolve the route to open for a notification. We re-derive the link from
+ * the notification's `type` + `referenceId` rather than blindly trusting the
+ * `link` column, because older rows in Catalyst were written with stale
+ * paths (e.g. `/admin/news`, `/admin/tasks`) that no longer route to a
+ * real page and silently fall through to the catch-all. Doing the dispatch
+ * client-side means existing rows keep working without a backfill.
+ */
+function resolveNotificationLink(n: Notification): string | null {
+  const id = n.referenceId ?? null;
+  switch (n.type) {
+    case "GRIEVANCE_REJECTED":
+    case "TEMPLE_VISIT_LETTER_GENERATED":
+      return id
+        ? `/grievances/view?id=${encodeURIComponent(id)}`
+        : "/grievances/view";
+    case "TASK_ASSIGNED":
+      return id
+        ? `/staff/tasks?id=${encodeURIComponent(id)}`
+        : "/staff/tasks";
+    case "TASK_RESOLVED":
+      return id
+        ? `/admin/task-tracker?id=${encodeURIComponent(id)}`
+        : "/admin/task-tracker";
+    case "NEWS_CRITICAL":
+      return id ? `/news/view?id=${encodeURIComponent(id)}` : "/news/view";
+    case "TOUR_DECIDED":
+      return id ? `/staff/home?tour=${encodeURIComponent(id)}` : "/staff/home";
+    default:
+      // Future notification types — fall back to whatever the server stored.
+      return n.link ?? null;
+  }
+}
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "";
@@ -25,6 +60,10 @@ function timeAgo(iso: string | null): string {
 export function NotificationBell() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  // Controlled so handleClick can close the popover after navigation —
+  // otherwise the floating panel stays open over the new page until the
+  // user clicks outside.
+  const [open, setOpen] = useState(false);
 
   // Polled bell — 30s is the same cadence used elsewhere in the app.
   const { data: unread = 0 } = useQuery({
@@ -46,6 +85,9 @@ export function NotificationBell() {
   };
 
   const handleClick = async (n: Notification) => {
+    // Close the popover immediately so the user sees the page change. The
+    // mark-read network call still runs in the background.
+    setOpen(false);
     if (!n.isRead) {
       try {
         await notificationsApi.markRead(n.id);
@@ -54,7 +96,8 @@ export function NotificationBell() {
         // non-fatal — still navigate
       }
     }
-    if (n.link) navigate(n.link);
+    const target = resolveNotificationLink(n);
+    if (target) navigate(target);
   };
 
   const handleMarkAll = async () => {
@@ -67,7 +110,7 @@ export function NotificationBell() {
   };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"

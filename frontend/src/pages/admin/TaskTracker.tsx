@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ClipboardList,
   Users,
@@ -41,6 +41,7 @@ import {
 
 export default function AdminTaskTracker() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [trackingData, setTrackingData] = useState<TaskTrackingData | null>(null);
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
@@ -194,6 +195,22 @@ export default function AdminTaskTracker() {
     setSelectedTask(task);
     setDetailsOpen(true);
   };
+
+  // Deep-link: notifications ship the admin to /admin/task-tracker?id=<row>.
+  // When the matching task lands in the list, open its details dialog and
+  // drop the param so closing the dialog doesn't keep reopening it.
+  const targetTaskId = searchParams.get("id");
+  useEffect(() => {
+    if (!targetTaskId || tasks.length === 0) return;
+    const match = tasks.find((t) => t.id === targetTaskId);
+    if (match) {
+      setSelectedTask(match);
+      setDetailsOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("id");
+      setSearchParams(next, { replace: true });
+    }
+  }, [targetTaskId, tasks, searchParams, setSearchParams]);
 
   const handleMarkResolved = async (task: TaskAssignment) => {
     if (!confirm('Mark this task as completed/resolved?')) return;
