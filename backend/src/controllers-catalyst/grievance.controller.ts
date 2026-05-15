@@ -149,6 +149,7 @@ function shapeGrievance(
     // Temple-visit fields — present only when grievanceType === 'TEMPLE_VISIT'.
     // All optional, so legacy rows return null here.
     templeKey: row.templeKey ?? null,
+    templeRecipient: row.templeRecipient ?? null,
     memberCount:
       row.memberCount === null || row.memberCount === undefined || row.memberCount === ''
         ? null
@@ -172,6 +173,34 @@ function parseServicesRequested(v: unknown): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/**
+ * Normalise an inbound servicesRequested array. Predefined codes are
+ * uppercased and validated against VALID_TEMPLE_SERVICES; any entry that
+ * begins with "OTHER:" is treated as freeform staff text and preserved
+ * (with internal commas stripped, since storage is comma-separated).
+ */
+function normalizeServicesRequested(
+  input: unknown[]
+): { values: string[]; error?: string } {
+  const out: string[] = [];
+  for (const raw of input) {
+    const t = String(raw).trim();
+    if (!t) continue;
+    const colon = t.indexOf(':');
+    if (colon > 0 && t.slice(0, colon).toUpperCase() === 'OTHER') {
+      const note = t.slice(colon + 1).trim().replace(/,/g, ' ');
+      if (note) out.push(`OTHER:${note}`);
+      continue;
+    }
+    const upper = t.toUpperCase();
+    if (!VALID_TEMPLE_SERVICES.has(upper)) {
+      return { values: [], error: `Invalid temple service: ${upper}` };
+    }
+    out.push(upper);
+  }
+  return { values: out };
 }
 
 /**
@@ -238,6 +267,7 @@ export async function createGrievance(
       source,
       // Temple-visit specific (optional for every other grievanceType).
       templeKey,
+      templeRecipient,
       memberCount,
       originDistrict,
       originState,
@@ -305,6 +335,11 @@ export async function createGrievance(
     // also save a draft and fill these in later via PUT /grievances/:id).
     if (grievanceType === 'TEMPLE_VISIT' || templeKey) {
       if (templeKey) grievancePayload.templeKey = String(templeKey).trim();
+      if (typeof templeRecipient === 'string' && templeRecipient.trim()) {
+        // Multi-line address block — newline-separated. Used by the PDF
+        // generator when the templeKey is outside the static registry.
+        grievancePayload.templeRecipient = templeRecipient.trim();
+      }
       if (memberCount !== undefined && memberCount !== null && memberCount !== '') {
         const n = Number(memberCount);
         if (!Number.isInteger(n) || n < 1) {
@@ -328,15 +363,14 @@ export async function createGrievance(
         if (v) grievancePayload.visitDateTo = v;
       }
       if (Array.isArray(servicesRequested) && servicesRequested.length > 0) {
-        const clean = servicesRequested
-          .map((s) => String(s).trim().toUpperCase())
-          .filter(Boolean);
-        const bad = clean.find((s) => !VALID_TEMPLE_SERVICES.has(s));
-        if (bad) {
-          sendError(res, `Invalid temple service: ${bad}`);
+        const clean = normalizeServicesRequested(servicesRequested);
+        if (clean.error) {
+          sendError(res, clean.error);
           return;
         }
-        grievancePayload.servicesRequested = clean.join(',');
+        if (clean.values.length > 0) {
+          grievancePayload.servicesRequested = clean.values.join(',');
+        }
       }
       if (showMobileOnLetter !== undefined) {
         grievancePayload.showMobileOnLetter = Boolean(showMobileOnLetter);
@@ -349,7 +383,15 @@ export async function createGrievance(
     const [shaped] = await attachUsers([row]);
     sendSuccess(res, shaped, 'Grievance created successfully', 201);
   } catch (error) {
-    sendServerError(res, 'Failed to create grievance', error);
+    // Pass through the underlying Catalyst error message — invaluable when a
+    // missing/misnamed column or invalid type is the cause. Without this the
+    // staff only sees "Failed to create grievance" while the real reason is
+    // buried in the server console.
+    const msg =
+      error instanceof Error && error.message
+        ? `Failed to create grievance: ${error.message}`
+        : 'Failed to create grievance';
+    sendServerError(res, msg, error);
   }
 }
 
@@ -592,15 +634,12 @@ export async function updateGrievance(
     if (body.visitDateFrom !== undefined) body.visitDateFrom = toCatalystDate(body.visitDateFrom);
     if (body.visitDateTo !== undefined) body.visitDateTo = toCatalystDate(body.visitDateTo);
     if (Array.isArray(body.servicesRequested)) {
-      const clean = body.servicesRequested
-        .map((s: unknown) => String(s).trim().toUpperCase())
-        .filter(Boolean);
-      const bad = clean.find((s: string) => !VALID_TEMPLE_SERVICES.has(s));
-      if (bad) {
-        sendError(res, `Invalid temple service: ${bad}`);
+      const clean = normalizeServicesRequested(body.servicesRequested);
+      if (clean.error) {
+        sendError(res, clean.error);
         return;
       }
-      body.servicesRequested = clean.join(',');
+      body.servicesRequested = clean.values.join(',');
     }
     if (body.showMobileOnLetter !== undefined) {
       body.showMobileOnLetter = Boolean(body.showMobileOnLetter);
@@ -666,6 +705,12 @@ export async function updateGrievanceStatus(
     if (status === 'RESOLVED') {
       updateData.resolvedAt = toCatalystDate(new Date());
     }
+    // Reopening — wipe the resolved/closed bookkeeping so the row reads as
+    // genuinely open again (resolvedAt cleared, stage rewound).
+    if (status === 'OPEN') {
+      updateData.resolvedAt = null;
+      updateData.currentStage = 'RECEIVED';
+    }
     const updated = await updateRow(GRIEVANCE_TABLE, updateData as any);
     invalidateStatCaches();
 
@@ -682,7 +727,9 @@ export async function updateGrievanceStatus(
         type: 'GRIEVANCE_REJECTED',
         title: 'Grievance rejected',
         body,
-        link: `/grievances/view?search=${encodeURIComponent(petitioner)}`,
+        // Deep-link to the specific grievance — GrievanceView opens the
+        // details dialog when ?id=<row> is present.
+        link: `/grievances/view?id=${encodeURIComponent(String(id))}`,
         referenceId: String(id),
         referenceType: 'GRIEVANCE',
       });

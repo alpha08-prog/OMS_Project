@@ -422,7 +422,9 @@ export async function updateDecision(
           type: 'TOUR_DECIDED',
           title: `Tour ${String(decision).toLowerCase()}: ${updated.eventName ?? 'event'}`,
           body: decisionNote ? String(decisionNote).slice(0, 200) : '',
-          link: '/staff/home',
+          // Staff home shows the submitter's tour cards; passing the row id
+          // lets the page open/highlight this tour on arrival.
+          link: `/staff/home?tour=${encodeURIComponent(String(updated.ROWID))}`,
           referenceId: String(updated.ROWID),
           referenceType: 'TOUR',
         });

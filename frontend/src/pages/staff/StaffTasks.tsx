@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ClipboardList,
   Clock,
@@ -39,6 +39,7 @@ import {
 export default function StaffTasks() {
   const _navigate = useNavigate();
   void _navigate; // Available for future navigation needs
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +126,23 @@ export default function StaffTasks() {
       setHistoryLoading(false);
     }
   };
+
+  // Deep-link: notifications point staff to /staff/tasks?id=<row>. Auto-open
+  // the Update Progress dialog for that task once it's present in the list.
+  // Param is stripped after consuming so it doesn't re-open on every render.
+  const targetTaskId = searchParams.get("id");
+  useEffect(() => {
+    if (!targetTaskId || tasks.length === 0 || updateDialogOpen) return;
+    const match = tasks.find((t) => t.id === targetTaskId);
+    if (!match) return;
+    void handleOpenUpdate(match);
+    const next = new URLSearchParams(searchParams);
+    next.delete("id");
+    setSearchParams(next, { replace: true });
+    // handleOpenUpdate is intentionally excluded from deps — including it
+    // would loop because it's redefined every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetTaskId, tasks]);
 
   const handleUpdateProgress = async (newStatus?: TaskStatus) => {
     if (!selectedTask) return;

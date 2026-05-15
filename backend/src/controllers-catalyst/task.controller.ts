@@ -409,7 +409,12 @@ export async function createTask(
       type: 'TASK_ASSIGNED',
       title: `New task: ${title}`,
       body: description ? String(description).slice(0, 200) : `Type: ${taskType}`,
-      link: '/staff/tasks',
+      // Each assignee's task is its own row (Promise.all above). Linking to
+      // the staff task list with the first row id is a best-effort deep link
+      // — the page can highlight that row, or fall back to the full list.
+      link: rows[0]
+        ? `/staff/tasks?id=${encodeURIComponent(String(rows[0].ROWID))}`
+        : '/staff/tasks',
       referenceId: rows[0] ? String(rows[0].ROWID) : undefined,
       referenceType: 'TASK',
     });
@@ -852,7 +857,9 @@ export async function updateTaskProgress(
         type: 'TASK_RESOLVED',
         title: `Task resolved: ${taskTitle}`,
         body: `${resolverName} marked "${taskTitle}" as resolved.`,
-        link: '/admin/tasks',
+        // Admin task tracker page; carry the row id so the page can scroll
+        // / highlight the resolved task.
+        link: `/admin/task-tracker?id=${encodeURIComponent(String(id))}`,
         referenceId: id,
         referenceType: 'TASK',
       });

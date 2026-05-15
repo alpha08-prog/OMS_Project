@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   historyApi,
+  grievanceApi,
   type HistoryItem,
   type HistoryStats,
   type HistoryItemType,
@@ -48,6 +49,7 @@ import {
   ChevronRight,
   Eye,
   TrendingUp,
+  RotateCcw,
 } from "lucide-react";
 
 export default function AdminHistory() {
@@ -55,6 +57,8 @@ export default function AdminHistory() {
   const [stats, setStats] = useState<HistoryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
+  const [reopenLoading, setReopenLoading] = useState(false);
+  const [reopenError, setReopenError] = useState<string | null>(null);
 
   const isCreatedBy = (value: unknown): value is { name: string; email: string } => {
     if (!value || typeof value !== 'object') return false;
@@ -201,6 +205,42 @@ export default function AdminHistory() {
         {action}
       </Badge>
     );
+  };
+
+  // A grievance row from the Action History is reopenable if it's currently
+  // in a closed state (resolved or rejected). We rely on the action string —
+  // backend serialises these consistently — so we don't need to hit the
+  // grievance API just to read the latest status.
+  const REOPENABLE_GRIEVANCE_ACTIONS = new Set([
+    "Resolved",
+    "Verified & Resolved",
+    "Rejected",
+  ]);
+  const isGrievanceReopenable = (item: HistoryItem | null): boolean =>
+    Boolean(
+      item && item.type === "GRIEVANCE" && REOPENABLE_GRIEVANCE_ACTIONS.has(item.action)
+    );
+
+  const handleReopen = async () => {
+    if (!selectedItem || !isGrievanceReopenable(selectedItem)) return;
+    const confirmed = window.confirm(
+      `Reopen this grievance? It will move back to OPEN and reappear in the active queue.`
+    );
+    if (!confirmed) return;
+    setReopenLoading(true);
+    setReopenError(null);
+    try {
+      await grievanceApi.updateStatus(selectedItem.id, "OPEN");
+      setSelectedItem(null);
+      // Refresh both the list and the top-of-page counters.
+      await Promise.all([fetchHistory(), fetchStats()]);
+    } catch (err: unknown) {
+      setReopenError(
+        err instanceof Error ? err.message : "Failed to reopen grievance"
+      );
+    } finally {
+      setReopenLoading(false);
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -518,7 +558,15 @@ export default function AdminHistory() {
         </div>
 
         {/* Detail Dialog */}
-        <Dialog open={!!selectedItem} onOpenChange={() => setSelectedItem(null)}>
+        <Dialog
+          open={!!selectedItem}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedItem(null);
+              setReopenError(null);
+            }
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -584,7 +632,23 @@ export default function AdminHistory() {
                   )}
                 </div>
 
-                <div className="flex justify-end">
+                {reopenError && (
+                  <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-sm">
+                    {reopenError}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2">
+                  {isGrievanceReopenable(selectedItem) && (
+                    <Button
+                      onClick={handleReopen}
+                      disabled={reopenLoading}
+                      className="bg-amber-500 text-black hover:bg-amber-600"
+                    >
+                      <RotateCcw className={`h-4 w-4 mr-2 ${reopenLoading ? "animate-spin" : ""}`} />
+                      {reopenLoading ? "Reopening..." : "Reopen Grievance"}
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => setSelectedItem(null)}>
                     Close
                   </Button>
