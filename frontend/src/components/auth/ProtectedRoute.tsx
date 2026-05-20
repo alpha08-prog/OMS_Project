@@ -107,9 +107,18 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
       '/train-eq/queue',
       '/tour-program/pending',
     ]
-    
-    if (adminOnlyRoutes.includes(currentPath) || 
-        currentPath.startsWith('/admin/')) {
+
+    // Admin-prefixed routes that staff are explicitly allowed to view.
+    // The route still lives under /admin/ for legacy reasons but the page
+    // itself is shared (read access only — destructive actions are gated
+    // server-side).
+    const staffAllowedAdminRoutes = ['/admin/birthdays']
+
+    if (
+      (adminOnlyRoutes.includes(currentPath) ||
+        currentPath.startsWith('/admin/')) &&
+      !staffAllowedAdminRoutes.includes(currentPath)
+    ) {
       console.warn(`Access denied: Staff cannot access route ${currentPath}. Redirecting to /staff/home`)
       return <Navigate to="/staff/home" />
     }

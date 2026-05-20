@@ -360,6 +360,21 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     ? data.numberOfPassengers
     : rows.length || 1;
 
+  // Collapse to "<primary> + N others" when there's a single primary row but
+  // the PNR has additional travellers (numberOfPassengers > 1). Sex/Age and
+  // W/L for the primary stay populated; only the name is suffixed.
+  if (
+    rows.length === 1 &&
+    data.numberOfPassengers &&
+    data.numberOfPassengers > 1
+  ) {
+    const others = data.numberOfPassengers - 1;
+    rows = [{
+      ...rows[0],
+      name: `${rows[0].name} + ${others} ${others === 1 ? 'other' : 'others'}`,
+    }];
+  }
+
   // Format Sex/Age cell as "M/34", "F/27", "OTHER/—". Returns empty string
   // when neither field is present so the cell looks blank rather than "—/—".
   const sexAgeCell = (p: TrainEQPassenger): string => {
@@ -984,10 +999,11 @@ export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Resp
 
     // Signature block layout (relative to its top):
     //   0   : closing (left)
-    //   +20 : "Yours sincerely" (centred)
-    //   +50 : signer name (centred, bold)
-    // Total block height ≈ 50pt; centre it in the available gap.
-    const sigBlockHeight = 50;
+    //   +20 : "Yours sincerely" (right-aligned)
+    //   +70 : signer name (right-aligned, bold)
+    // The wider gap between "Yours sincerely" and the printed signer name
+    // gives space for a hand-written signature on the printed letter.
+    const sigBlockHeight = 70;
     const gapMid = (bodyEndY + recipientStartY) / 2;
     const closingY = Math.max(bodyEndY + 18, gapMid - sigBlockHeight / 2);
 
@@ -995,12 +1011,12 @@ export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Resp
     doc.text(data.closing, margin, closingY, { lineBreak: false });
     doc.text('Yours sincerely', margin, closingY + 20, {
       width: innerWidth,
-      align: 'center',
+      align: 'right',
       lineBreak: false,
     });
-    doc.font('Helvetica-Bold').fontSize(11).text(data.signerName, margin, closingY + 50, {
+    doc.font('Helvetica-Bold').fontSize(11).text(data.signerName, margin, closingY + 70, {
       width: innerWidth,
-      align: 'center',
+      align: 'right',
       lineBreak: false,
     });
 

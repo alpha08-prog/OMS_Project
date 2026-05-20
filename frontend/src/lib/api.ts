@@ -224,6 +224,9 @@ export type CreateTrainRequestRequest = {
   referencedBy?: string
   /** Structured passenger rows. Backend writes these to TrainPassenger. */
   passengers?: TrainPassengerInput[]
+  /** Total people on this PNR (primary + additional). Drives the "+ N others"
+   *  rendering on the EQ letter. */
+  numberOfPassengers?: number
 }
 
 // Tour Program Types

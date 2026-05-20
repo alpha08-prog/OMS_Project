@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/select";
 import { visitorApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import FloatingNotice from "@/components/common/FloatingNotice";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 
 export default function VisitorCreate() {
   const navigate = useNavigate();
@@ -106,12 +108,11 @@ export default function VisitorCreate() {
               </p>
             </div>
 
-            {/* Success Message */}
-            {success && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-                ✅ Visitor logged successfully! Redirecting...
-              </div>
-            )}
+            <FloatingNotice
+              show={success}
+              variant="success"
+              message="Visitor registered successfully! Redirecting..."
+            />
 
             {/* Error Message */}
             {error && (
@@ -201,14 +202,9 @@ export default function VisitorCreate() {
                               <SelectValue placeholder="Select constituency" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Navalgund">Navalgund</SelectItem>
-                              <SelectItem value="Kundgol">Kundgol</SelectItem>
-                              <SelectItem value="Hubli-Dharwad East">Hubli-Dharwad East</SelectItem>
-                              <SelectItem value="Hubli-Dharwad Central">Hubli-Dharwad Central</SelectItem>
-                              <SelectItem value="Dharwad West">Dharwad West</SelectItem>
-                              <SelectItem value="Kalaghatagi">Kalaghatagi</SelectItem>
-                              <SelectItem value="Shiggaon">Shiggaon</SelectItem>
-                              <SelectItem value="Out of Constituency">Out of Constituency</SelectItem>
+                              {CONSTITUENCY_OPTIONS.map((c) => (
+                                <SelectItem key={c} value={c}>{c}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>

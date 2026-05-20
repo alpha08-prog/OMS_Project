@@ -29,6 +29,8 @@ import {
 } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { useFormDraft } from "@/hooks/useFormDraft";
+import FloatingNotice from "@/components/common/FloatingNotice";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 
 // Sentinel templeKey for the "Other" dropdown option. When chosen, the staff
 // member supplies the temple name via a text input and we send that name as
@@ -311,11 +313,13 @@ export default function GrievanceCreate() {
     </div>
   ) : null;
 
-  const successBanner = success ? (
-    <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-      ✅ Grievance created successfully! Redirecting...
-    </div>
-  ) : null;
+  const successBanner = (
+    <FloatingNotice
+      show={success}
+      variant="success"
+      message="Grievance registered successfully! Redirecting..."
+    />
+  );
 
   // ----- Step 1: just the type picker -----
   if (step === "type") {
@@ -484,14 +488,9 @@ export default function GrievanceCreate() {
                               <SelectValue placeholder="Select constituency" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Navalgund">Navalgund</SelectItem>
-                              <SelectItem value="Kundgol">Kundgol</SelectItem>
-                              <SelectItem value="Hubli-Dharwad East">Hubli-Dharwad East</SelectItem>
-                              <SelectItem value="Hubli-Dharwad Central">Hubli-Dharwad Central</SelectItem>
-                              <SelectItem value="Dharwad West">Dharwad West</SelectItem>
-                              <SelectItem value="Kalaghatagi">Kalaghatagi</SelectItem>
-                              <SelectItem value="Shiggaon">Shiggaon</SelectItem>
-                              <SelectItem value="Out of Constituency">Out of Constituency</SelectItem>
+                              {CONSTITUENCY_OPTIONS.map((c) => (
+                                <SelectItem key={c} value={c}>{c}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>

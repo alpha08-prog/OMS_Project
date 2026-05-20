@@ -256,12 +256,27 @@ export async function previewTrainEQ(
     // Prefer structured passenger rows when present so the preview matches
     // the PDF (Sex/Age and W/L populated).
     const passengers = await loadTrainPassengers(id);
-    const previewRows: TrainEQPassenger[] =
+    let previewRows: TrainEQPassenger[] =
       passengers.length > 0 ? passengers : allNames.map((n) => ({ name: n }));
 
     const rawCount = Number(row.numberOfPassengers);
     const berthCount =
       Number.isFinite(rawCount) && rawCount > 0 ? rawCount : previewRows.length || 1;
+
+    // Collapse to "<primary> + N others" when there's a single primary row
+    // but the PNR holds additional travellers. Sex/Age and W/L for the
+    // primary stay populated; only the name is suffixed.
+    if (
+      previewRows.length === 1 &&
+      Number.isFinite(rawCount) &&
+      rawCount > 1
+    ) {
+      const others = rawCount - 1;
+      previewRows = [{
+        ...previewRows[0],
+        name: `${previewRows[0].name} + ${others} ${others === 1 ? 'other' : 'others'}`,
+      }];
+    }
 
     const trainNumber = row.trainNumber ? String(row.trainNumber) : '';
     const trainName = row.trainName ? String(row.trainName) : '';
@@ -1160,12 +1175,12 @@ export async function previewTempleVisit(
     .subject { font-weight: bold; margin: 12px 0 18px 0; font-size: 12px; }
     .body { font-size: 12px; line-height: 1.9; text-align: justify; }
     /* Closing sits left-aligned; "Yours sincerely" wraps to the next line and
-       is centred across the page. Stacking them keeps the centred line on
-       the page midline rather than the right-hand half. */
+       is right-aligned with extra breathing room before the signer name so
+       the signature has space to be added on a printed letter. */
     .closing { margin-top: 24px; font-size: 12px; }
     .closing .left { display: block; text-align: left; }
-    .closing .center { display: block; text-align: center; margin-top: 10px; }
-    .signer { margin-top: 26px; text-align: center; font-weight: bold; color: #000080; font-size: 13px; }
+    .closing .right { display: block; text-align: right; margin-top: 10px; }
+    .signer { margin-top: 48px; text-align: right; font-weight: bold; color: #000080; font-size: 13px; }
     .recipient { margin-top: 28px; font-size: 12px; line-height: 1.5; }
   </style>
 </head>
@@ -1198,7 +1213,7 @@ export async function previewTempleVisit(
   <div class="sig-group">
     <div class="closing">
       <span class="left">${escapeHtml(d.closing)}</span>
-      <span class="center">Yours sincerely</span>
+      <span class="right">Yours sincerely</span>
     </div>
     <div class="signer">${escapeHtml(d.signerName)}</div>
   </div>
