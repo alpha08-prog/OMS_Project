@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Info, Upload, X } from "lucide-react";
 import { tourProgramApi, uploadsApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import FloatingNotice from "@/components/common/FloatingNotice";
 
 export default function TourProgramCreate() {
   const navigate = useNavigate();
@@ -124,12 +125,11 @@ export default function TourProgramCreate() {
               </p>
             </div>
 
-            {/* Success Message */}
-            {success && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-                ✅ Tour program saved successfully! Redirecting...
-              </div>
-            )}
+            <FloatingNotice
+              show={success}
+              variant="success"
+              message="Tour program registered successfully! Redirecting..."
+            />
 
             {/* Error Message */}
             {error && (

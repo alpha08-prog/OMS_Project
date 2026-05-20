@@ -13,10 +13,13 @@ import {
 } from "@/components/ui/select";
 import { trainRequestApi, pdfApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { Plus, X, AlertTriangle, Users, Download, Eye } from "lucide-react";
+import { AlertTriangle, Users, Download, Eye } from "lucide-react";
+import FloatingNotice from "@/components/common/FloatingNotice";
 
-// Passenger limit constant
+// Max additional travellers beyond the primary. Together with the primary
+// passenger that's MAX_PASSENGERS_GENERAL total per General booking PNR.
 const MAX_PASSENGERS_GENERAL = 6;
+const MAX_ADDITIONAL = MAX_PASSENGERS_GENERAL - 1;
 
 export default function TrainEQCreate() {
   const navigate = useNavigate();
@@ -29,18 +32,30 @@ export default function TrainEQCreate() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pnrLoading, setPnrLoading] = useState(false);
 
-  // Per-passenger row capturing the fields the EQ letter needs.
-  // Gender/Age populate the Sex/Age column; waitlist populates W/L.
-  type PassengerRow = {
-    name: string;
-    gender: '' | 'MALE' | 'FEMALE' | 'OTHER';
-    age: string;
-    waitlist: string;
-  };
-  const emptyPassenger = (): PassengerRow => ({ name: '', gender: '', age: '', waitlist: '' });
-  const [passengers, setPassengers] = useState<PassengerRow[]>([emptyPassenger()]);
-
-  const [formData, setFormData] = useState({
+  type Gender = '' | 'MALE' | 'FEMALE' | 'OTHER';
+  const [formData, setFormData] = useState<{
+    primaryPassengerName: string;
+    primaryGender: Gender;
+    primaryAge: string;
+    primaryWaitlist: string;
+    additionalTravellers: string;
+    pnrNumber: string;
+    ContactNumber: string;
+    trainName: string;
+    trainNumber: string;
+    journeyClass: string;
+    dateOfJourney: string;
+    fromStation: string;
+    toStation: string;
+    route: string;
+    referencedBy: string;
+    attachSignature: boolean;
+  }>({
+    primaryPassengerName: "",
+    primaryGender: "",
+    primaryAge: "",
+    primaryWaitlist: "",
+    additionalTravellers: "0",
     pnrNumber: "",
     ContactNumber: "",
     trainName: "",
@@ -53,39 +68,7 @@ export default function TrainEQCreate() {
     referencedBy: "",
     attachSignature: false,
   });
-  
-  // Add new passenger
-  const addPassenger = () => {
-    if (passengers.length < MAX_PASSENGERS_GENERAL) {
-      setPassengers([...passengers, emptyPassenger()]);
-      setError(null);
-    } else {
-      setError(`Maximum ${MAX_PASSENGERS_GENERAL} passengers allowed for General bookings`);
-    }
-  };
 
-  // Remove passenger
-  const removePassenger = (index: number) => {
-    if (passengers.length > 1) {
-      setPassengers(passengers.filter((_, i) => i !== index));
-      setError(null);
-    }
-  };
-
-  // Update a single field on a passenger row.
-  const updatePassengerField = <K extends keyof PassengerRow>(
-    index: number,
-    field: K,
-    value: PassengerRow[K]
-  ) => {
-    setPassengers((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], [field]: value };
-      return next;
-    });
-    setError(null);
-  };
-  
   const handleChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setError(null);
@@ -219,35 +202,39 @@ export default function TrainEQCreate() {
     setError(null);
     setLoading(true);
 
-    // Filter out rows where the name is blank — those are unfilled placeholders.
-    const validPassengers = passengers.filter((p) => p.name.trim());
-
-    // Validation
-    if (validPassengers.length === 0) {
-      setError("At least one passenger name is required");
+    const primaryName = formData.primaryPassengerName.trim();
+    if (!primaryName) {
+      setError("Primary passenger name is required");
       setLoading(false);
       return;
     }
 
-    // Age sanity check — if provided, must be 0 < age <= 120.
-    for (const p of validPassengers) {
-      if (p.age.trim()) {
-        const n = Number(p.age);
-        if (!Number.isFinite(n) || n <= 0 || n > 120) {
-          setError(`Invalid age "${p.age}" for ${p.name}. Enter a value between 1 and 120.`);
-          setLoading(false);
-          return;
-        }
+    const primaryAgeStr = formData.primaryAge.trim();
+    if (primaryAgeStr) {
+      const n = Number(primaryAgeStr);
+      if (!Number.isFinite(n) || n <= 0 || n > 120) {
+        setError(`Invalid age "${primaryAgeStr}". Enter a value between 1 and 120.`);
+        setLoading(false);
+        return;
       }
     }
 
-    // Check passenger limit
-    if (validPassengers.length > MAX_PASSENGERS_GENERAL) {
-      setError(`Maximum ${MAX_PASSENGERS_GENERAL} passengers allowed for General bookings`);
+    const additionalRaw = formData.additionalTravellers.trim();
+    const additional = additionalRaw === "" ? 0 : Number(additionalRaw);
+    if (!Number.isFinite(additional) || additional < 0 || !Number.isInteger(additional)) {
+      setError("Additional travellers must be a non-negative whole number");
       setLoading(false);
       return;
     }
-    
+    if (additional > MAX_ADDITIONAL) {
+      setError(
+        `Maximum ${MAX_PASSENGERS_GENERAL} total passengers allowed per PNR (primary + up to ${MAX_ADDITIONAL} additional)`
+      );
+      setLoading(false);
+      return;
+    }
+    const totalPassengers = 1 + additional;
+
     if (!formData.pnrNumber.trim()) {
       setError("PNR number is required");
       setLoading(false);
@@ -288,13 +275,8 @@ export default function TrainEQCreate() {
     }
 
     try {
-      // Join passenger names with comma for backend storage (legacy field).
-      // The structured `passengers` array drives the per-row data (Sex/Age/W/L)
-      // shown on the EQ letter.
-      const passengerNameStr = validPassengers.map((p) => p.name.trim()).join(', ');
-
       const created = await trainRequestApi.create({
-        passengerName: passengerNameStr,
+        passengerName: primaryName,
         pnrNumber: formData.pnrNumber,
         contactNumber: formData.ContactNumber,
         trainName: formData.trainName || undefined,
@@ -305,12 +287,17 @@ export default function TrainEQCreate() {
         toStation: formData.toStation,
         route: formData.route || `${formData.fromStation} to ${formData.toStation}`,
         referencedBy: formData.referencedBy || undefined,
-        passengers: validPassengers.map((p) => ({
-          name: p.name.trim(),
-          gender: p.gender || undefined,
-          age: p.age.trim() ? Number(p.age) : undefined,
-          currentStatus: p.waitlist.trim() || undefined,
-        })),
+        numberOfPassengers: totalPassengers,
+        // Only the primary's Sex/Age/W-L is captured; the letter shows it on
+        // a single row and appends "+ N others" when additional > 0.
+        passengers: [
+          {
+            name: primaryName,
+            gender: formData.primaryGender || undefined,
+            age: primaryAgeStr ? Number(primaryAgeStr) : undefined,
+            currentStatus: formData.primaryWaitlist.trim() || undefined,
+          },
+        ],
       });
 
       setCreatedId(created?.id ?? null);
@@ -318,11 +305,17 @@ export default function TrainEQCreate() {
       // No auto-redirect — the staff member needs to print the letter from
       // this same screen now that admin no longer mediates the flow.
     } catch (err: unknown) {
-      const e = err as { message?: string; errors?: Array<{ field: string; message: string }> };
+      const e = err as {
+        message?: string;
+        status?: number;
+        errors?: Array<{ field: string; message: string }>;
+      };
       const errorMessage =
-        Array.isArray(e?.errors) && e.errors.length > 0
-          ? e.errors.map((x) => `${x.field}: ${x.message}`).join('. ')
-          : e?.message || "Failed to create train request";
+        e?.status === 409
+          ? e?.message || `This PNR (${formData.pnrNumber}) is already registered.`
+          : Array.isArray(e?.errors) && e.errors.length > 0
+            ? e.errors.map((x) => `${x.field}: ${x.message}`).join('. ')
+            : e?.message || "Failed to create train request";
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -333,6 +326,19 @@ export default function TrainEQCreate() {
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
       
+      <FloatingNotice
+        show={success}
+        variant="success"
+        message="Train EQ request registered successfully. Print or preview the letter below, or visit the Print Center anytime to print letters later."
+        onClose={() => setSuccess(false)}
+      />
+      <FloatingNotice
+        show={!!error}
+        variant="error"
+        message={error || ""}
+        onClose={() => setError(null)}
+        autoHideMs={6000}
+      />
       <main className="flex-1 overflow-auto">
         <div className="w-full min-h-screen bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
           <div className="max-w-7xl mx-auto space-y-6">
@@ -354,7 +360,7 @@ export default function TrainEQCreate() {
                   ✅ Train EQ request created and approved.
                 </div>
                 <p className="text-sm">
-                  Print the letter now or preview it before printing. Admin will see this entry in the read-only list.
+                  Print the letter now or preview it before printing. You can also reprint any letter later from the <span className="font-medium">Print Center</span>. Admin will see this entry in the read-only list.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -439,23 +445,10 @@ export default function TrainEQCreate() {
 
                     {/* Passenger Information */}
                     <section className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-2">
-                          <Users className="h-4 w-4" />
-                          Passenger Information ({passengers.length}/{MAX_PASSENGERS_GENERAL})
-                        </h3>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={addPassenger}
-                          disabled={passengers.length >= MAX_PASSENGERS_GENERAL}
-                          className="gap-1"
-                        >
-                          <Plus className="h-4 w-4" />
-                          Add Passenger
-                        </Button>
-                      </div>
+                      <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        Passenger Information
+                      </h3>
 
                       {/* Passenger limit info */}
                       <div className="flex items-center gap-2 text-sm p-3 rounded-lg bg-blue-50 text-blue-800">
@@ -464,91 +457,92 @@ export default function TrainEQCreate() {
                           General bookings (AC/Non-AC) allow maximum {MAX_PASSENGERS_GENERAL} passengers per PNR
                         </span>
                       </div>
-                      
-                      {/* Passenger List — Name + Gender + Age + W/L per row.
-                          Gender, Age, and W/L populate the Sex/Age and W/L columns
-                          on the generated EQ letter. */}
-                      <div className="space-y-4">
-                        {passengers.map((passenger, index) => (
-                          <div
-                            key={index}
-                            className="rounded-lg border border-gray-200 bg-white/70 p-3 space-y-2"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-medium text-indigo-700">
-                                Passenger {index + 1} {index === 0 && <span className="text-red-500">*</span>}
-                              </span>
-                              {passengers.length > 1 && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                  onClick={() => removePassenger(index)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
 
-                            <div className="grid grid-cols-12 gap-2">
-                              <div className="col-span-12 md:col-span-5">
-                                <Label className="text-xs text-muted-foreground">Full Name</Label>
-                                <Input
-                                  placeholder={`Passenger ${index + 1} full name`}
-                                  value={passenger.name}
-                                  onChange={(e) => updatePassengerField(index, 'name', e.target.value)}
-                                />
-                              </div>
-
-                              <div className="col-span-6 md:col-span-3">
-                                <Label className="text-xs text-muted-foreground">Gender</Label>
-                                <Select
-                                  value={passenger.gender}
-                                  onValueChange={(v) =>
-                                    updatePassengerField(index, 'gender', v as PassengerRow['gender'])
-                                  }
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="MALE">Male</SelectItem>
-                                    <SelectItem value="FEMALE">Female</SelectItem>
-                                    <SelectItem value="OTHER">Other</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <div className="col-span-3 md:col-span-2">
-                                <Label className="text-xs text-muted-foreground">Age</Label>
-                                <Input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min={1}
-                                  max={120}
-                                  placeholder="Age"
-                                  value={passenger.age}
-                                  onChange={(e) => {
-                                    const v = e.target.value.replace(/\D/g, '').slice(0, 3);
-                                    updatePassengerField(index, 'age', v);
-                                  }}
-                                />
-                              </div>
-
-                              <div className="col-span-3 md:col-span-2">
-                                <Label className="text-xs text-muted-foreground">W/L</Label>
-                                <Input
-                                  placeholder="e.g. WL/12"
-                                  value={passenger.waitlist}
-                                  onChange={(e) =>
-                                    updatePassengerField(index, 'waitlist', e.target.value)
-                                  }
-                                />
-                              </div>
-                            </div>
+                      {/* Primary passenger (with Sex/Age/W-L) + additional
+                          travellers count. The EQ letter shows the primary's
+                          details on one row and appends "+ N others" to the
+                          name when additional > 0. */}
+                      <div className="rounded-lg border border-gray-200 bg-white/70 p-3 space-y-3">
+                        <div className="grid grid-cols-12 gap-3">
+                          <div className="col-span-12 md:col-span-6">
+                            <Label>
+                              Primary Passenger Name <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              placeholder="Full name of the primary passenger"
+                              value={formData.primaryPassengerName}
+                              onChange={(e) =>
+                                handleChange("primaryPassengerName", e.target.value)
+                              }
+                            />
                           </div>
-                        ))}
+                          <div className="col-span-6 md:col-span-3">
+                            <Label>Gender</Label>
+                            <Select
+                              value={formData.primaryGender}
+                              onValueChange={(v) =>
+                                handleChange("primaryGender", v as Gender)
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="MALE">Male</SelectItem>
+                                <SelectItem value="FEMALE">Female</SelectItem>
+                                <SelectItem value="OTHER">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="col-span-3 md:col-span-1">
+                            <Label>Age</Label>
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              min={1}
+                              max={120}
+                              placeholder="Age"
+                              value={formData.primaryAge}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/\D/g, '').slice(0, 3);
+                                handleChange("primaryAge", v);
+                              }}
+                            />
+                          </div>
+                          <div className="col-span-3 md:col-span-2">
+                            <Label>W/L</Label>
+                            <Input
+                              placeholder="e.g. WL/12"
+                              value={formData.primaryWaitlist}
+                              onChange={(e) =>
+                                handleChange("primaryWaitlist", e.target.value)
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-12 gap-3">
+                          <div className="col-span-12 md:col-span-6">
+                            <Label>
+                              Additional Travellers <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={MAX_ADDITIONAL}
+                              placeholder="0"
+                              value={formData.additionalTravellers}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/\D/g, '').slice(0, 2);
+                                handleChange("additionalTravellers", v);
+                              }}
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Other people travelling on the same PNR (excluding the primary). Max {MAX_ADDITIONAL}.
+                            </p>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Phone Number Field */}

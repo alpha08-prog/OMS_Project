@@ -15,6 +15,8 @@ import {
 import { birthdayApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { Cake, ArrowLeft } from "lucide-react";
+import FloatingNotice from "@/components/common/FloatingNotice";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 
 export default function BirthdayCreate() {
   const navigate = useNavigate();
@@ -110,12 +112,11 @@ export default function BirthdayCreate() {
               </div>
             </div>
 
-            {/* Success Message */}
-            {success && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-                ✅ Birthday entry saved successfully! Redirecting...
-              </div>
-            )}
+            <FloatingNotice
+              show={success}
+              variant="success"
+              message="Birthday registered successfully! Redirecting..."
+            />
 
             {/* Error Message */}
             {error && (
@@ -213,14 +214,9 @@ export default function BirthdayCreate() {
                         <SelectValue placeholder="Select constituency" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Navalgund">Navalgund</SelectItem>
-                        <SelectItem value="Kundgol">Kundgol</SelectItem>
-                        <SelectItem value="Hubli-Dharwad East">Hubli-Dharwad East</SelectItem>
-                        <SelectItem value="Hubli-Dharwad Central">Hubli-Dharwad Central</SelectItem>
-                        <SelectItem value="Dharwad West">Dharwad West</SelectItem>
-                        <SelectItem value="Kalaghatagi">Kalaghatagi</SelectItem>
-                        <SelectItem value="Shiggaon">Shiggaon</SelectItem>
-                        <SelectItem value="Out of Constituency">Out of Constituency</SelectItem>
+                        {CONSTITUENCY_OPTIONS.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

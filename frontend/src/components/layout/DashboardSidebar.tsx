@@ -89,7 +89,7 @@ const allMenuItems: MenuItem[] = [
   { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
   { icon: Printer, label: "Print Center", route: "/staff/print-center", roles: ['STAFF'] },
   { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },
-  { icon: Gift, label: "View Birthdays", route: "/admin/birthdays", roles: ['ADMIN', 'SUPER_ADMIN'] },
+  { icon: Gift, label: "View Birthdays", route: "/admin/birthdays", roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
 
   // Super Admin — these don't navigate to separate pages. They stay on
   // /home and trigger an in-page popup via the ?popup= search param.

@@ -157,7 +157,7 @@ export default function App() {
         <Route
           path="/admin/birthdays"
           element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
               <Birthdays />
             </ProtectedRoute>
           }

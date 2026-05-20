@@ -24,6 +24,8 @@ import {
 } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { useFormDraft } from "@/hooks/useFormDraft";
+import FloatingNotice from "@/components/common/FloatingNotice";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 
 export default function OfficeGrievanceCreate() {
   const navigate = useNavigate();
@@ -257,12 +259,11 @@ export default function OfficeGrievanceCreate() {
               </p>
             </div>
 
-            {/* Success Message */}
-            {success && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-                ✅ Office Grievance created successfully! Redirecting...
-              </div>
-            )}
+            <FloatingNotice
+              show={success}
+              variant="success"
+              message="Office Grievance registered successfully! Redirecting..."
+            />
 
             {/* Error Message */}
             {error && (
@@ -342,12 +343,9 @@ export default function OfficeGrievanceCreate() {
                               <SelectValue placeholder="Select constituency" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Central">Central</SelectItem>
-                              <SelectItem value="West Zone">West Zone</SelectItem>
-                              <SelectItem value="East Division">East Division</SelectItem>
-                              <SelectItem value="Ward 5">Ward 5</SelectItem>
-                              <SelectItem value="Ward 12">Ward 12</SelectItem>
-                              <SelectItem value="Ward 15">Ward 15</SelectItem>
+                              {CONSTITUENCY_OPTIONS.map((c) => (
+                                <SelectItem key={c} value={c}>{c}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>

@@ -257,6 +257,35 @@ async function deletePassengersFor(trainRequestId: string): Promise<void> {
   }
 }
 
+/**
+ * Look up an existing TrainRequest by PNR. Returns the first match (any status)
+ * or null if none exist. Used to enforce PNR uniqueness on create.
+ * Prefers ZCQL push-down filter when enabled; falls back to in-memory scan
+ * so duplicate detection still works when the ZCQL flag is off.
+ */
+async function findTrainRequestByPnr(pnr: string): Promise<CatalystRow | null> {
+  if (!pnr) return null;
+  if (useZCQL()) {
+    try {
+      const rows = await executeZCQL<CatalystRow>(
+        `SELECT * FROM ${TRAIN_TABLE} WHERE pnrNumber = '${zcqlEscapeValue(pnr)}' LIMIT 1`
+      );
+      return rows[0] ?? null;
+    } catch (err) {
+      console.warn(
+        '[trainRequest] ZCQL PNR lookup failed, falling back to listAllRows:',
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+  try {
+    const all = await listAllRows(TRAIN_TABLE);
+    return all.find((r) => (r.pnrNumber ?? '').toString().trim() === pnr) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Endpoints ─────────────────────────────────────────────────────────────
 
 /**
@@ -287,6 +316,7 @@ export async function createTrainRequest(
       contactNumber,
       remarks,
       passengers,
+      numberOfPassengers,
     } = req.body;
 
     const bType = (bookingType || 'GENERAL').toString().toUpperCase();
@@ -305,12 +335,28 @@ export async function createTrainRequest(
       return;
     }
 
+    // Enforce PNR uniqueness — same PNR cannot be re-registered.
+    // 409 Conflict so the frontend can branch on status if needed.
+    const pnrTrim = (pnrNumber ?? '').toString().trim();
+    if (pnrTrim) {
+      const duplicate = await findTrainRequestByPnr(pnrTrim);
+      if (duplicate) {
+        sendError(
+          res,
+          `A Train EQ request with PNR ${pnrTrim} already exists. Each PNR can only be registered once.`,
+          409
+        );
+        return;
+      }
+    }
+
     // Train EQ entries are now self-service: staff submission auto-approves
     // so the staff member can print the letter immediately. Admin sees
     // entries in a read-only list — no separate approval step.
     const nowIso = new Date().toISOString();
     let row: CatalystRow;
     try {
+      const passengerCount = Number(numberOfPassengers);
       row = await insertRow(TRAIN_TABLE, {
         pnrNumber,
         passengerName,
@@ -326,6 +372,8 @@ export async function createTrainRequest(
         referencedBy: referencedBy ?? null,
         contactNumber: contactNumber ?? null,
         remarks: remarks ?? null,
+        numberOfPassengers:
+          Number.isFinite(passengerCount) && passengerCount > 0 ? passengerCount : null,
         status: 'APPROVED',
         approvedAt: toCatalystDate(nowIso),
         rejectionReason: null,
