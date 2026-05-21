@@ -362,10 +362,10 @@ export type ApiResponse<T> = {
   message: string
   data: T
   meta?: {
-    page?: number
-    limit?: number
-    total?: number
-    totalPages?: number
+    page: number
+    limit: number
+    total: number
+    totalPages: number
     /** Cursor-based pagination (keyset). null on the last page. */
     nextCursor?: string | null
   }
