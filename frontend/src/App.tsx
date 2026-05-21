@@ -41,6 +41,8 @@ const AdminCalendar = lazy(() => import("./pages/admin/AdminCalendar"));
 const Profile = lazy(() => import("./pages/Profile"));
 const CreateUser = lazy(() => import("./pages/admin/CreateUser"));
 const UserList = lazy(() => import("./pages/admin/UserList"));
+const StaffAttendance = lazy(() => import("./pages/staff/StaffAttendance"));
+const AdminAttendance = lazy(() => import("./pages/admin/AdminAttendance"));
 
 function PageFallback() {
   return (
@@ -93,6 +95,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['STAFF']}>
               <StaffHistory />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/staff/attendance"
+          element={
+            <ProtectedRoute allowedRoles={['STAFF']}>
+              <StaffAttendance />
             </ProtectedRoute>
           }
         />
@@ -293,6 +303,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['ADMIN']}>
               <AdminCalendar />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/attendance"
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+              <AdminAttendance />
             </ProtectedRoute>
           }
         />

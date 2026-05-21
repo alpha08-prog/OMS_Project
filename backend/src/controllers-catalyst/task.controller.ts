@@ -21,6 +21,7 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
   zcqlSafeLimit,
@@ -501,21 +502,26 @@ export async function getTaskGroups(
     const { page, limit, skip } = parsePagination(
       req.query as { page?: string; limit?: string }
     );
-    const { status, taskType, priority } = req.query as Record<string, string>;
+    const { status, taskType, priority, includeCompleted } = req.query as Record<string, string>;
 
-    let allRows: CatalystRow[];
-    if (useZCQL()) {
-      const baseQuery = buildTaskZCQL({ status, taskType, priority, orderBy: 'created' });
-      // No safeLimit cap here -- we need every row to group correctly. The
-      // cardinality is bounded by total active tasks, which is small.
-      allRows = await executeZCQL<CatalystRow>(baseQuery);
-    } else {
-      let rows = await listAllRows(TASK_TABLE);
-      if (status) rows = rows.filter((r) => r.status === status);
-      if (taskType) rows = rows.filter((r) => r.taskType === taskType);
-      if (priority) rows = rows.filter((r) => r.priorities === priority);
-      allRows = rows;
+    // We need every matching row to group correctly. ZCQL `SELECT *` caps at
+    // 299 rows and silently drops the rest, so we use listAllRows (which
+    // paginates internally) for correctness.
+    //
+    // Scaling guard: if the caller did not pick a specific status and didn't
+    // opt into completed tasks via `includeCompleted=true`, we drop COMPLETED
+    // rows in JS so the working set stays bounded by ACTIVE tasks regardless
+    // of how many years of history accumulate. Admin queues are almost always
+    // looking at open work; completed history has its own report.
+    let rows = await listAllRows(TASK_TABLE);
+    if (status) {
+      rows = rows.filter((r) => r.status === status);
+    } else if (includeCompleted !== 'true') {
+      rows = rows.filter((r) => r.status !== 'COMPLETED');
     }
+    if (taskType) rows = rows.filter((r) => r.taskType === taskType);
+    if (priority) rows = rows.filter((r) => r.priorities === priority);
+    const allRows: CatalystRow[] = rows;
 
     // Bucket by groupId. Solo rows become their own group keyed by ROWID
     // so callers always iterate uniformly.
@@ -820,10 +826,10 @@ export async function updateTaskProgress(
     if (status) {
       updateData.status = status;
       if (status === 'IN_PROGRESS' && !existing.startedAt) {
-        updateData.startedAt = toCatalystDate(new Date());
+        updateData.startedAt = nowCatalystIST();
       }
       if (status === 'COMPLETED') {
-        updateData.completedAt = toCatalystDate(new Date());
+        updateData.completedAt = nowCatalystIST();
         updateData.progressPercent = 100;
       }
     }
@@ -933,7 +939,7 @@ export async function updateTaskStatus(
     }
     const updateData: Record<string, unknown> = { ROWID: id, status };
     if (status === 'COMPLETED') {
-      updateData.completedAt = toCatalystDate(new Date());
+      updateData.completedAt = nowCatalystIST();
       updateData.progressPercent = 100;
     }
     const updated = await updateRow(TASK_TABLE, updateData as any);

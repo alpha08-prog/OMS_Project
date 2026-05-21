@@ -476,7 +476,7 @@ export default function TrainEQCreate() {
                               }
                             />
                           </div>
-                          <div className="col-span-6 md:col-span-3">
+                          <div className="col-span-6 md:col-span-2">
                             <Label>Gender</Label>
                             <Select
                               value={formData.primaryGender}
@@ -494,7 +494,7 @@ export default function TrainEQCreate() {
                               </SelectContent>
                             </Select>
                           </div>
-                          <div className="col-span-3 md:col-span-1">
+                          <div className="col-span-3 md:col-span-2">
                             <Label>Age</Label>
                             <Input
                               type="number"

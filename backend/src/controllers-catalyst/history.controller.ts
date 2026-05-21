@@ -16,6 +16,7 @@ import {
   CatalystRow,
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
+import { cacheSWR } from '../lib/cache';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import { sendSuccess, sendServerError } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
@@ -346,76 +347,86 @@ export async function getAdminHistory(
   }
 }
 
-/** GET /api/history/stats — dashboard counts. */
+/**
+ * GET /api/history/stats — dashboard counts.
+ *
+ * Catalyst ZCQL COUNT() / GROUP BY are unreliable across environments, so
+ * we can't push the aggregation down to the DB. The fallback is fetching
+ * every row and counting in JS — which is O(n) per request.
+ *
+ * Mitigation: stale-while-revalidate cache. After the first hit pays the
+ * cost, every subsequent hit within 10 min gets cached data instantly; a
+ * background refresh kicks in after 2 min so the data stays fresh without
+ * making anyone wait.
+ */
 export async function getHistoryStats(
   _req: AuthenticatedRequest,
   res: Response
 ): Promise<void> {
   try {
-    // Catalyst ZCQL doesn't support COUNT() across all environments reliably.
-    // Pull each table once (cheap at this scale, cached at the table-list
-    // level for repeat hits) and count in JS.
-    const [grievances, trainRequests, tours] = await Promise.all([
-      listAllRows(GRIEVANCE_TABLE),
-      listAllRows(TRAIN_TABLE),
-      listAllRows(TOUR_TABLE),
-    ]);
+    const stats = await cacheSWR('history_stats', 120, 600, async () => {
+      const [grievances, trainRequests, tours] = await Promise.all([
+        listAllRows(GRIEVANCE_TABLE),
+        listAllRows(TRAIN_TABLE),
+        listAllRows(TOUR_TABLE),
+      ]);
 
-    let resolvedG = 0,
-      rejectedG = 0,
-      verifiedG = 0,
-      inProgressG = 0;
-    for (const g of grievances) {
-      if (g.status === 'RESOLVED') resolvedG++;
-      if (g.status === 'REJECTED') rejectedG++;
-      if (parseBool(g.isVerified)) verifiedG++;
-      if (g.status === 'IN_PROGRESS') inProgressG++;
-    }
+      let resolvedG = 0,
+        rejectedG = 0,
+        verifiedG = 0,
+        inProgressG = 0;
+      for (const g of grievances) {
+        if (g.status === 'RESOLVED') resolvedG++;
+        if (g.status === 'REJECTED') rejectedG++;
+        if (parseBool(g.isVerified)) verifiedG++;
+        if (g.status === 'IN_PROGRESS') inProgressG++;
+      }
 
-    let approvedT = 0,
-      rejectedT = 0,
-      resolvedT = 0;
-    for (const t of trainRequests) {
-      if (t.status === 'APPROVED') approvedT++;
-      if (t.status === 'REJECTED') rejectedT++;
-      if (t.status === 'RESOLVED') resolvedT++;
-    }
+      let approvedT = 0,
+        rejectedT = 0,
+        resolvedT = 0;
+      for (const t of trainRequests) {
+        if (t.status === 'APPROVED') approvedT++;
+        if (t.status === 'REJECTED') rejectedT++;
+        if (t.status === 'RESOLVED') resolvedT++;
+      }
 
-    let acceptedTours = 0,
-      regretTours = 0;
-    for (const tp of tours) {
-      if (tp.decision === 'ACCEPTED') acceptedTours++;
-      if (tp.decision === 'REGRET') regretTours++;
-    }
+      let acceptedTours = 0,
+        regretTours = 0;
+      for (const tp of tours) {
+        if (tp.decision === 'ACCEPTED') acceptedTours++;
+        if (tp.decision === 'REGRET') regretTours++;
+      }
 
-    const stats = {
-      grievances: {
-        resolved: resolvedG,
-        rejected: rejectedG,
-        verified: verifiedG,
-        inProgress: inProgressG,
-        total: resolvedG + rejectedG + verifiedG + inProgressG,
-      },
-      trainRequests: {
-        approved: approvedT,
-        rejected: rejectedT,
-        resolved: resolvedT,
-        total: approvedT + rejectedT + resolvedT,
-      },
-      tourPrograms: {
-        accepted: acceptedTours,
-        regret: regretTours,
-        total: acceptedTours + regretTours,
-      },
-      totalActions:
-        resolvedG +
-        rejectedG +
-        approvedT +
-        rejectedT +
-        resolvedT +
-        acceptedTours +
-        regretTours,
-    };
+      return {
+        grievances: {
+          resolved: resolvedG,
+          rejected: rejectedG,
+          verified: verifiedG,
+          inProgress: inProgressG,
+          total: resolvedG + rejectedG + verifiedG + inProgressG,
+        },
+        trainRequests: {
+          approved: approvedT,
+          rejected: rejectedT,
+          resolved: resolvedT,
+          total: approvedT + rejectedT + resolvedT,
+        },
+        tourPrograms: {
+          accepted: acceptedTours,
+          regret: regretTours,
+          total: acceptedTours + regretTours,
+        },
+        totalActions:
+          resolvedG +
+          rejectedG +
+          approvedT +
+          rejectedT +
+          resolvedT +
+          acceptedTours +
+          regretTours,
+      };
+    });
 
     sendSuccess(res, stats, 'History stats retrieved successfully');
   } catch (error) {

@@ -22,6 +22,7 @@ import {
   Star,
   UserCircle,
   UserPlus,
+  UserCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -46,6 +47,7 @@ const allMenuItems: MenuItem[] = [
   // Staff - Data Entry
   { icon: ClipboardList, label: "My Tasks", route: "/staff/tasks", roles: ['STAFF'] },
   { icon: History, label: "My History", route: "/staff/history", roles: ['STAFF'] },
+  { icon: UserCheck, label: "My Attendance", route: "/staff/attendance", roles: ['STAFF'] },
   { 
     icon: FileText, 
     label: "Grievance", 
@@ -73,6 +75,7 @@ const allMenuItems: MenuItem[] = [
   { icon: Star, label: "Events", route: "/admin/events", roles: ['ADMIN'] },
   { icon: Calendar, label: "Calendar", route: "/admin/calendar", roles: ['ADMIN'] },
   { icon: Users, label: "View Visitors", route: "/admin/visitors", roles: ["ADMIN"] },
+  { icon: UserCheck, label: "Staff Attendance", route: "/admin/attendance", roles: ['ADMIN', 'SUPER_ADMIN'] },
   {
     icon: UserPlus,
     label: "Manage Users",

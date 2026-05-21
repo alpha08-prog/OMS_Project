@@ -21,6 +21,7 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
   zcqlSafeLimit,
@@ -258,6 +259,42 @@ async function deletePassengersFor(trainRequestId: string): Promise<void> {
 }
 
 /**
+ * Catalyst Data Store has no composite unique constraints. Two concurrent
+ * createTrainRequest calls with the same PNR can both pass the duplicate
+ * check before either INSERT lands → two rows for the same PNR.
+ *
+ * Strategy: after our INSERT, query ALL rows with this PNR. The lowest ROWID
+ * wins (earliest insert). If our just-inserted row is NOT the winner, we
+ * delete it and surface 409 to the loser. The winner gets its normal
+ * success response.
+ */
+async function deduplicateByPnr(
+  pnr: string,
+  newRowId: string
+): Promise<{ kept: boolean; canonical: CatalystRow | null }> {
+  try {
+    const rows = await executeZCQL<CatalystRow>(
+      `SELECT * FROM ${TRAIN_TABLE} WHERE pnrNumber = '${zcqlEscapeValue(pnr)}' LIMIT 50`
+    );
+    if (rows.length <= 1) return { kept: true, canonical: rows[0] ?? null };
+    rows.sort((a, b) => Number(a.ROWID ?? 0) - Number(b.ROWID ?? 0));
+    const [keep, ...extras] = rows;
+    for (const dupe of extras) {
+      deleteRow(TRAIN_TABLE, String(dupe.ROWID)).catch((err) => {
+        console.warn(
+          `[trainRequest] Failed to delete duplicate row ${dupe.ROWID} (PNR ${pnr})`,
+          err
+        );
+      });
+    }
+    return { kept: String(keep.ROWID) === newRowId, canonical: keep };
+  } catch (err) {
+    console.warn('[trainRequest] PNR dedupe query failed', err);
+    return { kept: true, canonical: null };
+  }
+}
+
+/**
  * Look up an existing TrainRequest by PNR. Returns the first match (any status)
  * or null if none exist. Used to enforce PNR uniqueness on create.
  * Prefers ZCQL push-down filter when enabled; falls back to in-memory scan
@@ -361,7 +398,7 @@ export async function createTrainRequest(
         pnrNumber,
         passengerName,
         journeyClass,
-        dateOfJourney: toCatalystDate(dateOfJourney) || toCatalystDate(new Date()),
+        dateOfJourney: toCatalystDate(dateOfJourney) || nowCatalystIST(),
         fromStation,
         toStation,
         journeyRoute: route ?? null, // frontend `route` → Catalyst `journeyRoute`
@@ -389,6 +426,26 @@ export async function createTrainRequest(
       console.error('[trainRequest] Parent insert failed:', err);
       sendError(res, `Failed to create train request: ${detail}`, 500, detail);
       return;
+    }
+
+    // Race-safety: another request with the same PNR may have inserted
+    // concurrently between our findTrainRequestByPnr check and the insert
+    // above. Run dedupe — if WE'RE the loser, undo our work and return 409.
+    if (pnrTrim) {
+      const dedupe = await deduplicateByPnr(pnrTrim, String(row.ROWID));
+      if (!dedupe.kept) {
+        // Clean up our orphan parent row (passenger rows haven't been written
+        // yet, so no further cleanup needed).
+        deleteRow(TRAIN_TABLE, String(row.ROWID)).catch((err) => {
+          console.warn(`[trainRequest] Failed to roll back lost-race row ${row.ROWID}`, err);
+        });
+        sendError(
+          res,
+          `A Train EQ request with PNR ${pnrTrim} already exists. Each PNR can only be registered once.`,
+          409
+        );
+        return;
+      }
     }
 
     // Best-effort passenger persistence. Schema/table issues are logged
@@ -632,7 +689,7 @@ export async function approveTrainRequest(
       ROWID: id,
       status: 'APPROVED',
       approvedById: req.user.id,
-      approvedAt: toCatalystDate(new Date()),
+      approvedAt: nowCatalystIST(),
     });
     const [shaped] = await hydrate([updated]);
     sendSuccess(res, shaped, 'Train request approved successfully');
