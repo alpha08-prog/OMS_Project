@@ -1425,12 +1425,42 @@ export type AttendanceAggregate = {
   staff: AttendanceAggregateRow[]
 }
 
+export type LeaveRangeResult = {
+  startDate: string
+  endDate: string
+  count: number
+  records: AttendanceRow[]
+  skipped: { date: string; status: string }[]
+}
+
 export const attendanceApi = {
   // `date` (YYYY-MM-DD) is only meaningful for LEAVE — the backend rejects
   // future/past dates for PRESENT / HALF_DAY. Leave undefined to mean today.
   mark: async (status: AttendanceStatus, reason?: string, date?: string) => {
     const res = await http.post<ApiResponse<AttendanceRow>>('/attendance', { status, reason, date })
     return res.data.data
+  },
+
+  // Multi-day leave: one row per day in [startDate, endDate]. Days already
+  // marked PRESENT/HALF_DAY are returned in `skipped` rather than overwritten.
+  markLeaveRange: async (
+    startDate: string,
+    endDate: string,
+    reason: string
+  ): Promise<LeaveRangeResult> => {
+    const res = await http.post<ApiResponse<LeaveRangeResult>>(
+      '/attendance/leave-range',
+      { startDate, endDate, reason }
+    )
+    return (
+      res.data.data ?? {
+        startDate,
+        endDate,
+        count: 0,
+        records: [],
+        skipped: [],
+      }
+    )
   },
 
   getMyToday: async (): Promise<AttendanceRow | null> => {

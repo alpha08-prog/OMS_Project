@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Clock, FileX, Loader2 } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock, FileX, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,10 @@ function todayISTString(): string {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+// The "Apply" card handles HALF_DAY and LEAVE. PRESENT is intentionally
+// excluded — it's a one-tap action for today and lives in the Today card.
+type ApplyType = "HALF_DAY" | "LEAVE";
+
 export default function StaffAttendance() {
   const [today, setToday] = useState<AttendanceRow | null>(null);
   const [history, setHistory] = useState<AttendanceRow[]>([]);
@@ -34,11 +38,19 @@ export default function StaffAttendance() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<AttendanceStatus | null>(null);
-  const [reason, setReason] = useState("");
-  const [leaveDate, setLeaveDate] = useState<string>(todayISTString());
-  const [error, setError] = useState<string | null>(null);
 
-  /** Initial / forced refresh — replaces the history list. */
+  // Apply-card state (Half Day / Leave).
+  const [applyType, setApplyType] = useState<ApplyType>("LEAVE");
+  const [applyFromDate, setApplyFromDate] = useState<string>(todayISTString());
+  // Empty = single-day. Only meaningful for LEAVE. Cleared when switching to HD.
+  const [applyToDate, setApplyToDate] = useState<string>("");
+  const [reason, setReason] = useState("");
+
+  // Feedback for both cards.
+  const [presentError, setPresentError] = useState<string | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applyInfo, setApplyInfo] = useState<string | null>(null);
+
   const refresh = async () => {
     try {
       const [t, page] = await Promise.all([
@@ -55,7 +67,6 @@ export default function StaffAttendance() {
     }
   };
 
-  /** Append the next page; called by the "Load more" button. */
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
@@ -77,29 +88,12 @@ export default function StaffAttendance() {
     refresh();
   }, []);
 
-  const handleMark = async (status: AttendanceStatus) => {
-    setError(null);
-    if (status === "LEAVE" && !reason.trim()) {
-      setError("Please provide a reason for leave.");
-      return;
-    }
-    if (status === "LEAVE" && leaveDate < todayISTString()) {
-      setError("Leave cannot be marked for a past date.");
-      return;
-    }
-    setSubmitting(status);
+  const handleMarkPresent = async () => {
+    setPresentError(null);
+    setSubmitting("PRESENT");
     try {
-      const next = await attendanceApi.mark(
-        status,
-        status === "LEAVE" ? reason.trim() : undefined,
-        status === "LEAVE" ? leaveDate : undefined
-      );
-      // If we just marked today, update the today card. Future leaves only
-      // refresh the history list.
-      if (status !== "LEAVE" || leaveDate === todayISTString()) {
-        setToday(next);
-      }
-      // Re-fetch first page so the new mark appears at the top.
+      const next = await attendanceApi.mark("PRESENT");
+      setToday(next);
       const page = await attendanceApi.getMyHistory({ limit: 50 });
       setHistory(page.rows);
       setNextCursor(page.nextCursor);
@@ -107,13 +101,86 @@ export default function StaffAttendance() {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data
           ?.message ?? "Failed to mark attendance.";
-      setError(msg);
+      setPresentError(msg);
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const handleApply = async () => {
+    setApplyError(null);
+    setApplyInfo(null);
+    const todayStr = todayISTString();
+
+    if (applyFromDate < todayStr) {
+      setApplyError("Date cannot be in the past.");
+      return;
+    }
+    if (applyType === "LEAVE") {
+      if (!reason.trim()) {
+        setApplyError("Please provide a reason for leave.");
+        return;
+      }
+      if (applyToDate && applyToDate < applyFromDate) {
+        setApplyError("'To' date cannot be before 'From' date.");
+        return;
+      }
+    }
+
+    setSubmitting(applyType);
+    try {
+      const isRange =
+        applyType === "LEAVE" && !!applyToDate && applyToDate > applyFromDate;
+
+      if (isRange) {
+        const result = await attendanceApi.markLeaveRange(
+          applyFromDate,
+          applyToDate,
+          reason.trim()
+        );
+        const todayRecord = result.records.find((r) => r.date === todayStr);
+        if (todayRecord) setToday(todayRecord);
+
+        const parts: string[] = [];
+        if (result.count > 0) {
+          parts.push(
+            `Leave marked for ${result.count} day${result.count === 1 ? "" : "s"}.`
+          );
+        }
+        if (result.skipped.length > 0) {
+          const skippedDates = result.skipped
+            .map((s) => `${s.date} (${s.status})`)
+            .join(", ");
+          parts.push(`Skipped: ${skippedDates}.`);
+        }
+        setApplyInfo(parts.join(" ") || "No new leave days marked.");
+      } else {
+        const next = await attendanceApi.mark(
+          applyType,
+          applyType === "LEAVE" ? reason.trim() : undefined,
+          applyFromDate
+        );
+        if (applyFromDate === todayStr) setToday(next);
+        setApplyInfo(
+          `${STATUS_LABEL[applyType]} marked for ${applyFromDate}.`
+        );
+      }
+
+      const page = await attendanceApi.getMyHistory({ limit: 50 });
+      setHistory(page.rows);
+      setNextCursor(page.nextCursor);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to submit.";
+      setApplyError(msg);
     } finally {
       setSubmitting(null);
     }
   };
 
   const todayIST = todayISTString();
+  const presentMarkedToday = today?.date === todayIST && today?.status === "PRESENT";
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -127,20 +194,24 @@ export default function StaffAttendance() {
                 My Attendance
               </h1>
               <p className="text-sm text-muted-foreground">
-                Mark your attendance for today and view your history.
+                Mark today's attendance or plan a half day / leave for any
+                upcoming date.
               </p>
             </div>
 
-            {/* TODAY'S MARK */}
+            {/* CARD 1 — TODAY: Mark Present (today only, one click) */}
             <Card className="rounded-2xl shadow-sm border border-indigo-100">
               <CardHeader>
-                <CardTitle className="text-lg">Today — {todayIST}</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  Today — {todayIST}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {loading ? (
                   <p className="text-sm text-muted-foreground">Loading…</p>
-                ) : today ? (
-                  <div className="flex items-center gap-3">
+                ) : today && today.date === todayIST ? (
+                  <div className="flex items-center gap-3 flex-wrap">
                     <Badge className={STATUS_TONE[today.status]}>
                       {today.status === "ABSENT"
                         ? "Absent"
@@ -159,87 +230,176 @@ export default function StaffAttendance() {
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Not marked yet. Choose one below.
+                    Not marked yet. Tap below to mark yourself present.
                   </p>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <Button
-                    disabled={submitting !== null}
-                    onClick={() => handleMark("PRESENT")}
-                    className="h-20 flex flex-col gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                <Button
+                  disabled={submitting !== null || presentMarkedToday}
+                  onClick={handleMarkPresent}
+                  className="w-full h-14 text-base bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+                >
+                  {submitting === "PRESENT" ? (
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  ) : (
+                    <CheckCircle2 className="h-5 w-5 mr-2" />
+                  )}
+                  {presentMarkedToday
+                    ? "Already marked present today"
+                    : "Mark me present (today)"}
+                </Button>
+
+                {presentError && (
+                  <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+                    {presentError}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* CARD 2 — APPLY: Half Day or Leave (today or future) */}
+            <Card className="rounded-2xl shadow-sm border border-indigo-100">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <CalendarDays className="h-5 w-5 text-sky-600" />
+                  Apply Half Day or Leave
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  For today or any upcoming date.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Type toggle */}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplyType("HALF_DAY");
+                      setApplyToDate(""); // To date is leave-only
+                      setApplyError(null);
+                      setApplyInfo(null);
+                    }}
+                    className={`flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition ${
+                      applyType === "HALF_DAY"
+                        ? "bg-amber-500 text-white shadow-sm"
+                        : "text-gray-700 hover:bg-white"
+                    }`}
                   >
-                    {submitting === "PRESENT" ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="h-5 w-5" />
-                    )}
-                    <span>Mark Present</span>
-                  </Button>
-                  <Button
-                    disabled={submitting !== null}
-                    onClick={() => handleMark("HALF_DAY")}
-                    className="h-20 flex flex-col gap-1 bg-amber-500 hover:bg-amber-600 text-white"
+                    <Clock className="h-4 w-4" />
+                    Half Day
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplyType("LEAVE");
+                      setApplyError(null);
+                      setApplyInfo(null);
+                    }}
+                    className={`flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition ${
+                      applyType === "LEAVE"
+                        ? "bg-sky-600 text-white shadow-sm"
+                        : "text-gray-700 hover:bg-white"
+                    }`}
                   >
-                    {submitting === "HALF_DAY" ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Clock className="h-5 w-5" />
-                    )}
-                    <span>Half Day</span>
-                  </Button>
-                  <Button
-                    disabled={submitting !== null}
-                    onClick={() => handleMark("LEAVE")}
-                    className="h-20 flex flex-col gap-1 bg-sky-600 hover:bg-sky-700 text-white"
-                  >
-                    {submitting === "LEAVE" ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <FileX className="h-5 w-5" />
-                    )}
-                    <span>Leave</span>
-                  </Button>
+                    <FileX className="h-4 w-4" />
+                    Leave
+                  </button>
                 </div>
 
-                <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-4 space-y-3">
-                  <p className="text-sm font-medium text-sky-900">
-                    Leave details (only used when marking Leave)
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-1">
+                {/* Date fields */}
+                <div
+                  className={`grid grid-cols-1 gap-3 ${
+                    applyType === "LEAVE" ? "sm:grid-cols-2" : ""
+                  }`}
+                >
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      {applyType === "LEAVE" ? "From date" : "Date"}
+                    </label>
+                    <input
+                      type="date"
+                      value={applyFromDate}
+                      min={todayISTString()}
+                      onChange={(e) => {
+                        setApplyFromDate(e.target.value);
+                        if (applyToDate && applyToDate < e.target.value) {
+                          setApplyToDate("");
+                        }
+                      }}
+                      className="block w-full h-10 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Today or any future date.
+                    </p>
+                  </div>
+
+                  {applyType === "LEAVE" && (
+                    <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Leave date
+                        To date <span className="text-muted-foreground">(optional)</span>
                       </label>
                       <input
                         type="date"
-                        value={leaveDate}
-                        min={todayISTString()}
-                        onChange={(e) => setLeaveDate(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        value={applyToDate}
+                        min={applyFromDate}
+                        onChange={(e) => setApplyToDate(e.target.value)}
+                        className="block w-full h-10 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                       <p className="text-[11px] text-muted-foreground mt-1">
-                        Today or any future date.
+                        Leave blank for single day. Max 90 days.
                       </p>
                     </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Reason (required for Leave)
-                      </label>
-                      <textarea
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                        placeholder="e.g. Family function, medical, etc."
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        rows={2}
-                      />
-                    </div>
-                  </div>
+                  )}
                 </div>
 
-                {error && (
+                {/* Reason — required for Leave, optional for Half Day */}
+                {applyType === "LEAVE" && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Reason (required)
+                    </label>
+                    <textarea
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="e.g. Family function, medical, etc."
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      rows={2}
+                    />
+                  </div>
+                )}
+
+                {/* Submit */}
+                <Button
+                  disabled={submitting !== null}
+                  onClick={handleApply}
+                  className={`w-full h-12 text-white ${
+                    applyType === "LEAVE"
+                      ? "bg-sky-600 hover:bg-sky-700"
+                      : "bg-amber-500 hover:bg-amber-600"
+                  }`}
+                >
+                  {submitting === applyType ? (
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  ) : applyType === "LEAVE" ? (
+                    <FileX className="h-5 w-5 mr-2" />
+                  ) : (
+                    <Clock className="h-5 w-5 mr-2" />
+                  )}
+                  {applyType === "LEAVE"
+                    ? applyToDate && applyToDate > applyFromDate
+                      ? "Apply Leave (range)"
+                      : "Apply Leave"
+                    : "Apply Half Day"}
+                </Button>
+
+                {applyError && (
                   <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
-                    {error}
+                    {applyError}
+                  </p>
+                )}
+                {applyInfo && !applyError && (
+                  <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
+                    {applyInfo}
                   </p>
                 )}
               </CardContent>

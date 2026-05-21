@@ -182,18 +182,18 @@ export async function markAttendance(
 
     const today = todayIST();
     // Date rules:
-    //   - PRESENT / HALF_DAY → must be today (no marking yourself present
-    //     for a different day).
-    //   - LEAVE → today or any future date (planned leaves).
+    //   - PRESENT → must be today (no marking yourself present for a different
+    //     day — you can only confirm presence in the moment).
+    //   - HALF_DAY / LEAVE → today or any future date (you can plan ahead).
     const targetDate = (dateInput && /^\d{4}-\d{2}-\d{2}$/.test(dateInput))
       ? dateInput
       : today;
-    if (status !== 'LEAVE' && targetDate !== today) {
-      sendError(res, 'Only LEAVE can be marked for a date other than today', 400);
+    if (status === 'PRESENT' && targetDate !== today) {
+      sendError(res, 'PRESENT can only be marked for today', 400);
       return;
     }
-    if (status === 'LEAVE' && targetDate < today) {
-      sendError(res, 'Leave cannot be marked for a past date', 400);
+    if ((status === 'HALF_DAY' || status === 'LEAVE') && targetDate < today) {
+      sendError(res, `${status} cannot be marked for a past date`, 400);
       return;
     }
 
@@ -225,6 +225,153 @@ export async function markAttendance(
     sendSuccess(res, shapeAttendance(inserted), 'Attendance marked', 201);
   } catch (error) {
     sendServerError(res, 'Failed to mark attendance', error);
+  }
+}
+
+/**
+ * POST /api/attendance/leave-range — apply LEAVE for an inclusive date range.
+ *
+ * One LEAVE row per day is upserted (so the existing per-day aggregates, ABSENT
+ * auto-fill, and history queries keep working unchanged). Days where the user
+ * already has PRESENT or HALF_DAY are *skipped* rather than overwritten — you
+ * shouldn't be able to wipe out a day you already showed up for by applying a
+ * vacation that overlaps it.
+ *
+ * Caps the range at 90 days to keep one request bounded and to stay well under
+ * Catalyst's per-call limits.
+ */
+const MAX_LEAVE_RANGE_DAYS = 90;
+
+export async function markLeaveRange(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      sendError(res, 'Not authenticated', 401);
+      return;
+    }
+
+    const { startDate, endDate, reason } = req.body as {
+      startDate?: string;
+      endDate?: string;
+      reason?: string;
+    };
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    if (!startDate || !dateRe.test(startDate)) {
+      sendError(res, 'startDate must be in YYYY-MM-DD format', 400);
+      return;
+    }
+    if (!endDate || !dateRe.test(endDate)) {
+      sendError(res, 'endDate must be in YYYY-MM-DD format', 400);
+      return;
+    }
+    const trimmedReason = (reason ?? '').trim();
+    if (!trimmedReason) {
+      sendError(res, 'reason is required for leave', 400);
+      return;
+    }
+    if (endDate < startDate) {
+      sendError(res, 'endDate cannot be before startDate', 400);
+      return;
+    }
+    const today = todayIST();
+    if (startDate < today) {
+      sendError(res, 'Leave cannot start in the past', 400);
+      return;
+    }
+
+    // Build the inclusive list of dates in the range, capped.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const startMs = Date.UTC(
+      Number(startDate.slice(0, 4)),
+      Number(startDate.slice(5, 7)) - 1,
+      Number(startDate.slice(8, 10))
+    );
+    const endMs = Date.UTC(
+      Number(endDate.slice(0, 4)),
+      Number(endDate.slice(5, 7)) - 1,
+      Number(endDate.slice(8, 10))
+    );
+    const totalDays = Math.floor((endMs - startMs) / DAY_MS) + 1;
+    if (totalDays > MAX_LEAVE_RANGE_DAYS) {
+      sendError(
+        res,
+        `Leave range cannot exceed ${MAX_LEAVE_RANGE_DAYS} days`,
+        400
+      );
+      return;
+    }
+    const dates: string[] = [];
+    for (let t = startMs; t <= endMs; t += DAY_MS) {
+      dates.push(new Date(t).toISOString().slice(0, 10));
+    }
+
+    const userId = req.user.id;
+    const nowIso = nowCatalystIST();
+
+    // Process days with small parallelism. resolveAttendanceRow + insert/update
+    // is one round-trip per day; chunked Promise.all keeps the total wall time
+    // close to a single round-trip while not flooding Catalyst.
+    const CONCURRENCY = 5;
+    const records: ReturnType<typeof shapeAttendance>[] = [];
+    const skipped: { date: string; status: string }[] = [];
+
+    for (let i = 0; i < dates.length; i += CONCURRENCY) {
+      const slice = dates.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        slice.map(async (targetDate) => {
+          const existing = await resolveAttendanceRow(userId, targetDate);
+          if (existing && existing.status && existing.status !== 'LEAVE') {
+            return {
+              kind: 'skipped' as const,
+              date: targetDate,
+              status: String(existing.status),
+            };
+          }
+          if (existing) {
+            const updated = await updateRow(ATTENDANCE_TABLE, {
+              ROWID: String(existing.ROWID),
+              status: 'LEAVE',
+              reason: trimmedReason,
+              markedAt: nowIso,
+            });
+            return { kind: 'record' as const, row: updated };
+          }
+          const inserted = await insertRow(ATTENDANCE_TABLE, {
+            userId,
+            userName: req.user!.name,
+            userRole: req.user!.role,
+            dates: targetDate,
+            status: 'LEAVE',
+            reason: trimmedReason,
+            markedAt: nowIso,
+          });
+          return { kind: 'record' as const, row: inserted };
+        })
+      );
+      for (const r of results) {
+        if (r.kind === 'record') records.push(shapeAttendance(r.row));
+        else skipped.push({ date: r.date, status: r.status });
+      }
+    }
+
+    sendSuccess(
+      res,
+      {
+        startDate,
+        endDate,
+        count: records.length,
+        records,
+        skipped,
+      },
+      records.length > 0
+        ? `Leave marked for ${records.length} day${records.length === 1 ? '' : 's'}${skipped.length ? ` (${skipped.length} day${skipped.length === 1 ? '' : 's'} skipped)` : ''}`
+        : 'No new leave days marked',
+      201
+    );
+  } catch (error) {
+    sendServerError(res, 'Failed to mark leave range', error);
   }
 }
 

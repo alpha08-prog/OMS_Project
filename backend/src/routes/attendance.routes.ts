@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import {
   markAttendance,
+  markLeaveRange,
   getMyToday,
   getMyHistory,
   getAllAttendance,
@@ -24,10 +25,27 @@ const markAttendanceValidation = [
     .withMessage('date must be in YYYY-MM-DD format'),
 ];
 
+const leaveRangeValidation = [
+  body('startDate')
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('startDate must be in YYYY-MM-DD format'),
+  body('endDate')
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('endDate must be in YYYY-MM-DD format'),
+  body('reason').isString().trim().isLength({ min: 1, max: 500 })
+    .withMessage('reason is required (max 500 chars)'),
+];
+
 router.use(authenticate);
 
 // Staff endpoints — any authenticated user may mark/view their own row.
 router.post('/', staffOnly, validate(markAttendanceValidation), markAttendance);
+router.post(
+  '/leave-range',
+  staffOnly,
+  validate(leaveRangeValidation),
+  markLeaveRange
+);
 router.get('/me/today', staffOnly, getMyToday);
 router.get('/me', staffOnly, getMyHistory);
 
