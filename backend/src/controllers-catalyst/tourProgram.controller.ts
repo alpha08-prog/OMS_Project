@@ -22,6 +22,7 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
   zcqlSafeLimit,
@@ -178,7 +179,7 @@ export async function createTourProgram(
     const row = await insertRow(TOUR_TABLE, {
       eventName,
       organizer,
-      dateTime: toCatalystDate(dateTime) || toCatalystDate(new Date()),
+      dateTime: toCatalystDate(dateTime) || nowCatalystIST(),
       venue,
       venueLink: venueLink?.trim() || null,
       description: description?.trim() || null,
@@ -663,7 +664,7 @@ export async function submitEventReport(
     const updated = await updateRow(TOUR_TABLE, {
       ROWID: id,
       isCompleted: true,
-      completedAt: toCatalystDate(new Date()),
+      completedAt: nowCatalystIST(),
       driveLink: driveLink?.trim() || null,
       keynotes: keynotes?.trim() || null,
       attendeesCount: parseInt0(attendeesCount),

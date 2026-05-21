@@ -21,6 +21,7 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
   zcqlSafeLimit,
@@ -667,14 +668,14 @@ export async function verifyGrievance(
       return;
     }
     const { id } = req.params;
-    const now = new Date();
+    const now = nowCatalystIST();
     const updated = await updateRow(GRIEVANCE_TABLE, {
       ROWID: id,
       isVerified: true,
       status: 'RESOLVED',
       verifiedById: req.user.id,
-      verifiedAt: toCatalystDate(now),
-      resolvedAt: toCatalystDate(now),
+      verifiedAt: now,
+      resolvedAt: now,
     });
     invalidateStatCaches();
     const [shaped] = await attachUsers([updated]);
@@ -703,7 +704,7 @@ export async function updateGrievanceStatus(
     const existing = await getRow(GRIEVANCE_TABLE, id);
     const updateData: Record<string, unknown> = { ROWID: id, status };
     if (status === 'RESOLVED') {
-      updateData.resolvedAt = toCatalystDate(new Date());
+      updateData.resolvedAt = nowCatalystIST();
     }
     // Reopening — wipe the resolved/closed bookkeeping so the row reads as
     // genuinely open again (resolvedAt cleared, stage rewound).

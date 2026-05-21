@@ -18,6 +18,8 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  executeZCQL,
+  zcqlEscapeValue,
   CatalystRow,
 } from '../lib/catalyst-client';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
@@ -104,10 +106,16 @@ export async function createBirthday(
     }
     const { name, phone, dob, relation, notes, designation, constituency, wardVillage } = req.body;
 
-    // Duplicate check (case-insensitive name match) — done in JS.
-    const all = await listAllRows(BIRTHDAY_TABLE);
-    const lower = String(name).trim().toLowerCase();
-    if (all.some((r) => (r.name || '').toString().toLowerCase() === lower)) {
+    // Duplicate check via targeted ZCQL — O(1) regardless of table size.
+    // Catalyst text equality is case-insensitive, but we still re-check in JS
+    // after fetch so the contract is explicit and not dependent on Catalyst's
+    // collation defaults.
+    const trimmedName = String(name).trim();
+    const lower = trimmedName.toLowerCase();
+    const existing = await executeZCQL<CatalystRow>(
+      `SELECT * FROM ${BIRTHDAY_TABLE} WHERE name = '${zcqlEscapeValue(trimmedName)}' LIMIT 20`
+    );
+    if (existing.some((r) => String(r.name ?? '').trim().toLowerCase() === lower)) {
       sendError(res, `A birthday entry for "${name}" already exists`, 409);
       return;
     }

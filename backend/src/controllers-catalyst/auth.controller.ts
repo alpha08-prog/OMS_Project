@@ -19,6 +19,7 @@ import {
   insertRow,
   getRow,
   updateRow,
+  deleteRow,
   executeZCQL,
   zcqlEscapeValue,
   CatalystRow,
@@ -37,6 +38,47 @@ import type { AuthenticatedRequest, LoginRequest, RegisterRequest } from '../typ
 
 const APPUSER_TABLE = 'AppUser';
 const VALID_ROLES = new Set(['STAFF', 'ADMIN', 'SUPER_ADMIN']);
+
+/**
+ * Race-safe duplicate guard. The pre-insert `getCachedTableList` check leaves
+ * a window where two concurrent signups with the same email/phone can both
+ * pass and both insert. After our INSERT, query Catalyst for ALL matching
+ * rows: lowest ROWID wins (earliest writer). If we lost, the caller deletes
+ * our row and returns 409.
+ *
+ * Returns `{ kept: true }` if our row is canonical (no race or we won),
+ * `{ kept: false }` if we should clean up and reject.
+ */
+async function deduplicateAppUser(
+  email: string,
+  phone: string | null,
+  newRowId: string
+): Promise<{ kept: boolean }> {
+  try {
+    const filters: string[] = [`email = '${zcqlEscapeValue(email)}'`];
+    if (phone) filters.push(`phone = '${zcqlEscapeValue(phone)}'`);
+    const where = filters.length === 1 ? filters[0] : `(${filters.join(' OR ')})`;
+    const rows = await executeZCQL<CatalystRow>(
+      `SELECT * FROM ${APPUSER_TABLE} WHERE ${where} LIMIT 20`
+    );
+    if (rows.length <= 1) return { kept: true };
+    rows.sort((a, b) => Number(a.ROWID ?? 0) - Number(b.ROWID ?? 0));
+    const [keep, ...extras] = rows;
+    for (const dupe of extras) {
+      if (String(dupe.ROWID) === newRowId) continue; // we'll handle ourselves below
+      deleteRow(APPUSER_TABLE, String(dupe.ROWID)).catch((err) => {
+        console.warn(
+          `[auth] Failed to delete duplicate AppUser ${dupe.ROWID} for ${email}`,
+          err
+        );
+      });
+    }
+    return { kept: String(keep.ROWID) === newRowId };
+  } catch (err) {
+    console.warn('[auth] AppUser dedupe query failed', err);
+    return { kept: true };
+  }
+}
 
 function parseBool(v: unknown, fallback = false): boolean {
   if (typeof v === 'boolean') return v;
@@ -208,6 +250,18 @@ export async function register(req: Request, res: Response): Promise<void> {
       calendarConnected: false,
     });
     invalidateTableList(APPUSER_TABLE);
+
+    // Race-safety: a concurrent signup may have inserted the same email/phone.
+    // Run dedupe — if we lost, undo our insert and return 409.
+    const dedupe = await deduplicateAppUser(lowerEmail, phone || null, String(row.ROWID));
+    if (!dedupe.kept) {
+      deleteRow(APPUSER_TABLE, String(row.ROWID)).catch((err) => {
+        console.warn(`[auth] Failed to roll back lost-race signup ${row.ROWID}`, err);
+      });
+      invalidateTableList(APPUSER_TABLE);
+      sendError(res, 'User with this email or phone already exists', 409);
+      return;
+    }
 
     const user = shapeUser(row);
     const token = generateToken({
@@ -455,6 +509,16 @@ export async function createUser(
       calendarConnected: false,
     });
     invalidateTableList(APPUSER_TABLE);
+
+    const dedupe = await deduplicateAppUser(lowerEmail, phone || null, String(row.ROWID));
+    if (!dedupe.kept) {
+      deleteRow(APPUSER_TABLE, String(row.ROWID)).catch((err) => {
+        console.warn(`[auth] Failed to roll back lost-race createUser ${row.ROWID}`, err);
+      });
+      invalidateTableList(APPUSER_TABLE);
+      sendError(res, 'A user with this email or phone already exists', 409);
+      return;
+    }
 
     sendSuccess(res, shapeUser(row), 'User created successfully', 201);
   } catch (error) {

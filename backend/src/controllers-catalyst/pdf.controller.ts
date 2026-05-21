@@ -14,7 +14,7 @@
  * the new ROWID-based ids that the frontend now receives.
  */
 import { Response } from 'express';
-import { getRow, listAllRows, updateRow, toCatalystDate, CatalystRow } from '../lib/catalyst-client';
+import { getRow, listAllRows, updateRow, toCatalystDate, nowCatalystIST, CatalystRow } from '../lib/catalyst-client';
 import {
   sendSuccess,
   sendError,
@@ -864,9 +864,9 @@ function statusUpdateForLetterIssue(row: CatalystRow): Record<string, unknown> |
   return {
     currentStage: 'LETTER_GENERATED',
     status: 'RESOLVED',
-    resolvedAt: toCatalystDate(new Date()),
+    resolvedAt: nowCatalystIST(),
     isVerified: true,
-    verifiedAt: row.verifiedAt ?? toCatalystDate(new Date()),
+    verifiedAt: row.verifiedAt ?? nowCatalystIST(),
   };
 }
 

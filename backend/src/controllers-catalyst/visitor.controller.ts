@@ -20,6 +20,7 @@ import {
   updateRow,
   deleteRow,
   toCatalystDate,
+  nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
   zcqlSafeLimit,
@@ -114,7 +115,7 @@ export async function createVisitor(
       dob: toCatalystDate(dob),
       purpose,
       referencedBy,
-      visitDate: toCatalystDate(visitDate) || toCatalystDate(new Date()),
+      visitDate: toCatalystDate(visitDate) || nowCatalystIST(),
       createdById: req.user.id,
     };
     if (constituency) payload.constituency = constituency;
