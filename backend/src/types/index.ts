@@ -44,6 +44,9 @@ export interface ApiResponse<T = unknown> {
     limit?: number;
     total?: number;
     totalPages?: number;
+    // For cursor-based pagination (keyset). Returned by endpoints whose result
+    // set has no fixed total — `null` when the last page has been reached.
+    nextCursor?: string | null;
   };
 }
 

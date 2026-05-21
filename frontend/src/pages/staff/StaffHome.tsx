@@ -8,12 +8,15 @@ import {
   XCircle,
   ChevronDown,
   ChevronRight,
+  CheckCircle2,
+  Clock,
+  FileX,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { grievanceApi, visitorApi, trainRequestApi, type Grievance, type Visitor, type TrainRequest } from "@/lib/api";
+import { grievanceApi, visitorApi, trainRequestApi, attendanceApi, type Grievance, type Visitor, type TrainRequest, type AttendanceRow, type AttendanceStatus } from "@/lib/api";
 
 type RecentEntry = {
   type: string;
@@ -28,6 +31,8 @@ export default function StaffHome() {
   const [rejectedExpanded, setRejectedExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Staff Member");
+  const [todayAttendance, setTodayAttendance] = useState<AttendanceRow | null>(null);
+  const [attendanceSubmitting, setAttendanceSubmitting] = useState<AttendanceStatus | null>(null);
 
   useEffect(() => {
     // Get user name from localStorage
@@ -98,7 +103,29 @@ export default function StaffHome() {
     };
 
     fetchRecentEntries();
+
+    attendanceApi
+      .getMyToday()
+      .then(setTodayAttendance)
+      .catch((e) => console.error("Failed to fetch today attendance", e));
   }, []);
+
+  const handleQuickMark = async (status: AttendanceStatus) => {
+    if (status === "LEAVE") {
+      // LEAVE needs a reason — send the staff to the full page.
+      navigate("/staff/attendance");
+      return;
+    }
+    setAttendanceSubmitting(status);
+    try {
+      const next = await attendanceApi.mark(status);
+      setTodayAttendance(next);
+    } catch (e) {
+      console.error("Failed to mark attendance", e);
+    } finally {
+      setAttendanceSubmitting(null);
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -125,6 +152,80 @@ export default function StaffHome() {
                 STAFF ACCESS
               </span>
             </div>
+
+            {/* TODAY'S ATTENDANCE */}
+            <Card className="rounded-2xl shadow-sm border border-indigo-100">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <CardTitle className="text-lg">Today's Attendance</CardTitle>
+                <Button
+                  variant="link"
+                  className="text-indigo-700"
+                  onClick={() => navigate("/staff/attendance")}
+                >
+                  View history
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {todayAttendance ? (
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={
+                        "px-3 py-1 rounded-full text-sm font-medium " +
+                        (todayAttendance.status === "PRESENT"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : todayAttendance.status === "HALF_DAY"
+                          ? "bg-amber-100 text-amber-800"
+                          : todayAttendance.status === "LEAVE"
+                          ? "bg-sky-100 text-sky-800"
+                          : "bg-rose-100 text-rose-800")
+                      }
+                    >
+                      Marked: {todayAttendance.status.replace("_", " ")}
+                    </span>
+                    {todayAttendance.markedAt && (
+                      <span className="text-xs text-muted-foreground">
+                        at {new Date(todayAttendance.markedAt).toLocaleTimeString()}
+                      </span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="ml-auto"
+                      onClick={() => navigate("/staff/attendance")}
+                    >
+                      Change
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <Button
+                      disabled={attendanceSubmitting !== null}
+                      onClick={() => handleQuickMark("PRESENT")}
+                      className="h-16 flex flex-col gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      <CheckCircle2 className="h-5 w-5" />
+                      <span className="text-sm">Mark Present</span>
+                    </Button>
+                    <Button
+                      disabled={attendanceSubmitting !== null}
+                      onClick={() => handleQuickMark("HALF_DAY")}
+                      className="h-16 flex flex-col gap-1 bg-amber-500 hover:bg-amber-600 text-white"
+                    >
+                      <Clock className="h-5 w-5" />
+                      <span className="text-sm">Half Day</span>
+                    </Button>
+                    <Button
+                      disabled={attendanceSubmitting !== null}
+                      onClick={() => handleQuickMark("LEAVE")}
+                      className="h-16 flex flex-col gap-1 bg-sky-600 hover:bg-sky-700 text-white"
+                    >
+                      <FileX className="h-5 w-5" />
+                      <span className="text-sm">Leave</span>
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* QUICK ENTRY ACTIONS */}
             <Card className="rounded-2xl shadow-sm border border-indigo-100">

@@ -13,6 +13,7 @@ import taskRoutes from './task.routes';
 import googleRoutes from './google.routes';
 import uploadRoutes from './upload.routes';
 import notificationRoutes from './notification.routes';
+import attendanceRoutes from './attendance.routes';
 
 const router = Router();
 
@@ -41,5 +42,6 @@ router.use('/tasks', taskRoutes);
 router.use('/google', googleRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/attendance', attendanceRoutes);
 
 export default router;

@@ -248,6 +248,29 @@ export function toCatalystDate(value: Date | string | null | undefined): string 
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+/**
+ * Current wall-clock time in IST, formatted as Catalyst datetime
+ * (`YYYY-MM-DD HH:mm:ss`, no timezone marker).
+ *
+ * Catalyst datetime columns are timezone-naive: whatever string you write is
+ * the string it reads back. AppSail containers typically run UTC, so doing
+ * `toCatalystDate(new Date())` writes UTC wall-clock — which the browser then
+ * parses as local time, displaying ~5.5h off for Indian users.
+ *
+ * Use this whenever you need to stamp "now" on a record (`verifiedAt`,
+ * `resolvedAt`, `markedAt`, `approvedAt`, `completedAt`, etc). For
+ * user-supplied dates, keep using `toCatalystDate(value)` so the input is
+ * preserved as-given.
+ */
+export function nowCatalystIST(): string {
+  const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())} ` +
+    `${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}:${pad(ist.getUTCSeconds())}`
+  );
+}
+
 // Catalyst's max page size for the row endpoint is 300.
 const MAX_PAGE_SIZE = 300;
 

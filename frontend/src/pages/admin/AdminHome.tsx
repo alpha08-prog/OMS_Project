@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { FileCheck, Printer, Train, ClipboardList } from "lucide-react";
+import { FileCheck, Printer, Train, ClipboardList, UserCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { BirthdayWidget } from "@/components/dashboard/BirthdayWidget";
-import { grievanceApi, trainRequestApi, tourProgramApi, statsApi, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
+import { grievanceApi, trainRequestApi, tourProgramApi, statsApi, attendanceApi, type Grievance, type TrainRequest, type TourProgram, type AttendanceStats } from "@/lib/api";
 
 export default function AdminHome() {
   const navigate = useNavigate();
@@ -20,6 +20,7 @@ export default function AdminHome() {
   const [pendingGrievances, setPendingGrievances] = useState<Grievance[]>([]);
   const [pendingTrainRequests, setPendingTrainRequests] = useState<TrainRequest[]>([]);
   const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
+  const [attendanceStats, setAttendanceStats] = useState<AttendanceStats | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Admin");
@@ -37,12 +38,13 @@ export default function AdminHome() {
       setLoading(true);
       try {
         // 1. Stats API — single cached call, gives all counts instantly
-        const [stats, grievancesRes, trainRes, tourRes] = await Promise.all([
+        const [stats, grievancesRes, trainRes, tourRes, attendance] = await Promise.all([
           statsApi.getSummary(),
           // Small previews: only 5 rows, DB-filtered
           grievanceApi.getAll({ isVerified: 'false', limit: '5' }),
           trainRequestApi.getAll({ status: 'PENDING', limit: '5' }),
           tourProgramApi.getAll({ decision: 'PENDING', limit: '5' }),
+          attendanceApi.getTodayStats().catch(() => null),
         ]);
 
         // Counts from stats cache
@@ -54,6 +56,7 @@ export default function AdminHome() {
         setPendingGrievances(Array.isArray(grievancesRes?.data) ? grievancesRes.data : []);
         setPendingTrainRequests(Array.isArray(trainRes?.data) ? trainRes.data : []);
         setPendingTourPrograms(Array.isArray(tourRes?.data) ? tourRes.data : []);
+        setAttendanceStats(attendance);
       } catch (error) {
         console.error('Failed to fetch pending items:', error);
         setGrievanceCount(0);
@@ -93,6 +96,43 @@ export default function AdminHome() {
                 ADMIN ACCESS
               </span>
             </div>
+
+            {/* ATTENDANCE TODAY */}
+            <Card className="rounded-2xl border border-indigo-100">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <UserCheck className="h-5 w-5 text-indigo-700" />
+                  Today's Attendance
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={() => navigate("/admin/attendance")}>
+                  View full
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {attendanceStats ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                      <p className="text-xs uppercase text-emerald-700">Present</p>
+                      <p className="text-2xl font-semibold text-emerald-900">{attendanceStats.present}</p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                      <p className="text-xs uppercase text-amber-700">Half Day</p>
+                      <p className="text-2xl font-semibold text-amber-900">{attendanceStats.halfDay}</p>
+                    </div>
+                    <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+                      <p className="text-xs uppercase text-sky-700">Leave</p>
+                      <p className="text-2xl font-semibold text-sky-900">{attendanceStats.leave}</p>
+                    </div>
+                    <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+                      <p className="text-xs uppercase text-rose-700">Absent</p>
+                      <p className="text-2xl font-semibold text-rose-900">{attendanceStats.absent}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Loading attendance…</p>
+                )}
+              </CardContent>
+            </Card>
 
             {/* PRIMARY ACTIONS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

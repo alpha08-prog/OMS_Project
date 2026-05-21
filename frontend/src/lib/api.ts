@@ -362,10 +362,12 @@ export type ApiResponse<T> = {
   message: string
   data: T
   meta?: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
+    page?: number
+    limit?: number
+    total?: number
+    totalPages?: number
+    /** Cursor-based pagination (keyset). null on the last page. */
+    nextCursor?: string | null
   }
 }
 
@@ -1378,6 +1380,97 @@ export const notificationsApi = {
   markAllRead: async () => {
     const res = await http.post<ApiResponse<{ updated: number }>>('/notifications/read-all')
     return res.data.data
+  },
+}
+
+// ===========================================
+// Attendance API
+// ===========================================
+export type AttendanceStatus = 'PRESENT' | 'HALF_DAY' | 'LEAVE'
+export type AttendanceRow = {
+  id: string
+  userId: string
+  userName: string
+  userRole: string
+  date: string
+  status: AttendanceStatus | 'ABSENT'
+  reason: string | null
+  markedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type AttendanceStats = {
+  date: string
+  totalStaff: number
+  present: number
+  halfDay: number
+  leave: number
+  absent: number
+}
+
+export type AttendanceAggregateRow = {
+  userId: string
+  userName: string
+  present: number
+  halfDay: number
+  leave: number
+  totalMarked: number
+}
+
+export type AttendanceAggregate = {
+  startDate: string
+  endDate: string
+  totalStaff: number
+  staff: AttendanceAggregateRow[]
+}
+
+export const attendanceApi = {
+  // `date` (YYYY-MM-DD) is only meaningful for LEAVE — the backend rejects
+  // future/past dates for PRESENT / HALF_DAY. Leave undefined to mean today.
+  mark: async (status: AttendanceStatus, reason?: string, date?: string) => {
+    const res = await http.post<ApiResponse<AttendanceRow>>('/attendance', { status, reason, date })
+    return res.data.data
+  },
+
+  getMyToday: async (): Promise<AttendanceRow | null> => {
+    const res = await http.get<ApiResponse<AttendanceRow | null>>('/attendance/me/today')
+    return res.data.data ?? null
+  },
+
+  getMyHistory: async (params?: {
+    startDate?: string
+    endDate?: string
+    limit?: number
+    cursor?: string | null
+  }): Promise<{ rows: AttendanceRow[]; nextCursor: string | null }> => {
+    // Strip nullish cursor — axios serialises `null` as the literal string "null",
+    // which the backend would then try to base64-decode.
+    const cleaned: Record<string, string | number> = {}
+    if (params?.startDate) cleaned.startDate = params.startDate
+    if (params?.endDate) cleaned.endDate = params.endDate
+    if (params?.limit) cleaned.limit = params.limit
+    if (params?.cursor) cleaned.cursor = params.cursor
+    const res = await http.get<ApiResponse<AttendanceRow[]>>('/attendance/me', { params: cleaned })
+    return {
+      rows: res.data.data ?? [],
+      nextCursor: (res.data.meta?.nextCursor ?? null) as string | null,
+    }
+  },
+
+  getAll: async (params?: { date?: string; startDate?: string; endDate?: string }) => {
+    const res = await http.get<ApiResponse<AttendanceRow[]>>('/attendance', { params })
+    return res.data.data ?? []
+  },
+
+  getTodayStats: async (): Promise<AttendanceStats> => {
+    const res = await http.get<ApiResponse<AttendanceStats>>('/attendance/stats')
+    return res.data.data ?? { date: '', totalStaff: 0, present: 0, halfDay: 0, leave: 0, absent: 0 }
+  },
+
+  getAggregate: async (params: { startDate: string; endDate: string }): Promise<AttendanceAggregate> => {
+    const res = await http.get<ApiResponse<AttendanceAggregate>>('/attendance/aggregate', { params })
+    return res.data.data ?? { startDate: params.startDate, endDate: params.endDate, totalStaff: 0, staff: [] }
   },
 }
 
