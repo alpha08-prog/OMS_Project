@@ -188,40 +188,45 @@ function streamPdfToResponse(
   }
 }
 
-// Helper to create letterhead
+// Helper to create letterhead. Used by grievance and tour-program PDFs. Sized
+// to fit on A5 (320pt usable width) without text wrapping — fontSize 11 keeps
+// the long ministry line on a single line at both A5 and A4.
 function createLetterhead(doc: PDFKit.PDFDocument): void {
   const pageWidth = doc.page.width;
   const margin = 50;
+  const innerWidth = pageWidth - margin * 2;
 
-  // Government header
-  doc.fontSize(14)
-     .fillColor(COLORS.navy)
-     .text('GOVERNMENT OF INDIA', margin, 50, { align: 'center', width: pageWidth - margin * 2 });
+  // Office of the Minister — top-of-letterhead heading. Replaces the
+  // previous generic "GOVERNMENT OF INDIA" line per office convention.
+  doc.font('Helvetica-Bold').fontSize(14).fillColor(COLORS.navy)
+     .text('OFFICE OF SHRI PRALHAD JOSHI', margin, 50, {
+       align: 'center', width: innerWidth, lineBreak: false,
+     });
 
-  // Minister Pralhad Joshi holds both portfolios — the letterhead lists both
-  // ministries on consecutive lines to mirror the official train EQ format.
-  doc.fontSize(12)
-     .text('MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION', margin, 68, { align: 'center', width: pageWidth - margin * 2 });
+  doc.font('Helvetica').fontSize(10).fillColor(COLORS.gray)
+     .text("Hon'ble Union Minister", margin, 70, {
+       align: 'center', width: innerWidth, lineBreak: false,
+     });
 
-  doc.fontSize(12)
-     .text('MINISTRY OF NEW AND RENEWABLE ENERGY', margin, 84, { align: 'center', width: pageWidth - margin * 2 });
+  // Minister Pralhad Joshi holds both portfolios — list them on consecutive
+  // lines. fontSize 11 keeps the long Consumer-Affairs line single-line on A5.
+  doc.font('Helvetica').fontSize(11).fillColor(COLORS.black)
+     .text('Ministry of Consumer Affairs, Food and Public Distribution', margin, 92, {
+       align: 'center', width: innerWidth, lineBreak: false,
+     });
+  doc.text('Ministry of New and Renewable Energy', margin, 108, {
+       align: 'center', width: innerWidth, lineBreak: false,
+     });
 
-  // Minister's name
-  doc.fontSize(16)
-     .font('Helvetica-Bold')
-     .fillColor(COLORS.black)
-     .text('SHRI PRALHAD JOSHI', margin, 106, { align: 'center', width: pageWidth - margin * 2 });
-
-  doc.fontSize(11)
-     .font('Helvetica')
-     .fillColor(COLORS.gray)
-     .text('Hon\'ble Union Minister', margin, 126, { align: 'center', width: pageWidth - margin * 2 });
+  // Member of Parliament line — Pralhad Joshi represents Dharwad constituency.
+  doc.font('Helvetica-Oblique').fontSize(10).fillColor(COLORS.gray)
+     .text('MP, Dharwad Constituency', margin, 126, {
+       align: 'center', width: innerWidth, lineBreak: false,
+     });
 
   // Tricolor line
-  const lineY = 149;
-  const lineWidth = pageWidth - margin * 2;
-  const segmentWidth = lineWidth / 3;
-
+  const lineY = 146;
+  const segmentWidth = innerWidth / 3;
   doc.rect(margin, lineY, segmentWidth, 3).fill(COLORS.saffron);
   doc.rect(margin + segmentWidth, lineY, segmentWidth, 3).fill('#FFFFFF');
   doc.rect(margin + segmentWidth, lineY, segmentWidth, 1).stroke(COLORS.gray);
@@ -318,29 +323,26 @@ function createWatermark(
   }
 }
 
-// Helper to create footer
+// Helper to create footer. Matches the Train EQ / Temple Visit footer style:
+// a single black line with the Delhi residence address below it. Used by
+// grievance and tour-program PDFs so all letters share one footer identity.
 function createFooter(doc: PDFKit.PDFDocument): void {
   const pageWidth = doc.page.width;
   const margin = 50;
-  const footerY = doc.page.height - 80;
+  const innerWidth = pageWidth - margin * 2;
+  const footerLineY = doc.page.height - 55;
 
-  // Tricolor line
-  const lineWidth = pageWidth - margin * 2;
-  const segmentWidth = lineWidth / 3;
+  doc.moveTo(margin, footerLineY)
+     .lineTo(pageWidth - margin, footerLineY)
+     .strokeColor(COLORS.black)
+     .stroke();
 
-  doc.rect(margin, footerY, segmentWidth, 2).fill(COLORS.saffron);
-  doc.rect(margin + segmentWidth, footerY, segmentWidth, 2).fill('#FFFFFF');
-  doc.rect(margin + segmentWidth, footerY, segmentWidth, 0.5).stroke(COLORS.gray);
-  doc.rect(margin + segmentWidth * 2, footerY, segmentWidth, 2).fill(COLORS.green);
-
-  // Contact info
-  doc.fontSize(8)
-     .fillColor(COLORS.gray)
+  doc.font('Helvetica').fontSize(9).fillColor(COLORS.black)
      .text(
-       'Office of Hon\'ble Minister | Krishi Bhawan, New Delhi - 110001 | Tel: 011-23383615',
+       'DELHI RESIDENCE : #11, AKBAR ROAD, NEW DELHI - 110001, TEL : 011 23014097, 23094098',
        margin,
-       footerY + 10,
-       { align: 'center', width: pageWidth - margin * 2 }
+       footerLineY + 6,
+       { align: 'center', width: innerWidth, lineBreak: false }
      );
 }
 
@@ -737,15 +739,17 @@ I request you to look into this matter personally and take necessary action at t
   // Footer
   createFooter(doc);
 
-    // Add verification notice at bottom
+    // Verification notice — sits just below the createFooter line, matching
+    // the Train EQ footer/notice stack so all letters look identical at the
+    // bottom edge.
     doc.fontSize(7)
        .font('Helvetica')
        .fillColor('#888888')
        .text(
          `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
          margin,
-         doc.page.height - 40,
-         { width: doc.page.width - margin * 2, align: 'center' }
+         doc.page.height - 33,
+         { width: doc.page.width - margin * 2, align: 'center', lineBreak: false }
        );
   }, size);
 }
@@ -755,13 +759,14 @@ export function generateTourProgramPDF(
   events: Array<{
     eventName: string;
     organizer: string;
+    organizerPhone?: string | null;
     eventDate: string;
     venue: string;
     decision: string;
   }>,
   dateRange: string,
   res: Response,
-  size: PdfPageSize = 'A4'
+  size: PdfPageSize = 'A5'
 ): void {
   const documentId = `TOUR${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   const refNumber = `TOUR-${Date.now().toString(36).toUpperCase()}`;
@@ -802,58 +807,65 @@ export function generateTourProgramPDF(
 
   y += 40;
 
-  // Table header
-  const colWidths = [40, 150, 120, 80, 100];
+  // Table header. Column widths sized so the total (320pt) fits within A5's
+  // usable area (420 page - 100 margins = 320pt). Organizer cell shows name +
+  // phone on two lines, so rowHeight is bumped accordingly.
+  const colWidths = [25, 70, 90, 55, 35, 45];
   const tableWidth = colWidths.reduce((a, b) => a + b, 0);
   const startX = (doc.page.width - tableWidth) / 2;
 
   // Header row
-  doc.rect(startX, y, tableWidth, 25).fill(COLORS.navy);
-  
+  doc.rect(startX, y, tableWidth, 22).fill(COLORS.navy);
+
   doc.fillColor('#FFFFFF')
-     .fontSize(10)
+     .fontSize(9)
      .font('Helvetica-Bold');
 
-  let x = startX + 5;
-  const headers = ['S.No', 'Event', 'Venue', 'Time', 'Status'];
+  let x = startX + 4;
+  const headers = ['S.No', 'Event', 'Organizer / Phone', 'Venue', 'Time', 'Status'];
   headers.forEach((header, i) => {
-    doc.text(header, x, y + 7, { width: colWidths[i] - 10 });
+    doc.text(header, x, y + 7, { width: colWidths[i] - 8, lineBreak: false });
     x += colWidths[i];
   });
 
-  y += 25;
+  y += 22;
 
   // Data rows
   doc.font('Helvetica')
-     .fontSize(9)
+     .fontSize(8)
      .fillColor(COLORS.black);
 
   events.forEach((event, index) => {
-    const rowHeight = 35;
-    
+    const rowHeight = 38;
+
     // Alternate row colors
     if (index % 2 === 0) {
       doc.rect(startX, y, tableWidth, rowHeight).fill('#f8f9fa');
     }
 
     doc.fillColor(COLORS.black);
-    x = startX + 5;
+    x = startX + 4;
 
     const eventTime = new Date(event.eventDate).toLocaleTimeString('en-IN', {
       hour: '2-digit',
       minute: '2-digit',
     });
 
+    const organizerCell = event.organizerPhone
+      ? `${event.organizer}\n${event.organizerPhone}`
+      : event.organizer;
+
     const rowData = [
       String(index + 1),
-      `${event.eventName}\n(${event.organizer})`,
+      event.eventName,
+      organizerCell,
       event.venue,
       eventTime,
       event.decision,
     ];
 
     rowData.forEach((data, i) => {
-      doc.text(data, x, y + 5, { width: colWidths[i] - 10 });
+      doc.text(data, x, y + 4, { width: colWidths[i] - 8 });
       x += colWidths[i];
     });
 
@@ -872,15 +884,17 @@ export function generateTourProgramPDF(
   // Footer
   createFooter(doc);
 
-    // Add verification notice at bottom
+    // Verification notice — sits just below the createFooter line, matching
+    // the Train EQ footer/notice stack so all letters look identical at the
+    // bottom edge.
     doc.fontSize(7)
        .font('Helvetica')
        .fillColor('#888888')
        .text(
          `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
          margin,
-         doc.page.height - 40,
-         { width: doc.page.width - margin * 2, align: 'center' }
+         doc.page.height - 33,
+         { width: doc.page.width - margin * 2, align: 'center', lineBreak: false }
        );
   }, size);
 }
@@ -892,7 +906,7 @@ export function generateTourProgramPDF(
 export function generateTempleVisitLetter(
   data: TempleVisitLetterData,
   res: Response,
-  size: PdfPageSize = 'A4'
+  size: PdfPageSize = 'A5'
 ): void {
   const documentId =
     data.documentId ||
@@ -1193,15 +1207,17 @@ export function generateGenericLetter(config: LetterConfig, res: Response): void
   // Footer
   createFooter(doc);
 
-    // Add verification notice at bottom
+    // Verification notice — sits just below the createFooter line, matching
+    // the Train EQ footer/notice stack so all letters look identical at the
+    // bottom edge.
     doc.fontSize(7)
        .font('Helvetica')
        .fillColor('#888888')
        .text(
          `This document is electronically generated. Verify at: verify.oms.gov.in/${documentId}`,
          margin,
-         doc.page.height - 40,
-         { width: doc.page.width - margin * 2, align: 'center' }
+         doc.page.height - 33,
+         { width: doc.page.width - margin * 2, align: 'center', lineBreak: false }
        );
   });
 }

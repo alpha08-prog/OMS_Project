@@ -28,17 +28,7 @@ import {
   generateTempleVisitLetter,
   generateTourProgramPDF,
   type TrainEQPassenger,
-  type PdfPageSize,
 } from '../utils/pdfGenerator';
-
-/**
- * Parse the ?size= query param into the supported PdfPageSize union. Defaults
- * to A4 when missing/invalid. Train EQ ignores this and always uses A5.
- */
-function parsePageSize(value: unknown): PdfPageSize {
-  const s = String(value || '').trim().toUpperCase();
-  return s === 'A5' ? 'A5' : 'A4';
-}
 import { cacheClear } from '../lib/cache';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import { emitNotifications } from './notification.controller';
@@ -480,8 +470,7 @@ export async function generateGrievancePDF(
         senderName: 'Shri Pralhad Joshi',
         senderDesignation: "Hon'ble Union Minister",
       },
-      res,
-      parsePageSize(req.query.size)
+      res
     );
   } catch (error) {
     sendServerError(res, 'Failed to generate Grievance PDF', error);
@@ -540,12 +529,12 @@ export async function previewGrievance(
 </head>
 <body>
   <div class="letterhead">
-    <p style="font-size: 20px;">॥ सत्यमेव जयते ॥</p>
-    <h1>GOVERNMENT OF INDIA</h1>
-    <h1>MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION</h1>
-    <h1>MINISTRY OF NEW AND RENEWABLE ENERGY</h1>
-    <h2>SHRI PRALHAD JOSHI</h2>
+    <p style="font-size: 18px;">॥ सत्यमेव जयते ॥</p>
+    <h2>OFFICE OF SHRI PRALHAD JOSHI</h2>
     <p>Hon'ble Union Minister</p>
+    <h1>Ministry of Consumer Affairs, Food and Public Distribution</h1>
+    <h1>Ministry of New and Renewable Energy</h1>
+    <p style="font-style: italic;">MP, Dharwad Constituency</p>
   </div>
 
   <div class="meta">
@@ -593,7 +582,7 @@ export async function previewGrievance(
   </div>
 
   <div class="footer">
-    Office of Hon'ble Minister | Krishi Bhawan, New Delhi - 110001 | Tel: 011-23383615
+    DELHI RESIDENCE : #11, AKBAR ROAD, NEW DELHI - 110001, TEL : 011 23014097, 23094098
   </div>
 </body>
 </html>
@@ -1073,7 +1062,7 @@ export async function generateTempleVisitPDF(
       })();
     });
 
-    generateTempleVisitLetter(built.data, res, parsePageSize(req.query.size));
+    generateTempleVisitLetter(built.data, res);
   } catch (error) {
     sendServerError(res, 'Failed to generate temple-visit PDF', error);
   }
@@ -1304,13 +1293,13 @@ export async function generateTourProgramPDFController(
       events.map((e: CatalystRow) => ({
         eventName: String(e.eventName),
         organizer: String(e.organizer),
+        organizerPhone: e.organizerPhone ? String(e.organizerPhone) : null,
         eventDate: new Date(e.dateTime).toISOString(),
         venue: String(e.venue),
         decision: String(e.decision),
       })),
       `${startLabel} - ${endLabel}`,
-      res,
-      parsePageSize(req.query.size)
+      res
     );
   } catch (error) {
     sendServerError(res, 'Failed to generate Tour Program PDF', error);
@@ -1345,6 +1334,7 @@ export async function generateTourProgramSinglePDF(
         {
           eventName: String(row.eventName),
           organizer: String(row.organizer),
+          organizerPhone: row.organizerPhone ? String(row.organizerPhone) : null,
           eventDate: row.dateTime
             ? new Date(String(row.dateTime)).toISOString()
             : new Date().toISOString(),
@@ -1353,8 +1343,7 @@ export async function generateTourProgramSinglePDF(
         },
       ],
       eventDate,
-      res,
-      parsePageSize(req.query.size)
+      res
     );
   } catch (error) {
     sendServerError(res, 'Failed to generate Tour Program PDF', error);
@@ -1421,12 +1410,12 @@ export async function previewTourProgram(
 </head>
 <body>
   <div class="letterhead">
-    <p style="font-size: 20px;">॥ सत्यमेव जयते ॥</p>
-    <h1>GOVERNMENT OF INDIA</h1>
-    <h1>MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION</h1>
-    <h1>MINISTRY OF NEW AND RENEWABLE ENERGY</h1>
-    <h2>SHRI PRALHAD JOSHI</h2>
+    <p style="font-size: 18px;">॥ सत्यमेव जयते ॥</p>
+    <h2>OFFICE OF SHRI PRALHAD JOSHI</h2>
     <p>Hon'ble Union Minister</p>
+    <h1>Ministry of Consumer Affairs, Food and Public Distribution</h1>
+    <h1>Ministry of New and Renewable Energy</h1>
+    <p style="font-style: italic;">MP, Dharwad Constituency</p>
   </div>
 
   <div class="meta">
@@ -1442,6 +1431,7 @@ export async function previewTourProgram(
       <tr>
         <th style="width:40px;">S.No</th>
         <th>Event</th>
+        <th>Organizer / Phone</th>
         <th>Venue</th>
         <th style="width:80px;">Time</th>
         <th style="width:90px;">Status</th>
@@ -1450,7 +1440,8 @@ export async function previewTourProgram(
     <tbody>
       <tr>
         <td>1</td>
-        <td><strong>${String(row.eventName)}</strong><br><span style="color:#555;">(${String(row.organizer)})</span></td>
+        <td><strong>${String(row.eventName)}</strong></td>
+        <td>${String(row.organizer)}${row.organizerPhone ? `<br><span style="color:#555;">${String(row.organizerPhone)}</span>` : ''}</td>
         <td>${String(row.venue)}</td>
         <td>${eventTime}</td>
         <td>${String(row.decision)}</td>
@@ -1459,7 +1450,7 @@ export async function previewTourProgram(
   </table>
 
   <div class="footer">
-    Office of Hon'ble Minister | Krishi Bhawan, New Delhi - 110001 | Tel: 011-23383615
+    DELHI RESIDENCE : #11, AKBAR ROAD, NEW DELHI - 110001, TEL : 011 23014097, 23094098
   </div>
 </body>
 </html>
