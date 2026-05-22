@@ -33,6 +33,8 @@ type PrintableItem = {
   data: Grievance | TrainRequest | TourProgram;
 };
 
+type PageSize = 'A4' | 'A5';
+
 export default function PrintCenter() {
   const [printableItems, setPrintableItems] = useState<PrintableItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +45,20 @@ export default function PrintCenter() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  // Per-row page size for grievance / temple / tour letters. Train EQ is
+  // omitted — it is always rendered on A5 server-side, regardless of any
+  // client choice. Keyed by `${type}-${id}` to match the row's React key.
+  const [pageSizes, setPageSizes] = useState<Record<string, PageSize>>({});
+
+  // Train EQ letters are always A5 (server forces it); everything else
+  // defaults to A4 and honours the per-row toggle.
+  const sizeFor = (item: PrintableItem): PageSize =>
+    item.type === 'train' ? 'A5' : pageSizes[`${item.type}-${item.id}`] || 'A4';
+
+  const setSizeFor = (item: PrintableItem, size: PageSize) => {
+    if (item.type === 'train') return; // locked
+    setPageSizes((prev) => ({ ...prev, [`${item.type}-${item.id}`]: size }));
+  };
 
   const fetchPrintableItems = async () => {
     setLoading(true);
@@ -179,10 +195,11 @@ export default function PrintCenter() {
 
   const handleDownloadPDF = async (item: PrintableItem) => {
     try {
-      console.log('Downloading PDF for item:', item);
+      const size = sizeFor(item);
+      console.log('Downloading PDF for item:', item, 'size:', size);
       const endpoint = endpointFor(item);
       if (!endpoint) return;
-      await pdfApi.downloadPDF(endpoint, filenameFor(item));
+      await pdfApi.downloadPDF(endpoint, filenameFor(item), size);
       // Temple-visit download flips the grievance to RESOLVED on the server.
       // Refresh so the row's status badge updates without a manual refresh.
       if (item.type === 'temple') {
@@ -228,11 +245,15 @@ export default function PrintCenter() {
 
   const handlePrint = async (item: PrintableItem) => {
     try {
-      console.log('Printing item:', item);
+      const size = sizeFor(item);
+      console.log('Printing item:', item, 'size:', size);
       const endpoint = endpointFor(item);
       if (!endpoint) return;
 
-      const res = await http.get(endpoint, { responseType: 'blob' });
+      const res = await http.get(endpoint, {
+        responseType: 'blob',
+        params: { size },
+      });
       const blob = new Blob([res.data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
       const printWindow = window.open(url, '_blank');
@@ -424,6 +445,48 @@ export default function PrintCenter() {
                             ? 'Train EQ'
                             : 'Tour Invitation'}
                         </Badge>
+
+                        {/* Page-size selector. Train EQ is locked to A5 server-side
+                            so we render a non-interactive badge; everything else
+                            gets an A4/A5 toggle that feeds the next download/print. */}
+                        {item.type === 'train' ? (
+                          <Badge
+                            className="bg-indigo-50 text-indigo-700 border border-indigo-200"
+                            title="Train EQ letters are always printed on A5"
+                          >
+                            A5
+                          </Badge>
+                        ) : (
+                          <div
+                            className="inline-flex items-center rounded-md border border-indigo-200 overflow-hidden text-xs"
+                            role="group"
+                            aria-label="Page size"
+                          >
+                            {(['A4', 'A5'] as const).map((s) => {
+                              const selected = sizeFor(item) === s;
+                              return (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSizeFor(item, s);
+                                  }}
+                                  className={
+                                    'px-2 py-1 transition ' +
+                                    (selected
+                                      ? 'bg-indigo-600 text-white'
+                                      : 'bg-white text-indigo-700 hover:bg-indigo-50')
+                                  }
+                                  title={`Print on ${s} paper`}
+                                  aria-pressed={selected}
+                                >
+                                  {s}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
 
                         {(item.type === 'train' || item.type === 'grievance' || item.type === 'temple' || item.type === 'tour') && (
                           <Button 

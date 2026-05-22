@@ -28,7 +28,17 @@ import {
   generateTempleVisitLetter,
   generateTourProgramPDF,
   type TrainEQPassenger,
+  type PdfPageSize,
 } from '../utils/pdfGenerator';
+
+/**
+ * Parse the ?size= query param into the supported PdfPageSize union. Defaults
+ * to A4 when missing/invalid. Train EQ ignores this and always uses A5.
+ */
+function parsePageSize(value: unknown): PdfPageSize {
+  const s = String(value || '').trim().toUpperCase();
+  return s === 'A5' ? 'A5' : 'A4';
+}
 import { cacheClear } from '../lib/cache';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import { emitNotifications } from './notification.controller';
@@ -470,7 +480,8 @@ export async function generateGrievancePDF(
         senderName: 'Shri Pralhad Joshi',
         senderDesignation: "Hon'ble Union Minister",
       },
-      res
+      res,
+      parsePageSize(req.query.size)
     );
   } catch (error) {
     sendServerError(res, 'Failed to generate Grievance PDF', error);
@@ -532,7 +543,8 @@ export async function previewGrievance(
     <p style="font-size: 20px;">॥ सत्यमेव जयते ॥</p>
     <h1>GOVERNMENT OF INDIA</h1>
     <h1>MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION</h1>
-    <h2>SHRI PRAHLAD JOSHI</h2>
+    <h1>MINISTRY OF NEW AND RENEWABLE ENERGY</h1>
+    <h2>SHRI PRALHAD JOSHI</h2>
     <p>Hon'ble Union Minister</p>
   </div>
 
@@ -576,10 +588,8 @@ export async function previewGrievance(
   </div>
 
   <div class="signature">
-    <p>With regards,</p>
-    <p><strong>Shri Pralhad Joshi</strong><br>
-    Hon'ble Union Minister<br>
-    Office of Hon'ble Union Minister</p>
+    <p>Yours sincerely,</p>
+    <p style="margin-top: 36px;"><strong>MALLIKARJUNGOUDA PATIL</strong></p>
   </div>
 
   <div class="footer">
@@ -1063,7 +1073,7 @@ export async function generateTempleVisitPDF(
       })();
     });
 
-    generateTempleVisitLetter(built.data, res);
+    generateTempleVisitLetter(built.data, res, parsePageSize(req.query.size));
   } catch (error) {
     sendServerError(res, 'Failed to generate temple-visit PDF', error);
   }
@@ -1135,7 +1145,7 @@ export async function previewTempleVisit(
     .notice { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 8px 12px; border-radius: 6px; font-size: 11px; margin-bottom: 14px; }
     .letterhead-zone {
       border: 1px dashed #cbd5e1;
-      height: 140px;
+      height: 110px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1143,7 +1153,7 @@ export async function previewTempleVisit(
       font-size: 11px;
       font-style: italic;
       letter-spacing: 0.05em;
-      margin-bottom: 30px;
+      margin-bottom: 24px;
       background:
         repeating-linear-gradient(
           45deg,
@@ -1153,7 +1163,7 @@ export async function previewTempleVisit(
     }
     .footer-zone {
       border: 1px dashed #cbd5e1;
-      height: 60px;
+      height: 90px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1161,7 +1171,7 @@ export async function previewTempleVisit(
       font-size: 11px;
       font-style: italic;
       letter-spacing: 0.05em;
-      margin-top: 36px;
+      margin-top: 44px;
       background:
         repeating-linear-gradient(
           45deg,
@@ -1299,7 +1309,8 @@ export async function generateTourProgramPDFController(
         decision: String(e.decision),
       })),
       `${startLabel} - ${endLabel}`,
-      res
+      res,
+      parsePageSize(req.query.size)
     );
   } catch (error) {
     sendServerError(res, 'Failed to generate Tour Program PDF', error);
@@ -1342,7 +1353,8 @@ export async function generateTourProgramSinglePDF(
         },
       ],
       eventDate,
-      res
+      res,
+      parsePageSize(req.query.size)
     );
   } catch (error) {
     sendServerError(res, 'Failed to generate Tour Program PDF', error);
@@ -1412,7 +1424,8 @@ export async function previewTourProgram(
     <p style="font-size: 20px;">॥ सत्यमेव जयते ॥</p>
     <h1>GOVERNMENT OF INDIA</h1>
     <h1>MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION</h1>
-    <h2>SHRI PRAHLAD JOSHI</h2>
+    <h1>MINISTRY OF NEW AND RENEWABLE ENERGY</h1>
+    <h2>SHRI PRALHAD JOSHI</h2>
     <p>Hon'ble Union Minister</p>
   </div>
 

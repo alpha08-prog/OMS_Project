@@ -1004,12 +1004,16 @@ export const pdfApi = {
     }
   },
 
-  // Generic PDF download helper (uses axios with blob)
-  downloadPDF: async (endpoint: string, filename: string) => {
+  // Generic PDF download helper (uses axios with blob).
+  // `size` is forwarded as a query param when provided — Train EQ ignores it
+  // server-side (always A5); grievance/temple/tour respect it (A4 default, A5
+  // when explicitly requested).
+  downloadPDF: async (endpoint: string, filename: string, size?: 'A4' | 'A5') => {
     try {
-      console.log('PDF download - Fetching from:', endpoint)
+      console.log('PDF download - Fetching from:', endpoint, 'size:', size)
       const res = await http.get(endpoint, {
         responseType: 'blob',
+        params: size ? { size } : undefined,
         validateStatus: (status) => status < 500, // Don't throw on 4xx errors, we'll handle them
       })
       console.log('PDF download - Response received:', res.status, res.headers)

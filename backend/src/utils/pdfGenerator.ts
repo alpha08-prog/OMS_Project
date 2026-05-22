@@ -143,13 +143,16 @@ export interface TempleVisitLetterData {
 //
 // Buffering first lets us either send a complete PDF or a real 500 JSON
 // error -- never a corrupt file.
+export type PdfPageSize = 'A4' | 'A5';
+
 function streamPdfToResponse(
   res: Response,
   filename: string,
   label: string,
-  build: (doc: PDFKit.PDFDocument) => void
+  build: (doc: PDFKit.PDFDocument) => void,
+  size: PdfPageSize = 'A4'
 ): void {
-  const doc = new PDFDocument({ margin: 50 });
+  const doc = new PDFDocument({ margin: 50, size });
   const chunks: Buffer[] = [];
   let failed = false;
 
@@ -195,22 +198,27 @@ function createLetterhead(doc: PDFKit.PDFDocument): void {
      .fillColor(COLORS.navy)
      .text('GOVERNMENT OF INDIA', margin, 50, { align: 'center', width: pageWidth - margin * 2 });
 
+  // Minister Pralhad Joshi holds both portfolios — the letterhead lists both
+  // ministries on consecutive lines to mirror the official train EQ format.
   doc.fontSize(12)
      .text('MINISTRY OF CONSUMER AFFAIRS, FOOD AND PUBLIC DISTRIBUTION', margin, 68, { align: 'center', width: pageWidth - margin * 2 });
+
+  doc.fontSize(12)
+     .text('MINISTRY OF NEW AND RENEWABLE ENERGY', margin, 84, { align: 'center', width: pageWidth - margin * 2 });
 
   // Minister's name
   doc.fontSize(16)
      .font('Helvetica-Bold')
      .fillColor(COLORS.black)
-     .text('SHRI PRAHLAD JOSHI', margin, 90, { align: 'center', width: pageWidth - margin * 2 });
+     .text('SHRI PRALHAD JOSHI', margin, 106, { align: 'center', width: pageWidth - margin * 2 });
 
   doc.fontSize(11)
      .font('Helvetica')
      .fillColor(COLORS.gray)
-     .text('Hon\'ble Union Minister', margin, 110, { align: 'center', width: pageWidth - margin * 2 });
+     .text('Hon\'ble Union Minister', margin, 126, { align: 'center', width: pageWidth - margin * 2 });
 
   // Tricolor line
-  const lineY = 135;
+  const lineY = 149;
   const lineWidth = pageWidth - margin * 2;
   const segmentWidth = lineWidth / 3;
 
@@ -226,17 +234,26 @@ function createLetterhead(doc: PDFKit.PDFDocument): void {
 let isCreatingWatermark = false;
 
 // Helper to create unique watermark - SAFE version that won't cause infinite recursion
-function createWatermark(doc: PDFKit.PDFDocument, documentId: string, refNumber: string): void {
+// `overrideWidth` / `overrideHeight` let callers in a scaled coordinate system
+// (train EQ on A5 — see generateTrainEQLetter) pass the virtual page dimensions
+// so the watermark and corner labels sit at the right virtual coordinates.
+function createWatermark(
+  doc: PDFKit.PDFDocument,
+  documentId: string,
+  refNumber: string,
+  overrideWidth?: number,
+  overrideHeight?: number
+): void {
   // Prevent re-entry which causes infinite recursion
   if (isCreatingWatermark) {
     return;
   }
-  
+
   isCreatingWatermark = true;
-  
+
   try {
-    const pageWidth = doc.page.width;
-    const pageHeight = doc.page.height;
+    const pageWidth = overrideWidth ?? doc.page.width;
+    const pageHeight = overrideHeight ?? doc.page.height;
     
     // Save current state including position
     const savedY = doc.y;
@@ -388,15 +405,36 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
   };
 
   streamPdfToResponse(res, filename, 'TrainEQ', (doc) => {
-    // Tighten the bottom margin so the contact-line footer + verification
-    // notice (which sit close to the page edge) don't trip PDFKit's auto
-    // pagination and produce extra blank pages.
-    doc.page.margins.bottom = 15;
+    // Train EQ letters always render on A5. The layout below was tuned for
+    // A4 (595×842pt) — we keep it pixel-identical and uniformly scale the
+    // canvas down so the same content fits on A5 (420×595pt) without any
+    // content modification. All draw calls use the virtual A4 dimensions.
+    const VIRTUAL_W = 595;
+    const VIRTUAL_H = 842;
+    const scaleFactor = Math.min(
+      doc.page.width / VIRTUAL_W,
+      doc.page.height / VIRTUAL_H
+    );
 
-    doc.on('pageAdded', () => createWatermark(doc, documentId, data.refNumber));
-    createWatermark(doc, documentId, data.refNumber);
+    // PDFKit's auto-pagination compares `doc.y` against
+    // (page.height - margins.bottom) in user-space units. The signature,
+    // footer line, and verification notice sit at virtual y ≈ 692..810,
+    // which is well past the A5 page height (595) — each call would
+    // otherwise trigger a fresh blank page just to draw that one line.
+    // Push the bottom margin below the actual page edge so the virtual
+    // layout never trips overflow. Same trick for the top margin so the
+    // first writes at virtual y=50 (above actual y=50) don't get clipped.
+    doc.page.margins.top = 0;
+    doc.page.margins.bottom = doc.page.height - VIRTUAL_H - 20;
 
-    const pageWidth = doc.page.width;
+    doc.scale(scaleFactor);
+
+    doc.on('pageAdded', () =>
+      createWatermark(doc, documentId, data.refNumber, VIRTUAL_W, VIRTUAL_H)
+    );
+    createWatermark(doc, documentId, data.refNumber, VIRTUAL_W, VIRTUAL_H);
+
+    const pageWidth = VIRTUAL_W;
     const margin = 50;
     const innerWidth = pageWidth - margin * 2;
     const headerTop = 50;
@@ -572,14 +610,14 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     doc.moveTo(margin, y).lineTo(tableEndX, y).strokeColor(COLORS.gray).stroke();
 
     // ── Signature block (anchored above the bottom footer) ────────────────
-    const signatureY = doc.page.height - 150;
+    const signatureY = VIRTUAL_H - 150;
     doc.font('Helvetica').fontSize(11).fillColor(COLORS.black)
       .text("Your's Faithfully,", pageWidth - margin - 220, signatureY, { width: 220, lineBreak: false });
     doc.font('Helvetica-Bold').fontSize(13)
       .text('MALLIKARJUNGOUDA PATIL', pageWidth - margin - 260, signatureY + 45, { width: 260, lineBreak: false });
 
     // ── Bottom footer ─────────────────────────────────────────────────────
-    const footerLineY = doc.page.height - 55;
+    const footerLineY = VIRTUAL_H - 55;
     doc.moveTo(margin, footerLineY).lineTo(pageWidth - margin, footerLineY).strokeColor(COLORS.black).stroke();
     doc.font('Helvetica').fontSize(9).fillColor(COLORS.black)
       .text(
@@ -597,15 +635,21 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
         footerLineY + 22,
         { width: innerWidth, align: 'center', lineBreak: false }
       );
-  });
+  }, 'A5');
 }
 
 // Generate Grievance Letter
-export function generateGrievanceLetter(data: GrievanceLetter, res: Response): void {
+export function generateGrievanceLetter(data: GrievanceLetter, res: Response, size: PdfPageSize = 'A4'): void {
   const documentId = `GRV${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   const filename = `Grievance_${data.refNumber}.pdf`;
 
   streamPdfToResponse(res, filename, 'Grievance', (doc) => {
+    // Verification notice is drawn at (page.height - 40). PDFKit's default
+    // margins.bottom=50 would treat that as overflow and add a blank trailing
+    // page just to hold that single line — tighten the bottom margin so the
+    // notice stays on the same page as the letter body.
+    doc.page.margins.bottom = 15;
+
     // Add watermark to every page using page event
     doc.on('pageAdded', () => {
       createWatermark(doc, documentId, data.refNumber);
@@ -681,16 +725,14 @@ I request you to look into this matter personally and take necessary action at t
 
   y = doc.y + 40;
 
-  // Signature
-  doc.text('With regards,', margin, y);
-  y += 30;
+  // Signature — matches the Train EQ / Temple Visit letters: a single
+  // "Yours sincerely" line with the issuing officer's name below it.
+  // (Shri Pralhad Joshi is the Hon'ble Minister; letters from this office
+  // are issued under his Additional Private Secretary's signature.)
+  doc.text('Yours sincerely,', margin, y);
+  y += 45;
   doc.font('Helvetica-Bold')
-     .text(data.senderName, margin, y);
-  y += 15;
-  doc.font('Helvetica')
-     .text(data.senderDesignation, margin, y);
-  y += 15;
-  doc.text('Office of Hon\'ble Union Minister', margin, y);
+     .text('MALLIKARJUNGOUDA PATIL', margin, y);
 
   // Footer
   createFooter(doc);
@@ -705,7 +747,7 @@ I request you to look into this matter personally and take necessary action at t
          doc.page.height - 40,
          { width: doc.page.width - margin * 2, align: 'center' }
        );
-  });
+  }, size);
 }
 
 // Generate Tour Program PDF
@@ -718,13 +760,19 @@ export function generateTourProgramPDF(
     decision: string;
   }>,
   dateRange: string,
-  res: Response
+  res: Response,
+  size: PdfPageSize = 'A4'
 ): void {
   const documentId = `TOUR${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   const refNumber = `TOUR-${Date.now().toString(36).toUpperCase()}`;
   const filename = `TourProgram_${Date.now()}.pdf`;
 
   streamPdfToResponse(res, filename, 'TourProgram', (doc) => {
+    // Verification notice sits at (page.height - 40); default margins.bottom=50
+    // would treat that as overflow and append a blank page. Tighten it so the
+    // notice stays on the last content page.
+    doc.page.margins.bottom = 15;
+
     // Add watermark to every page using page event
     doc.on('pageAdded', () => {
       createWatermark(doc, documentId, refNumber);
@@ -834,14 +882,18 @@ export function generateTourProgramPDF(
          doc.page.height - 40,
          { width: doc.page.width - margin * 2, align: 'center' }
        );
-  });
+  }, size);
 }
 
 // Generate Temple Visit (darshan / accommodation) letter. Uses the
 // Addl. PS letterhead — three-column header identical to the Train EQ form
 // (officer details + emblem + contact block), then a narrative body and a
 // per-temple recipient block at the bottom.
-export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Response): void {
+export function generateTempleVisitLetter(
+  data: TempleVisitLetterData,
+  res: Response,
+  size: PdfPageSize = 'A4'
+): void {
   const documentId =
     data.documentId ||
     `TPL${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -865,14 +917,14 @@ export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Resp
     const headerTop = 50;
     const officerW = 220;
 
-    // Body start Y. In letterhead mode we shift down to ~180pt (≈ 2.5") so
-    // the pre-printed letterhead occupies the blank zone above. In normal
-    // mode we draw the digital letterhead in that zone and start the body
-    // right below it.
+    // Body start Y. In letterhead mode we shift down to ~145pt so the
+    // pre-printed letterhead occupies the blank zone above. In normal mode
+    // we draw the digital letterhead in that zone and start the body right
+    // below it.
     let y: number;
 
     if (letterheadMode) {
-      y = 180;
+      y = 145;
     } else {
       // ── Letterhead — left officer block ────────────────────────────────
       doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.navy)
@@ -991,7 +1043,7 @@ export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Resp
     // rendered) footer, but not so low that there's a sea of whitespace
     // between the signature and the address. Tuned by eye against the
     // sample letter; bump the reserve to push the block higher.
-    const bottomReserve = letterheadMode ? 230 : 250;
+    const bottomReserve = letterheadMode ? 265 : 250;
     const recipientStartY = Math.max(
       bodyEndY + 90,
       doc.page.height - bottomReserve - recipientLineCount * recipientLineHeight
@@ -1050,7 +1102,7 @@ export function generateTempleVisitLetter(data: TempleVisitLetterData, res: Resp
           { width: innerWidth, align: 'center', lineBreak: false }
         );
     }
-  });
+  }, size);
 }
 
 // Generate generic letter
