@@ -70,6 +70,13 @@ class _RejectedGrievancesPageState extends State<RejectedGrievancesPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF0F172A),
+        // Override the global appBarTheme.titleTextStyle (which is white) so
+        // the title is readable on this page's white AppBar background.
+        titleTextStyle: const TextStyle(
+          color: Color(0xFF0F172A),
+          fontWeight: FontWeight.bold,
+          fontSize: 17,
+        ),
         elevation: 0.5,
         title: Row(
           children: [
@@ -77,7 +84,11 @@ class _RejectedGrievancesPageState extends State<RejectedGrievancesPage> {
             const SizedBox(width: 8),
             const Text(
               "Rejected Grievances",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.bold,
+                fontSize: 17,
+              ),
             ),
             if (!_loading) ...[
               const SizedBox(width: 8),

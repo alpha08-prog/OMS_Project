@@ -26,7 +26,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
 
   bool loading = true;
   String? error;
-  String selectedStatus = "All";
   String _searchQuery = "";
   DateTime? _dateFrom;
   DateTime? _dateTo;
@@ -34,11 +33,7 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
 
   List<Map<String, dynamic>> requests = [];
 
-  // Stats
   int _totalCount = 0;
-  int _pendingCount = 0;
-  int _approvedCount = 0;
-  int _rejectedCount = 0;
 
   @override
   void initState() {
@@ -59,11 +54,7 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     });
 
     try {
-      // Build query params
       final Map<String, String> queryParams = {};
-      if (selectedStatus != "All") {
-        queryParams['status'] = selectedStatus.toUpperCase();
-      }
       if (_searchQuery.isNotEmpty) {
         queryParams['search'] = _searchQuery;
       }
@@ -86,27 +77,9 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
 
-        // Calculate stats
-        int pending = 0, approved = 0, rejected = 0, resolved = 0;
-        for (var r in items) {
-          final status = (r["status"] ?? "PENDING").toString().toUpperCase();
-          if (status.contains("PENDING")) {
-            pending++;
-          } else if (status.contains("RESOLVED")) {
-            resolved++;
-          } else if (status.contains("APPROVED")) {
-            approved++;
-          } else if (status.contains("REJECT")) {
-            rejected++;
-          }
-        }
-
         setState(() {
           requests = items;
           _totalCount = items.length;
-          _pendingCount = pending;
-          _approvedCount = approved;
-          _rejectedCount = rejected;
           loading = false;
         });
       } else {
@@ -150,112 +123,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     if (id is int) return id.toString();
     if (id is String) return id;
     return null;
-  }
-
-  Future<void> _approve(String id) async {
-    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
-    if (!isAdmin) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Only Admin can approve.")),
-      );
-      return;
-    }
-
-    try {
-      final res = await HttpService.patch("/api/train-requests/$id/approve", {});
-      if (res.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Approved")),
-        );
-        fetchRequests();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Approve failed (${res.statusCode})")),
-        );
-      }
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error")),
-      );
-    }
-  }
-
-  Future<void> _reject(String id) async {
-    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
-    if (!isAdmin) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Only Admin can reject.")),
-      );
-      return;
-    }
-
-    try {
-      final res = await HttpService.patch("/api/train-requests/$id/reject", {});
-      if (res.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Rejected")),
-        );
-        fetchRequests();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Reject failed (${res.statusCode})")),
-        );
-      }
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error")),
-      );
-    }
-  }
-
-  Future<void> _resolve(String id) async {
-    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
-    if (!isAdmin) return;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.check_circle_outline, color: Colors.blue),
-            SizedBox(width: 8),
-            Text("Resolve Request"),
-          ],
-        ),
-        content: const Text("Mark this approved request as resolved?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Resolve", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    try {
-      final res = await HttpService.patch("/api/train-requests/$id/resolve", {});
-      if (res.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Request resolved")),
-        );
-        fetchRequests();
-      } else {
-        String msg = "Failed";
-        try { msg = jsonDecode(res.body)["message"] ?? msg; } catch (_) {}
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-      }
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error")),
-      );
-    }
   }
 
   Future<void> _delete(String id) async {
@@ -398,7 +265,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     final to = r["toStation"] ?? r["to"] ?? "-";
     final journeyClass = r["journeyClass"] ?? "-";
     final bookingType = r["bookingType"] ?? "-";
-    final status = r["status"] ?? "PENDING";
     final passengers = r["passengers"] as List? ?? [];
     final dateOfJourney = r["dateOfJourney"];
     final createdBy = r["createdBy"];
@@ -476,37 +342,32 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
                       ],
                     ),
                   ),
-                  _statusChip(status),
                 ],
               ),
 
-              // Download PDF Button - only for APPROVED requests (Admin only)
-              if (status.toString().toUpperCase() == "APPROVED" &&
-                  (widget.role == Roles.admin || widget.role == Roles.superAdmin)) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      final id = r["id"]?.toString();
-                      if (id != null) {
-                        Navigator.pop(ctx); // Close bottom sheet
-                        _downloadPdf(id, pnr.toString());
-                      }
-                    },
-                    icon: const Icon(Icons.download, size: 20),
-                    label: const Text("Download EQ Letter (PDF)"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: successGreen,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    final id = r["id"]?.toString();
+                    if (id != null) {
+                      Navigator.pop(ctx);
+                      _downloadPdf(id, pnr.toString());
+                    }
+                  },
+                  icon: const Icon(Icons.download, size: 20),
+                  label: const Text("Download EQ Letter (PDF)"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: successGreen,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                 ),
-              ],
+              ),
 
               const SizedBox(height: 20),
 
@@ -815,12 +676,9 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
               ],
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _statItem("Total", _totalCount, Icons.train),
-                _statItem("Pending", _pendingCount, Icons.pending, Colors.orangeAccent),
-                _statItem("Approved", _approvedCount, Icons.check_circle, Colors.lightGreenAccent),
-                _statItem("Rejected", _rejectedCount, Icons.cancel, Colors.redAccent),
               ],
             ),
           ),
@@ -859,34 +717,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
           ),
 
           const SizedBox(height: 12),
-
-          // Status Filter Chips
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                _filterChip("All"),
-                _filterChip("Pending"),
-                _filterChip("Approved"),
-                _filterChip("Resolved"),
-                _filterChip("Rejected"),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 8),
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
@@ -992,35 +822,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     }).toList();
   }
 
-  Widget _filterChip(String status) {
-    final isSelected = selectedStatus == status;
-
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() => selectedStatus = status);
-          fetchRequests();
-        },
-        child: Container(
-          height: 38,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: isSelected ? primaryBlue : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            status,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.black87,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildRequestCard(Map<String, dynamic> r, bool isAdmin) {
     final String? id = _getId(r);
     final pnr = r["pnrNumber"] ?? r["pnr"] ?? "-";
@@ -1028,7 +829,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     final trainNumber = r["trainNumber"] ?? "";
     final from = r["fromStation"] ?? r["from"] ?? "-";
     final to = r["toStation"] ?? r["to"] ?? "-";
-    final status = (r["status"] ?? "PENDING").toString();
     final passengers = r["passengers"] as List? ?? [];
     final passengerCount = passengers.isNotEmpty
         ? passengers.length
@@ -1043,8 +843,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
         formattedDate = DateFormat('dd MMM').format(date);
       } catch (_) {}
     }
-
-    final isPending = status.toUpperCase().contains("PENDING");
 
     // Get passenger names preview
     String passengerPreview = "";
@@ -1095,19 +893,12 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                "PNR: $pnr",
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            _statusChip(status),
-                          ],
+                        Text(
+                          "PNR: $pnr",
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         const SizedBox(height: 4),
                         if (trainNumber.isNotEmpty || trainName.isNotEmpty)
@@ -1204,69 +995,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
                 ),
               ],
 
-              // Admin actions - Approve/Reject for PENDING
-              if (isAdmin && isPending && id != null) ...[
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _reject(id),
-                        icon: const Icon(Icons.close, size: 16),
-                        label: const Text("Reject"),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _approve(id),
-                        icon: const Icon(Icons.check, size: 16),
-                        label: const Text("Approve"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: successGreen,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-
-              // Admin actions - Resolve for APPROVED
-              if (isAdmin && status.toString().toUpperCase() == "APPROVED" && id != null) ...[
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _resolve(id);
-                    },
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: const Text("Mark as Resolved"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -1274,40 +1002,4 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     );
   }
 
-  Widget _statusChip(String status) {
-    final s = status.toUpperCase();
-
-    Color bg = Colors.grey.shade200;
-    Color text = Colors.grey.shade800;
-
-    if (s.contains("PENDING")) {
-      bg = Colors.orange.shade50;
-      text = Colors.orange.shade700;
-    } else if (s.contains("APPROVED")) {
-      bg = Colors.green.shade50;
-      text = Colors.green.shade700;
-    } else if (s.contains("RESOLVED")) {
-      bg = Colors.blue.shade50;
-      text = Colors.blue.shade700;
-    } else if (s.contains("REJECT")) {
-      bg = Colors.red.shade50;
-      text = Colors.red.shade700;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        status,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          color: text,
-        ),
-      ),
-    );
-  }
 }

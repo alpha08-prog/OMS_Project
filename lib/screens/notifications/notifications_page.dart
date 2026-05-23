@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/notification_model.dart';
+import '../../services/http_service.dart';
 import '../../services/notification_service.dart';
 import '../../utils/access_control.dart';
 import '../../utils/app_navigator.dart';
+import '../../widgets/admin_grievance_detail_dialog.dart';
 
 class NotificationsPage extends StatefulWidget {
   final String role;
@@ -71,8 +75,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   void _routeFor(AppNotification n) {
     final role = widget.role;
+    final refId = n.referenceId;
     switch (n.type) {
       case 'TASK_ASSIGNED':
+      case 'TASK_RESOLVED':
+        // Staff/admin lists don't expose a per-row detail dialog yet —
+        // landing on the list is the best we can do for now.
         if (role == Roles.staff) {
           AppNavigator.toStaffTasks(context);
         } else {
@@ -87,20 +95,59 @@ class _NotificationsPageState extends State<NotificationsPage> {
         }
         break;
       case 'NEWS_CRITICAL':
-        AppNavigator.toNewsList(context, role: role);
+        // Deep-link: the news list page auto-opens the matching item's
+        // detail sheet when `highlightId` is supplied.
+        AppNavigator.toNewsList(context, role: role, highlightId: refId);
         break;
       case 'GRIEVANCE_REJECTED':
-        AppNavigator.toRejectedGrievances(context, role: role);
+      case 'TEMPLE_VISIT_LETTER_GENERATED':
+        if (refId != null && refId.isNotEmpty) {
+          _openGrievanceById(refId);
+        } else {
+          AppNavigator.toRejectedGrievances(context, role: role);
+        }
         break;
       default:
-        // Unknown type — just stay on the list.
+        // Unknown type — stay on the list.
         break;
     }
+  }
+
+  /// Fetch a grievance by id and show the read-only detail dialog. Used by
+  /// GRIEVANCE_REJECTED / TEMPLE_VISIT_LETTER_GENERATED deep-links — no
+  /// Timeline / History tabs, no action buttons; just the info + Close.
+  Future<void> _openGrievanceById(String id) async {
+    Map<String, dynamic>? grievance;
+    try {
+      final res = await HttpService.get('/api/grievances/$id');
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final data = decoded is Map<String, dynamic>
+            ? (decoded['data'] ?? decoded)
+            : null;
+        if (data is Map) {
+          grievance = Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    if (grievance == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That grievance is no longer available')),
+      );
+      return;
+    }
+    // No callbacks passed → dialog renders read-only with just a Close button.
+    AdminGrievanceDetailDialog.show(
+      context: context,
+      grievance: grievance,
+    );
   }
 
   IconData _iconFor(String type) {
     switch (type) {
       case 'TASK_ASSIGNED':
+      case 'TASK_RESOLVED':
         return Icons.task_alt;
       case 'TOUR_DECIDED':
         return Icons.event_available;
@@ -108,6 +155,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return Icons.campaign;
       case 'GRIEVANCE_REJECTED':
         return Icons.report_gmailerrorred;
+      case 'TEMPLE_VISIT_LETTER_GENERATED':
+        return Icons.account_balance;
       default:
         return Icons.notifications;
     }
@@ -116,6 +165,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Color _colorFor(String type) {
     switch (type) {
       case 'TASK_ASSIGNED':
+      case 'TASK_RESOLVED':
         return const Color(0xFF2563EB);
       case 'TOUR_DECIDED':
         return const Color(0xFF059669);
@@ -123,6 +173,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return const Color(0xFFDC2626);
       case 'GRIEVANCE_REJECTED':
         return const Color(0xFFB45309);
+      case 'TEMPLE_VISIT_LETTER_GENERATED':
+        return const Color(0xFFEA580C);
       default:
         return Colors.indigo;
     }

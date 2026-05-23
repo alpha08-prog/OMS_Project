@@ -363,10 +363,13 @@ class _InvitationAddPageState extends State<InvitationAddPage> {
                 TextFormField(
                   controller: referencedByController,
                   decoration: const InputDecoration(
-                    labelText: "Referenced By (optional)",
+                    labelText: "Referenced By *",
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.person_pin),
                   ),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? "Referenced By is required"
+                      : null,
                 ),
               ],
             ),

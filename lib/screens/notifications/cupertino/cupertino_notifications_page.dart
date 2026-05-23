@@ -1,12 +1,17 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Material, InkWell;
 import 'package:intl/intl.dart';
 
 import '../../../models/notification_model.dart';
+import '../../../services/http_service.dart';
 import '../../../services/notification_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
+import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/cupertino/cupertino_admin_grievance_detail_dialog.dart';
 
 class CupertinoNotificationsPage extends StatefulWidget {
   final String role;
@@ -64,8 +69,10 @@ class _CupertinoNotificationsPageState
 
   void _routeFor(AppNotification n) {
     final role = widget.role;
+    final refId = n.referenceId;
     switch (n.type) {
       case 'TASK_ASSIGNED':
+      case 'TASK_RESOLVED':
         if (role == Roles.staff) {
           AppNavigator.toStaffTasks(context);
         } else {
@@ -80,19 +87,57 @@ class _CupertinoNotificationsPageState
         }
         break;
       case 'NEWS_CRITICAL':
-        AppNavigator.toNewsList(context, role: role);
+        // Deep-link: the list page auto-opens the matching item's detail
+        // sheet when `highlightId` is supplied.
+        AppNavigator.toNewsList(context, role: role, highlightId: refId);
         break;
       case 'GRIEVANCE_REJECTED':
-        AppNavigator.toRejectedGrievances(context, role: role);
+      case 'TEMPLE_VISIT_LETTER_GENERATED':
+        if (refId != null && refId.isNotEmpty) {
+          _openGrievanceById(refId);
+        } else {
+          AppNavigator.toRejectedGrievances(context, role: role);
+        }
         break;
       default:
         break;
     }
   }
 
+  /// Fetch a grievance by id and show the read-only detail dialog. Used by
+  /// GRIEVANCE_REJECTED / TEMPLE_VISIT_LETTER_GENERATED deep-links — no
+  /// Timeline / History / action buttons; just the info + Close.
+  Future<void> _openGrievanceById(String id) async {
+    Map<String, dynamic>? grievance;
+    try {
+      final res = await HttpService.get('/api/grievances/$id');
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final data = decoded is Map<String, dynamic>
+            ? (decoded['data'] ?? decoded)
+            : null;
+        if (data is Map) {
+          grievance = Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    if (grievance == null) {
+      CupertinoToast.show(context, 'That grievance is no longer available',
+          isError: true);
+      return;
+    }
+    // No callbacks → dialog renders read-only with just a Close button.
+    CupertinoAdminGrievanceDetailDialog.show(
+      context: context,
+      grievance: grievance,
+    );
+  }
+
   IconData _iconFor(String type) {
     switch (type) {
       case 'TASK_ASSIGNED':
+      case 'TASK_RESOLVED':
         return CupertinoIcons.checkmark_seal;
       case 'TOUR_DECIDED':
         return CupertinoIcons.calendar_badge_plus;
@@ -100,6 +145,8 @@ class _CupertinoNotificationsPageState
         return CupertinoIcons.exclamationmark_bubble;
       case 'GRIEVANCE_REJECTED':
         return CupertinoIcons.xmark_octagon;
+      case 'TEMPLE_VISIT_LETTER_GENERATED':
+        return CupertinoIcons.building_2_fill;
       default:
         return CupertinoIcons.bell;
     }
@@ -108,6 +155,7 @@ class _CupertinoNotificationsPageState
   Color _colorFor(String type) {
     switch (type) {
       case 'TASK_ASSIGNED':
+      case 'TASK_RESOLVED':
         return CupertinoColors.activeBlue;
       case 'TOUR_DECIDED':
         return CupertinoColors.activeGreen;
@@ -115,6 +163,8 @@ class _CupertinoNotificationsPageState
         return CupertinoColors.systemRed;
       case 'GRIEVANCE_REJECTED':
         return CupertinoColors.systemOrange;
+      case 'TEMPLE_VISIT_LETTER_GENERATED':
+        return const Color(0xFFEA580C);
       default:
         return CupertinoColors.activeBlue;
     }
@@ -149,37 +199,38 @@ class _CupertinoNotificationsPageState
                   )
                 : null,
           ),
-          Expanded(child: CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _load),
-            if (_loading)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: CupertinoActivityIndicator()),
-              )
-            else if (_items.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: _EmptyState(),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (_, i) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _tile(_items[i]),
+          Expanded(
+              child: CustomScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            slivers: [
+              CupertinoSliverRefreshControl(onRefresh: _load),
+              if (_loading)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: CupertinoActivityIndicator()),
+                )
+              else if (_items.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _EmptyState(),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (_, i) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _tile(_items[i]),
+                      ),
+                      childCount: _items.length,
                     ),
-                    childCount: _items.length,
                   ),
                 ),
-              ),
-          ],
-        )),
+            ],
+          )),
         ],
       ),
     );

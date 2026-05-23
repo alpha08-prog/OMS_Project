@@ -9,7 +9,6 @@ import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
-import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
@@ -34,7 +33,6 @@ class _CupertinoTrainRequestListPageState
 
   bool loading = true;
   String? error;
-  String selectedStatus = "All";
   String _searchQuery = "";
   DateTime? _dateFrom;
   DateTime? _dateTo;
@@ -42,11 +40,7 @@ class _CupertinoTrainRequestListPageState
 
   List<Map<String, dynamic>> requests = [];
 
-  // Stats
   int _totalCount = 0;
-  int _pendingCount = 0;
-  int _approvedCount = 0;
-  int _rejectedCount = 0;
 
   @override
   void initState() {
@@ -68,9 +62,6 @@ class _CupertinoTrainRequestListPageState
 
     try {
       final Map<String, String> queryParams = {};
-      if (selectedStatus != "All") {
-        queryParams['status'] = selectedStatus.toUpperCase();
-      }
       if (_searchQuery.isNotEmpty) {
         queryParams['search'] = _searchQuery;
       }
@@ -93,24 +84,9 @@ class _CupertinoTrainRequestListPageState
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
 
-        int pending = 0, approved = 0, rejected = 0;
-        for (var r in items) {
-          final status = (r["status"] ?? "PENDING").toString().toUpperCase();
-          if (status.contains("PENDING")) {
-            pending++;
-          } else if (status.contains("APPROVED")) {
-            approved++;
-          } else if (status.contains("REJECT")) {
-            rejected++;
-          }
-        }
-
         setState(() {
           requests = items;
           _totalCount = items.length;
-          _pendingCount = pending;
-          _approvedCount = approved;
-          _rejectedCount = rejected;
           loading = false;
         });
       } else {
@@ -153,54 +129,6 @@ class _CupertinoTrainRequestListPageState
     if (id is int) return id.toString();
     if (id is String) return id;
     return null;
-  }
-
-  Future<void> _approve(String id) async {
-    final isAdmin =
-        widget.role == Roles.admin || widget.role == Roles.superAdmin;
-    if (!isAdmin) {
-      CupertinoToast.show(context, "Only Admin can approve.", isError: true);
-      return;
-    }
-
-    try {
-      final res =
-          await HttpService.patch("/api/train-requests/$id/approve", {});
-      if (res.statusCode == 200) {
-        CupertinoToast.show(context, "Approved");
-        fetchRequests();
-      } else {
-        CupertinoToast.show(
-            context, "Approve failed (${res.statusCode})",
-            isError: true);
-      }
-    } catch (_) {
-      CupertinoToast.show(context, "Server error", isError: true);
-    }
-  }
-
-  Future<void> _reject(String id) async {
-    final isAdmin =
-        widget.role == Roles.admin || widget.role == Roles.superAdmin;
-    if (!isAdmin) {
-      CupertinoToast.show(context, "Only Admin can reject.", isError: true);
-      return;
-    }
-
-    try {
-      final res =
-          await HttpService.patch("/api/train-requests/$id/reject", {});
-      if (res.statusCode == 200) {
-        CupertinoToast.show(context, "Rejected");
-        fetchRequests();
-      } else {
-        CupertinoToast.show(
-            context, "Reject failed (${res.statusCode})",
-            isError: true);
-      }
-    } catch (_) {
-      CupertinoToast.show(context, "Server error", isError: true);
-    }
   }
 
   Future<void> _delete(String id) async {
@@ -322,7 +250,6 @@ class _CupertinoTrainRequestListPageState
     final to = r["toStation"] ?? r["to"] ?? "-";
     final journeyClass = r["journeyClass"] ?? "-";
     final bookingType = r["bookingType"] ?? "-";
-    final status = r["status"] ?? "PENDING";
     final passengers = r["passengers"] as List? ?? [];
     final dateOfJourney = r["dateOfJourney"];
     final createdBy = r["createdBy"];
@@ -397,37 +324,31 @@ class _CupertinoTrainRequestListPageState
                       ],
                     ),
                   ),
-                  _statusChip(status),
                 ],
               ),
 
-              // Download PDF Button
-              if (status.toString().toUpperCase() == "APPROVED" &&
-                  (widget.role == Roles.admin ||
-                      widget.role == Roles.superAdmin)) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: CupertinoButton.filled(
-                    onPressed: () {
-                      final id = r["id"]?.toString();
-                      if (id != null) {
-                        Navigator.pop(ctx);
-                        _downloadPdf(id, pnr.toString());
-                      }
-                    },
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(CupertinoIcons.arrow_down_doc, size: 20),
-                        SizedBox(width: 8),
-                        Text("Download EQ Letter (PDF)"),
-                      ],
-                    ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoButton.filled(
+                  onPressed: () {
+                    final id = r["id"]?.toString();
+                    if (id != null) {
+                      Navigator.pop(ctx);
+                      _downloadPdf(id, pnr.toString());
+                    }
+                  },
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(CupertinoIcons.arrow_down_doc, size: 20),
+                      SizedBox(width: 8),
+                      Text("Download EQ Letter (PDF)"),
+                    ],
                   ),
                 ),
-              ],
+              ),
 
               const SizedBox(height: 20),
 
@@ -737,18 +658,10 @@ class _CupertinoTrainRequestListPageState
                 ],
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _statItem(
                       "Total", _totalCount, CupertinoIcons.train_style_one),
-                  _statItem("Pending", _pendingCount,
-                      CupertinoIcons.clock, const Color(0xFFFFAB40)),
-                  _statItem("Approved", _approvedCount,
-                      CupertinoIcons.check_mark_circled,
-                      const Color(0xFFB9F6CA)),
-                  _statItem("Rejected", _rejectedCount,
-                      CupertinoIcons.xmark_circle,
-                      const Color(0xFFFF5252)),
                 ],
               ),
             ),
@@ -792,22 +705,6 @@ class _CupertinoTrainRequestListPageState
             ),
 
             const SizedBox(height: 12),
-
-            // Status Filter
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: CupertinoFilterRow(
-                options: const ["All", "Pending", "Approved", "Rejected"],
-                selected: selectedStatus,
-                selectedColor: primaryBlue,
-                onSelected: (v) {
-                  setState(() => selectedStatus = v);
-                  fetchRequests();
-                },
-              ),
-            ),
-
-            const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: CupertinoDateRangeFilter(
@@ -934,7 +831,6 @@ class _CupertinoTrainRequestListPageState
     final trainNumber = r["trainNumber"] ?? "";
     final from = r["fromStation"] ?? r["from"] ?? "-";
     final to = r["toStation"] ?? r["to"] ?? "-";
-    final status = (r["status"] ?? "PENDING").toString();
     final passengers = r["passengers"] as List? ?? [];
     final passengerCount = passengers.isNotEmpty
         ? passengers.length
@@ -949,8 +845,6 @@ class _CupertinoTrainRequestListPageState
         formattedDate = DateFormat('dd MMM').format(date);
       } catch (_) {}
     }
-
-    final isPending = status.toUpperCase().contains("PENDING");
 
     String passengerPreview = "";
     if (passengers.isNotEmpty) {
@@ -990,17 +884,10 @@ class _CupertinoTrainRequestListPageState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text("PNR: $pnr",
-                              style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold)),
-                        ),
-                        _statusChip(status),
-                      ],
-                    ),
+                    Text("PNR: $pnr",
+                        style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     if (trainNumber.isNotEmpty || trainName.isNotEmpty)
                       Text(
@@ -1096,86 +983,8 @@ class _CupertinoTrainRequestListPageState
                 overflow: TextOverflow.ellipsis),
           ],
 
-          // Admin actions
-          if (isAdmin && isPending && id != null) ...[
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: CupertinoButton(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    color: CupertinoColors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    onPressed: () => _reject(id),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(CupertinoIcons.xmark,
-                            size: 16,
-                            color: AppTheme.destructiveRed),
-                        const SizedBox(width: 6),
-                        Text("Reject",
-                            style: TextStyle(
-                                color: AppTheme.destructiveRed)),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: CupertinoButton(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    color: successGreen,
-                    borderRadius: BorderRadius.circular(10),
-                    onPressed: () => _approve(id),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(CupertinoIcons.check_mark,
-                            size: 16,
-                            color: CupertinoColors.white),
-                        SizedBox(width: 6),
-                        Text("Approve",
-                            style: TextStyle(
-                                color: CupertinoColors.white)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
       ),
-    );
-  }
-
-  Widget _statusChip(String status) {
-    final s = status.toUpperCase();
-
-    Color bg = CupertinoColors.systemGrey5;
-    Color text = CupertinoColors.systemGrey;
-
-    if (s.contains("PENDING")) {
-      bg = const Color(0xFFFFF3E0);
-      text = const Color(0xFFE65100);
-    } else if (s.contains("APPROVED")) {
-      bg = const Color(0xFFE8F5E9);
-      text = const Color(0xFF2E7D32);
-    } else if (s.contains("REJECT")) {
-      bg = const Color(0xFFFFEBEE);
-      text = const Color(0xFFC62828);
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(status,
-          style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.bold, color: text)),
     );
   }
 }

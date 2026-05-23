@@ -84,6 +84,10 @@ import '../screens/history/cupertino/cupertino_history_page.dart';
 import '../screens/about/cupertino/cupertino_about_page.dart';
 import '../screens/notifications/notifications_page.dart';
 import '../screens/notifications/cupertino/cupertino_notifications_page.dart';
+import '../screens/attendance/my_attendance_page.dart';
+import '../screens/attendance/cupertino/cupertino_my_attendance_page.dart';
+import '../screens/attendance/staff_attendance_page.dart';
+import '../screens/attendance/cupertino/cupertino_staff_attendance_page.dart';
 
 class AppNavigator {
   /// Creates a platform-appropriate route
@@ -313,11 +317,15 @@ class AppNavigator {
     }
   }
 
-  static void toNewsList(BuildContext context, {required String role}) {
+  static void toNewsList(
+    BuildContext context, {
+    required String role,
+    String? highlightId,
+  }) {
     push(
       context,
-      () => NewsListPage(role: role),
-      () => CupertinoNewsListPage(role: role),
+      () => NewsListPage(role: role, highlightId: highlightId),
+      () => CupertinoNewsListPage(role: role, highlightId: highlightId),
     );
   }
 
@@ -507,5 +515,35 @@ class AppNavigator {
       () => NotificationsPage(role: role),
       () => CupertinoNotificationsPage(role: role),
     );
+  }
+
+  /// Staff "My Attendance" — mark today's status (Present/Half Day/Leave)
+  /// and view personal history. Hits /api/attendance.
+  static void toMyAttendance(BuildContext context) {
+    push(
+      context,
+      () => const MyAttendancePage(),
+      () => const CupertinoMyAttendancePage(),
+    );
+  }
+
+  /// Admin "Staff Attendance" — Day / Month / Year view of all staff with
+  /// auto-absent for un-marked staff and stat tiles for today.
+  static void toStaffAttendance(BuildContext context) {
+    push(
+      context,
+      () => const StaffAttendancePage(),
+      () => const CupertinoStaffAttendancePage(),
+    );
+  }
+
+  /// Role-aware attendance entry: STAFF → My Attendance, ADMIN/SUPER → Staff
+  /// Attendance dashboard.
+  static void toAttendance(BuildContext context, {required String role}) {
+    if (role == Roles.staff) {
+      toMyAttendance(context);
+    } else {
+      toStaffAttendance(context);
+    }
   }
 }

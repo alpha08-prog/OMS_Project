@@ -31,7 +31,13 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
   String _statusFilter = "All";
   DateTime? _dateFrom;
   DateTime? _dateTo;
-  static const _statuses = ["All", "PENDING", "APPROVED", "RESOLVED", "REJECTED"];
+  static const _statuses = [
+    "All",
+    "PENDING",
+    "APPROVED",
+    "RESOLVED",
+    "REJECTED"
+  ];
 
   final Set<String> _busyIds = {};
 
@@ -63,8 +69,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
         if (mounted) {
           setState(() {
             _requests = list
-                .map<Map<String, dynamic>>(
-                    (e) => Map<String, dynamic>.from(e))
+                .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
                 .toList();
             _loading = false;
           });
@@ -92,8 +97,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
       final res = await HttpService.get("/api/tasks/staff");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         _staffList = list
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
@@ -114,14 +118,12 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
         final result = await OpenFilex.open(file.path);
         if (!mounted) return;
         if (result.type != ResultType.done) {
-          CupertinoToast.show(context,
-              "Could not open PDF: ${result.message}",
+          CupertinoToast.show(context, "Could not open PDF: ${result.message}",
               isError: true);
         }
       } else {
         if (!mounted) return;
-        CupertinoToast.show(
-            context, "PDF failed (${res.statusCode})",
+        CupertinoToast.show(context, "PDF failed (${res.statusCode})",
             isError: true);
       }
     } catch (_) {
@@ -172,8 +174,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
       }
     } catch (_) {
       if (!mounted) return;
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     }
   }
 
@@ -213,8 +214,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
       }
     } catch (_) {
       if (!mounted) return;
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     }
   }
 
@@ -286,8 +286,8 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: CupertinoColors.white.withOpacity(0.18),
                       borderRadius: BorderRadius.circular(8),
@@ -313,53 +313,55 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
               ],
             ),
           ),
-          Expanded(child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _fetchRequests),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Center(child: CupertinoActivityIndicator()),
-                    )
-                  else ...[
-                    Container(
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.systemBackground,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: CupertinoColors.systemGrey5),
+          Expanded(
+              child: CustomScrollView(
+            slivers: [
+              CupertinoSliverRefreshControl(onRefresh: _fetchRequests),
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    if (_loading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 60),
+                        child: Center(child: CupertinoActivityIndicator()),
+                      )
+                    else ...[
+                      Container(
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.systemBackground,
+                          borderRadius: BorderRadius.circular(12),
+                          border:
+                              Border.all(color: CupertinoColors.systemGrey5),
+                        ),
+                        child: CupertinoDateRangeFilter(
+                          from: _dateFrom,
+                          to: _dateTo,
+                          tint: AppTheme.primaryIndigo,
+                          onFromChanged: (d) => setState(() => _dateFrom = d),
+                          onToChanged: (d) => setState(() => _dateTo = d),
+                          onClear: () => setState(() {
+                            _dateFrom = null;
+                            _dateTo = null;
+                          }),
+                        ),
                       ),
-                      child: CupertinoDateRangeFilter(
-                        from: _dateFrom,
-                        to: _dateTo,
-                        tint: AppTheme.primaryIndigo,
-                        onFromChanged: (d) => setState(() => _dateFrom = d),
-                        onToChanged: (d) => setState(() => _dateTo = d),
-                        onClear: () => setState(() {
-                          _dateFrom = null;
-                          _dateTo = null;
-                        }),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildSectionHeader(),
-                    const SizedBox(height: 12),
-                    if (_error != null)
-                      _buildError()
-                    else if (_visibleRequests.isEmpty)
-                      _buildEmpty()
-                    else
-                      ..._visibleRequests.map(_buildCard),
-                    const SizedBox(height: 24),
-                  ],
-                ]),
+                      const SizedBox(height: 12),
+                      _buildSectionHeader(),
+                      const SizedBox(height: 12),
+                      if (_error != null)
+                        _buildError()
+                      else if (_visibleRequests.isEmpty)
+                        _buildEmpty()
+                      else
+                        ..._visibleRequests.map(_buildCard),
+                      const SizedBox(height: 24),
+                    ],
+                  ]),
+                ),
               ),
-            ),
-          ],
-        )),
+            ],
+          )),
         ],
       ),
     );
@@ -456,8 +458,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
                     Text(
                       "PNR: $pnr · $from → $to · $dateOfJourney · $cls",
                       style: const TextStyle(
-                          fontSize: 12,
-                          color: CupertinoColors.systemGrey),
+                          fontSize: 12, color: CupertinoColors.systemGrey),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -490,8 +491,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
                     Text(
                       "Created by: $createdBy · $createdAt",
                       style: const TextStyle(
-                          fontSize: 11,
-                          color: CupertinoColors.systemGrey),
+                          fontSize: 11, color: CupertinoColors.systemGrey),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -627,8 +627,8 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
       decoration:
           BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
       child: Text(status,
-          style: TextStyle(
-              fontSize: 10, fontWeight: FontWeight.bold, color: fg)),
+          style:
+              TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: fg)),
     );
   }
 
@@ -642,8 +642,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
                 size: 48, color: CupertinoColors.systemGrey3),
             const SizedBox(height: 12),
             Text(_error!,
-                style:
-                    const TextStyle(color: CupertinoColors.systemGrey)),
+                style: const TextStyle(color: CupertinoColors.systemGrey)),
             const SizedBox(height: 12),
             CupertinoButton.filled(
               onPressed: _fetchRequests,
@@ -665,8 +664,8 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
                 size: 56, color: CupertinoColors.systemGrey4),
             SizedBox(height: 12),
             Text("No train EQ requests",
-                style: TextStyle(
-                    color: CupertinoColors.systemGrey, fontSize: 14)),
+                style:
+                    TextStyle(color: CupertinoColors.systemGrey, fontSize: 14)),
           ],
         ),
       ),
@@ -712,8 +711,8 @@ class _CupertinoVerifyAssignTrainSheetState
     final dateOfJourney = r["dateOfJourney"]?.toString() ?? "";
     final cls = r["journeyClass"] ?? "—";
 
-    titleController = TextEditingController(
-        text: "Process Train EQ - PNR $pnr - $passenger");
+    titleController =
+        TextEditingController(text: "Process Train EQ - PNR $pnr - $passenger");
     descriptionController = TextEditingController(
       text: "PNR: $pnr\n"
           "Passenger: $passenger\n"
@@ -745,8 +744,7 @@ class _CupertinoVerifyAssignTrainSheetState
     _staffError =
         _selectedStaffId == null ? "Please select a staff member" : null;
     if (_staffError != null) ok = false;
-    _titleError =
-        titleController.text.trim().isEmpty ? "Required" : null;
+    _titleError = titleController.text.trim().isEmpty ? "Required" : null;
     if (_titleError != null) ok = false;
     setState(() {});
     return ok;
@@ -793,12 +791,10 @@ class _CupertinoVerifyAssignTrainSheetState
           (s) => s["id"]?.toString() == _selectedStaffId,
           orElse: () => {"name": "staff"},
         );
-        CupertinoToast.show(
-            context, "Approved & assigned to ${staff["name"]}");
+        CupertinoToast.show(context, "Approved & assigned to ${staff["name"]}");
         Navigator.pop(context, true);
       } else {
-        String msg =
-            "Approved, but assignment failed (${taskRes.statusCode})";
+        String msg = "Approved, but assignment failed (${taskRes.statusCode})";
         try {
           final m = jsonDecode(taskRes.body)["message"];
           if (m != null) msg = "Approved, but $m";
@@ -808,8 +804,7 @@ class _CupertinoVerifyAssignTrainSheetState
       }
     } catch (_) {
       if (!mounted) return;
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -868,9 +863,8 @@ class _CupertinoVerifyAssignTrainSheetState
                       CupertinoButton(
                         padding: EdgeInsets.zero,
                         minSize: 0,
-                        onPressed: _submitting
-                            ? null
-                            : () => Navigator.pop(context),
+                        onPressed:
+                            _submitting ? null : () => Navigator.pop(context),
                         child: const Icon(CupertinoIcons.xmark,
                             size: 20, color: CupertinoColors.systemGrey),
                       ),
@@ -895,8 +889,7 @@ class _CupertinoVerifyAssignTrainSheetState
                         const SizedBox(height: 2),
                         Text("$passenger • PNR $pnr • $dateOfJourney",
                             style: const TextStyle(
-                                fontSize: 13,
-                                color: AppTheme.primaryIndigo)),
+                                fontSize: 13, color: AppTheme.primaryIndigo)),
                       ],
                     ),
                   ),
@@ -979,9 +972,8 @@ class _CupertinoVerifyAssignTrainSheetState
                           color: CupertinoColors.systemGrey6,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           borderRadius: BorderRadius.circular(10),
-                          onPressed: _submitting
-                              ? null
-                              : () => Navigator.pop(context),
+                          onPressed:
+                              _submitting ? null : () => Navigator.pop(context),
                           child: const Text("Cancel",
                               style: TextStyle(
                                   fontWeight: FontWeight.w600,
@@ -999,13 +991,11 @@ class _CupertinoVerifyAssignTrainSheetState
                               ? const CupertinoActivityIndicator(
                                   color: CupertinoColors.white)
                               : const Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(CupertinoIcons.person_add,
-                                        size: 18,
-                                        color: CupertinoColors.white),
+                                        size: 18, color: CupertinoColors.white),
                                     SizedBox(width: 6),
                                     Text("Approve & Assign",
                                         style: TextStyle(
@@ -1054,10 +1044,12 @@ class _CupertinoVerifyAssignTrainSheetState
           items: names,
           currentValue: _selectedStaffId == null
               ? names.first
-              : (widget.staffList.firstWhere(
-                  (s) => s["id"]?.toString() == _selectedStaffId,
-                  orElse: () => widget.staffList.first,
-                )["name"]?.toString() ??
+              : (widget.staffList
+                      .firstWhere(
+                        (s) => s["id"]?.toString() == _selectedStaffId,
+                        orElse: () => widget.staffList.first,
+                      )["name"]
+                      ?.toString() ??
                   names.first),
           title: "Assign To Staff",
           onSelected: (name) {
@@ -1166,8 +1158,7 @@ class _CupertinoVerifyAssignTrainSheetState
             padding: const EdgeInsets.only(top: 4, left: 4),
             child: Text(error,
                 style: const TextStyle(
-                    fontSize: 12,
-                    color: CupertinoColors.destructiveRed)),
+                    fontSize: 12, color: CupertinoColors.destructiveRed)),
           ),
       ],
     );
@@ -1279,8 +1270,7 @@ class _CupertinoTrainPreviewSheet extends StatelessWidget {
                     "${r["trainNumber"] ?? ""} ${r["trainName"] ?? ""}".trim()),
                 _kv("Route",
                     "${r["fromStation"] ?? "—"} → ${r["toStation"] ?? "—"}"),
-                _kv("Date of Journey",
-                    _formatDate(r["dateOfJourney"])),
+                _kv("Date of Journey", _formatDate(r["dateOfJourney"])),
                 if ((r["referencedBy"] ?? "").toString().isNotEmpty)
                   _kv("Referenced By", r["referencedBy"].toString()),
                 if ((r["remarks"] ?? "").toString().isNotEmpty)
@@ -1288,8 +1278,8 @@ class _CupertinoTrainPreviewSheet extends StatelessWidget {
                 if (passengers.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const Text("Passengers",
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.bold)),
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   ...passengers.map((p) {
                     final m = Map<String, dynamic>.from(p);
@@ -1308,8 +1298,7 @@ class _CupertinoTrainPreviewSheet extends StatelessWidget {
                   }),
                 ],
                 const SizedBox(height: 12),
-                _kv("Created by",
-                    r["createdBy"]?["name"]?.toString() ?? "—"),
+                _kv("Created by", r["createdBy"]?["name"]?.toString() ?? "—"),
                 _kv("Created at", _formatDateTime(r["createdAt"])),
                 if (r["approvedAt"] != null) ...[
                   _kv("Approved by",
@@ -1317,8 +1306,7 @@ class _CupertinoTrainPreviewSheet extends StatelessWidget {
                   _kv("Approved at", _formatDateTime(r["approvedAt"])),
                 ],
                 if ((r["rejectionReason"] ?? "").toString().isNotEmpty)
-                  _kv("Rejection Reason",
-                      r["rejectionReason"].toString()),
+                  _kv("Rejection Reason", r["rejectionReason"].toString()),
                 const SizedBox(height: 18),
                 Container(height: 0.5, color: CupertinoColors.systemGrey4),
                 const SizedBox(height: 8),
@@ -1360,8 +1348,8 @@ class _CupertinoTrainPreviewSheet extends StatelessWidget {
           ),
           Expanded(
             child: Text(value,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w500)),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
           ),
         ],
       ),
@@ -1397,8 +1385,8 @@ class _CupertinoTrainPreviewSheet extends StatelessWidget {
       decoration:
           BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
       child: Text(text,
-          style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.bold, color: fg)),
+          style:
+              TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: fg)),
     );
   }
 

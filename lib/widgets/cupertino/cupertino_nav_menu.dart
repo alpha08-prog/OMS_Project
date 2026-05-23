@@ -49,83 +49,84 @@ class CupertinoNavMenu extends StatelessWidget {
           ),
           Expanded(
             child: ListView(
-          children: [
-            // User profile header
-            Container(
-              padding: const EdgeInsets.all(20),
-              margin: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: AppTheme.primaryGradient,
-                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              ),
-              child: Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 28,
-                    backgroundColor: CupertinoColors.white,
-                    child: Icon(CupertinoIcons.person_fill,
-                        size: 30, color: AppTheme.primaryIndigo),
+              children: [
+                // User profile header
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.primaryGradient,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusLg),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
+                    children: [
+                      const CircleAvatar(
+                        radius: 28,
+                        backgroundColor: CupertinoColors.white,
+                        child: Icon(CupertinoIcons.person_fill,
+                            size: 30, color: AppTheme.primaryIndigo),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              userName,
+                              style: const TextStyle(
+                                color: CupertinoColors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "Role: $role",
+                              style: const TextStyle(
+                                  color: CupertinoColors.systemGrey5,
+                                  fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                if (isSuperAdmin)
+                  ..._buildSuperAdminMenu(context)
+                else if (isAdmin)
+                  ..._buildAdminMenu(context)
+                else if (isStaff)
+                  ..._buildStaffMenu(context)
+                else
+                  ..._buildDefaultMenu(context),
+
+                // Logout
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: CupertinoButton(
+                    color: AppTheme.destructiveRed,
+                    onPressed: () {
+                      Navigator.pop(context);
+                      onLogout();
+                    },
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          userName,
-                          style: const TextStyle(
-                            color: CupertinoColors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Role: $role",
-                          style: const TextStyle(
-                              color: CupertinoColors.systemGrey5, fontSize: 13),
-                        ),
+                        Icon(CupertinoIcons.square_arrow_right,
+                            color: CupertinoColors.white),
+                        SizedBox(width: 8),
+                        Text('Logout',
+                            style: TextStyle(color: CupertinoColors.white)),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-
-            if (isSuperAdmin)
-              ..._buildSuperAdminMenu(context)
-            else if (isAdmin)
-              ..._buildAdminMenu(context)
-            else if (isStaff)
-              ..._buildStaffMenu(context)
-            else
-              ..._buildDefaultMenu(context),
-
-            // Logout
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: CupertinoButton(
-                color: AppTheme.destructiveRed,
-                onPressed: () {
-                  Navigator.pop(context);
-                  onLogout();
-                },
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(CupertinoIcons.square_arrow_right,
-                        color: CupertinoColors.white),
-                    SizedBox(width: 8),
-                    Text('Logout',
-                        style: TextStyle(color: CupertinoColors.white)),
-                  ],
                 ),
-              ),
-            ),
 
-            const SizedBox(height: 32),
-          ],
-        ),
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ],
       ),
@@ -159,10 +160,13 @@ class CupertinoNavMenu extends StatelessWidget {
         children: [
           _menuTile(context, CupertinoIcons.square_grid_2x2_fill, 'Dashboard',
               () => Navigator.pop(context)),
-          _menuTile(
-              context, CupertinoIcons.checkmark_square, 'My Tasks', () {
+          _menuTile(context, CupertinoIcons.checkmark_square, 'My Tasks', () {
             Navigator.pop(context);
             AppNavigator.toStaffTasks(context);
+          }),
+          _menuTile(context, CupertinoIcons.calendar, 'My Attendance', () {
+            Navigator.pop(context);
+            AppNavigator.toMyAttendance(context);
           }),
           _menuTile(context, CupertinoIcons.clock, 'My History', () {
             Navigator.pop(context);
@@ -180,8 +184,7 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toBirthday(context, role: role);
           }),
-          _menuTile(
-              context, CupertinoIcons.train_style_one, 'Train EQ Request',
+          _menuTile(context, CupertinoIcons.train_style_one, 'Train EQ Request',
               () {
             Navigator.pop(context);
             AppNavigator.toTrainRequestAdd(context, role: role);
@@ -228,18 +231,18 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toActionCenter(context, role: role);
           }),
-          _menuTile(
-              context, CupertinoIcons.chart_bar_alt_fill, 'Task Tracker', () {
+          _menuTile(context, CupertinoIcons.chart_bar_alt_fill, 'Task Tracker',
+              () {
             Navigator.pop(context);
             AppNavigator.toTaskList(context, role: role);
           }),
-          _menuTile(
-              context, CupertinoIcons.checkmark_seal, 'Verify Grievances', () {
+          _menuTile(context, CupertinoIcons.checkmark_seal, 'Verify Grievances',
+              () {
             Navigator.pop(context);
             AppNavigator.toVerificationQueue(context);
           }),
-          _menuTile(
-              context, CupertinoIcons.train_style_one, 'Train EQ Queue', () {
+          _menuTile(context, CupertinoIcons.train_style_one, 'Train EQ Queue',
+              () {
             Navigator.pop(context);
             AppNavigator.toTrainQueue(context);
           }),
@@ -269,6 +272,10 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toPrintCenter(context);
           }),
+          _menuTile(context, CupertinoIcons.calendar, 'Staff Attendance', () {
+            Navigator.pop(context);
+            AppNavigator.toStaffAttendance(context);
+          }),
           _menuTile(context, CupertinoIcons.time, 'Action History', () {
             Navigator.pop(context);
             AppNavigator.toActionHistory(context);
@@ -276,6 +283,10 @@ class CupertinoNavMenu extends StatelessWidget {
           _menuTile(context, CupertinoIcons.person_circle, 'My Profile', () {
             Navigator.pop(context);
             AppNavigator.toMyProfile(context);
+          }),
+          _menuTile(context, CupertinoIcons.person_2, 'User Management', () {
+            Navigator.pop(context);
+            AppNavigator.toUserManagement(context);
           }),
           _menuTile(context, CupertinoIcons.group, 'About Team', () {
             Navigator.pop(context);
@@ -305,8 +316,8 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toBirthday(context, role: role);
           }),
-          _menuTile(
-              context, CupertinoIcons.train_style_one, 'Train Requests', () {
+          _menuTile(context, CupertinoIcons.train_style_one, 'Train Requests',
+              () {
             Navigator.pop(context);
             AppNavigator.toTrainRequestList(context, role: role);
           }),
@@ -326,33 +337,36 @@ class CupertinoNavMenu extends StatelessWidget {
         CupertinoListSection.insetGrouped(
           header: const Text('ADMIN'),
           children: [
-            _menuTile(
-                context, CupertinoIcons.square_grid_2x2, 'Action Center', () {
+            _menuTile(context, CupertinoIcons.square_grid_2x2, 'Action Center',
+                () {
               Navigator.pop(context);
               AppNavigator.toActionCenter(context, role: role);
             }),
-            _menuTile(context, CupertinoIcons.building_2_fill,
-                'Office Grievance', () {
+            _menuTile(
+                context, CupertinoIcons.building_2_fill, 'Office Grievance',
+                () {
               Navigator.pop(context);
               AppNavigator.toOfficeGrievanceCreate(context);
             }),
-            _menuTile(context, CupertinoIcons.checkmark_seal,
-                'Verification Queue', () {
+            _menuTile(
+                context, CupertinoIcons.checkmark_seal, 'Verification Queue',
+                () {
               Navigator.pop(context);
               AppNavigator.toVerificationQueue(context);
             }),
-            _menuTile(
-                context, CupertinoIcons.train_style_one, 'Train EQ Queue', () {
+            _menuTile(context, CupertinoIcons.train_style_one, 'Train EQ Queue',
+                () {
               Navigator.pop(context);
               AppNavigator.toTrainQueue(context);
             }),
-            _menuTile(context, CupertinoIcons.calendar_badge_plus,
-                'Tour Decisions', () {
+            _menuTile(
+                context, CupertinoIcons.calendar_badge_plus, 'Tour Decisions',
+                () {
               Navigator.pop(context);
               AppNavigator.toTourQueue(context);
             }),
-            _menuTile(
-                context, CupertinoIcons.checkmark_square, 'Task Tracker', () {
+            _menuTile(context, CupertinoIcons.checkmark_square, 'Task Tracker',
+                () {
               Navigator.pop(context);
               AppNavigator.toTaskList(context, role: role);
             }),
@@ -368,8 +382,7 @@ class CupertinoNavMenu extends StatelessWidget {
               Navigator.pop(context);
               AppNavigator.toPrintCenter(context);
             }),
-            _menuTile(
-                context, CupertinoIcons.person_2, 'User Management', () {
+            _menuTile(context, CupertinoIcons.person_2, 'User Management', () {
               Navigator.pop(context);
               AppNavigator.toUserManagement(context);
             }),
@@ -381,8 +394,7 @@ class CupertinoNavMenu extends StatelessWidget {
         CupertinoListSection.insetGrouped(
           header: const Text('MY WORK'),
           children: [
-            _menuTile(
-                context, CupertinoIcons.checkmark_square, 'My Tasks', () {
+            _menuTile(context, CupertinoIcons.checkmark_square, 'My Tasks', () {
               Navigator.pop(context);
               AppNavigator.toStaffTasks(context);
             }),

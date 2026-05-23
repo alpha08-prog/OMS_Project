@@ -314,7 +314,8 @@ class _TourProgramListPageState extends State<TourProgramListPage>
 
   @override
   Widget build(BuildContext context) {
-    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
+    final canCreate = AccessControl.can(widget.role, ActionPermission.create) &&
+        widget.role != Roles.admin;
 
     return Scaffold(
       backgroundColor: bgLight,

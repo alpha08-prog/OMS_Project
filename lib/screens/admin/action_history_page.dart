@@ -29,6 +29,7 @@ class _ActionHistoryPageState extends State<ActionHistoryPage> {
   static const List<_Opt> _typeOptions = [
     _Opt('All', 'All Types'),
     _Opt('GRIEVANCE', 'Grievance'),
+    _Opt('TEMPLE_VISIT', 'Temple Visit'),
     _Opt('TRAIN_REQUEST', 'Train Request'),
     _Opt('TOUR_PROGRAM', 'Tour Program'),
   ];
@@ -77,7 +78,15 @@ class _ActionHistoryPageState extends State<ActionHistoryPage> {
     }
     try {
       final params = <String, String>{'limit': '100'};
-      if (_typeFilter != 'All') params['type'] = _typeFilter;
+      // Backend `type` filter only knows GRIEVANCE / TRAIN_REQUEST /
+      // TOUR_PROGRAM. The Temple Visit option is a subset of GRIEVANCE rows,
+      // narrowed client-side below using `details.grievanceType`.
+      final isTempleFilter = _typeFilter == 'TEMPLE_VISIT';
+      if (isTempleFilter) {
+        params['type'] = 'GRIEVANCE';
+      } else if (_typeFilter != 'All') {
+        params['type'] = _typeFilter;
+      }
       if (_actionFilter != 'All') params['action'] = _actionFilter;
       if (_fromDate != null) {
         params['startDate'] = _fromDate!.toIso8601String();
@@ -96,10 +105,20 @@ class _ActionHistoryPageState extends State<ActionHistoryPage> {
             ? decoded
             : (decoded is Map && decoded['data'] is List ? decoded['data'] : []);
         if (mounted) {
+          var items = list
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+              .toList();
+          if (isTempleFilter) {
+            items = items.where((it) {
+              final details = it['details'];
+              if (details is Map) {
+                return details['grievanceType'] == 'TEMPLE_VISIT';
+              }
+              return false;
+            }).toList();
+          }
           setState(() {
-            _items = list
-                .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-                .toList();
+            _items = items;
             _loadingList = false;
           });
         }
@@ -1133,6 +1152,73 @@ class _ActionHistoryPageState extends State<ActionHistoryPage> {
 
   // ============ DETAIL SHEET ============
 
+  /// Admin-only action: flips a RESOLVED grievance back to OPEN by calling
+  /// PATCH /api/grievances/:id/status. This is the **only** entry point for
+  /// re-opening a grievance — the view page no longer exposes a status
+  /// toggle. Closes the detail sheet and refreshes the history list on
+  /// success.
+  Future<void> _reopenGrievance(BuildContext sheetCtx, String id) async {
+    if (id.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Missing grievance ID')),
+      );
+      return;
+    }
+    final confirm = await showDialog<bool>(
+      context: sheetCtx,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reopen Grievance?'),
+        content: const Text(
+          'This will move the grievance back to OPEN status and make it editable again. Continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.saffron,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Reopen'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final res = await HttpService.patch(
+        '/api/grievances/$id/status',
+        {'status': 'OPEN'},
+      );
+      if (!mounted) return;
+      if (res.statusCode == 200) {
+        if (Navigator.of(sheetCtx).canPop()) Navigator.pop(sheetCtx);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Grievance reopened')),
+        );
+        await Future.wait([_fetchStats(), _fetchHistory()]);
+      } else {
+        String msg = 'Failed to reopen (${res.statusCode})';
+        try {
+          final data = jsonDecode(res.body);
+          msg = data['message'] ?? msg;
+        } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Server error / No internet')),
+      );
+    }
+  }
+
   void _showDetailSheet(Map<String, dynamic> item) {
     final type = (item['type'] ?? '').toString();
     final typeMeta = _typeMeta(type);
@@ -1281,22 +1367,49 @@ class _ActionHistoryPageState extends State<ActionHistoryPage> {
                 top: false,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryIndigo,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                  child: Row(
+                    children: [
+                      if (type == 'GRIEVANCE' &&
+                          status.toUpperCase() == 'RESOLVED')
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _reopenGrievance(
+                                ctx, (item['id'] ?? '').toString()),
+                            icon: const Icon(Icons.restart_alt, size: 18),
+                            label: const Text('Reopen Grievance'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.saffron,
+                              foregroundColor: Colors.black,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 13),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (type == 'GRIEVANCE' &&
+                          status.toUpperCase() == 'RESOLVED')
+                        const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryIndigo,
+                            foregroundColor: Colors.white,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 13),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text('Close',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                       ),
-                      child: const Text('Close',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
+                    ],
                   ),
                 ),
               ),

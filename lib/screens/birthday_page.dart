@@ -957,9 +957,26 @@ class __AddBirthdaySheetState extends State<_AddBirthdaySheet> {
   final relationController = TextEditingController();
   final designationController = TextEditingController();
   final notesController = TextEditingController();
+  final wardVillageController = TextEditingController();
 
+  String? selectedConstituency;
   DateTime? selectedDate;
   bool submitting = false;
+
+  // Canonical Dharwad constituency list — AC numbers included so downstream
+  // exports preserve official numbering. Must stay in sync with the deployed
+  // web app (OMS_Project-main/frontend/src/lib/constituencies.ts).
+  static const List<String> _constituencies = [
+    'Navalagund 69',
+    'Kundagol 70',
+    'Dharwad 71',
+    'Hubli-Dharwad East 72',
+    'Hubli-Dharwad Central 73',
+    'Dharwad West 74',
+    'Kalaghatagi 75',
+    'Shiggaon 83',
+    'Out of Constituency',
+  ];
 
   @override
   void dispose() {
@@ -969,6 +986,7 @@ class __AddBirthdaySheetState extends State<_AddBirthdaySheet> {
     relationController.dispose();
     designationController.dispose();
     notesController.dispose();
+    wardVillageController.dispose();
     super.dispose();
   }
 
@@ -1011,14 +1029,21 @@ class __AddBirthdaySheetState extends State<_AddBirthdaySheet> {
           ? "${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}"
           : "";
 
-      final res = await HttpService.post("/api/birthdays", {
+      final body = <String, dynamic>{
         "name": nameController.text.trim(),
         "phone": phoneController.text.trim(),
         "dob": dobFormatted,
         "relation": relationController.text.trim(),
         "designation": designationController.text.trim(),
         "notes": notesController.text.trim(),
-      });
+      };
+      if (selectedConstituency != null && selectedConstituency!.isNotEmpty) {
+        body["constituency"] = selectedConstituency;
+      }
+      final ward = wardVillageController.text.trim();
+      if (ward.isNotEmpty) body["wardVillage"] = ward;
+
+      final res = await HttpService.post("/api/birthdays", body);
 
       if (res.statusCode == 201 || res.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1133,6 +1158,39 @@ class __AddBirthdaySheetState extends State<_AddBirthdaySheet> {
                   labelText: "Designation (optional)",
                   prefixIcon: const Icon(Icons.work),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              DropdownButtonFormField<String>(
+                value: selectedConstituency,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: "Constituency",
+                  prefixIcon: const Icon(Icons.location_on),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+                hint: const Text("Select constituency"),
+                items: _constituencies
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) => setState(() => selectedConstituency = v),
+              ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: wardVillageController,
+                decoration: InputDecoration(
+                  labelText: "Ward / Village",
+                  hintText: "Enter ward or village",
+                  prefixIcon: const Icon(Icons.home_work_outlined),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   filled: true,
                   fillColor: Colors.grey.shade50,
                 ),
