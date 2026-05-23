@@ -1087,7 +1087,9 @@ class __CupertinoAddBirthdaySheetState
   final relationController = TextEditingController();
   final designationController = TextEditingController();
   final notesController = TextEditingController();
+  final wardVillageController = TextEditingController();
 
+  String? selectedConstituency;
   DateTime? selectedDate;
   bool submitting = false;
 
@@ -1095,6 +1097,21 @@ class __CupertinoAddBirthdaySheetState
   String? phoneError;
   String? dobError;
   String? relationError;
+
+  // Canonical Dharwad constituency list — AC numbers included so downstream
+  // exports preserve official numbering. Must stay in sync with the deployed
+  // web app (OMS_Project-main/frontend/src/lib/constituencies.ts).
+  static const List<String> _constituencies = [
+    'Navalagund 69',
+    'Kundagol 70',
+    'Dharwad 71',
+    'Hubli-Dharwad East 72',
+    'Hubli-Dharwad Central 73',
+    'Dharwad West 74',
+    'Kalaghatagi 75',
+    'Shiggaon 83',
+    'Out of Constituency',
+  ];
 
   @override
   void dispose() {
@@ -1104,6 +1121,7 @@ class __CupertinoAddBirthdaySheetState
     relationController.dispose();
     designationController.dispose();
     notesController.dispose();
+    wardVillageController.dispose();
     super.dispose();
   }
 
@@ -1159,14 +1177,21 @@ class __CupertinoAddBirthdaySheetState
           ? "${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}"
           : "";
 
-      final res = await HttpService.post("/api/birthdays", {
+      final body = <String, dynamic>{
         "name": nameController.text.trim(),
         "phone": phoneController.text.trim(),
         "dob": dobFormatted,
         "relation": relationController.text.trim(),
         "designation": designationController.text.trim(),
         "notes": notesController.text.trim(),
-      });
+      };
+      if (selectedConstituency != null && selectedConstituency!.isNotEmpty) {
+        body["constituency"] = selectedConstituency;
+      }
+      final ward = wardVillageController.text.trim();
+      if (ward.isNotEmpty) body["wardVillage"] = ward;
+
+      final res = await HttpService.post("/api/birthdays", body);
 
       if (res.statusCode == 201 || res.statusCode == 200) {
         CupertinoToast.show(context, "Birthday added");
@@ -1272,6 +1297,13 @@ class __CupertinoAddBirthdaySheetState
                 "Designation (optional)", CupertinoIcons.briefcase, null),
             const SizedBox(height: 12),
 
+            _constituencyField(),
+            const SizedBox(height: 12),
+
+            _buildField(wardVillageController, "Ward / Village",
+                CupertinoIcons.house, null),
+            const SizedBox(height: 12),
+
             CupertinoTextField(
               controller: notesController,
               placeholder: "Notes (optional)",
@@ -1316,6 +1348,62 @@ class __CupertinoAddBirthdaySheetState
                       ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _constituencyField() {
+    return GestureDetector(
+      onTap: () {
+        CupertinoFormHelpers.showPicker(
+          context: context,
+          items: _constituencies,
+          currentValue: selectedConstituency ?? _constituencies.first,
+          title: 'Constituency',
+          onSelected: (v) => setState(() => selectedConstituency = v),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppTheme.backgroundAlt,
+          border: Border.all(color: AppTheme.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(CupertinoIcons.location_solid,
+                color: AppTheme.muted, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Constituency',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    selectedConstituency ?? 'Tap to select',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: selectedConstituency != null
+                          ? CupertinoColors.black
+                          : CupertinoColors.systemGrey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(CupertinoIcons.chevron_down,
+                size: 16, color: CupertinoColors.systemGrey),
           ],
         ),
       ),

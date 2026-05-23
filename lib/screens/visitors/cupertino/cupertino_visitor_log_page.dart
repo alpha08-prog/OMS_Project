@@ -21,16 +21,34 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
   final phoneController = TextEditingController();
   final purposeController = TextEditingController();
   final referencedByController = TextEditingController();
+  final wardVillageController = TextEditingController();
 
+  String? _selectedConstituency;
   DateTime? _dob;
 
   bool _submitting = false;
   int _logged = 0;
 
+  // Canonical Dharwad constituency list — AC numbers included so downstream
+  // exports preserve official numbering. Must stay in sync with the deployed
+  // web app (OMS_Project-main/frontend/src/lib/constituencies.ts).
+  static const List<String> _constituencies = [
+    'Navalagund 69',
+    'Kundagol 70',
+    'Dharwad 71',
+    'Hubli-Dharwad East 72',
+    'Hubli-Dharwad Central 73',
+    'Dharwad West 74',
+    'Kalaghatagi 75',
+    'Shiggaon 83',
+    'Out of Constituency',
+  ];
+
   String? _nameError;
   String? _designationError;
   String? _phoneError;
   String? _purposeError;
+  String? _referencedByError;
 
   @override
   void dispose() {
@@ -39,6 +57,7 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
     phoneController.dispose();
     purposeController.dispose();
     referencedByController.dispose();
+    wardVillageController.dispose();
     super.dispose();
   }
 
@@ -75,6 +94,13 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
       _purposeError = null;
     }
 
+    if (referencedByController.text.trim().isEmpty) {
+      _referencedByError = "Referenced By is required";
+      ok = false;
+    } else {
+      _referencedByError = null;
+    }
+
     setState(() {});
     return ok;
   }
@@ -85,12 +111,15 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
     phoneController.clear();
     purposeController.clear();
     referencedByController.clear();
+    wardVillageController.clear();
     setState(() {
       _dob = null;
+      _selectedConstituency = null;
       _nameError = null;
       _designationError = null;
       _phoneError = null;
       _purposeError = null;
+      _referencedByError = null;
     });
   }
 
@@ -114,6 +143,12 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
 
       final referencedBy = referencedByController.text.trim();
       if (referencedBy.isNotEmpty) body["referencedBy"] = referencedBy;
+
+      if (_selectedConstituency != null && _selectedConstituency!.isNotEmpty) {
+        body["constituency"] = _selectedConstituency;
+      }
+      final ward = wardVillageController.text.trim();
+      if (ward.isNotEmpty) body["wardVillage"] = ward;
 
       final res = await HttpService.post("/api/visitors", body);
 
@@ -200,6 +235,14 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
                 ),
                 const SizedBox(height: 12),
                 _dobField(),
+                const SizedBox(height: 12),
+                _constituencyField(),
+                const SizedBox(height: 12),
+                _textField(
+                  controller: wardVillageController,
+                  placeholder: "Ward / Village",
+                  prefixIcon: CupertinoIcons.house,
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -215,8 +258,9 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
                 const SizedBox(height: 12),
                 _textField(
                   controller: referencedByController,
-                  placeholder: "Referenced By (optional)",
+                  placeholder: "Referenced By *",
                   prefixIcon: CupertinoIcons.person_2,
+                  error: _referencedByError,
                 ),
               ],
             ),
@@ -375,6 +419,62 @@ class _CupertinoVisitorLogPageState extends State<CupertinoVisitorLogPage> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _constituencyField() {
+    return GestureDetector(
+      onTap: () {
+        CupertinoFormHelpers.showPicker(
+          context: context,
+          items: _constituencies,
+          currentValue: _selectedConstituency ?? _constituencies.first,
+          title: 'Constituency',
+          onSelected: (v) => setState(() => _selectedConstituency = v),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemGrey6,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: CupertinoColors.systemGrey4),
+        ),
+        child: Row(
+          children: [
+            const Icon(CupertinoIcons.location_solid,
+                color: CupertinoColors.systemGrey, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Constituency',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _selectedConstituency ?? 'Tap to select',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: _selectedConstituency != null
+                          ? CupertinoColors.black
+                          : CupertinoColors.systemGrey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(CupertinoIcons.chevron_down,
+                size: 16, color: CupertinoColors.systemGrey),
+          ],
+        ),
+      ),
     );
   }
 

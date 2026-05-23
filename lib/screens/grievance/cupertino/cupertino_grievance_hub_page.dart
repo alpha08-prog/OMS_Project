@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../../theme/app_theme.dart';
-import 'cupertino_grievance_create_page.dart';
+import 'cupertino_grievance_type_picker_page.dart';
 import 'cupertino_office_grievance_create_page.dart';
 import 'cupertino_grievance_list_page.dart';
 
@@ -48,7 +48,7 @@ class CupertinoGrievanceHubPage extends StatelessWidget {
                   context,
                   CupertinoPageRoute(
                     builder: (_) =>
-                        CupertinoGrievanceCreatePage(role: role),
+                        CupertinoGrievanceTypePickerPage(role: role),
                   ),
                 );
               },

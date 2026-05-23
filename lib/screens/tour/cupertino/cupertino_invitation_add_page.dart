@@ -39,6 +39,7 @@ class _CupertinoInvitationAddPageState
   String? _eventNameError;
   String? _organizerError;
   String? _venueError;
+  String? _referencedByError;
 
   static const int _maxFileBytes = 10 * 1024 * 1024;
   static const List<String> _allowedExtensions = ['pdf', 'png', 'jpg', 'jpeg'];
@@ -72,6 +73,11 @@ class _CupertinoInvitationAddPageState
     _venueError =
         venueController.text.trim().isEmpty ? "Venue is required" : null;
     if (_venueError != null) ok = false;
+
+    _referencedByError = referencedByController.text.trim().isEmpty
+        ? "Referenced By is required"
+        : null;
+    if (_referencedByError != null) ok = false;
 
     setState(() {});
     return ok;
@@ -292,8 +298,9 @@ class _CupertinoInvitationAddPageState
                 const SizedBox(height: 12),
                 _textField(
                   controller: referencedByController,
-                  placeholder: "Referenced By (optional)",
+                  placeholder: "Referenced By *",
                   prefixIcon: CupertinoIcons.person_2,
+                  error: _referencedByError,
                 ),
               ],
             ),

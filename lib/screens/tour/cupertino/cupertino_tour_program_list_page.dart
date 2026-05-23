@@ -599,7 +599,8 @@ class _CupertinoTourProgramListPageState
   @override
   Widget build(BuildContext context) {
     final canCreate =
-        AccessControl.can(widget.role, ActionPermission.create);
+        AccessControl.can(widget.role, ActionPermission.create) &&
+            widget.role != Roles.admin;
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,

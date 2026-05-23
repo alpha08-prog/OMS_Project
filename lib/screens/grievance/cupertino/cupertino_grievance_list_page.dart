@@ -14,6 +14,7 @@ import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_admin_grievance_detail_dialog.dart';
+import 'cupertino_grievance_type_picker_page.dart';
 
 class CupertinoGrievanceListPage extends StatefulWidget {
   final String role;
@@ -219,15 +220,24 @@ class _CupertinoGrievanceListPageState
     if (id.isEmpty) return;
     if (_downloadingIds.contains(id)) return;
 
+    // TEMPLE_VISIT uses a dedicated endpoint that streams the Darshan
+    // letter and atomically marks the grievance RESOLVED — so the status
+    // flips only once staff actually downloads.
+    final isTempleVisit = grievance['grievanceType'] == 'TEMPLE_VISIT';
+    final endpoint = isTempleVisit
+        ? "/api/pdf/grievance/$id/temple-visit"
+        : "/api/pdf/grievance/$id";
+    final fileName =
+        isTempleVisit ? "Darshan_Letter_$id.pdf" : "grievance_$id.pdf";
+
     setState(() => _downloadingIds.add(id));
 
     try {
-      final res =
-          await HttpService.downloadFile("/api/pdf/grievance/$id");
+      final res = await HttpService.downloadFile(endpoint);
 
       if (res.statusCode == 200) {
         final dir = await getTemporaryDirectory();
-        final file = File("${dir.path}/grievance_$id.pdf");
+        final file = File("${dir.path}/$fileName");
         await file.writeAsBytes(res.bodyBytes);
 
         final result = await OpenFilex.open(file.path);
@@ -236,7 +246,11 @@ class _CupertinoGrievanceListPageState
           CupertinoToast.show(context,
               "Could not open PDF: ${result.message}",
               isError: true);
+        } else if (isTempleVisit) {
+          CupertinoToast.show(
+              context, "Letter downloaded. Grievance resolved.");
         }
+        if (isTempleVisit) _fetchGrievances();
       } else {
         if (!mounted) return;
         CupertinoToast.show(context,
@@ -259,20 +273,31 @@ class _CupertinoGrievanceListPageState
     );
   }
 
-  void _openCreate() {
-    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
+  Future<void> _openCreate() async {
+    final canCreate = AccessControl.can(widget.role, ActionPermission.create) &&
+        widget.role != Roles.superAdmin;
 
     if (!canCreate) {
       CupertinoToast.show(context, "You have view-only access.", isError: true);
       return;
     }
 
-    AppNavigator.toGrievanceCreate(context, role: widget.role);
+    final result = await Navigator.push<bool>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => CupertinoGrievanceTypePickerPage(
+          role: widget.role,
+          onCreated: () => _fetchGrievances(),
+        ),
+      ),
+    );
+    if (result == true) _fetchGrievances();
   }
 
   @override
   Widget build(BuildContext context) {
-    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
+    final canCreate = AccessControl.can(widget.role, ActionPermission.create) &&
+        widget.role != Roles.superAdmin;
     final hasFilters = _startDate != null ||
         _endDate != null ||
         _searchQuery.isNotEmpty ||

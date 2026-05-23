@@ -143,6 +143,10 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toStaffTasks(context);
           }),
+          _menuTile(context, CupertinoIcons.calendar, 'My Attendance', () {
+            Navigator.pop(context);
+            AppNavigator.toMyAttendance(context);
+          }),
           _menuTile(context, CupertinoIcons.clock, 'My History', () {
             Navigator.pop(context);
             AppNavigator.toStaffHistory(context);
@@ -244,9 +248,17 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toPrintCenter(context);
           }),
+          _menuTile(context, CupertinoIcons.calendar, 'Staff Attendance', () {
+            Navigator.pop(context);
+            AppNavigator.toStaffAttendance(context);
+          }),
           _menuTile(context, CupertinoIcons.time, 'Action History', () {
             Navigator.pop(context);
             AppNavigator.toActionHistory(context);
+          }),
+          _menuTile(context, CupertinoIcons.person_2, 'User Management', () {
+            Navigator.pop(context);
+            AppNavigator.toUserManagement(context);
           }),
           _menuTile(context, CupertinoIcons.group, 'About Team', () {
             Navigator.pop(context);

@@ -24,9 +24,11 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
 
   bool _loadingGrievances = true;
   bool _loadingTrainRequests = true;
+  bool _loadingTempleVisits = true;
 
   List<Map<String, dynamic>> _verifiedGrievances = [];
   List<Map<String, dynamic>> _approvedTrainRequests = [];
+  List<Map<String, dynamic>> _templeVisits = [];
 
   DateTime? _tourStartDate;
   DateTime? _tourEndDate;
@@ -36,22 +38,41 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
     super.initState();
     _fetchGrievances();
     _fetchTrainRequests();
+    _fetchTempleVisits();
   }
 
   Future<void> _fetchGrievances() async {
     setState(() => _loadingGrievances = true);
     try {
       final res =
-          await HttpService.get("/api/grievances?status=VERIFIED&limit=100");
+          await HttpService.get("/api/grievances?isVerified=true&limit=100");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
+        // Temple-visit grievances live in their own segment.
         _verifiedGrievances = list
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .where((g) => g['grievanceType'] != 'TEMPLE_VISIT')
             .toList();
       }
     } catch (_) {}
     if (mounted) setState(() => _loadingGrievances = false);
+  }
+
+  Future<void> _fetchTempleVisits() async {
+    setState(() => _loadingTempleVisits = true);
+    try {
+      final res = await HttpService.get(
+          "/api/grievances?grievanceType=TEMPLE_VISIT&limit=100");
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
+        _templeVisits = list
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loadingTempleVisits = false);
   }
 
   Future<void> _fetchTrainRequests() async {
@@ -176,17 +197,20 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
                 groupValue: _selectedSegment,
                 children: const {
                   0: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Text("Grievances", style: TextStyle(fontSize: 13)),
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Text("Grievance", style: TextStyle(fontSize: 12)),
                   ),
                   1: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Text("Train EQ", style: TextStyle(fontSize: 13)),
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Text("Temple", style: TextStyle(fontSize: 12)),
                   ),
                   2: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child:
-                        Text("Tour Program", style: TextStyle(fontSize: 13)),
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Text("Train", style: TextStyle(fontSize: 12)),
+                  ),
+                  3: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Text("Tour", style: TextStyle(fontSize: 12)),
                   ),
                 },
                 onValueChanged: (value) {
@@ -201,8 +225,10 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
               child: _selectedSegment == 0
                   ? _buildGrievanceTab()
                   : _selectedSegment == 1
-                      ? _buildTrainTab()
-                      : _buildTourTab(),
+                      ? _buildTempleVisitTab()
+                      : _selectedSegment == 2
+                          ? _buildTrainTab()
+                          : _buildTourTab(),
             ),
           ],
         ),
@@ -291,6 +317,85 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
               "train_eq_${r['id'].toString().substring(0, 8)}.pdf"),
           onPreview: () => _previewHTML(
               "/api/pdf/train-eq/${r['id']}/preview", "Train EQ Letter"),
+        );
+      },
+    );
+  }
+
+  Widget _buildTempleVisitTab() {
+    if (_loadingTempleVisits) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+    if (_templeVisits.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(CupertinoIcons.building_2_fill,
+                size: 64, color: CupertinoColors.systemGrey4),
+            const SizedBox(height: 16),
+            Text("No temple-visit grievances",
+                style: TextStyle(color: CupertinoColors.systemGrey)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _templeVisits.length,
+      itemBuilder: (_, i) {
+        final g = _templeVisits[i];
+        final id = g['id'].toString();
+        final shortId = id.length > 8 ? id.substring(0, 8) : id;
+        final temple = (g['templeKey']?.toString() ?? '').trim();
+        final status = (g['status']?.toString() ?? '').toUpperCase();
+
+        String visitRange = '';
+        try {
+          final from = g['visitDateFrom']?.toString();
+          final to = g['visitDateTo']?.toString();
+          if (from != null && from.isNotEmpty) {
+            final fromStr =
+                DateFormat('dd MMM yyyy').format(DateTime.parse(from));
+            if (to != null && to.isNotEmpty) {
+              final toStr =
+                  DateFormat('dd MMM yyyy').format(DateTime.parse(to));
+              visitRange = '$fromStr → $toStr';
+            } else {
+              visitRange = fromStr;
+            }
+          }
+        } catch (_) {}
+
+        final subtitleParts = <String>[
+          if (temple.isNotEmpty) temple,
+          if (visitRange.isNotEmpty) visitRange,
+          if (g['constituency'] != null &&
+              (g['constituency'] as String).isNotEmpty)
+            g['constituency'].toString(),
+        ];
+
+        return _printCard(
+          title: g['petitionerName']?.toString() ?? '-',
+          subtitle: subtitleParts.isEmpty
+              ? 'Temple visit'
+              : subtitleParts.join(' • '),
+          icon: CupertinoIcons.building_2_fill,
+          iconColor: AppTheme.saffronDark,
+          badge: status,
+          onDownload: () async {
+            await _downloadPDF(
+              "/api/pdf/grievance/$id/temple-visit",
+              "Darshan_Letter_$shortId.pdf",
+            );
+            // Backend marks the grievance RESOLVED on a successful download.
+            await _fetchTempleVisits();
+          },
+          onPreview: () => _previewHTML(
+            "/api/pdf/grievance/$id/temple-visit/preview",
+            "Darshan Letter",
+          ),
         );
       },
     );
@@ -413,6 +518,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
     required Color iconColor,
     required VoidCallback onDownload,
     required VoidCallback onPreview,
+    String? badge,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -438,9 +544,17 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(title,
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.bold)),
+                    ),
+                    if (badge != null && badge.isNotEmpty)
+                      _statusPill(badge),
+                  ],
+                ),
                 Text(subtitle,
                     style: TextStyle(
                         fontSize: 12, color: CupertinoColors.systemGrey),
@@ -462,6 +576,49 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
                 color: AppTheme.primaryIndigo),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _statusPill(String status) {
+    final Color bg;
+    final Color fg;
+    switch (status) {
+      case 'RESOLVED':
+        bg = AppTheme.successGreen100;
+        fg = AppTheme.successGreen;
+        break;
+      case 'REJECTED':
+        bg = AppTheme.destructiveRed100;
+        fg = AppTheme.destructiveRed;
+        break;
+      case 'VERIFIED':
+        bg = AppTheme.primaryIndigo100;
+        fg = AppTheme.primaryIndigo;
+        break;
+      case 'IN_PROGRESS':
+        bg = AppTheme.warningAmber100;
+        fg = AppTheme.saffronDark;
+        break;
+      case 'OPEN':
+      default:
+        bg = AppTheme.warningAmber50;
+        fg = AppTheme.saffronDark;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        status.replaceAll('_', ' '),
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+          color: fg,
+          letterSpacing: 0.3,
+        ),
       ),
     );
   }

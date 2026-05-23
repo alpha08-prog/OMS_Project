@@ -14,7 +14,16 @@ const Color _kNewsBgLight = Color(0xFFF4F6FB);
 
 class CupertinoNewsListPage extends StatefulWidget {
   final String role;
-  const CupertinoNewsListPage({super.key, required this.role});
+
+  /// When set, the matching news item's detail sheet auto-opens on the
+  /// first frame after the list loads. Used for notification deep-links.
+  final String? highlightId;
+
+  const CupertinoNewsListPage({
+    super.key,
+    required this.role,
+    this.highlightId,
+  });
 
   @override
   State<CupertinoNewsListPage> createState() => _CupertinoNewsListPageState();
@@ -37,6 +46,9 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
   bool _showFilters = false;
 
   List<Map<String, dynamic>> newsList = [];
+
+  // One-shot guard so the deep-linked detail sheet only auto-opens once.
+  bool _highlightHandled = false;
 
   bool get _canSeeFilter =>
       widget.role == Roles.admin || widget.role == Roles.superAdmin;
@@ -103,6 +115,7 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
               .toList();
           loading = false;
         });
+        _maybeOpenHighlighted();
       } else {
         setState(() {
           error = "Failed to load news (${res.statusCode})";
@@ -179,6 +192,33 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
     } catch (_) {
       CupertinoToast.show(context, "Server error / No internet", isError: true);
     }
+  }
+
+  /// Notification deep-link: open the matching news item's detail sheet on
+  /// the first frame after the list loads. Falls back to a toast if the
+  /// item no longer exists.
+  void _maybeOpenHighlighted() {
+    if (_highlightHandled) return;
+    final id = widget.highlightId;
+    if (id == null || id.isEmpty) return;
+    _highlightHandled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Map<String, dynamic>? match;
+      for (final n in newsList) {
+        if (n['id']?.toString() == id) {
+          match = n;
+          break;
+        }
+      }
+      if (match != null) {
+        _openDetails(match);
+      } else {
+        CupertinoToast.show(
+            context, 'That news item is no longer available',
+            isError: true);
+      }
+    });
   }
 
   void _openDetails(Map<String, dynamic> item) {

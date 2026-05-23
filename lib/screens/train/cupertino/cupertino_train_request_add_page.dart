@@ -1,12 +1,20 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/access_control.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
+/// Train EQ (Emergency Quota) request form — Cupertino variant.
+///
+/// Mirrors the deployed web layout (2026-05-22) — one primary passenger + an
+/// "Additional Travellers" count, no per-extra-row fields. Cap = 6 total
+/// passengers per PNR (1 primary + up to 5 additional).
 class CupertinoTrainRequestAddPage extends StatefulWidget {
   final String role;
   final Future<void> Function()? onCreated;
@@ -26,78 +34,75 @@ class _CupertinoTrainRequestAddPageState
     extends State<CupertinoTrainRequestAddPage> {
   static const Color primaryBlue = Color(0xFF0A2E5C);
   static const Color bgLight = Color(0xFFF4F6FB);
+  static const int _maxAdditional = 5;
 
-  // Controllers
+  // Primary passenger
+  final primaryNameController = TextEditingController();
+  final primaryAgeController = TextEditingController();
+  final primaryWaitlistController = TextEditingController();
+  String _primaryGender = '';
+
+  // Additional travellers
+  final additionalTravellersController = TextEditingController(text: '0');
+
+  // Contact + PNR + referenced
   final pnrController = TextEditingController();
+  final contactNumberController = TextEditingController();
+  final referencedByController = TextEditingController();
+
+  // Train
   final trainNameController = TextEditingController();
   final trainNumberController = TextEditingController();
   final fromStationController = TextEditingController();
   final toStationController = TextEditingController();
-  final contactNumberController = TextEditingController();
-  final referencedByController = TextEditingController();
-  final remarksController = TextEditingController();
-
   DateTime? dateOfJourney;
-  String selectedBookingType = 'GENERAL';
   String selectedClass = 'SL';
 
-  // Passengers
-  List<Map<String, dynamic>> passengers = [];
-
-  // State
   bool submitting = false;
   bool fetchingPNR = false;
-  bool _signatureAcknowledged = false;
 
   // Validation errors
+  String? _primaryNameError;
+  String? _ageError;
+  String? _additionalError;
+  String? _phoneError;
   String? _pnrError;
+  String? _referencedError;
   String? _fromError;
   String? _toError;
-  String? _passengersError;
 
-  final List<Map<String, String>> bookingTypes = [
-    {'value': 'GENERAL', 'label': 'General'},
-    {'value': 'TATKAL', 'label': 'Tatkal'},
-    {'value': 'PREMIUM_TATKAL', 'label': 'Premium Tatkal'},
-    {'value': 'LADIES', 'label': 'Ladies Quota'},
-    {'value': 'LOWER_BERTH', 'label': 'Lower Berth'},
-    {'value': 'DUTY_PASS', 'label': 'Duty Pass'},
+  final List<String> journeyClasses = const [
+    'SL',
+    '3A',
+    '2A',
+    '1A',
+    'CC',
+    'EC',
+    '2S',
+    'FC',
   ];
 
-  final List<String> journeyClasses = [
-    'SL', '3A', '2A', '1A', 'CC', 'EC', '2S', 'FC',
+  static const List<Map<String, String>> _genderOptions = [
+    {'value': '', 'label': 'Select'},
+    {'value': 'MALE', 'label': 'Male'},
+    {'value': 'FEMALE', 'label': 'Female'},
+    {'value': 'OTHER', 'label': 'Other'},
   ];
 
   @override
   void dispose() {
+    primaryNameController.dispose();
+    primaryAgeController.dispose();
+    primaryWaitlistController.dispose();
+    additionalTravellersController.dispose();
     pnrController.dispose();
+    contactNumberController.dispose();
+    referencedByController.dispose();
     trainNameController.dispose();
     trainNumberController.dispose();
     fromStationController.dispose();
     toStationController.dispose();
-    contactNumberController.dispose();
-    referencedByController.dispose();
-    remarksController.dispose();
     super.dispose();
-  }
-
-  void _addPassenger() {
-    setState(() {
-      passengers.add({
-        'name': '',
-        'age': '',
-        'gender': '',
-        'berthPreference': '',
-        'waitingList': '',
-      });
-      _passengersError = null;
-    });
-  }
-
-  void _removePassenger(int index) {
-    setState(() {
-      passengers.removeAt(index);
-    });
   }
 
   Future<void> _fetchPNRStatus() async {
@@ -135,20 +140,22 @@ class _CupertinoTrainRequestAddPageState
           }
 
           final passengerList = data["passengers"] as List? ?? [];
-          passengers = passengerList.map<Map<String, dynamic>>((p) {
-            final cs = (p["currentStatus"] ?? '').toString();
-            final bs = (p["bookingStatus"] ?? '').toString();
-            return {
-              'name': p["name"] ?? '',
-              'age': (p["age"] ?? '').toString(),
-              'gender': p["gender"] ?? '',
-              'berthPreference': '',
-              'bookingStatus': bs,
-              'currentStatus': cs,
-              'waitingList': cs.isNotEmpty ? cs : bs,
-            };
-          }).toList();
-          _passengersError = null;
+          if (passengerList.isNotEmpty) {
+            final p0 = passengerList.first as Map;
+            primaryNameController.text = (p0["name"] ?? '').toString();
+            primaryAgeController.text = (p0["age"] ?? '').toString();
+            final g = (p0["gender"] ?? '').toString().toUpperCase();
+            if (g == 'MALE' || g == 'FEMALE' || g == 'OTHER') {
+              _primaryGender = g;
+            }
+            final cs = (p0["currentStatus"] ?? '').toString();
+            final bs = (p0["bookingStatus"] ?? '').toString();
+            primaryWaitlistController.text = cs.isNotEmpty ? cs : bs;
+          }
+          final extra =
+              (passengerList.length > 1 ? passengerList.length - 1 : 0)
+                  .clamp(0, _maxAdditional);
+          additionalTravellersController.text = '$extra';
         });
 
         CupertinoToast.show(
@@ -158,102 +165,122 @@ class _CupertinoTrainRequestAddPageState
               : "PNR fetched successfully",
         );
       } else {
-        CupertinoToast.show(
-            context, "PNR fetch failed (${res.statusCode})",
+        CupertinoToast.show(context, "PNR fetch failed (${res.statusCode})",
             isError: true);
       }
-    } catch (e) {
+    } catch (_) {
       CupertinoToast.show(context, "Server error", isError: true);
     } finally {
-      setState(() => fetchingPNR = false);
+      if (mounted) setState(() => fetchingPNR = false);
     }
   }
 
-  void _pickDate() {
-    CupertinoFormHelpers.showDatePicker(
+  Future<void> _pickDate() async {
+    DateTime temp = dateOfJourney ?? DateTime.now().add(const Duration(days: 1));
+    await showCupertinoModalPopup<void>(
       context: context,
-      initialDate:
-          dateOfJourney ?? DateTime.now().add(const Duration(days: 1)),
-      minimumDate: DateTime.now(),
-      maximumDate: DateTime.now().add(const Duration(days: 120)),
-      onDateSelected: (date) {
-        setState(() => dateOfJourney = date);
-      },
+      builder: (ctx) => Container(
+        height: 280,
+        color: AppTheme.surface,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 44,
+              child: Row(
+                children: [
+                  CupertinoButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel'),
+                  ),
+                  const Spacer(),
+                  CupertinoButton(
+                    onPressed: () {
+                      setState(() => dateOfJourney = temp);
+                      Navigator.pop(ctx);
+                    },
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.date,
+                initialDateTime: temp,
+                minimumDate: DateTime.now().subtract(const Duration(days: 1)),
+                maximumDate: DateTime.now().add(const Duration(days: 120)),
+                onDateTimeChanged: (d) => temp = d,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   bool _validate() {
-    bool valid = true;
-    setState(() {
-      _pnrError = (pnrController.text.trim().length != 10)
-          ? "Enter 10-digit PNR"
-          : null;
-      _fromError = fromStationController.text.trim().isEmpty
-          ? "Required"
-          : null;
-      _toError =
-          toStationController.text.trim().isEmpty ? "Required" : null;
+    bool ok = true;
+    _primaryNameError =
+        primaryNameController.text.trim().isEmpty ? 'Required' : null;
+    if (_primaryNameError != null) ok = false;
 
-      if (passengers.isEmpty) {
-        _passengersError = "Add at least one passenger";
-      } else {
-        _passengersError = null;
-        for (final p in passengers) {
-          final name = (p['name'] ?? '').toString().trim();
-          final ageStr = (p['age'] ?? '').toString().trim();
-          final gender = (p['gender'] ?? '').toString().trim();
-          final wl = (p['waitingList'] ?? '').toString().trim();
-          final ageNum = int.tryParse(ageStr);
-
-          p['nameError'] = name.isEmpty ? "Required" : null;
-          p['ageError'] = ageStr.isEmpty
-              ? "Required"
-              : (ageNum == null || ageNum <= 0 ? "Invalid" : null);
-          p['genderError'] = gender.isEmpty ? "Required" : null;
-          p['waitingListError'] = wl.isEmpty ? "Required" : null;
-        }
-      }
-    });
-
-    if (_pnrError != null || _fromError != null || _toError != null) {
-      valid = false;
+    final ageStr = primaryAgeController.text.trim();
+    if (ageStr.isNotEmpty) {
+      final n = int.tryParse(ageStr);
+      _ageError = (n == null || n <= 0 || n > 120) ? '1–120' : null;
+      if (_ageError != null) ok = false;
+    } else {
+      _ageError = null;
     }
-    if (_passengersError != null) valid = false;
-    for (final p in passengers) {
-      if (p['nameError'] != null ||
-          p['ageError'] != null ||
-          p['genderError'] != null ||
-          p['waitingListError'] != null) {
-        valid = false;
-      }
-    }
-    return valid;
-  }
 
-  /// Backend's express-validator on POST /api/train-requests requires a
-  /// non-empty top-level `passengerName`. Derive it from the first named
-  /// passenger; fall back to the PNR so the request still goes through
-  /// when the staff hasn't filled the passengers list.
-  String _leadPassengerName() {
-    for (final p in passengers) {
-      final n = (p['name'] ?? '').toString().trim();
-      if (n.isNotEmpty) return n;
+    final addStr = additionalTravellersController.text.trim();
+    final addN = int.tryParse(addStr.isEmpty ? '0' : addStr);
+    _additionalError =
+        (addN == null || addN < 0 || addN > _maxAdditional)
+            ? '0–$_maxAdditional'
+            : null;
+    if (_additionalError != null) ok = false;
+
+    final phone = contactNumberController.text.trim();
+    if (phone.isEmpty) {
+      _phoneError = 'Phone number is required';
+      ok = false;
+    } else if (!RegExp(r'^\d{10}$').hasMatch(phone)) {
+      _phoneError = 'Enter a valid 10-digit phone number';
+      ok = false;
+    } else {
+      _phoneError = null;
     }
+
     final pnr = pnrController.text.trim();
-    return pnr.isNotEmpty ? 'PNR $pnr' : 'Not specified';
-  }
+    if (pnr.length != 10) {
+      _pnrError = 'Enter 10-digit PNR';
+      ok = false;
+    } else {
+      _pnrError = null;
+    }
 
-  /// Backend allows an empty contact number, but if non-empty it MUST be
-  /// exactly 10 digits. Strip non-digits; only forward when valid.
-  String _sanitizedContactNumber() {
-    final raw = contactNumberController.text.trim();
-    final digits = raw.replaceAll(RegExp(r'\D'), '');
-    return digits.length == 10 ? digits : '';
+    _referencedError = referencedByController.text.trim().isEmpty
+        ? 'Referenced By is required'
+        : null;
+    if (_referencedError != null) ok = false;
+
+    _fromError = fromStationController.text.trim().isEmpty
+        ? 'From station is required'
+        : null;
+    if (_fromError != null) ok = false;
+
+    _toError = toStationController.text.trim().isEmpty
+        ? 'To station is required'
+        : null;
+    if (_toError != null) ok = false;
+
+    setState(() {});
+    return ok;
   }
 
   Future<void> _submit() async {
     if (!_validate()) return;
-
     if (dateOfJourney == null) {
       CupertinoToast.show(context, "Please select date of journey",
           isError: true);
@@ -261,53 +288,72 @@ class _CupertinoTrainRequestAddPageState
     }
 
     setState(() => submitting = true);
-
     try {
-      final body = {
-        "passengerName": _leadPassengerName(),
+      final primaryName = primaryNameController.text.trim();
+      final ageStr = primaryAgeController.text.trim();
+      final waitlist = primaryWaitlistController.text.trim();
+      final addStr = additionalTravellersController.text.trim();
+      final additional = int.tryParse(addStr.isEmpty ? '0' : addStr) ?? 0;
+      final fromStation = fromStationController.text.trim();
+      final toStation = toStationController.text.trim();
+
+      final body = <String, dynamic>{
+        "passengerName": primaryName,
         "pnrNumber": pnrController.text.trim(),
+        "contactNumber": contactNumberController.text.trim(),
         "trainName": trainNameController.text.trim(),
         "trainNumber": trainNumberController.text.trim(),
-        "bookingType": selectedBookingType,
         "journeyClass": selectedClass,
         "dateOfJourney": dateOfJourney!.toIso8601String(),
-        "fromStation": fromStationController.text.trim(),
-        "toStation": toStationController.text.trim(),
-        "contactNumber": _sanitizedContactNumber(),
+        "fromStation": fromStation,
+        "toStation": toStation,
+        "route": "$fromStation to $toStation",
         "referencedBy": referencedByController.text.trim(),
-        "remarks": remarksController.text.trim(),
-        "passengers": passengers
-            .map((p) => {
-                  "name": p['name'],
-                  "age": int.tryParse(p['age']?.toString() ?? '') ?? 30,
-                  "gender": p['gender'] ?? 'MALE',
-                  "berthPreference": p['berthPreference'] ?? '',
-                  "bookingStatus": p['bookingStatus'] ?? '',
-                  // UI's "Waiting List" maps to backend's currentStatus
-                  // column (no separate waitingList column in Catalyst).
-                  "currentStatus": (p['waitingList']?.toString().trim().isNotEmpty ?? false)
-                      ? p['waitingList']
-                      : (p['currentStatus'] ?? ''),
-                })
-            .toList(),
+        "numberOfPassengers": 1 + additional,
+        "passengers": [
+          <String, dynamic>{
+            "name": primaryName,
+            if (_primaryGender.isNotEmpty) "gender": _primaryGender,
+            if (ageStr.isNotEmpty) "age": int.tryParse(ageStr) ?? 0,
+            if (waitlist.isNotEmpty) "currentStatus": waitlist,
+          },
+        ],
       };
 
       final res = await HttpService.post("/api/train-requests", body);
 
       if (res.statusCode == 201 || res.statusCode == 200) {
-        CupertinoToast.show(context, "Train request created");
-
-        if (widget.onCreated != null) {
-          await widget.onCreated!();
+        if (widget.role == Roles.staff) {
+          await _showPdfReadyDialog(
+            title: 'Train EQ Request Generated',
+            content: const Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                      text:
+                          'Your Train EQ request has been created.\n\nGo to '),
+                  TextSpan(
+                    text: 'Print Center',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  TextSpan(
+                      text:
+                          ' to download the EQ Letter PDF once it is approved.'),
+                ],
+              ),
+            ),
+          );
+        } else {
+          CupertinoToast.show(context, "Train request created");
         }
-
+        if (widget.onCreated != null) await widget.onCreated!();
+        if (!mounted) return;
         Navigator.pop(context, true);
       } else {
         String msg = "Failed (${res.statusCode})";
         try {
           final data = jsonDecode(res.body);
           msg = data["message"] ?? msg;
-          // Surface the first specific field error for easier debugging.
           final errs = data["errors"];
           if (errs is List && errs.isNotEmpty) {
             final first = errs.first;
@@ -316,485 +362,445 @@ class _CupertinoTrainRequestAddPageState
             }
           }
         } catch (_) {}
-
         CupertinoToast.show(context, msg, isError: true);
       }
-    } catch (e) {
+    } catch (_) {
       CupertinoToast.show(context, "Server error", isError: true);
     } finally {
       if (mounted) setState(() => submitting = false);
     }
   }
 
+  Future<void> _showPdfReadyDialog({
+    required String title,
+    required Widget content,
+  }) async {
+    if (!mounted) return;
+    await showCupertinoDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: content,
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("New Train Request"),
+      navigationBar: const CupertinoNavigationBar(
         backgroundColor: primaryBlue,
         brightness: Brightness.dark,
+        middle: Text(
+          "Train EQ Entry",
+          style: TextStyle(color: CupertinoColors.white),
+        ),
       ),
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // PNR Section
-            _buildCard(
-              title: "PNR DETAILS",
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          CupertinoTextField(
-                            controller: pnrController,
-                            keyboardType: TextInputType.number,
-                            maxLength: 10,
-                            placeholder: "PNR Number *",
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 14),
-                            decoration: BoxDecoration(
-                              color: AppTheme.backgroundAlt,
-                              borderRadius:
-                                  BorderRadius.circular(AppTheme.radiusMd),
-                              border: Border.all(
-                                  color: _pnrError != null
-                                      ? AppTheme.destructiveRed
-                                      : AppTheme.border),
-                            ),
-                          ),
-                          if (_pnrError != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4, left: 4),
-                              child: Text(_pnrError!,
-                                  style: const TextStyle(
-                                      color: AppTheme.destructiveRed,
-                                      fontSize: 12)),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    CupertinoButton.filled(
-                      onPressed: fetchingPNR ? null : _fetchPNRStatus,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                      child: fetchingPNR
-                          ? const CupertinoActivityIndicator(
-                              color: CupertinoColors.white)
-                          : const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(CupertinoIcons.search, size: 18),
-                                SizedBox(width: 6),
-                                Text("Fetch"),
-                              ],
-                            ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: () {
-                    CupertinoFormHelpers.showPicker(
-                      context: context,
-                      items: bookingTypes
-                          .map((t) => t['label']!)
-                          .toList(),
-                      currentValue: bookingTypes
-                          .firstWhere(
-                              (t) => t['value'] == selectedBookingType)['label']!,
-                      title: "Booking Type",
-                      onSelected: (label) {
-                        final type = bookingTypes
-                            .firstWhere((t) => t['label'] == label);
-                        setState(
-                            () => selectedBookingType = type['value']!);
-                      },
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppTheme.backgroundAlt,
-                      borderRadius:
-                          BorderRadius.circular(AppTheme.radiusMd),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            "Booking Type: ${bookingTypes.firstWhere((t) => t['value'] == selectedBookingType)['label']}",
-                            style: const TextStyle(fontSize: 15),
-                          ),
-                        ),
-                        const Icon(CupertinoIcons.chevron_down,
-                            size: 16,
-                            color: CupertinoColors.systemGrey),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+            Text(
+              "Generate Railway Emergency Quota letter instantly",
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
             ),
             const SizedBox(height: 16),
-
-            // Train Details
-            _buildCard(
-              title: "TRAIN DETAILS",
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: CupertinoTextField(
-                        controller: trainNumberController,
-                        placeholder: "Train Number",
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: AppTheme.backgroundAlt,
-                          borderRadius:
-                              BorderRadius.circular(AppTheme.radiusMd),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: CupertinoTextField(
-                        controller: trainNameController,
-                        placeholder: "Train Name",
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: AppTheme.backgroundAlt,
-                          borderRadius:
-                              BorderRadius.circular(AppTheme.radiusMd),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          CupertinoTextField(
-                            controller: fromStationController,
-                            placeholder: "From Station *",
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 14),
-                            decoration: BoxDecoration(
-                              color: AppTheme.backgroundAlt,
-                              borderRadius: BorderRadius.circular(
-                                  AppTheme.radiusMd),
-                              border: Border.all(
-                                  color: _fromError != null
-                                      ? AppTheme.destructiveRed
-                                      : AppTheme.border),
-                            ),
-                          ),
-                          if (_fromError != null)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.only(top: 4, left: 4),
-                              child: Text(_fromError!,
-                                  style: const TextStyle(
-                                      color: AppTheme.destructiveRed,
-                                      fontSize: 12)),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          CupertinoTextField(
-                            controller: toStationController,
-                            placeholder: "To Station *",
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 14),
-                            decoration: BoxDecoration(
-                              color: AppTheme.backgroundAlt,
-                              borderRadius: BorderRadius.circular(
-                                  AppTheme.radiusMd),
-                              border: Border.all(
-                                  color: _toError != null
-                                      ? AppTheme.destructiveRed
-                                      : AppTheme.border),
-                            ),
-                          ),
-                          if (_toError != null)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.only(top: 4, left: 4),
-                              child: Text(_toError!,
-                                  style: const TextStyle(
-                                      color: AppTheme.destructiveRed,
-                                      fontSize: 12)),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                GestureDetector(
-                  onTap: () {
-                    CupertinoFormHelpers.showPicker(
-                      context: context,
-                      items: journeyClasses,
-                      currentValue: selectedClass,
-                      title: "Class",
-                      onSelected: (v) =>
-                          setState(() => selectedClass = v),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppTheme.backgroundAlt,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text("Class: $selectedClass",
-                              style: const TextStyle(fontSize: 15)),
-                        ),
-                        const Icon(CupertinoIcons.chevron_down,
-                            size: 16, color: CupertinoColors.systemGrey),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                GestureDetector(
-                  onTap: _pickDate,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppTheme.backgroundAlt,
-                      borderRadius:
-                          BorderRadius.circular(AppTheme.radiusMd),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            dateOfJourney != null
-                                ? "Journey: ${DateFormat('dd MMM yyyy').format(dateOfJourney!)}"
-                                : "Date of Journey *",
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: dateOfJourney != null
-                                  ? AppTheme.foreground
-                                  : CupertinoColors.systemGrey,
-                            ),
-                          ),
-                        ),
-                        const Icon(CupertinoIcons.calendar,
-                            size: 18,
-                            color: CupertinoColors.systemGrey),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            _buildPassengerCard(),
             const SizedBox(height: 16),
-
-            // Passengers Section
-            _buildCard(
-              title: "PASSENGERS",
-              trailing: CupertinoButton(
-                padding: EdgeInsets.zero,
-                minSize: 0,
-                onPressed: _addPassenger,
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(CupertinoIcons.add, size: 18),
-                    SizedBox(width: 4),
-                    Text("Add"),
-                  ],
-                ),
-              ),
-              children: [
-                if (passengers.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      _passengersError ??
-                          "No passengers added. Click 'Add' to add passengers.",
-                      style: TextStyle(
-                        color: _passengersError != null
-                            ? AppTheme.destructiveRed
-                            : CupertinoColors.systemGrey,
-                      ),
-                    ),
-                  )
-                else
-                  ...passengers.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final passenger = entry.value;
-                    return _buildPassengerCard(index, passenger);
-                  }),
-              ],
-            ),
+            _buildTrainCard(),
+            const SizedBox(height: 20),
+            _buildSubmitButton(),
             const SizedBox(height: 16),
-
-            // Contact & Reference
-            _buildCard(
-              title: "CONTACT & REFERENCE",
-              children: [
-                CupertinoTextField(
-                  controller: contactNumberController,
-                  keyboardType: TextInputType.phone,
-                  placeholder: "Contact Number",
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: AppTheme.backgroundAlt,
-                    borderRadius:
-                        BorderRadius.circular(AppTheme.radiusMd),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                CupertinoTextField(
-                  controller: referencedByController,
-                  placeholder: "Referenced By",
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: AppTheme.backgroundAlt,
-                    borderRadius:
-                        BorderRadius.circular(AppTheme.radiusMd),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                CupertinoTextField(
-                  controller: remarksController,
-                  maxLines: 2,
-                  placeholder: "Remarks",
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: AppTheme.backgroundAlt,
-                    borderRadius:
-                        BorderRadius.circular(AppTheme.radiusMd),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Digital Signature gate
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: CupertinoColors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _signatureAcknowledged
-                      ? AppTheme.primaryIndigo
-                      : CupertinoColors.systemGrey4,
-                  width: _signatureAcknowledged ? 1.5 : 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  CupertinoSwitch(
-                    value: _signatureAcknowledged,
-                    activeTrackColor: AppTheme.primaryIndigo,
-                    onChanged: (v) =>
-                        setState(() => _signatureAcknowledged = v),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Attach Digital Signature",
-                          style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          "Appends Minister's stored digital signature to the PDF",
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: CupertinoColors.systemGrey),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Submit Button
-            SizedBox(
-              width: double.infinity,
-              child: CupertinoButton.filled(
-                onPressed: (submitting || !_signatureAcknowledged)
-                    ? null
-                    : _submit,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                borderRadius: BorderRadius.circular(12),
-                child: submitting
-                    ? const CupertinoActivityIndicator(
-                        color: CupertinoColors.white)
-                    : Text(
-                        _signatureAcknowledged
-                            ? "Submit Request"
-                            : "Tick the signature box to enable",
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCard({
-    required String title,
-    required List<Widget> children,
-    Widget? trailing,
-  }) {
+  Widget _buildPassengerCard() {
+    return _card(
+      title: "PASSENGER INFORMATION",
+      children: [
+        // Cap banner
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            border: Border.all(color: const Color(0xFFBFDBFE)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              const Icon(CupertinoIcons.info,
+                  color: Color(0xFF1D4ED8), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "General bookings (AC/Non-AC) allow maximum 6 passengers per PNR",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _label("Primary Passenger Name *"),
+        _textField(
+          controller: primaryNameController,
+          placeholder: "Full name of the primary passenger",
+          textCapitalization: TextCapitalization.words,
+        ),
+        if (_primaryNameError != null) _errorText(_primaryNameError!),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("Gender"),
+                  _pickerField(
+                    value: _primaryGender,
+                    options: _genderOptions,
+                    onSelected: (v) => setState(() => _primaryGender = v),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("Age"),
+                  _textField(
+                    controller: primaryAgeController,
+                    placeholder: "Age",
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                  if (_ageError != null) _errorText(_ageError!),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("W/L"),
+                  _textField(
+                    controller: primaryWaitlistController,
+                    placeholder: "e.g. WL/12",
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _label("Additional Travellers *"),
+        _textField(
+          controller: additionalTravellersController,
+          placeholder: "0",
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            "Other people travelling on the same PNR (excluding the primary). Max $_maxAdditional.",
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ),
+        if (_additionalError != null) _errorText(_additionalError!),
+        const SizedBox(height: 12),
+        _label("Phone Number (Primary Passenger) *"),
+        _textField(
+          controller: contactNumberController,
+          placeholder: "10-digit mobile number",
+          keyboardType: TextInputType.phone,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            "Contact number for the primary passenger",
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ),
+        if (_phoneError != null) _errorText(_phoneError!),
+        const SizedBox(height: 12),
+        _label("PNR Number *"),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _textField(
+                controller: pnrController,
+                placeholder: "10-digit PNR",
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            CupertinoButton(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: primaryBlue,
+              borderRadius: BorderRadius.circular(8),
+              onPressed: fetchingPNR ? null : _fetchPNRStatus,
+              child: fetchingPNR
+                  ? const CupertinoActivityIndicator(
+                      color: CupertinoColors.white)
+                  : const Text(
+                      "Fetch",
+                      style: TextStyle(color: CupertinoColors.white),
+                    ),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            "Click Fetch to auto-fill train details",
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ),
+        if (_pnrError != null) _errorText(_pnrError!),
+        const SizedBox(height: 12),
+        _label("Referenced By *"),
+        _textField(
+          controller: referencedByController,
+          placeholder: "Eg: MP Recommendation / Emergency Call",
+        ),
+        if (_referencedError != null) _errorText(_referencedError!),
+      ],
+    );
+  }
+
+  Widget _buildTrainCard() {
+    final dateStr = dateOfJourney == null
+        ? "dd-mm-yyyy"
+        : DateFormat('dd-MM-yyyy').format(dateOfJourney!);
+
+    return _card(
+      title: "TRAIN DETAILS",
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("Train Number"),
+                  _textField(
+                    controller: trainNumberController,
+                    placeholder: "e.g. 12301",
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("Train Name"),
+                  _textField(
+                    controller: trainNameController,
+                    placeholder: "e.g. Rajdhani Express",
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("Date of Journey *"),
+                  GestureDetector(
+                    onTap: _pickDate,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: AppTheme.border),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              dateStr,
+                              style: TextStyle(
+                                color: dateOfJourney == null
+                                    ? Colors.grey.shade500
+                                    : Colors.black,
+                              ),
+                            ),
+                          ),
+                          const Icon(CupertinoIcons.calendar,
+                              size: 18, color: AppTheme.muted),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("Class *"),
+                  GestureDetector(
+                    onTap: () => CupertinoFormHelpers.showPicker(
+                      context: context,
+                      items: journeyClasses,
+                      currentValue: selectedClass,
+                      onSelected: (v) => setState(() => selectedClass = v),
+                      title: 'Class',
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: AppTheme.border),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              selectedClass,
+                              style: const TextStyle(color: Colors.black),
+                            ),
+                          ),
+                          const Icon(CupertinoIcons.chevron_down,
+                              size: 16, color: AppTheme.muted),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("From Station *"),
+                  _textField(
+                    controller: fromStationController,
+                    placeholder: "e.g. New Delhi (NDLS)",
+                  ),
+                  if (_fromError != null) _errorText(_fromError!),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label("To Station *"),
+                  _textField(
+                    controller: toStationController,
+                    placeholder: "e.g. Mumbai (BCT)",
+                  ),
+                  if (_toError != null) _errorText(_toError!),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: CupertinoButton(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        color: const Color(0xFFF59E0B),
+        borderRadius: BorderRadius.circular(10),
+        onPressed: submitting ? null : _submit,
+        child: submitting
+            ? const CupertinoActivityIndicator(color: CupertinoColors.black)
+            : const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(CupertinoIcons.arrow_up_right_square,
+                      size: 18, color: CupertinoColors.black),
+                  SizedBox(width: 8),
+                  Text(
+                    "Generate EQ Letter",
+                    style: TextStyle(
+                      color: CupertinoColors.black,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────
+
+  Widget _card({required String title, required List<Widget> children}) {
     return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.white,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -803,339 +809,115 @@ class _CupertinoTrainRequestAddPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: Row(
-              children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: primaryBlue)),
-                const Spacer(),
-                if (trailing != null) trailing,
-              ],
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: primaryBlue,
+              letterSpacing: 0.5,
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(children: children),
-          ),
+          const SizedBox(height: 14),
+          ...children,
         ],
       ),
     );
   }
 
-  Widget _buildPassengerCard(int index, Map<String, dynamic> passenger) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.foreground,
+          ),
+        ),
+      );
+
+  Widget _textField({
+    required TextEditingController controller,
+    String? placeholder,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+  }) {
+    return CupertinoTextField(
+      controller: controller,
+      placeholder: placeholder,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      textCapitalization: textCapitalization,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       decoration: BoxDecoration(
-        color: bgLight,
+        color: Colors.white,
+        border: Border.all(color: AppTheme.border),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: CupertinoColors.systemGrey4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: primaryBlue,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Center(
-                  child: Text("${index + 1}",
-                      style: const TextStyle(
-                          color: CupertinoColors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold)),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text("Passenger ${index + 1}",
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              const Spacer(),
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                minSize: 0,
-                onPressed: () => _removePassenger(index),
-                child: const Icon(CupertinoIcons.delete,
-                    color: AppTheme.destructiveRed, size: 20),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          CupertinoTextField(
-            placeholder: "Name *",
-            controller:
-                TextEditingController(text: passenger['name'] ?? ''),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: CupertinoColors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: passenger['nameError'] != null
-                    ? AppTheme.destructiveRed
-                    : AppTheme.border,
-              ),
-            ),
-            onChanged: (v) => passengers[index]['name'] = v,
-          ),
-          if (passenger['nameError'] != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4, left: 4),
-              child: Text(
-                passenger['nameError'],
-                style: const TextStyle(
-                    fontSize: 12, color: AppTheme.destructiveRed),
-              ),
-            ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CupertinoTextField(
-                      placeholder: "Age *",
-                      controller: TextEditingController(
-                          text: passenger['age']?.toString() ?? ''),
-                      keyboardType: TextInputType.number,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: passenger['ageError'] != null
-                              ? AppTheme.destructiveRed
-                              : AppTheme.border,
-                        ),
-                      ),
-                      onChanged: (v) => passengers[index]['age'] = v,
-                    ),
-                    if (passenger['ageError'] != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, left: 4),
-                        child: Text(
-                          passenger['ageError'],
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.destructiveRed),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        CupertinoFormHelpers.showPicker(
-                          context: context,
-                          items: const ['Male', 'Female', 'Other'],
-                          currentValue: _genderLabel(
-                              passenger['gender'] ?? 'MALE'),
-                          title: "Sex / Gender",
-                          onSelected: (label) {
-                            final value = label.toUpperCase();
-                            setState(() {
-                              passengers[index]['gender'] = value;
-                              passengers[index]['genderError'] = null;
-                            });
-                          },
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: CupertinoColors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: passenger['genderError'] != null
-                                ? AppTheme.destructiveRed
-                                : AppTheme.border,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                (passenger['gender']?.toString() ?? '')
-                                        .isEmpty
-                                    ? "Sex *"
-                                    : _genderLabel(passenger['gender']),
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  color: (passenger['gender']?.toString() ??
-                                              '')
-                                          .isEmpty
-                                      ? CupertinoColors.systemGrey
-                                      : CupertinoColors.black,
-                                ),
-                              ),
-                            ),
-                            const Icon(CupertinoIcons.chevron_down,
-                                size: 14,
-                                color: CupertinoColors.systemGrey),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (passenger['genderError'] != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, left: 4),
-                        child: Text(
-                          passenger['genderError'],
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.destructiveRed),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          CupertinoTextField(
-            placeholder: "Waiting List * (e.g., CNF, RAC, WL/15)",
-            controller: TextEditingController(
-                text: passenger['waitingList'] ?? ''),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: CupertinoColors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: passenger['waitingListError'] != null
-                    ? AppTheme.destructiveRed
-                    : AppTheme.border,
-              ),
-            ),
-            onChanged: (v) => passengers[index]['waitingList'] = v,
-          ),
-          if (passenger['waitingListError'] != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4, left: 4),
-              child: Text(
-                passenger['waitingListError'],
-                style: const TextStyle(
-                    fontSize: 12, color: AppTheme.destructiveRed),
-              ),
-            ),
-          const SizedBox(height: 10),
-          CupertinoTextField(
-            placeholder: "Berth Preference (LB/MB/UB/SL/SU)",
-            controller: TextEditingController(
-                text: passenger['berthPreference'] ?? ''),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: CupertinoColors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.border),
-            ),
-            onChanged: (v) => passengers[index]['berthPreference'] = v,
-          ),
-          if (passenger['bookingStatus']?.toString().isNotEmpty == true ||
-              passenger['currentStatus']?.toString().isNotEmpty ==
-                  true) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (passenger['bookingStatus']?.toString().isNotEmpty ==
-                    true)
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE3F2FD),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Booking Status",
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: CupertinoColors.systemGrey)),
-                          Text(passenger['bookingStatus'].toString(),
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF1565C0))),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (passenger['bookingStatus']
-                            ?.toString()
-                            .isNotEmpty ==
-                        true &&
-                    passenger['currentStatus']
-                            ?.toString()
-                            .isNotEmpty ==
-                        true)
-                  const SizedBox(width: 8),
-                if (passenger['currentStatus']
-                        ?.toString()
-                        .isNotEmpty ==
-                    true)
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8F5E9),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Current Status",
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: CupertinoColors.systemGrey)),
-                          Text(
-                              passenger['currentStatus'].toString(),
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF2E7D32))),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ],
       ),
     );
   }
 
-  String _genderLabel(dynamic value) {
-    final s = (value ?? '').toString().toUpperCase();
-    switch (s) {
-      case 'MALE':
-        return 'Male';
-      case 'FEMALE':
-        return 'Female';
-      case 'OTHER':
-        return 'Other';
-      default:
-        return '';
-    }
+  Widget _pickerField({
+    required String value,
+    required List<Map<String, String>> options,
+    required ValueChanged<String> onSelected,
+  }) {
+    final label =
+        options.firstWhere((o) => o['value'] == value, orElse: () => options.first)['label']!;
+    return GestureDetector(
+      onTap: () {
+        final items = options.map((o) => o['label']!).toList();
+        final initial = options
+            .firstWhere((o) => o['value'] == value, orElse: () => options.first);
+        CupertinoFormHelpers.showPicker(
+          context: context,
+          items: items,
+          currentValue: initial['label']!,
+          onSelected: (selectedLabel) {
+            final match = options.firstWhere(
+              (o) => o['label'] == selectedLabel,
+              orElse: () => options.first,
+            );
+            onSelected(match['value']!);
+          },
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: AppTheme.border),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: value.isEmpty ? Colors.grey.shade500 : Colors.black,
+                ),
+              ),
+            ),
+            const Icon(CupertinoIcons.chevron_down,
+                size: 16, color: AppTheme.muted),
+          ],
+        ),
+      ),
+    );
   }
+
+  Widget _errorText(String msg) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          msg,
+          style: const TextStyle(
+            fontSize: 11,
+            color: Color(0xFFDC2626),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
 }

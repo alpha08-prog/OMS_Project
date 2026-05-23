@@ -20,12 +20,29 @@ class _VisitorLogPageState extends State<VisitorLogPage> {
   final phoneController = TextEditingController();
   final purposeController = TextEditingController();
   final referencedByController = TextEditingController();
+  final wardVillageController = TextEditingController();
 
   final FocusNode _nameFocus = FocusNode();
 
+  String? _selectedConstituency;
   DateTime? _dob;
   bool _submitting = false;
   int _logged = 0;
+
+  // Canonical Dharwad constituency list — AC numbers included so downstream
+  // exports preserve official numbering. Must stay in sync with the deployed
+  // web app (OMS_Project-main/frontend/src/lib/constituencies.ts).
+  static const List<String> _constituencies = [
+    'Navalagund 69',
+    'Kundagol 70',
+    'Dharwad 71',
+    'Hubli-Dharwad East 72',
+    'Hubli-Dharwad Central 73',
+    'Dharwad West 74',
+    'Kalaghatagi 75',
+    'Shiggaon 83',
+    'Out of Constituency',
+  ];
 
   @override
   void dispose() {
@@ -34,6 +51,7 @@ class _VisitorLogPageState extends State<VisitorLogPage> {
     phoneController.dispose();
     purposeController.dispose();
     referencedByController.dispose();
+    wardVillageController.dispose();
     _nameFocus.dispose();
     super.dispose();
   }
@@ -70,7 +88,11 @@ class _VisitorLogPageState extends State<VisitorLogPage> {
     phoneController.clear();
     purposeController.clear();
     referencedByController.clear();
-    setState(() => _dob = null);
+    wardVillageController.clear();
+    setState(() {
+      _dob = null;
+      _selectedConstituency = null;
+    });
     _nameFocus.requestFocus();
   }
 
@@ -95,6 +117,12 @@ class _VisitorLogPageState extends State<VisitorLogPage> {
 
       final referencedBy = referencedByController.text.trim();
       if (referencedBy.isNotEmpty) body["referencedBy"] = referencedBy;
+
+      if (_selectedConstituency != null && _selectedConstituency!.isNotEmpty) {
+        body["constituency"] = _selectedConstituency;
+      }
+      final ward = wardVillageController.text.trim();
+      if (ward.isNotEmpty) body["wardVillage"] = ward;
 
       final res = await HttpService.post("/api/visitors", body);
 
@@ -198,6 +226,32 @@ class _VisitorLogPageState extends State<VisitorLogPage> {
                 ),
                 const SizedBox(height: 12),
                 _dobPickerField(),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _selectedConstituency,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: "Constituency",
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.location_on),
+                  ),
+                  hint: const Text("Select constituency"),
+                  items: _constituencies
+                      .map((c) =>
+                          DropdownMenuItem(value: c, child: Text(c)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _selectedConstituency = v),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: wardVillageController,
+                  decoration: const InputDecoration(
+                    labelText: "Ward / Village",
+                    hintText: "Enter ward or village",
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.home_work_outlined),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -221,10 +275,13 @@ class _VisitorLogPageState extends State<VisitorLogPage> {
                 TextFormField(
                   controller: referencedByController,
                   decoration: const InputDecoration(
-                    labelText: "Referenced By (optional)",
+                    labelText: "Referenced By *",
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.person_pin),
                   ),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? "Referenced By is required"
+                      : null,
                 ),
               ],
             ),

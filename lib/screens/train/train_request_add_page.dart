@@ -1,9 +1,18 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../../services/auth_service.dart';
 import '../../services/http_service.dart';
+import '../../utils/access_control.dart';
 
+/// Train EQ (Emergency Quota) request form.
+///
+/// Mirrors the deployed web `TrainEQCreate.tsx` layout (2026-05-22) — one
+/// primary passenger + an "Additional Travellers" count, no per-extra-row
+/// fields. AC / Non-AC bookings cap total at 6 passengers per PNR (1 primary
+/// + up to 5 additional).
 class TrainRequestAddPage extends StatefulWidget {
   final Future<void> Function()? onCreated;
 
@@ -17,41 +26,39 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
   static const Color primaryBlue = Color(0xFF0A2E5C);
   static const Color bgLight = Color(0xFFF4F6FB);
 
+  // Web's MAX_PASSENGERS_GENERAL = 6 (AC / Non-AC). Primary takes one slot,
+  // so additional travellers cap at 5.
+  static const int _maxAdditional = 5;
+
   final _formKey = GlobalKey<FormState>();
 
-  // Controllers
+  // Primary passenger
+  final primaryNameController = TextEditingController();
+  final primaryAgeController = TextEditingController();
+  final primaryWaitlistController = TextEditingController();
+  String _primaryGender = ''; // '' | MALE | FEMALE | OTHER
+
+  // Additional travellers (other people on the same PNR, excluding primary)
+  final additionalTravellersController = TextEditingController(text: '0');
+
+  // Contact + PNR + referenced
   final pnrController = TextEditingController();
+  final contactNumberController = TextEditingController();
+  final referencedByController = TextEditingController();
+
+  // Train details
   final trainNameController = TextEditingController();
   final trainNumberController = TextEditingController();
   final fromStationController = TextEditingController();
   final toStationController = TextEditingController();
-  final contactNumberController = TextEditingController();
-  final referencedByController = TextEditingController();
-  final remarksController = TextEditingController();
-
   DateTime? dateOfJourney;
-  String selectedBookingType = 'GENERAL';
   String selectedClass = 'SL';
-
-  // Passengers
-  List<Map<String, dynamic>> passengers = [];
 
   // State
   bool submitting = false;
   bool fetchingPNR = false;
-  bool _signatureAcknowledged = false;
-  String? _passengersError;
 
-  final List<Map<String, String>> bookingTypes = [
-    {'value': 'GENERAL', 'label': 'General'},
-    {'value': 'TATKAL', 'label': 'Tatkal'},
-    {'value': 'PREMIUM_TATKAL', 'label': 'Premium Tatkal'},
-    {'value': 'LADIES', 'label': 'Ladies Quota'},
-    {'value': 'LOWER_BERTH', 'label': 'Lower Berth'},
-    {'value': 'DUTY_PASS', 'label': 'Duty Pass'},
-  ];
-
-  final List<String> journeyClasses = [
+  final List<String> journeyClasses = const [
     'SL',
     '3A',
     '2A',
@@ -62,44 +69,33 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
     'FC',
   ];
 
+  static const List<Map<String, String>> _genderOptions = [
+    {'value': '', 'label': 'Select'},
+    {'value': 'MALE', 'label': 'Male'},
+    {'value': 'FEMALE', 'label': 'Female'},
+    {'value': 'OTHER', 'label': 'Other'},
+  ];
+
   @override
   void dispose() {
+    primaryNameController.dispose();
+    primaryAgeController.dispose();
+    primaryWaitlistController.dispose();
+    additionalTravellersController.dispose();
     pnrController.dispose();
+    contactNumberController.dispose();
+    referencedByController.dispose();
     trainNameController.dispose();
     trainNumberController.dispose();
     fromStationController.dispose();
     toStationController.dispose();
-    contactNumberController.dispose();
-    referencedByController.dispose();
-    remarksController.dispose();
     super.dispose();
-  }
-
-  void _addPassenger() {
-    setState(() {
-      passengers.add({
-        'name': '',
-        'age': '',
-        'gender': '',
-        'berthPreference': '',
-        'waitingList': '',
-      });
-      _passengersError = null;
-    });
-  }
-
-  void _removePassenger(int index) {
-    setState(() {
-      passengers.removeAt(index);
-    });
   }
 
   Future<void> _fetchPNRStatus() async {
     final pnr = pnrController.text.trim();
     if (pnr.length != 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("PNR must be 10 digits")),
-      );
+      _snack("PNR must be 10 digits");
       return;
     }
 
@@ -113,13 +109,12 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
         final data = decoded["data"] ?? decoded;
 
         setState(() {
-          // Fill train details
+          // Train + journey
           trainNameController.text = data["trainName"] ?? '';
           trainNumberController.text = data["trainNumber"] ?? '';
           fromStationController.text = data["from"] ?? '';
           toStationController.text = data["to"] ?? '';
 
-          // Parse date
           final doj = data["dateOfJourney"];
           if (doj != null && doj != 'N/A') {
             try {
@@ -127,48 +122,43 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
             } catch (_) {}
           }
 
-          // Set class
           final cls = data["class"];
           if (cls != null && journeyClasses.contains(cls)) {
             selectedClass = cls;
           }
 
-          // Fill passengers
+          // Auto-fill the primary passenger from the first row the PNR
+          // returns; the remaining rows just bump the additional-travellers
+          // count so staff doesn't have to re-type each name.
           final passengerList = data["passengers"] as List? ?? [];
-          passengers = passengerList.map<Map<String, dynamic>>((p) {
-            final cs = (p["currentStatus"] ?? '').toString();
-            final bs = (p["bookingStatus"] ?? '').toString();
-            return {
-              'name': p["name"] ?? '',
-              'age': (p["age"] ?? '').toString(),
-              'gender': p["gender"] ?? '',
-              'berthPreference': '',
-              'bookingStatus': bs,
-              'currentStatus': cs,
-              'waitingList': cs.isNotEmpty ? cs : bs,
-            };
-          }).toList();
-          _passengersError = null;
+          if (passengerList.isNotEmpty) {
+            final p0 = passengerList.first as Map;
+            primaryNameController.text = (p0["name"] ?? '').toString();
+            primaryAgeController.text = (p0["age"] ?? '').toString();
+            final g = (p0["gender"] ?? '').toString().toUpperCase();
+            if (g == 'MALE' || g == 'FEMALE' || g == 'OTHER') {
+              _primaryGender = g;
+            }
+            final cs = (p0["currentStatus"] ?? '').toString();
+            final bs = (p0["bookingStatus"] ?? '').toString();
+            primaryWaitlistController.text = cs.isNotEmpty ? cs : bs;
+          }
+          final extra =
+              (passengerList.length > 1 ? passengerList.length - 1 : 0)
+                  .clamp(0, _maxAdditional);
+          additionalTravellersController.text = '$extra';
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(data["isMock"] == true
-                ? "PNR fetched (mock data)"
-                : "PNR fetched successfully"),
-          ),
-        );
+        _snack(data["isMock"] == true
+            ? "PNR fetched (mock data)"
+            : "PNR fetched successfully");
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("PNR fetch failed (${res.statusCode})")),
-        );
+        _snack("PNR fetch failed (${res.statusCode})");
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error")),
-      );
+    } catch (_) {
+      _snack("Server error");
     } finally {
-      setState(() => fetchingPNR = false);
+      if (mounted) setState(() => fetchingPNR = false);
     }
   }
 
@@ -176,101 +166,134 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
     final date = await showDatePicker(
       context: context,
       initialDate: dateOfJourney ?? DateTime.now().add(const Duration(days: 1)),
-      firstDate: DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
       lastDate: DateTime.now().add(const Duration(days: 120)),
     );
-
-    if (date != null) {
-      setState(() => dateOfJourney = date);
-    }
+    if (date != null) setState(() => dateOfJourney = date);
   }
 
-  /// Backend's express-validator on POST /api/train-requests requires a
-  /// non-empty top-level `passengerName`. Derive it from the first named
-  /// passenger; fall back to the PNR so the request still goes through
-  /// when the staff hasn't filled the passengers list.
-  String _leadPassengerName() {
-    for (final p in passengers) {
-      final n = (p['name'] ?? '').toString().trim();
-      if (n.isNotEmpty) return n;
-    }
-    final pnr = pnrController.text.trim();
-    return pnr.isNotEmpty ? 'PNR $pnr' : 'Not specified';
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  /// Backend allows an empty contact number, but if non-empty it MUST be
-  /// exactly 10 digits. Strip non-digits; only forward when valid.
-  String _sanitizedContactNumber() {
-    final raw = contactNumberController.text.trim();
-    final digits = raw.replaceAll(RegExp(r'\D'), '');
-    return digits.length == 10 ? digits : '';
+  /// STAFF-only success popup shown after a record is created that has a
+  /// downloadable PDF in the Print Center. Blocks until the user taps OK
+  /// so they read where to go next.
+  Future<void> _showPdfReadyDialog({
+    required String title,
+    required Widget content,
+  }) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.picture_as_pdf, color: primaryBlue),
+            const SizedBox(width: 8),
+            Expanded(child: Text(title)),
+          ],
+        ),
+        content: content,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _submit() async {
-    final formOk = _formKey.currentState?.validate() ?? false;
-    final hasPassengers = passengers.isNotEmpty;
-    if (!hasPassengers) {
-      setState(() => _passengersError = "Add at least one passenger");
-    }
-    if (!formOk || !hasPassengers) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
 
     if (dateOfJourney == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select date of journey")),
-      );
+      _snack("Please select date of journey");
+      return;
+    }
+
+    final primaryName = primaryNameController.text.trim();
+    final additional = int.tryParse(
+            additionalTravellersController.text.trim().isEmpty
+                ? '0'
+                : additionalTravellersController.text.trim()) ??
+        0;
+    if (additional < 0 || additional > _maxAdditional) {
+      _snack(
+          "Maximum ${_maxAdditional + 1} total passengers per PNR (primary + up to $_maxAdditional additional)");
       return;
     }
 
     setState(() => submitting = true);
 
     try {
-      final body = {
-        "passengerName": _leadPassengerName(),
+      final ageStr = primaryAgeController.text.trim();
+      final waitlist = primaryWaitlistController.text.trim();
+      final fromStation = fromStationController.text.trim();
+      final toStation = toStationController.text.trim();
+
+      final body = <String, dynamic>{
+        "passengerName": primaryName,
         "pnrNumber": pnrController.text.trim(),
+        "contactNumber": contactNumberController.text.trim(),
         "trainName": trainNameController.text.trim(),
         "trainNumber": trainNumberController.text.trim(),
-        "bookingType": selectedBookingType,
         "journeyClass": selectedClass,
         "dateOfJourney": dateOfJourney!.toIso8601String(),
-        "fromStation": fromStationController.text.trim(),
-        "toStation": toStationController.text.trim(),
-        "contactNumber": _sanitizedContactNumber(),
+        "fromStation": fromStation,
+        "toStation": toStation,
+        "route": "$fromStation to $toStation",
         "referencedBy": referencedByController.text.trim(),
-        "remarks": remarksController.text.trim(),
-        "passengers": passengers
-            .map((p) => {
-                  "name": p['name'],
-                  "age": int.tryParse(p['age']?.toString() ?? '') ?? 30,
-                  "gender": p['gender'] ?? 'MALE',
-                  "berthPreference": p['berthPreference'] ?? '',
-                  "bookingStatus": p['bookingStatus'] ?? '',
-                  // UI's "Waiting List" maps to backend's currentStatus
-                  // column (no separate waitingList column in Catalyst).
-                  "currentStatus": (p['waitingList']?.toString().trim().isNotEmpty ?? false)
-                      ? p['waitingList']
-                      : (p['currentStatus'] ?? ''),
-                })
-            .toList(),
+        "numberOfPassengers": 1 + additional,
+        "passengers": [
+          <String, dynamic>{
+            "name": primaryName,
+            if (_primaryGender.isNotEmpty) "gender": _primaryGender,
+            if (ageStr.isNotEmpty) "age": int.tryParse(ageStr) ?? 0,
+            if (waitlist.isNotEmpty) "currentStatus": waitlist,
+          },
+        ],
       };
 
       final res = await HttpService.post("/api/train-requests", body);
 
       if (res.statusCode == 201 || res.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Train request created ✅")),
-        );
-
-        if (widget.onCreated != null) {
-          await widget.onCreated!();
+        final role = await AuthService.getRole();
+        if (role == Roles.staff) {
+          await _showPdfReadyDialog(
+            title: 'Train EQ Request Generated',
+            content: const Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                      text:
+                          'Your Train EQ request has been created.\n\nGo to '),
+                  TextSpan(
+                    text: 'Print Center',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  TextSpan(
+                      text:
+                          ' to download the EQ Letter PDF once it is approved.'),
+                ],
+              ),
+            ),
+          );
+        } else {
+          _snack("Train request created ✅");
         }
 
+        if (widget.onCreated != null) await widget.onCreated!();
+        if (!mounted) return;
         Navigator.pop(context, true);
       } else {
         String msg = "Failed (${res.statusCode})";
         try {
           final data = jsonDecode(res.body);
           msg = data["message"] ?? msg;
-          // Surface the first specific field error for easier debugging.
           final errs = data["errors"];
           if (errs is List && errs.isNotEmpty) {
             final first = errs.first;
@@ -279,15 +302,10 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
             }
           }
         } catch (_) {}
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg)),
-        );
+        _snack(msg);
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error")),
-      );
+    } catch (_) {
+      _snack("Server error");
     } finally {
       if (mounted) setState(() => submitting = false);
     }
@@ -298,305 +316,383 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
     return Scaffold(
       backgroundColor: bgLight,
       appBar: AppBar(
-        title: const Text("New Train Request"),
+        title: const Text("Train Emergency (EQ) Entry"),
         backgroundColor: primaryBlue,
+        foregroundColor: Colors.white,
       ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // PNR Section
-            _buildCard(
-              title: "PNR DETAILS",
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: pnrController,
-                        keyboardType: TextInputType.number,
-                        maxLength: 10,
-                        decoration: const InputDecoration(
-                          labelText: "PNR Number *",
-                          border: OutlineInputBorder(),
-                          counterText: "",
-                        ),
-                        validator: (v) => (v == null || v.trim().length != 10)
-                            ? "Enter 10-digit PNR"
-                            : null,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      onPressed: fetchingPNR ? null : _fetchPNRStatus,
-                      icon: fetchingPNR
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.search, size: 18),
-                      label: const Text("Fetch"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: selectedBookingType,
-                  decoration: const InputDecoration(
-                    labelText: "Booking Type",
-                    border: OutlineInputBorder(),
-                  ),
-                  items: bookingTypes.map((t) {
-                    return DropdownMenuItem(
-                      value: t['value'],
-                      child: Text(t['label']!),
-                    );
-                  }).toList(),
-                  onChanged: (v) => setState(() => selectedBookingType = v!),
-                ),
-              ],
+            Text(
+              "Generate Railway Emergency Quota letter instantly",
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
             ),
             const SizedBox(height: 16),
-
-            // Train Details
-            _buildCard(
-              title: "TRAIN DETAILS",
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: trainNumberController,
-                        decoration: const InputDecoration(
-                          labelText: "Train Number",
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: TextFormField(
-                        controller: trainNameController,
-                        decoration: const InputDecoration(
-                          labelText: "Train Name",
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: fromStationController,
-                        decoration: const InputDecoration(
-                          labelText: "From Station *",
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? "Required" : null,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: toStationController,
-                        decoration: const InputDecoration(
-                          labelText: "To Station *",
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? "Required" : null,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: selectedClass,
-                  decoration: const InputDecoration(
-                    labelText: "Class *",
-                    border: OutlineInputBorder(),
-                  ),
-                  items: journeyClasses.map((c) {
-                    return DropdownMenuItem(value: c, child: Text(c));
-                  }).toList(),
-                  onChanged: (v) => setState(() => selectedClass = v!),
-                ),
-                const SizedBox(height: 12),
-                InkWell(
-                  onTap: _pickDate,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: "Date of Journey *",
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.calendar_today),
-                    ),
-                    child: Text(
-                      dateOfJourney != null
-                          ? DateFormat('dd MMM yyyy').format(dateOfJourney!)
-                          : "Select Date",
-                      style: TextStyle(
-                        color:
-                            dateOfJourney != null ? Colors.black : Colors.grey,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            _buildPassengerCard(),
             const SizedBox(height: 16),
-
-            // Passengers Section
-            _buildCard(
-              title: "PASSENGERS",
-              trailing: TextButton.icon(
-                onPressed: _addPassenger,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text("Add"),
-              ),
-              children: [
-                if (passengers.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      _passengersError ??
-                          "No passengers added. Click 'Add' to add passengers.",
-                      style: TextStyle(
-                        color: _passengersError != null
-                            ? Colors.red
-                            : Colors.grey,
-                      ),
-                    ),
-                  )
-                else
-                  ...passengers.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final passenger = entry.value;
-                    return _buildPassengerCard(index, passenger);
-                  }),
-              ],
-            ),
+            _buildTrainCard(),
+            const SizedBox(height: 20),
+            _buildSubmitButton(),
             const SizedBox(height: 16),
-
-            // Contact & Reference
-            _buildCard(
-              title: "CONTACT & REFERENCE",
-              children: [
-                TextFormField(
-                  controller: contactNumberController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: "Contact Number",
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: referencedByController,
-                  decoration: const InputDecoration(
-                    labelText: "Referenced By",
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: remarksController,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: "Remarks",
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Digital Signature gate
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _signatureAcknowledged
-                      ? primaryBlue
-                      : Colors.grey.shade300,
-                  width: _signatureAcknowledged ? 1.5 : 1,
-                ),
-              ),
-              child: CheckboxListTile(
-                value: _signatureAcknowledged,
-                onChanged: (v) =>
-                    setState(() => _signatureAcknowledged = v ?? false),
-                controlAffinity: ListTileControlAffinity.leading,
-                activeColor: primaryBlue,
-                title: const Text(
-                  "Attach Digital Signature",
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: const Text(
-                  "Appends Minister's stored digital signature to the PDF",
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Submit Button
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton(
-                onPressed: (submitting || !_signatureAcknowledged)
-                    ? null
-                    : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryBlue,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey.shade300,
-                  disabledForegroundColor: Colors.grey.shade600,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: submitting
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : Text(
-                        _signatureAcknowledged
-                            ? "Submit Request"
-                            : "Tick the signature box to enable",
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCard({
-    required String title,
-    required List<Widget> children,
-    Widget? trailing,
-  }) {
+  Widget _buildPassengerCard() {
+    return _card(
+      title: "PASSENGER INFORMATION",
+      children: [
+        // Cap banner
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            border: Border.all(color: const Color(0xFFBFDBFE)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline,
+                  color: Color(0xFF1D4ED8), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "General bookings (AC/Non-AC) allow maximum 6 passengers per PNR",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextFormField(
+          controller: primaryNameController,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: "Primary Passenger Name *",
+            hintText: "Full name of the primary passenger",
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.person),
+          ),
+          validator: (v) =>
+              (v == null || v.trim().isEmpty) ? "Primary passenger name is required" : null,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: DropdownButtonFormField<String>(
+                value: _primaryGender,
+                decoration: const InputDecoration(
+                  labelText: "Gender",
+                  border: OutlineInputBorder(),
+                ),
+                items: _genderOptions
+                    .map((g) => DropdownMenuItem(
+                          value: g['value'],
+                          child: Text(g['label']!),
+                        ))
+                    .toList(),
+                onChanged: (v) => setState(() => _primaryGender = v ?? ''),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: TextFormField(
+                controller: primaryAgeController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLength: 3,
+                decoration: const InputDecoration(
+                  labelText: "Age",
+                  border: OutlineInputBorder(),
+                  counterText: "",
+                ),
+                validator: (v) {
+                  final s = (v ?? '').trim();
+                  if (s.isEmpty) return null;
+                  final n = int.tryParse(s);
+                  if (n == null || n <= 0 || n > 120) {
+                    return "1–120";
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 3,
+              child: TextFormField(
+                controller: primaryWaitlistController,
+                decoration: const InputDecoration(
+                  labelText: "W/L",
+                  hintText: "e.g. WL/12",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: additionalTravellersController,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          maxLength: 1,
+          decoration: InputDecoration(
+            labelText: "Additional Travellers *",
+            helperText:
+                "Other people travelling on the same PNR (excluding the primary). Max $_maxAdditional.",
+            border: const OutlineInputBorder(),
+            counterText: "",
+            prefixIcon: const Icon(Icons.group_add_outlined),
+          ),
+          validator: (v) {
+            final s = (v ?? '').trim();
+            final n = int.tryParse(s.isEmpty ? '0' : s);
+            if (n == null || n < 0 || n > _maxAdditional) {
+              return "0–$_maxAdditional";
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: contactNumberController,
+          keyboardType: TextInputType.phone,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          maxLength: 10,
+          decoration: const InputDecoration(
+            labelText: "Phone Number (Primary Passenger) *",
+            hintText: "10-digit mobile number",
+            helperText: "Contact number for the primary passenger",
+            border: OutlineInputBorder(),
+            counterText: "",
+            prefixIcon: Icon(Icons.phone_outlined),
+          ),
+          validator: (v) {
+            final s = (v ?? '').trim();
+            if (s.isEmpty) return "Phone number is required";
+            if (!RegExp(r'^\d{10}$').hasMatch(s)) {
+              return "Enter a valid 10-digit phone number";
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: pnrController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLength: 10,
+                decoration: const InputDecoration(
+                  labelText: "PNR Number *",
+                  hintText: "10-digit PNR",
+                  helperText: "Click Fetch to auto-fill train details",
+                  border: OutlineInputBorder(),
+                  counterText: "",
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().length != 10) ? "Enter 10-digit PNR" : null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              onPressed: fetchingPNR ? null : _fetchPNRStatus,
+              icon: fetchingPNR
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.search, size: 18),
+              label: const Text("Fetch"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryBlue,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: referencedByController,
+          decoration: const InputDecoration(
+            labelText: "Referenced By *",
+            hintText: "Eg: MP Recommendation / Emergency Call",
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.assignment_ind_outlined),
+          ),
+          validator: (v) => (v == null || v.trim().isEmpty)
+              ? "Referenced By is required"
+              : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTrainCard() {
+    final dateStr = dateOfJourney == null
+        ? "dd-mm-yyyy"
+        : DateFormat('dd-MM-yyyy').format(dateOfJourney!);
+
+    return _card(
+      title: "TRAIN DETAILS",
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: trainNumberController,
+                decoration: const InputDecoration(
+                  labelText: "Train Number",
+                  hintText: "e.g. 12301",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: trainNameController,
+                decoration: const InputDecoration(
+                  labelText: "Train Name",
+                  hintText: "e.g. Rajdhani Express",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: _pickDate,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: "Date of Journey *",
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.calendar_today, size: 18),
+                  ),
+                  child: Text(
+                    dateStr,
+                    style: TextStyle(
+                      color: dateOfJourney == null
+                          ? Colors.grey.shade500
+                          : Colors.black,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: selectedClass,
+                decoration: const InputDecoration(
+                  labelText: "Class *",
+                  border: OutlineInputBorder(),
+                ),
+                items: journeyClasses
+                    .map((c) =>
+                        DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) =>
+                    setState(() => selectedClass = v ?? selectedClass),
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? "Required" : null,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: fromStationController,
+                decoration: const InputDecoration(
+                  labelText: "From Station *",
+                  hintText: "e.g. New Delhi (NDLS)",
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? "From station is required"
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: toStationController,
+                decoration: const InputDecoration(
+                  labelText: "To Station *",
+                  hintText: "e.g. Mumbai (BCT)",
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? "To station is required"
+                    : null,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton.icon(
+        onPressed: submitting ? null : _submit,
+        icon: submitting
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.send),
+        label: Text(submitting ? "Submitting..." : "Generate EQ Letter"),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFF59E0B),
+          foregroundColor: Colors.black,
+          textStyle:
+              const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _card({required String title, required List<Widget> children}) {
     return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -611,226 +707,17 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: Row(
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: primaryBlue,
-                  ),
-                ),
-                const Spacer(),
-                if (trailing != null) trailing,
-              ],
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: primaryBlue,
+              letterSpacing: 0.5,
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(children: children),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPassengerCard(int index, Map<String, dynamic> passenger) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: bgLight,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: primaryBlue,
-                child: Text(
-                  "${index + 1}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                "Passenger ${index + 1}",
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                onPressed: () => _removePassenger(index),
-                constraints: const BoxConstraints(),
-                padding: EdgeInsets.zero,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            initialValue: passenger['name'],
-            decoration: const InputDecoration(
-              labelText: "Name *",
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? "Required" : null,
-            onChanged: (v) => passengers[index]['name'] = v,
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextFormField(
-                  initialValue: passenger['age']?.toString(),
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: "Age *",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return "Required";
-                    final n = int.tryParse(v.trim());
-                    if (n == null || n <= 0) return "Invalid";
-                    return null;
-                  },
-                  onChanged: (v) => passengers[index]['age'] = v,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonFormField<String?>(
-                  value: () {
-                    final g = passenger['gender']?.toString() ?? '';
-                    return (g == 'MALE' || g == 'FEMALE' || g == 'OTHER')
-                        ? g
-                        : null;
-                  }(),
-                  decoration: const InputDecoration(
-                    labelText: "Sex *",
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem<String?>(
-                        value: null, child: Text("Select sex")),
-                    DropdownMenuItem<String?>(
-                        value: 'MALE', child: Text("Male")),
-                    DropdownMenuItem<String?>(
-                        value: 'FEMALE', child: Text("Female")),
-                    DropdownMenuItem<String?>(
-                        value: 'OTHER', child: Text("Other")),
-                  ],
-                  onChanged: (v) => setState(
-                      () => passengers[index]['gender'] = v ?? ''),
-                  validator: (v) =>
-                      (v?.isEmpty ?? true) ? "Required" : null,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            initialValue: passenger['waitingList'],
-            decoration: const InputDecoration(
-              labelText: "Waiting List *",
-              hintText: "e.g., CNF, RAC, WL/15",
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? "Required" : null,
-            onChanged: (v) => passengers[index]['waitingList'] = v,
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            initialValue: passenger['berthPreference'],
-            decoration: const InputDecoration(
-              labelText: "Berth Preference (LB/MB/UB/SL/SU)",
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onChanged: (v) => passengers[index]['berthPreference'] = v,
-          ),
-          if (passenger['bookingStatus']?.toString().isNotEmpty == true ||
-              passenger['currentStatus']?.toString().isNotEmpty == true) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (passenger['bookingStatus']?.toString().isNotEmpty == true)
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "Booking Status",
-                            style: TextStyle(fontSize: 10, color: Colors.grey),
-                          ),
-                          Text(
-                            passenger['bookingStatus'].toString(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (passenger['bookingStatus']?.toString().isNotEmpty == true &&
-                    passenger['currentStatus']?.toString().isNotEmpty == true)
-                  const SizedBox(width: 8),
-                if (passenger['currentStatus']?.toString().isNotEmpty == true)
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "Current Status",
-                            style: TextStyle(fontSize: 10, color: Colors.grey),
-                          ),
-                          Text(
-                            passenger['currentStatus'].toString(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
+          const SizedBox(height: 14),
+          ...children,
         ],
       ),
     );

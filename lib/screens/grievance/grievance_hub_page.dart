@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
-import 'grievance_create_page.dart';
+import 'grievance_type_picker_page.dart';
 import 'office_grievance_create_page.dart';
 import 'grievance_list_page.dart';
 
@@ -36,7 +36,9 @@ class GrievanceHubPage extends StatelessWidget {
             gradient: AppTheme.primaryGradient,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const GrievanceCreatePage()),
+              MaterialPageRoute(
+                builder: (_) => const GrievanceTypePickerPage(),
+              ),
             ),
           ),
           const SizedBox(height: 12),

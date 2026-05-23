@@ -3131,13 +3131,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             AppNavigator.toTrainRequestEntry(context, role: widget.role);
           }),
 
-          _bottomButton(
-              Icons.event,
-              widget.role == Roles.staff
-                  ? "Add\nInvitation"
-                  : "Tour\nPrograms", () {
-            AppNavigator.toTourProgramEntry(context, role: widget.role);
-          }),
+          if (widget.role == Roles.admin)
+            _bottomButton(Icons.star_outline, "Events", () {
+              AppNavigator.toEvents(context, role: widget.role);
+            })
+          else
+            _bottomButton(
+                Icons.event,
+                widget.role == Roles.staff
+                    ? "Add\nInvitation"
+                    : "Tour\nPrograms", () {
+              AppNavigator.toTourProgramEntry(context, role: widget.role);
+            }),
         ],
       ),
     );
@@ -3251,6 +3256,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => const StaffTasksPage(),
         ));
+      }),
+      _drawerItem(Icons.event_available, "My Attendance", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toMyAttendance(context);
       }),
       _drawerItem(Icons.history, "My History", onTap: () {
         Navigator.pop(context);
@@ -3376,9 +3385,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           builder: (_) => const PrintCenterPage(),
         ));
       }),
+      _drawerItem(Icons.event_available, "Staff Attendance", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toStaffAttendance(context);
+      }),
       _drawerItem(Icons.history_toggle_off, "Action History", onTap: () {
         Navigator.pop(context);
         AppNavigator.toActionHistory(context);
+      }),
+      _drawerItem(Icons.people_outline, "User Management", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toUserManagement(context);
       }),
       _drawerItem(Icons.groups_outlined, "About Team", onTap: () {
         Navigator.pop(context);

@@ -11,7 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/widgets.dart';
 import '../../widgets/admin_grievance_detail_dialog.dart';
 import 'grievance_view_page.dart';
-import 'grievance_create_page.dart';
+import 'grievance_type_picker_page.dart';
 
 class GrievanceListPage extends StatefulWidget {
   final String role;
@@ -246,15 +246,24 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
     if (id.isEmpty) return;
     if (_downloadingIds.contains(id)) return;
 
+    // TEMPLE_VISIT uses a dedicated endpoint that returns the Darshan letter
+    // and atomically marks the grievance RESOLVED on success — so the row
+    // becomes Resolved only once the staff actually downloads.
+    final isTempleVisit = grievance['grievanceType'] == 'TEMPLE_VISIT';
+    final endpoint = isTempleVisit
+        ? "/api/pdf/grievance/$id/temple-visit"
+        : "/api/pdf/grievance/$id";
+    final fileName =
+        isTempleVisit ? "Darshan_Letter_$id.pdf" : "grievance_$id.pdf";
+
     setState(() => _downloadingIds.add(id));
 
     try {
-      final res =
-          await HttpService.downloadFile("/api/pdf/grievance/$id");
+      final res = await HttpService.downloadFile(endpoint);
 
       if (res.statusCode == 200) {
         final dir = await getTemporaryDirectory();
-        final file = File("${dir.path}/grievance_$id.pdf");
+        final file = File("${dir.path}/$fileName");
         await file.writeAsBytes(res.bodyBytes);
 
         final result = await OpenFilex.open(file.path);
@@ -264,7 +273,14 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
             SnackBar(
                 content: Text("Could not open PDF: ${result.message}")),
           );
+        } else if (isTempleVisit) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text("Letter downloaded. Grievance resolved.")),
+          );
         }
+        // Refresh so the new RESOLVED status (for temple-visit) shows up.
+        if (isTempleVisit) _fetchGrievances();
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -282,7 +298,8 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
   }
 
   Future<void> _openCreate() async {
-    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
+    final canCreate = AccessControl.can(widget.role, ActionPermission.create) &&
+        widget.role != Roles.superAdmin;
 
     if (!canCreate) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -294,7 +311,9 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => GrievanceCreatePage(onCreated: () => _fetchGrievances()),
+        builder: (_) => GrievanceTypePickerPage(
+          onCreated: () => _fetchGrievances(),
+        ),
       ),
     );
     if (result == true) _fetchGrievances();
@@ -302,7 +321,8 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
+    final canCreate = AccessControl.can(widget.role, ActionPermission.create) &&
+        widget.role != Roles.superAdmin;
     final hasFilters = _startDate != null ||
         _endDate != null ||
         _searchQuery.isNotEmpty ||

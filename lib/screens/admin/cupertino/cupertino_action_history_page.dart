@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_toast.dart';
 
 class CupertinoActionHistoryPage extends StatefulWidget {
   const CupertinoActionHistoryPage({super.key});
@@ -30,6 +31,7 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
   static const List<List<String>> _typeOptions = [
     ['All', 'All Types'],
     ['GRIEVANCE', 'Grievance'],
+    ['TEMPLE_VISIT', 'Temple Visit'],
     ['TRAIN_REQUEST', 'Train Request'],
     ['TOUR_PROGRAM', 'Tour Program'],
   ];
@@ -78,7 +80,15 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
     }
     try {
       final params = <String, String>{'limit': '100'};
-      if (_typeFilter != 'All') params['type'] = _typeFilter;
+      // Backend `type` filter only knows GRIEVANCE / TRAIN_REQUEST /
+      // TOUR_PROGRAM. Temple Visit is a subset of GRIEVANCE rows, narrowed
+      // client-side below using `details.grievanceType`.
+      final isTempleFilter = _typeFilter == 'TEMPLE_VISIT';
+      if (isTempleFilter) {
+        params['type'] = 'GRIEVANCE';
+      } else if (_typeFilter != 'All') {
+        params['type'] = _typeFilter;
+      }
       if (_actionFilter != 'All') params['action'] = _actionFilter;
       if (_fromDate != null) {
         params['startDate'] = _fromDate!.toIso8601String();
@@ -97,10 +107,20 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
             ? decoded
             : (decoded is Map && decoded['data'] is List ? decoded['data'] : []);
         if (mounted) {
+          var items = list
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+              .toList();
+          if (isTempleFilter) {
+            items = items.where((it) {
+              final details = it['details'];
+              if (details is Map) {
+                return details['grievanceType'] == 'TEMPLE_VISIT';
+              }
+              return false;
+            }).toList();
+          }
           setState(() {
-            _items = list
-                .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-                .toList();
+            _items = items;
             _loadingList = false;
           });
         }
@@ -1211,6 +1231,61 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
 
   // ============ DETAIL SHEET ============
 
+  /// Admin-only action: flips a RESOLVED grievance back to OPEN. This is the
+  /// **only** entry point for reopening — the view page no longer exposes a
+  /// status toggle.
+  Future<void> _reopenGrievance(BuildContext sheetCtx, String id) async {
+    if (id.isEmpty) {
+      CupertinoToast.show(context, 'Missing grievance ID', isError: true);
+      return;
+    }
+    final confirm = await showCupertinoDialog<bool>(
+      context: sheetCtx,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Reopen Grievance?'),
+        content: const Text(
+          'This will move the grievance back to OPEN status and make it editable again. Continue?',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reopen'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final res = await HttpService.patch(
+        '/api/grievances/$id/status',
+        {'status': 'OPEN'},
+      );
+      if (!mounted) return;
+      if (res.statusCode == 200) {
+        if (Navigator.of(sheetCtx).canPop()) Navigator.pop(sheetCtx);
+        CupertinoToast.show(context, 'Grievance reopened');
+        await Future.wait([_fetchStats(), _fetchHistory()]);
+      } else {
+        String msg = 'Failed to reopen (${res.statusCode})';
+        try {
+          final data = jsonDecode(res.body);
+          msg = data['message'] ?? msg;
+        } catch (_) {}
+        CupertinoToast.show(context, msg, isError: true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      CupertinoToast.show(context, 'Server error / No internet',
+          isError: true);
+    }
+  }
+
   void _showDetailSheet(Map<String, dynamic> item) {
     final type = (item['type'] ?? '').toString();
     final typeMeta = _typeMeta(type);
@@ -1350,16 +1425,47 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
               top: false,
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: CupertinoButton(
-                    color: AppTheme.primaryIndigo,
-                    borderRadius: BorderRadius.circular(10),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Close',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
+                child: Row(
+                  children: [
+                    if (type == 'GRIEVANCE' &&
+                        status.toUpperCase() == 'RESOLVED')
+                      Expanded(
+                        child: CupertinoButton(
+                          color: AppTheme.saffron,
+                          borderRadius: BorderRadius.circular(10),
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 13),
+                          onPressed: () => _reopenGrievance(
+                              ctx, (item['id'] ?? '').toString()),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(CupertinoIcons.arrow_2_circlepath,
+                                  size: 18, color: CupertinoColors.black),
+                              SizedBox(width: 6),
+                              Text('Reopen Grievance',
+                                  style: TextStyle(
+                                    color: CupertinoColors.black,
+                                    fontWeight: FontWeight.bold,
+                                  )),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (type == 'GRIEVANCE' &&
+                        status.toUpperCase() == 'RESOLVED')
+                      const SizedBox(width: 10),
+                    Expanded(
+                      child: CupertinoButton(
+                        color: AppTheme.primaryIndigo,
+                        borderRadius: BorderRadius.circular(10),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Close',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
