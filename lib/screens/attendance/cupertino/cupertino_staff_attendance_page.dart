@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/attendance_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 
 class CupertinoStaffAttendancePage extends StatefulWidget {
@@ -172,37 +173,39 @@ class _CupertinoStaffAttendancePageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('Staff Attendance'),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _refresh),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildHeader(),
-                  const SizedBox(height: 16),
-                  _buildDatePickerCard(),
-                  const SizedBox(height: 16),
-                  if (_mode == _RangeMode.day) _buildStatsRow(),
-                  if (_mode == _RangeMode.day) const SizedBox(height: 16),
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 32),
-                      child: Center(child: CupertinoActivityIndicator()),
-                    )
-                  else if (_mode == _RangeMode.day)
-                    _buildDayTable()
-                  else
-                    _buildAggregateTable(),
-                ]),
-              ),
+      child: Column(
+        children: [
+          const OmsPageHeader(title: 'Staff Attendance'),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _refresh),
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildHeader(),
+                      const SizedBox(height: 16),
+                      _buildDatePickerCard(),
+                      const SizedBox(height: 16),
+                      if (_mode == _RangeMode.day) _buildStatsRow(),
+                      if (_mode == _RangeMode.day) const SizedBox(height: 16),
+                      if (_loading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 32),
+                          child: Center(child: CupertinoActivityIndicator()),
+                        )
+                      else if (_mode == _RangeMode.day)
+                        _buildDayTable()
+                      else
+                        _buildAggregateTable(),
+                    ]),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

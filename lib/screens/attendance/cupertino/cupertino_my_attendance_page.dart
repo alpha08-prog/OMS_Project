@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/attendance_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 
 class CupertinoMyAttendancePage extends StatefulWidget {
@@ -233,42 +234,44 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('My Attendance'),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _refreshAll),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  const Text(
-                    'My Attendance',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryIndigo,
-                    ),
+      child: Column(
+        children: [
+          const OmsPageHeader(title: 'My Attendance'),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _refreshAll),
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      const Text(
+                        'My Attendance',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryIndigo,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Mark today's attendance or plan a half day / leave for any upcoming date.",
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTodayCard(),
+                      const SizedBox(height: 16),
+                      _buildApplyCard(),
+                      const SizedBox(height: 16),
+                      _buildHistoryCard(),
+                    ]),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "Mark today's attendance or plan a half day / leave for any upcoming date.",
-                    style: TextStyle(
-                        fontSize: 13, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTodayCard(),
-                  const SizedBox(height: 16),
-                  _buildApplyCard(),
-                  const SizedBox(height: 16),
-                  _buildHistoryCard(),
-                ]),
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

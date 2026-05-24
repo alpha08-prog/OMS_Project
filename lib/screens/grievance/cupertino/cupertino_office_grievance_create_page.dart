@@ -10,6 +10,7 @@ import '../../../services/temple_registry_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
@@ -447,23 +448,16 @@ class _CupertinoOfficeGrievanceCreatePageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.saffronDark,
-        brightness: Brightness.dark,
-        middle: const Text(
-          'Office Grievance',
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+      child: Column(
+        children: [
+          const OmsPageHeader(
+            title: 'Office Grievance',
+            gradientColors: [AppTheme.saffronDark, AppTheme.saffron],
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
             Container(
               padding: const EdgeInsets.all(12),
               margin: const EdgeInsets.only(bottom: 16),
@@ -639,8 +633,10 @@ class _CupertinoOfficeGrievanceCreatePageState
               ),
             ),
             const SizedBox(height: 24),
-          ],
-        ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

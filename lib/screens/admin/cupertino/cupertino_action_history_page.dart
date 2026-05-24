@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 
 class CupertinoActionHistoryPage extends StatefulWidget {
@@ -349,62 +350,57 @@ class _CupertinoActionHistoryPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        border: null,
-        middle: const Text(
-          'Action History',
-          style: TextStyle(
-              color: CupertinoColors.white, fontWeight: FontWeight.bold),
-        ),
-        leading: CupertinoNavigationBarBackButton(
-          color: CupertinoColors.white,
-          onPressed: () => Navigator.pop(context),
-        ),
-        trailing: GestureDetector(
-          onTap: _loadAll,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
-          ),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _loadAll),
-            SliverToBoxAdapter(child: _buildHeroBanner()),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildStatsGrid(),
-                  const SizedBox(height: 18),
-                  _buildFilterPanel(),
-                  if (_hasFilters) ...[
-                    const SizedBox(height: 10),
-                    _buildAppliedFilters(),
-                  ],
-                  const SizedBox(height: 18),
-                  _buildLogHeader(),
-                  const SizedBox(height: 10),
-                  if (_loadingList)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child:
-                          Center(child: CupertinoActivityIndicator(radius: 14)),
-                    )
-                  else if (_error != null)
-                    _buildError()
-                  else if (_items.isEmpty)
-                    _buildEmpty()
-                  else
-                    ..._items.map(_buildLogCard),
-                ]),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'Action History',
+            trailing: GestureDetector(
+              onTap: _loadAll,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child:
+                    Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
               ),
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _loadAll),
+                SliverToBoxAdapter(child: _buildHeroBanner()),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildStatsGrid(),
+                      const SizedBox(height: 18),
+                      _buildFilterPanel(),
+                      if (_hasFilters) ...[
+                        const SizedBox(height: 10),
+                        _buildAppliedFilters(),
+                      ],
+                      const SizedBox(height: 18),
+                      _buildLogHeader(),
+                      const SizedBox(height: 10),
+                      if (_loadingList)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 60),
+                          child: Center(
+                              child: CupertinoActivityIndicator(radius: 14)),
+                        )
+                      else if (_error != null)
+                        _buildError()
+                      else if (_items.isEmpty)
+                        _buildEmpty()
+                      else
+                        ..._items.map(_buildLogCard),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

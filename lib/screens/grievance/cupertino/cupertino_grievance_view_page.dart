@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' show Colors;
 
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 
 /// Grievance details — single-pane view. Timeline + Tracking-history
@@ -188,20 +189,12 @@ class _CupertinoGrievanceViewPageState
     if (_loading) {
       return CupertinoPageScaffold(
         backgroundColor: const Color(0xFFF4F6FB),
-        navigationBar: CupertinoNavigationBar(
-          backgroundColor: primaryBlue,
-          brightness: Brightness.dark,
-          middle: const Text("Grievance Details",
-              style: TextStyle(
-                  fontWeight: FontWeight.w600, color: CupertinoColors.white)),
-          leading: CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () => Navigator.pop(context),
-            child:
-                const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-          ),
+        child: Column(
+          children: const [
+            OmsPageHeader(title: "Grievance Details"),
+            Expanded(child: Center(child: CupertinoActivityIndicator())),
+          ],
         ),
-        child: const Center(child: CupertinoActivityIndicator()),
       );
     }
 
@@ -211,28 +204,22 @@ class _CupertinoGrievanceViewPageState
 
     return CupertinoPageScaffold(
       backgroundColor: const Color(0xFFF4F6FB),
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        middle: const Text("Grievance Details",
-            style: TextStyle(
-                fontWeight: FontWeight.w600, color: CupertinoColors.white)),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-        trailing: _updating
-            ? const Padding(
-                padding: EdgeInsets.only(right: 8),
-                child: CupertinoActivityIndicator(color: CupertinoColors.white),
-              )
-            : null,
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Expanded(child: _buildDetailsBody(canEdit, canApprove)),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Grievance Details",
+            trailing: _updating
+                ? const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child:
+                        CupertinoActivityIndicator(color: CupertinoColors.white),
+                  )
+                : null,
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(child: _buildDetailsBody(canEdit, canApprove)),
             if (isLocked)
               Container(
                 padding: const EdgeInsets.all(16),
@@ -316,6 +303,8 @@ class _CupertinoGrievanceViewPageState
               ),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

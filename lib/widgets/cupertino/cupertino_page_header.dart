@@ -19,6 +19,7 @@ class OmsPageHeader extends StatelessWidget {
   final Widget? leading;
   final bool showBack;
   final VoidCallback? onBack;
+  final List<Color>? gradientColors;
 
   const OmsPageHeader({
     super.key,
@@ -28,6 +29,7 @@ class OmsPageHeader extends StatelessWidget {
     this.leading,
     this.showBack = true,
     this.onBack,
+    this.gradientColors,
   });
 
   @override
@@ -49,9 +51,10 @@ class OmsPageHeader extends StatelessWidget {
     final Widget rightWidget = trailing ?? const SizedBox(width: 44);
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppTheme.primaryIndigo, Color(0xFF4F46E5)],
+          colors: gradientColors ??
+              const [AppTheme.primaryIndigo, Color(0xFF4F46E5)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),

@@ -139,25 +139,28 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
         context: context,
         builder: (ctx) => CupertinoPageScaffold(
           backgroundColor: AppTheme.background,
-          navigationBar: CupertinoNavigationBar(
-            middle: Text(title),
-            backgroundColor: AppTheme.primaryIndigo,
-            brightness: Brightness.dark,
-            leading: CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Icon(CupertinoIcons.xmark,
-                  color: CupertinoColors.white),
-            ),
-          ),
-          child: SafeArea(
-            child: Container(
-              color: CupertinoColors.white,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Html(data: res.body),
+          child: Column(
+            children: [
+              OmsPageHeader(
+                title: title,
+                showBack: false,
+                leading: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Icon(CupertinoIcons.xmark,
+                      color: CupertinoColors.white),
+                ),
               ),
-            ),
+              Expanded(
+                child: Container(
+                  color: CupertinoColors.white,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Html(data: res.body),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );

@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import 'cupertino_user_create_page.dart';
 import 'cupertino_user_list_page.dart';
 
@@ -11,47 +12,44 @@ class CupertinoUserManagementPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text(
-          "User Management",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildOption(
-              context: context,
-              icon: CupertinoIcons.person_2_fill,
-              iconBg: AppTheme.primaryIndigo,
-              title: "View All Users",
-              subtitle:
-                  "Browse, search, change roles, and activate/deactivate users.",
-              onTap: () => Navigator.push(
-                context,
-                CupertinoPageRoute(
-                    builder: (_) => const CupertinoUserListPage()),
-              ),
+      child: Column(
+        children: [
+          const OmsPageHeader(title: "User Management"),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildOption(
+                  context: context,
+                  icon: CupertinoIcons.person_2_fill,
+                  iconBg: AppTheme.primaryIndigo,
+                  title: "View All Users",
+                  subtitle:
+                      "Browse, search, change roles, and activate/deactivate users.",
+                  onTap: () => Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const CupertinoUserListPage()),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _buildOption(
+                  context: context,
+                  icon: CupertinoIcons.person_badge_plus,
+                  iconBg: AppTheme.successGreen,
+                  title: "Create User",
+                  subtitle:
+                      "Provision a new account with a role and an initial password.",
+                  onTap: () => Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                        builder: (_) => const CupertinoUserCreatePage()),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 14),
-            _buildOption(
-              context: context,
-              icon: CupertinoIcons.person_badge_plus,
-              iconBg: AppTheme.successGreen,
-              title: "Create User",
-              subtitle:
-                  "Provision a new account with a role and an initial password.",
-              onTap: () => Navigator.push(
-                context,
-                CupertinoPageRoute(
-                    builder: (_) => const CupertinoUserCreatePage()),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
@@ -201,27 +202,23 @@ class _CupertinoUserCreatePageState extends State<CupertinoUserCreatePage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text(
-          "Create User",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        previousPageTitle: "Users",
-      ),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 16),
-            _buildFormCard(),
-            const SizedBox(height: 16),
-            _buildButtonsRow(),
-            const SizedBox(height: 24),
-          ],
-        ),
+      child: Column(
+        children: [
+          const OmsPageHeader(title: "Create User"),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildHeader(),
+                const SizedBox(height: 16),
+                _buildFormCard(),
+                const SizedBox(height: 16),
+                _buildButtonsRow(),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

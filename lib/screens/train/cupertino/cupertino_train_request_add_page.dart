@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/access_control.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
@@ -400,31 +401,28 @@ class _CupertinoTrainRequestAddPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: const CupertinoNavigationBar(
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        middle: Text(
-          "Train EQ Entry",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(
-              "Generate Railway Emergency Quota letter instantly",
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+      child: Column(
+        children: [
+          const OmsPageHeader(title: "Train EQ Entry"),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(
+                  "Generate Railway Emergency Quota letter instantly",
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 16),
+                _buildPassengerCard(),
+                const SizedBox(height: 16),
+                _buildTrainCard(),
+                const SizedBox(height: 20),
+                _buildSubmitButton(),
+                const SizedBox(height: 16),
+              ],
             ),
-            const SizedBox(height: 16),
-            _buildPassengerCard(),
-            const SizedBox(height: 16),
-            _buildTrainCard(),
-            const SizedBox(height: 20),
-            _buildSubmitButton(),
-            const SizedBox(height: 16),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
