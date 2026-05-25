@@ -1,7 +1,6 @@
 /**
  * Stats controller — Catalyst-backed.
  *
- * Mirrors backend/src/controllers/stats.controller.ts (the Prisma version).
  * Uses listAllRows + JS aggregation since Catalyst ZCQL has limited GROUP BY
  * support across versions. Cached aggressively (5 min) — admins refresh
  * dashboards rapidly, no point re-aggregating each time.

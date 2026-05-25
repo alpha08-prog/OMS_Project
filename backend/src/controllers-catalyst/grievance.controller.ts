@@ -1,8 +1,6 @@
 /**
  * Grievance controller — backed by Catalyst Data Store via the custom REST client.
  *
- * Mirrors backend/src/controllers/grievance.controller.ts (the Prisma version).
- *
  * Catalyst-specific notes:
  *   - 4 enums (GrievanceType, GrievanceStatus, ActionRequired, GrievanceStage)
  *     are stored as TEXT. Validation happens in this file.
@@ -115,7 +113,7 @@ function invalidateStatCaches() {
   cacheClear('stats_by_constituency');
 }
 
-/** Reshape a Catalyst row into the same JSON the Prisma controller returns. */
+/** Reshape a Catalyst row into the JSON shape the frontend expects. */
 function shapeGrievance(
   row: CatalystRow,
   createdBy?: { id: string; name: string; email: string } | null,
@@ -578,7 +576,7 @@ export async function getGrievanceById(
 /**
  * PUT /api/grievances/:id
  *
- * Excludes immutable fields (id, createdById, createdAt) — same as Prisma version.
+ * Excludes immutable fields (id, createdById, createdAt).
  */
 export async function updateGrievance(
   req: AuthenticatedRequest,

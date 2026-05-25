@@ -2,13 +2,10 @@
 /**
  * Visitor controller — backed by Catalyst Data Store via the custom REST client.
  *
- * Mirrors backend/src/controllers/visitor.controller.ts (the Prisma version) so
- * the route layer can dispatch to either implementation via feature flag.
- *
  * Bypasses zcatalyst-sdk-node entirely (it has bugs in local-dev mode).
  * Uses our thin client at lib/catalyst-client.ts instead.
  *
- * Role-based access mirrors the Prisma controller:
+ * Role-based access:
  *   - STAFF:  only see/edit rows where createdById === their user id
  *   - ADMIN:  see/edit everything
  */
@@ -40,7 +37,7 @@ import type { AuthenticatedRequest, VisitorFilters } from '../types';
 const VISITOR_TABLE = 'Visitor';
 const USER_TABLE = 'User';
 
-/** Reshape a Catalyst row into the same JSON the Prisma controller returns. */
+/** Reshape a Catalyst row into the JSON shape the frontend expects. */
 function shapeVisitor(
   row: CatalystRow,
   creator?: { id: string; name: string; email: string } | null

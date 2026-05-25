@@ -311,7 +311,7 @@ export default function AdminActionCenter() {
         }
       }
 
-      // Accept either UUID (legacy Prisma ids) or numeric Catalyst ROWID.
+      // Accept either UUID (legacy ids) or numeric Catalyst ROWID.
       const idRegex = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9]+)$/i;
       const invalid = assignToIds.find((id) => !idRegex.test(id));
       if (invalid) {
@@ -484,7 +484,7 @@ export default function AdminActionCenter() {
                   <div>
                     <p className="font-medium text-destructive">{error}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      If the database is unreachable, ensure it is running and DATABASE_URL in the backend is correct.
+                      If the database is unreachable, check that the Catalyst credentials in the backend are configured correctly.
                     </p>
                   </div>
                   <Button variant="outline" size="sm" onClick={fetchData}>

@@ -1,17 +1,15 @@
 /**
- * User lookup helper — Catalyst-only.
+ * User lookup helper — Catalyst.
  *
  * User identifiers come in two forms:
  *   - Numeric ROWID  (e.g. "37719000000076188") — Catalyst AppUser primary key
  *   - UUID           (e.g. "cc4afe35-c39a-...") — preserved as legacyId for
- *     rows that originated in the pre-migration Prisma database
+ *     rows that originated in the pre-migration database
  *
  * Lookup strategy per id:
  *   1. If id is numeric → fetch from Catalyst AppUser by ROWID
  *   2. If id is UUID format → fetch from Catalyst AppUser by legacyId
  *   3. Otherwise → unresolved (treated as not authenticated by callers)
- *
- * No Prisma / Neon fallback — Catalyst is the sole source of truth.
  */
 import {
   listAllRows,
@@ -47,7 +45,7 @@ export function isHiddenTestUser(row: CatalystRow | { email?: unknown }): boolea
 }
 
 // Auth runs on every API call and previously paid a full AppUser table scan
-// per request when the JWT subject was a UUID (legacy Prisma id). 5 minutes is
+// per request when the JWT subject was a UUID (legacy id). 5 minutes is
 // short enough that role / isActive flips become visible quickly, long enough
 // to absorb the burst of calls a single page load triggers.
 const AUTH_CACHE_TTL_SECONDS = 5 * 60;
@@ -146,7 +144,7 @@ export async function lookupUsers(
   try {
     allCatalyst = await getCachedTableList(APPUSER_TABLE);
   } catch {
-    // Table not created yet → fall through to Prisma-only path
+    // Table not reachable → leave allCatalyst empty; ids stay unresolved.
   }
 
   const byROWID = new Map<string, CatalystRow>();
@@ -182,11 +180,11 @@ export async function lookupUsers(
 export async function findUserForAuth(
   id: string
 ): Promise<{
-  source: 'catalyst' | 'prisma' | null;
+  source: 'catalyst' | null;
   user: { id: string; email: string; name: string; role: string; isActive: boolean } | null;
 }> {
   const cached = cacheGet<{
-    source: 'catalyst' | 'prisma' | null;
+    source: 'catalyst' | null;
     user: { id: string; email: string; name: string; role: string; isActive: boolean } | null;
   }>(authCacheKey(id));
   if (cached) return cached;
@@ -201,7 +199,7 @@ export async function findUserForAuth(
 async function resolveUserForAuth(
   id: string
 ): Promise<{
-  source: 'catalyst' | 'prisma' | null;
+  source: 'catalyst' | null;
   user: { id: string; email: string; name: string; role: string; isActive: boolean } | null;
 }> {
   // Numeric → Catalyst by ROWID
@@ -225,8 +223,8 @@ async function resolveUserForAuth(
     }
   }
 
-  // UUID → Catalyst by legacyId (then Prisma fallback). With ZCQL on, this is
-  // a direct indexed lookup (~30ms) instead of a full-table scan (~300ms).
+  // UUID → Catalyst by legacyId. With ZCQL on, this is a direct indexed
+  // lookup (~30ms) instead of a full-table scan (~300ms).
   if (UUID_RE.test(id)) {
     try {
       let row: CatalystRow | undefined;
@@ -258,7 +256,6 @@ async function resolveUserForAuth(
     }
   }
 
-  // Catalyst is the only source — no Prisma fallback. If the user isn't in
-  // AppUser, treat as not authenticated.
+  // If the user isn't in AppUser, treat as not authenticated.
   return { source: null, user: null };
 }

@@ -121,7 +121,6 @@ export function getCatalystApp(req: Request): CatalystApp {
 
 /**
  * Get a table handle for CRUD operations.
- * Replaces: prisma.<modelName>
  */
 export function getTable(req: Request, tableName: string) {
   return getCatalystApp(req).datastore().table(tableName);
@@ -142,7 +141,6 @@ export async function executeQuery<T = unknown>(
 
 /**
  * Retry wrapper for transient errors.
- * Mirrors prisma.ts withRetry() so callers can swap freely.
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,

@@ -1,8 +1,6 @@
 /**
  * Birthday controller — backed by Catalyst Data Store via custom REST client.
  *
- * Mirrors backend/src/controllers/birthday.controller.ts (the Prisma version).
- *
  * Catalyst-specific notes:
  *   - No enums on this model.
  *   - Month/day filters (today's birthdays, upcoming, month filter) are done in
@@ -185,7 +183,7 @@ export async function getBirthdays(
           if (!r.dob) return false;
           return new Date(r.dob).getMonth() + 1 === m;
         });
-        // When filtering by month, sort by day-of-month asc (matches Prisma)
+        // When filtering by month, sort by day-of-month asc
         rows.sort((a, b) => {
           const da = a.dob ? new Date(a.dob).getDate() : 99;
           const db = b.dob ? new Date(b.dob).getDate() : 99;
@@ -193,7 +191,7 @@ export async function getBirthdays(
         });
       }
     } else {
-      // Default sort: dob ascending (matches Prisma)
+      // Default sort: dob ascending
       rows.sort((a, b) => {
         const ta = a.dob ? new Date(a.dob).getTime() : 0;
         const tb = b.dob ? new Date(b.dob).getTime() : 0;

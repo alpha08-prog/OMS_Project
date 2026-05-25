@@ -1,10 +1,9 @@
 /**
  * History controller — Catalyst-backed.
  *
- * Mirrors backend/src/controllers/history.controller.ts (the Prisma version).
  * Reads from Catalyst Data Store (Grievance / TrainRequest / TourProgram)
  * via ZCQL when on, listAllRows fallback otherwise. User joins use the
- * cached AppUser table — no Neon round-trip.
+ * cached AppUser table.
  */
 import { Response } from 'express';
 import {

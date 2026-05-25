@@ -39,7 +39,6 @@ export async function authenticate(
     }
 
     // Resolve user from Catalyst AppUser (5-min cache hit on the hot path).
-    // No Prisma fallback — Catalyst is the sole source of truth.
     const { user } = await findUserForAuth(payload.id);
 
     if (!user || !user.isActive) {

@@ -1,14 +1,12 @@
 /**
  * News Intelligence controller — backed by Catalyst Data Store via custom REST client.
  *
- * Mirrors backend/src/controllers/news.controller.ts (the Prisma version).
- *
  * Catalyst-specific notes:
  *   - 2 enums (NewsCategory, NewsPriority) stored as TEXT, validated here.
  *   - Catalyst column `newsPriority` ↔ frontend `priority` (priority is a
  *     reserved word in Catalyst, same as we did for Task).
  *   - No data isolation by createdById — News is office-wide intelligence,
- *     anyone authenticated can see all entries (matches Prisma behavior).
+ *     anyone authenticated can see all entries.
  */
 import { Response } from 'express';
 import {

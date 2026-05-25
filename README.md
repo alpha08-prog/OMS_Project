@@ -33,8 +33,7 @@ The frontend is built for performance, accessibility, and a premium user experie
 The backend provides a secure and scalable API to handle business logic and data persistence.
 - **Runtime:** Node.js (TypeScript)
 - **Framework:** Express.js
-- **Database:** PostgreSQL
-- **ORM:** Prisma
+- **Database:** Zoho Catalyst Data Store (via `zcatalyst-sdk-node`)
 - **Authentication:** JWT (JSON Web Tokens)
 - **PDF Generation:** PDFKit
 - **External APIs:** RapidAPI (IRCTC PNR Status)
@@ -54,10 +53,10 @@ OMS_Project/
 │   └── ...
 ├── backend/              # Node.js Express API
 │   ├── src/
-│   │   ├── controllers/  # Request handlers
-│   │   ├── routes/       # API endpoints
-│   │   ├── middleware/   # Auth & Validation
-│   │   ├── prisma/       # DB Schema & Seeders
+│   │   ├── controllers-catalyst/  # Catalyst-backed handlers
+│   │   ├── routes/                # API endpoints
+│   │   ├── middleware/            # Auth & Validation
+│   │   ├── lib/                   # Catalyst SDK wrapper, cache, stratus
 │   │   └── ...
 │   └── ...
 └── README.md             # Project Documentation
@@ -68,8 +67,8 @@ OMS_Project/
 ## 🛠️ Setup & Installation
 
 ### Prerequisites
-- Node.js (v18 or higher)
-- PostgreSQL (Local or Cloud like Supabase/Neon)
+- Node.js (v22 or higher)
+- A Zoho Catalyst project with the required tables provisioned in the Console
 
 ### 1️⃣ Clone the Repository
 ```bash
@@ -85,29 +84,16 @@ npm install
 ```
 
 **Configuration:**
-1. Create a `.env` file based on the template:
-   ```bash
-   cp env.template .env
-   ```
-2. Update the `.env` file with your credentials:
-   - `DATABASE_URL`: Your PostgreSQL connection string.
-   - `JWT_SECRET`: A secure key for authentication.
-   - `RAPIDAPI_KEY`: Key for IRCTC PNR status (optional).
-
-**Database Initialization:**
-```bash
-# Push schema to database
-npx prisma db push
-
-# (Optional) Seed initial data
-npm run seed
-```
+Create a `.env` file with at least:
+- `JWT_SECRET`: A secure key for authentication.
+- `CATALYST_PROJECT_ID`, `CATALYST_CLIENT_ID`, `CATALYST_CLIENT_SECRET`: Catalyst credentials for local dev (AppSail provides these in production).
+- `RAPIDAPI_KEY`: Key for IRCTC PNR status (optional).
 
 **Run Backend:**
 ```bash
 npm run dev
 ```
-*Server runs on `http://localhost:5000` by default.*
+*Server runs on `http://localhost:9000` by default.*
 
 ### 3️⃣ Frontend Setup
 Open a new terminal, navigate to the frontend folder, and install dependencies:
@@ -487,7 +473,7 @@ The application features three distinct roles with specific permissions:
 ## 🚀 Future Enhancements
 
 ### Backend Integration
-- [x] Backend API (Node.js / Express) and PostgreSQL with Prisma
+- [x] Backend API (Node.js / Express) on Zoho Catalyst Data Store
 - [x] JWT authentication and role-based access (Staff, Admin, Super Admin)
 - [ ] File upload to object storage (news images, grievance attachments); URLs stored in DB
 - [ ] Real-time notifications (e.g. Zoho Cliq / email)
@@ -617,8 +603,8 @@ This section is for **client handover and deployment**. It describes what the cl
 | **Modules** | Grievances, Visitors, Train EQ, Tour Programs, News & Intelligence, Birthdays, Task Assignment, Action Center, Print Center, History. |
 | **Super Admin** | Dashboard at `/home`: stats from DB, search (grievances + visitors) with result detail in a dialog (no redirect to admin pages), notification badge from pending counts, Today’s Tour, Recent Grievances, News, Birthdays, Grievance chart. No “View All” on Recent Grievances. |
 | **Admin** | Action Center: single “Verify and Assign to Staff” for grievances, train EQ, tour programs (create task + verify/approve/accept). Train EQ Queue & Tour Program Queue use the same flow. Reject/Regret kept separate. |
-| **Data entry** | Staff/Admin create grievances, visitors, train requests, tour programs, news, birthdays. All stored in PostgreSQL via Prisma. |
-| **Backend** | Node.js + Express + Prisma + JWT. Stats, grievance/visitor search, PDF generation, IRCTC PNR (RapidAPI). |
+| **Data entry** | Staff/Admin create grievances, visitors, train requests, tour programs, news, birthdays. All stored in Zoho Catalyst Data Store. |
+| **Backend** | Node.js + Express + Catalyst SDK + JWT. Stats, grievance/visitor search, PDF generation, IRCTC PNR (RapidAPI). |
 | **Photo Booth** | Frontend only (public search + employee archive). Events and photos are **mock**; backend/DB for photos not implemented yet. |
 
 ---
@@ -632,19 +618,19 @@ The client (or their IT/vendor) must provide the following in **detail** before 
 | Requirement | Details to provide |
 |-------------|--------------------|
 | **Frontend hosting** | Where will the React app be hosted? (e.g. Zoho Sites, Vercel, Netlify, own server). Base URL (e.g. `https://oms.example.gov.in`). |
-| **Backend hosting** | Where will the Node.js API run? (e.g. Zoho Catalyst, own VPS, AWS/GCP). Base URL (e.g. `https://api.oms.example.gov.in`). |
+| **Backend hosting** | Backend runs on Zoho Catalyst AppSail. Base URL (e.g. `https://api.oms.example.gov.in`). |
 | **Domain & SSL** | Production domain(s), who manages DNS, and that HTTPS (SSL) is enabled. |
 | **Environment** | Confirm production vs staging URLs and that frontend `.env` (e.g. `VITE_API_URL`) and backend `.env` are set for the correct environment. |
 
-#### 2.2 Database (PostgreSQL)
+#### 2.2 Database (Zoho Catalyst Data Store)
 
 | Requirement | Details to provide |
 |-------------|--------------------|
-| **Provider** | Which PostgreSQL service? (e.g. Zoho Catalyst DB, Neon, Supabase, AWS RDS, self-hosted). |
-| **Connection string** | Production `DATABASE_URL` (with username, password, host, port, database name, SSL if required). **Never commit this to git.** |
-| **Access** | Who can create DB, run migrations, and backup? IP allowlist or VPN if applicable. |
-| **Backups** | Automated backup frequency, retention (e.g. 30 days), and restore process. |
-| **Scaling** | Expected number of concurrent users and rows per table (grievances, visitors, etc.) so that connection pooling and plan size can be chosen. |
+| **Provider** | Zoho Catalyst Data Store (managed). |
+| **Credentials** | Production Catalyst project ID + client credentials. Supplied by AppSail at runtime in production. **Never commit these to git.** |
+| **Access** | Who can manage tables, run imports/exports, and configure Security Rules in the Catalyst Console. |
+| **Backups** | Catalyst-managed; configure export schedule via Catalyst CLI / Stratus if additional retention is required. |
+| **Scaling** | Expected number of concurrent users and rows per table (grievances, visitors, etc.) so that Catalyst plan can be chosen. |
 
 #### 2.3 Secrets & API Keys
 
@@ -666,13 +652,13 @@ The client (or their IT/vendor) must provide the following in **detail** before 
 
 ### 3. Data-Entry Schema & Where Data Is Stored
 
-All transactional data is stored in **PostgreSQL** via **Prisma**. Schema is in `backend/prisma/schema.prisma`.
+All transactional data is stored in **Zoho Catalyst Data Store**. Tables are provisioned via the Catalyst Console.
 
 #### 3.1 High-Level Flow
 
 1. **Staff/Admin** logs in → JWT issued → uses forms (Grievance, Visitor, Train EQ, Tour, News, Birthday).
 2. **Frontend** sends POST to backend API (e.g. `/api/grievances`, `/api/visitors`).
-3. **Backend** validates, then Prisma writes to PostgreSQL.
+3. **Backend** validates, then writes to Catalyst Data Store via the SDK.
 4. **Admin** uses Action Center / queues to verify, assign tasks, approve/reject.
 5. **Super Admin** sees dashboard and search; no redirect to admin-only pages from search.
 
@@ -708,18 +694,10 @@ If the client is considering **Zoho** for deployment and database:
 
 | Zoho service | Use in OMS | What client must do |
 |--------------|------------|----------------------|
-| **Zoho Catalyst** | Backend (Node.js) and/or PostgreSQL | Create Catalyst project, get DB connection string, set env vars (DATABASE_URL, JWT_SECRET, etc.), deploy backend (e.g. via Git). |
-| **Zoho Creator / Zoho DB** | Alternative to PostgreSQL | If they prefer Zoho DB, the app would need a different backend layer (API that talks to Zoho) or migration of schema to Zoho; current codebase expects PostgreSQL. |
+| **Zoho Catalyst (AppSail + Data Store)** | Hosts the backend and stores all transactional data | Create the Catalyst project, provision tables and Security Rules in the Console, set env vars (JWT_SECRET, etc.), deploy backend via Git. |
 | **Zoho Sites / Zoho PageSense** | Frontend hosting | Build React app (`npm run build`), upload static output or connect Git; set `VITE_API_URL` to the backend URL. |
-| **Zoho Vault** | Secrets | Store JWT_SECRET, DATABASE_URL, API keys; inject into Catalyst or CI/CD. |
+| **Zoho Vault** | Secrets | Store JWT_SECRET, API keys; inject into Catalyst or CI/CD. |
 | **Zoho Cliq / Mail** | Notifications (future) | For alerts/mail, backend would call Zoho APIs; not implemented yet. |
-
-**Important:** Current OMS backend is written for **PostgreSQL** (Prisma). For Zoho deployment:
-
-- Use **Zoho Catalyst** with PostgreSQL add-on (or external Neon/Supabase) and keep existing backend as-is, **or**
-- If the client insists on Zoho Creator/DB only, a separate integration/migration project is needed (schema mapping, new API or adapters).
-
-Document the chosen option (Catalyst + PostgreSQL vs Zoho Creator) and who will configure DB, env, and backups.
 
 ---
 
@@ -746,16 +724,15 @@ To make Photo Booth production-ready and support **multi-user**, **long-term sto
 
 #### 5.2 Database Requirements for Photo Booth
 
-A dedicated schema is needed (e.g. in the same PostgreSQL DB or documented for the client):
+A dedicated schema is needed (provisioned in Catalyst Data Store):
 
 | Table | Purpose |
 |-------|---------|
 | **events** | id, name, eventDate, venue, description, createdById, createdAt. Index on eventDate (for year/date filters). |
 | **event_photos** | id, eventId (FK), fileUrl (or storage path), fileSize, mimeType, uploadedAt, uploadedById, optional caption. Index on eventId, uploadedAt. |
-| **face_embeddings** (optional) | For face search: photoId, embedding (array/vector), person label if needed. Requires vector extension (e.g. pgvector) if face search is in DB. |
+| **face_embeddings** (optional) | For face search: photoId, embedding (array/vector), person label if needed. Requires an external vector store if face search is in DB. |
 
 - **Scalability:** Indexes on `eventId`, `eventDate`, `uploadedAt` so that “photos by event”, “events by year/date”, and “recent uploads” are fast even with millions of rows.
-- **Concurrency:** Normal connection pooling (e.g. Prisma + PgBouncer) is enough for many concurrent users if queries are indexed.
 
 #### 5.3 Photo Storage Requirements (Object Storage)
 
@@ -785,22 +762,21 @@ These apply to the **existing** OMS modules and, when built, to Photo Booth.
 
 | Requirement | Details |
 |-------------|---------|
-| **Engine** | PostgreSQL 14+ (recommended). Compatible with Prisma and common cloud providers. |
-| **Connection limits** | Support at least 20–50 concurrent connections (typical for 10–50 active users). Use connection pooling (e.g. PgBouncer) if connections exceed DB limit. |
-| **Backups** | Daily automated backups; retention at least 30 days. Point-in-time recovery (PITR) if critical. |
-| **Migrations** | All schema changes via Prisma migrations (`npx prisma migrate deploy`) in production. No ad-hoc SQL without a migration. |
-| **Indexes** | Already defined in `schema.prisma` (e.g. grievance status/type, visitor visitDate, task assignedToId). Add indexes for any new query patterns (e.g. Photo Booth eventDate, eventId). |
-| **Security** | DB user with least privilege (read/write to app schema only). No superuser in app. SSL/TLS for connections in production. |
-| **Scaling** | Vertical: increase instance size as row counts grow. Horizontal: read replicas for reporting later if needed. For Photo Booth, keep large blobs in object storage, not in DB. |
+| **Engine** | Zoho Catalyst Data Store (managed). |
+| **Backups** | Catalyst-managed; supplement with Catalyst CLI / Stratus exports if longer retention is required. |
+| **Schema changes** | All table additions and column changes via the Catalyst Console. Document each change. |
+| **Indexes** | Configure indexes in the Catalyst Console for hot query paths (grievance status/type, visitor visitDate, task assignedToId, plus any new Photo Booth fields). |
+| **Security** | Configure per-table Security Rules in the Catalyst Console to mirror controller-level access checks. |
+| **Scaling** | Choose a Catalyst plan sized for the expected row counts. For Photo Booth, keep large blobs in object storage, not in DB. |
 
-The client should provide: **DB provider, connection string, backup/restore process, and who is responsible for running migrations and monitoring.**
+The client should provide: **Catalyst project access, who manages table changes, and who is responsible for monitoring and exports.**
 
 ---
 
 ### 7. Deployment Checklist (What You Need to Go Live)
 
 - [ ] **Hosting:** Frontend and backend URLs decided; SSL enabled.
-- [ ] **Database:** PostgreSQL provisioned; `DATABASE_URL` set in backend; migrations run; backups configured.
+- [ ] **Database:** Catalyst tables provisioned with required indexes and Security Rules; export schedule confirmed.
 - [ ] **Secrets:** `JWT_SECRET` (and any API keys) set in production; not in git.
 - [ ] **Env:** Frontend `VITE_API_URL` points to production backend; backend `.env` has production values.
 - [ ] **Users:** Initial Super Admin/Admin/Staff created (seed or script).

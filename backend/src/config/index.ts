@@ -64,10 +64,7 @@ export const config = {
     'http://127.0.0.1:5173',
     'http://127.0.0.1:5174'
   ),
-  
-  // Database
-  databaseUrl: process.env.DATABASE_URL,
-  
+
   // RapidAPI - IRCTC PNR Status
   rapidApi: {
     key: process.env.RAPIDAPI_KEY || '',

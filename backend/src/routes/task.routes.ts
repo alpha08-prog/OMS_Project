@@ -18,7 +18,7 @@ import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Catalyst row ids are numeric; legacy Prisma ids are UUID. Accept either form.
+// Catalyst row ids are numeric; legacy ids are UUID. Accept either form.
 const ID_PATTERN = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9]+)$/;
 
 const createTaskValidation = [

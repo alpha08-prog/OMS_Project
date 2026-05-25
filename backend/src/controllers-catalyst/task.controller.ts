@@ -1,14 +1,11 @@
 /**
  * Task controller — backed by Catalyst Data Store via custom REST client.
  *
- * Mirrors backend/src/controllers/task.controller.ts (the Prisma version).
- *
  * Catalyst-specific notes:
  *   - 2 enums (TaskType, TaskStatus) stored as TEXT, validated in this file.
  *   - Catalyst column `priorities` (couldn't use reserved word `priority`)
  *     is mapped transparently to/from the frontend's `priority` field.
- *   - User table still lives on Neon — assignedToId validation queries Prisma.
- *   - Cascade delete (Prisma `onDelete: Cascade`) is done manually here.
+ *   - Cascade delete is done manually here (no FK cascades in Catalyst).
  *   - getTaskTracking counts tasks per staff in JS (no native group-by).
  *   - TaskHistory is its own Catalyst table; we write to it on progress updates.
  */
@@ -86,7 +83,7 @@ function shapeTask(
     referenceType: row.referenceType ?? null,
     progressNotes: row.progressNotes ?? null,
     progressPercent: parseInteger(row.progressPercent),
-    assignedAt: row.CREATEDTIME, // Catalyst auto-timestamp = Prisma assignedAt
+    assignedAt: row.CREATEDTIME, // Catalyst auto-timestamp
     dueDate: row.dueDate ?? null,
     startedAt: row.startedAt ?? null,
     completedAt: row.completedAt ?? null,
@@ -1040,16 +1037,14 @@ export async function deleteTask(
 
 /**
  * GET /api/tasks/staff — list active STAFF for assignment dropdown.
- *
- * User table still on Neon — same Prisma query as before.
  */
 export async function getStaffMembers(
   _req: AuthenticatedRequest,
   res: Response
 ): Promise<void> {
   try {
-    // Read from cached Catalyst AppUser — no Neon round-trip. Filter to
-    // active STAFF users in JS (cheap on a list of office staff).
+    // Read from cached Catalyst AppUser. Filter to active STAFF users
+    // in JS (cheap on a list of office staff).
     const allUsers = await getCachedTableList('AppUser');
     const staff = allUsers
       .filter((u) => {

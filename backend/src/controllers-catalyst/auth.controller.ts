@@ -1,13 +1,11 @@
 /**
  * Auth controller — backed by Catalyst Data Store (AppUser table).
  *
- * Mirrors backend/src/controllers/auth.controller.ts (the Prisma version).
- *
  * Catalyst-specific notes:
  *   - Table is named `AppUser` because `User` is reserved.
  *   - `email` is a Var Char with Unique constraint enforced at the DB level.
- *   - `legacyId` column preserves the old Neon UUID for backward-compat.
- *     New users get null legacyId; seeded users get the UUID they had on Neon.
+ *   - `legacyId` column preserves the pre-migration UUID for backward-compat.
+ *     New users get null legacyId; seeded users get the UUID they had before.
  *   - JWT `id` claim:
  *       - For users seeded with legacyId, we sign with the UUID so old tokens
  *         keep working alongside new ones.

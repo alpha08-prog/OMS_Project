@@ -1,13 +1,13 @@
 /**
  * Tour Program controller — backed by Catalyst Data Store via custom REST client.
  *
- * Mirrors backend/src/controllers/tourProgram.controller.ts with these differences:
- *   - Google Calendar integration is dropped in the Catalyst path (matches the
- *     RapidAPI-drop pattern). The `googleCalendarEventId` column is preserved
- *     for schema compatibility but never written. Re-enable later if needed.
+ * Notes:
+ *   - Google Calendar integration is dropped on this path. The
+ *     `googleCalendarEventId` column is preserved for schema compatibility
+ *     but never written. Re-enable later if needed.
  *   - Tour programs are NOT data-isolated by createdById — everyone (any
- *     authenticated user) sees all tour programs. This matches the Prisma
- *     behavior because tours are office-wide events.
+ *     authenticated user) sees all tour programs because tours are
+ *     office-wide events.
  *
  * Workflow:
  *   - decision: PENDING → ACCEPTED | REGRET (admin only via /decision)
@@ -62,7 +62,7 @@ function parseInt0(v: unknown): number | null {
   return isNaN(n) ? null : Math.trunc(n);
 }
 
-/** Reshape a Catalyst tour row → JSON the frontend / Prisma controller returns. */
+/** Reshape a Catalyst tour row → JSON shape the frontend expects. */
 function shapeTour(
   row: CatalystRow,
   createdBy?: { id: string; name: string; email: string } | null,
@@ -393,8 +393,7 @@ export async function updateTourProgram(
 /**
  * PATCH /api/tour-programs/:id/decision — admin only.
  *
- * Google Calendar integration is intentionally NOT migrated. The Prisma version
- * still calls Google when running on Neon; this Catalyst version does not.
+ * Google Calendar integration is intentionally NOT wired here.
  */
 export async function updateDecision(
   req: AuthenticatedRequest,
@@ -548,7 +547,7 @@ export async function getPendingDecisions(
     rows.sort((a, b) => {
       const ta = a.dateTime ? new Date(a.dateTime).getTime() : 0;
       const tb = b.dateTime ? new Date(b.dateTime).getTime() : 0;
-      return tb - ta; // most recent first (matches Prisma behavior)
+      return tb - ta; // most recent first
     });
 
     const total = rows.length;

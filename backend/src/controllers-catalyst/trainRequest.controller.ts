@@ -1,17 +1,14 @@
 /**
  * Train Request controller — backed by Catalyst Data Store via custom REST client.
  *
- * Mirrors backend/src/controllers/trainRequest.controller.ts with these differences:
- *   - The RapidAPI PNR-status endpoint is NOT migrated. Frontend now collects all
- *     fields manually instead of auto-filling from PNR. The Prisma version still
- *     handles `GET /pnr/:pnr` if needed.
+ * Notes:
+ *   - The RapidAPI PNR-status endpoint is NOT wired here. Frontend collects all
+ *     fields manually instead of auto-filling from PNR.
  *   - Catalyst column `journeyRoute` ↔ frontend `route` mapping (route is a
  *     reserved word in some SQL engines).
  *   - Optional nested `passengers` array writes rows to TrainPassenger and
  *     cascade-deletes them when the parent is removed.
  *   - Status machine enforced: PENDING → APPROVED|REJECTED → RESOLVED.
- *   - Cross-DB user lookups (assignedTo equiv. createdBy/approvedBy) hit Neon
- *     since the User table still lives there.
  */
 import { Response } from 'express';
 import {
@@ -58,7 +55,7 @@ function parseInt0(v: unknown): number {
   return isNaN(n) ? 0 : Math.trunc(n);
 }
 
-/** Reshape a Catalyst Train row into the same JSON the Prisma controller returns. */
+/** Reshape a Catalyst Train row into the JSON shape the frontend expects. */
 function shapeTrainRequest(
   row: CatalystRow,
   createdBy?: { id: string; name: string; email: string } | null,
@@ -823,9 +820,8 @@ export async function getPendingQueue(
 /**
  * GET /api/train-requests/pnr/:pnr
  *
- * RapidAPI integration is dropped for the Catalyst migration. This stub returns
- * a 410 Gone so the frontend stops calling it. The Prisma version still has the
- * real handler for the legacy code path (USE_CATALYST_TRAIN=false).
+ * RapidAPI integration is dropped. This stub returns a 410 Gone so the
+ * frontend stops calling it.
  */
 export async function checkPNRStatus(
   _req: AuthenticatedRequest,

@@ -1,17 +1,12 @@
 /**
  * PDF controller — Catalyst-backed.
  *
- * Mirrors backend/src/controllers/pdf.controller.ts (the Prisma version) so
- * the route layer can dispatch to either implementation via the
- * USE_CATALYST_PDF feature flag.
- *
  * Reads source data from the Catalyst Data Store (TrainRequest / Grievance /
  * TourProgram tables). The PDF generation utilities themselves are unchanged.
  *
  * IDs in this controller are numeric Catalyst ROWIDs (e.g. "37719000000076188").
- * Legacy UUID ids (from the pre-migration Prisma database) are not resolvable
- * in this path — the route should still be hit through the dispatcher with
- * the new ROWID-based ids that the frontend now receives.
+ * Legacy UUID ids from the pre-migration database are not resolvable here —
+ * the frontend now passes the new ROWID-based ids.
  */
 import { Response } from 'express';
 import { getRow, listAllRows, updateRow, toCatalystDate, nowCatalystIST, CatalystRow } from '../lib/catalyst-client';
@@ -88,8 +83,7 @@ function refSuffix(id: string): string {
 }
 
 /**
- * Map grievance type → recipient department block. Kept identical to the
- * Prisma version of this controller so the generated letters match.
+ * Map grievance type → recipient department block.
  */
 const DEPARTMENT_MAP: Record<
   string,
@@ -1259,7 +1253,7 @@ export async function generateTourProgramPDFController(
       endDate?: string;
     };
 
-    // Default window: today → 7 days from now (matches Prisma version).
+    // Default window: today → 7 days from now.
     const startMs = startDate
       ? new Date(startDate).getTime()
       : new Date().setHours(0, 0, 0, 0);

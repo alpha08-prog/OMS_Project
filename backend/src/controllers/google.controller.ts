@@ -339,7 +339,7 @@ export async function deleteCustomEvent(req: AuthenticatedRequest, res: Response
         await deleteRow(CUSTOM_EVENT_TABLE, id);
       }
     } catch {
-      /* table may not exist — silently no-op, matches Prisma deleteMany semantics */
+      /* table may not exist — silently no-op (delete-if-present semantics) */
     }
 
     cacheClear('calendar_events_');

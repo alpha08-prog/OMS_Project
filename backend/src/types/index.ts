@@ -2,8 +2,7 @@ import { Request, ParamsDictionary } from 'express-serve-static-core';
 import { ParsedQs } from 'qs';
 
 /**
- * User role — declared locally so the codebase is decoupled from Prisma.
- * Provides both a runtime const (for `UserRole.STAFF` style usage) and a
+ * User role — runtime const (for `UserRole.STAFF` style usage) plus
  * type alias (for `role: UserRole` in interfaces / function signatures).
  */
 export const UserRole = {

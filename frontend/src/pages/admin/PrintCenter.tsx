@@ -373,7 +373,7 @@ export default function PrintCenter() {
                   <div className="text-center py-8">
                     <p className="text-destructive font-medium mb-2">{error}</p>
                     <p className="text-xs text-muted-foreground mb-4">
-                      If the database is unreachable, ensure it is running and DATABASE_URL in the backend is correct.
+                      If the database is unreachable, check that the Catalyst credentials in the backend are configured correctly.
                     </p>
                     <Button variant="outline" onClick={fetchPrintableItems}>
                       <RefreshCw className="h-4 w-4 mr-2" />

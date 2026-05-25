@@ -17,7 +17,7 @@ import { validate } from '../middleware/validate';
 
 const router = Router();
 
-// Catalyst row ids are numeric; legacy Prisma ids are UUID. Accept either form.
+// Catalyst row ids are numeric; legacy ids are UUID. Accept either form.
 const idParamValidation = [
   param('id')
     .matches(/^([0-9a-fA-F-]{36}|[0-9]+)$/)
