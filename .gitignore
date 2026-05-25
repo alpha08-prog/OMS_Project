@@ -18,3 +18,5 @@ Thumbs.db
 # Personal / non-shippable docs
 DEPLOYMENT_GUIDE.md
 INTERVIEW_PREP.md
+.claude/
+MIGRATION.md
