@@ -34,6 +34,13 @@ export function isWildcardAllowed(origin: string): boolean {
   );
 }
 
+// Insecure default used only for local development. If JWT_SECRET is not
+// explicitly provided in a production / Catalyst environment, the app refuses
+// to start (see assertSecureConfig in app.ts) — anyone knowing this string
+// could otherwise forge valid tokens.
+export const FALLBACK_JWT_SECRET = 'fallback-secret-change-in-production';
+const providedJwtSecret = normalizeEnvValue(process.env.JWT_SECRET || '');
+
 export const config = {
   // Server
   port: parseInt(
@@ -45,9 +52,11 @@ export const config = {
   backendUrl: normalizeOrigin(
     process.env.BACKEND_URL || 'https://omsbackend-50040756292.development.catalystappsail.in'
   ),
-  
+
   // JWT
-  jwtSecret: process.env.JWT_SECRET || 'fallback-secret-change-in-production',
+  jwtSecret: providedJwtSecret || FALLBACK_JWT_SECRET,
+  /** True when no real JWT_SECRET was supplied and the insecure default is in use. */
+  jwtSecretIsFallback: providedJwtSecret.length === 0,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   
   // CORS

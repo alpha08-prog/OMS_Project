@@ -850,12 +850,10 @@ export const pdfApi = {
   // Download Train EQ Letter PDF (opens in new tab)
   downloadTrainEQLetter: async (id: string) => {
     try {
-      console.log('Downloading TrainEQ PDF for id:', id)
       const res = await http.get(`/pdf/train-eq/${id}`, {
         responseType: 'blob',
         validateStatus: (status) => status < 500,
       })
-      console.log('TrainEQ PDF - Response status:', res.status, 'Content-Type:', res.headers['content-type'])
 
       if (res.status >= 400) {
         try {
@@ -876,11 +874,13 @@ export const pdfApi = {
       const link = document.createElement('a')
       link.href = url
       link.download = `TrainEQ_Letter_${id}.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      console.log('TrainEQ PDF download - Success')
+      try {
+        document.body.appendChild(link)
+        link.click()
+      } finally {
+        link.remove()
+        window.URL.revokeObjectURL(url)
+      }
     } catch (error: unknown) {
       console.error('PDF download error:', error)
       const errObj = error as Record<string, unknown> | null
@@ -899,12 +899,10 @@ export const pdfApi = {
   // Download Grievance Letter PDF (opens in new tab)
   downloadGrievanceLetter: async (id: string) => {
     try {
-      console.log('Downloading Grievance PDF for id:', id)
       const res = await http.get(`/pdf/grievance/${id}`, {
         responseType: 'blob',
         validateStatus: (status) => status < 500,
       })
-      console.log('Grievance PDF - Response status:', res.status, 'Content-Type:', res.headers['content-type'])
 
       if (res.status >= 400) {
         try {
@@ -925,11 +923,13 @@ export const pdfApi = {
       const link = document.createElement('a')
       link.href = url
       link.download = `Grievance_Letter_${id}.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      console.log('Grievance PDF download - Success')
+      try {
+        document.body.appendChild(link)
+        link.click()
+      } finally {
+        link.remove()
+        window.URL.revokeObjectURL(url)
+      }
     } catch (error: unknown) {
       console.error('PDF download error:', error)
       const errObj = error as Record<string, unknown> | null
@@ -994,10 +994,13 @@ export const pdfApi = {
       const link = document.createElement('a')
       link.href = url
       link.download = `TourProgram_${Date.now()}.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
+      try {
+        document.body.appendChild(link)
+        link.click()
+      } finally {
+        link.remove()
+        window.URL.revokeObjectURL(url)
+      }
     } catch (error) {
       console.error('PDF download error:', error)
       throw error
@@ -1010,13 +1013,11 @@ export const pdfApi = {
   // when explicitly requested).
   downloadPDF: async (endpoint: string, filename: string, size?: 'A4' | 'A5') => {
     try {
-      console.log('PDF download - Fetching from:', endpoint, 'size:', size)
       const res = await http.get(endpoint, {
         responseType: 'blob',
         params: size ? { size } : undefined,
         validateStatus: (status) => status < 500, // Don't throw on 4xx errors, we'll handle them
       })
-      console.log('PDF download - Response received:', res.status, res.headers)
 
       // Check if response status indicates an error
       if (res.status >= 400) {
@@ -1045,7 +1046,6 @@ export const pdfApi = {
       }
 
       const blob = new Blob([res.data], { type: 'application/pdf' })
-      console.log('PDF download - Blob created, size:', blob.size)
 
       if (blob.size === 0) {
         throw new Error('PDF file is empty')
@@ -1055,11 +1055,13 @@ export const pdfApi = {
       const link = document.createElement('a')
       link.href = url
       link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      console.log('PDF download - Success')
+      try {
+        document.body.appendChild(link)
+        link.click()
+      } finally {
+        link.remove()
+        window.URL.revokeObjectURL(url)
+      }
     } catch (error: unknown) {
       console.error('PDF download error:', error)
       const errObj = error as Record<string, unknown> | null
@@ -1194,12 +1196,7 @@ export const taskApi = {
   },
 
   getAll: async (params?: Record<string, string>) => {
-    console.log('TaskApi.getAll - Calling with params:', params)
     const res = await http.get<ApiResponse<TaskAssignment[]>>('/tasks', { params })
-    console.log('TaskApi.getAll - Response:', res)
-    console.log('TaskApi.getAll - Response data:', res.data)
-    console.log('TaskApi.getAll - Response data.data:', res.data?.data)
-    console.log('TaskApi.getAll - Response data.meta:', res.data?.meta)
     return res.data
   },
 

@@ -111,6 +111,7 @@ function invalidateStatCaches() {
   cacheClear('stats_by_type');
   cacheClear('stats_by_status');
   cacheClear('stats_by_constituency');
+  cacheClear('stats_monetization');
 }
 
 /** Reshape a Catalyst row into the JSON shape the frontend expects. */

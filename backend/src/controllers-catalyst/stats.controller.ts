@@ -267,29 +267,34 @@ export async function getMonetizationSummary(
   res: Response
 ): Promise<void> {
   try {
-    const grievances = await listAllRows(GRIEVANCE_TABLE);
-    let totalValue = 0;
-    let totalRequests = 0;
-    const byStatus = new Map<string, number>();
+    // SWR-cached like the sibling stats endpoints (same 2-min stale / 10-min
+    // expiry) so a dashboard that loads this alongside the summary doesn't scan
+    // the Grievance table twice. Invalidated by invalidateStatCaches() on edits.
+    const summary = await cacheSWR('stats_monetization', 120, 600, async () => {
+      const grievances = await listAllRows(GRIEVANCE_TABLE);
+      let totalValue = 0;
+      let totalRequests = 0;
+      const byStatus = new Map<string, number>();
 
-    for (const g of grievances) {
-      const v = parseNumber(g.monetaryValue);
-      if (!v) continue;
-      totalValue += v;
-      totalRequests++;
-      const status = String(g.status ?? 'OPEN');
-      byStatus.set(status, (byStatus.get(status) ?? 0) + v);
-    }
+      for (const g of grievances) {
+        const v = parseNumber(g.monetaryValue);
+        if (!v) continue;
+        totalValue += v;
+        totalRequests++;
+        const status = String(g.status ?? 'OPEN');
+        byStatus.set(status, (byStatus.get(status) ?? 0) + v);
+      }
 
-    const summary = {
-      totalValue,
-      averageValue: totalRequests > 0 ? totalValue / totalRequests : 0,
-      totalRequests,
-      byStatus: Array.from(byStatus.entries()).map(([status, totalValue]) => ({
-        status,
+      return {
         totalValue,
-      })),
-    };
+        averageValue: totalRequests > 0 ? totalValue / totalRequests : 0,
+        totalRequests,
+        byStatus: Array.from(byStatus.entries()).map(([status, totalValue]) => ({
+          status,
+          totalValue,
+        })),
+      };
+    });
 
     sendSuccess(res, summary, 'Monetization summary retrieved');
   } catch (error) {
