@@ -91,10 +91,13 @@ export async function getCachedTableList(
   }
   const key = tableListCacheKey(tableName);
   const cached = cacheGet<CatalystRow[]>(key);
-  if (cached) return cached;
+  // Return a shallow copy so callers that sort/mutate the list in place can't
+  // corrupt the shared cached array for every other request in the TTL window.
+  // Rows are still shared by reference (cheap) — only the array order is private.
+  if (cached) return cached.slice();
   const fresh = await listAllRows(tableName, pageSize);
   cacheSet(key, fresh, TABLE_LIST_TTL_SECONDS);
-  return fresh;
+  return fresh.slice();
 }
 
 /** Invalidate the cached list for a table (call after insert/update/delete). */

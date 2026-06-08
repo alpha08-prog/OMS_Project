@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { Spinner } from "./components/AuthForm/Spinner";
 import "./index.css";
 
@@ -54,7 +55,8 @@ function PageFallback() {
 
 export default function App() {
   return (
-    <Suspense fallback={<PageFallback />}>
+    <ErrorBoundary>
+      <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route path="/" element={<Navigate to="/auth/login" replace />} />
 
@@ -378,6 +380,7 @@ export default function App() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/auth/login" replace />} />
       </Routes>
-    </Suspense>
+      </Suspense>
+    </ErrorBoundary>
   );
 }

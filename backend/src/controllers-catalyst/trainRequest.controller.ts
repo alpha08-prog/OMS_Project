@@ -243,13 +243,9 @@ async function deletePassengersFor(trainRequestId: string): Promise<void> {
     const matches = all
       .filter((p) => p.trainRequestId === trainRequestId)
       .map((p) => String(p.ROWID));
-    for (const id of matches) {
-      try {
-        await deleteRow(PASSENGER_TABLE, id);
-      } catch {
-        /* keep going */
-      }
-    }
+    // Parallel best-effort delete — allSettled keeps the "ignore individual
+    // failures" semantics while collapsing N serial round-trips into one batch.
+    await Promise.allSettled(matches.map((id) => deleteRow(PASSENGER_TABLE, id)));
   } catch {
     /* TrainPassenger table missing — nothing to cascade */
   }

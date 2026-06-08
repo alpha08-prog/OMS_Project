@@ -1,5 +1,6 @@
 import express from 'express';
 import cors, { type CorsOptions } from 'cors';
+import compression from 'compression';
 import dotenv from 'dotenv';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -50,6 +51,11 @@ if (!config.isCatalystRuntime) {
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));
 }
+
+// Gzip responses. Mostly benefits large JSON (stats, lists); pdfkit output is
+// already binary so it's largely a no-op there. Safe even if the AppSail layer
+// also compresses — compression skips already-encoded responses.
+app.use(compression());
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -103,6 +109,28 @@ app.use(errorHandler);
 // ===========================================
 // Server Start
 // ===========================================
+
+// Fail fast on insecure config. A production or Catalyst deployment must supply
+// a real JWT_SECRET — starting with the development fallback would let anyone
+// who knows that public default string forge valid auth tokens. Locally we
+// allow the fallback but warn loudly.
+function assertSecureConfig(): void {
+  if (!config.jwtSecretIsFallback) return;
+  const isSecureEnv = config.isCatalystRuntime || config.nodeEnv === 'production';
+  if (isSecureEnv) {
+    console.error(
+      'FATAL: JWT_SECRET is not set. Refusing to start in a production/Catalyst ' +
+      'environment with the insecure default secret — set JWT_SECRET and redeploy.'
+    );
+    process.exit(1);
+  }
+  console.warn(
+    '[config] JWT_SECRET not set — using the insecure development fallback. ' +
+    'Fine for local dev, but it MUST be set in production.'
+  );
+}
+
+assertSecureConfig();
 
 const PORT = config.port;
 const serverBaseUrl = config.backendUrl || `http://localhost:${PORT}`;
