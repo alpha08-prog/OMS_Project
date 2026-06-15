@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Sun, Cloud, LogOut, FileText, Users } from "lucide-react";
+import { Search, Sun, Cloud, LogOut, FileText, Users, KeyRound } from "lucide-react";
 import { Input } from "../../components/ui/input";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import {
@@ -21,6 +21,7 @@ import {
 import { grievanceApi, visitorApi } from "../../lib/api";
 import type { Grievance, Visitor } from "../../lib/api";
 import { NotificationBell } from "../common/NotificationBell";
+import { ChangePasswordDialog } from "../auth/ChangePasswordDialog";
 
 type User = {
   name: string;
@@ -37,6 +38,7 @@ export function DashboardHeader() {
   const [searchResults, setSearchResults] = useState<{ grievances: Grievance[]; visitors: Visitor[] }>({ grievances: [], visitors: [] });
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
   const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
   useEffect(() => {
@@ -289,6 +291,11 @@ export function DashboardHeader() {
                 <span className="text-xs text-muted-foreground">{user?.email}</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setChangePasswordOpen(true)}>
+                <KeyRound className="mr-2 h-4 w-4" />
+                <span>Change Password</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="text-red-600">
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Log out</span>
@@ -377,6 +384,9 @@ export function DashboardHeader() {
         ) : null}
       </DialogContent>
     </Dialog>
+
+    {/* Super Admin change-password modal — header-only flow, no admin sidebar */}
+    <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
     </>
   );
 }
