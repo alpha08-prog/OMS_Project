@@ -8,13 +8,11 @@ import {
   LogOut,
   ChevronLeft,
   Building2,
-  CheckCircle,
   Printer,
   ClipboardList,
-  Cake,
+  ListChecks,
   History,
   Gift,
-  Zap,
   TrendingUp,
   ChevronRight,
   Plus,
@@ -44,32 +42,39 @@ const allMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", route: "/admin/home", roles: ['ADMIN'] },
   { icon: LayoutDashboard, label: "Dashboard", route: "/staff/home", roles: ['STAFF'] },
 
+  // Shared task board — everyone sees ALL tasks (pending work) here, with
+  // filters + inline edit. Replaces the verification/assignment workflow.
+  { icon: ListChecks, label: "All Tasks", route: "/tasks/all", roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
+
   // Staff - Data Entry
   { icon: ClipboardList, label: "My Tasks", route: "/staff/tasks", roles: ['STAFF'] },
   { icon: History, label: "My History", route: "/staff/history", roles: ['STAFF'] },
   { icon: UserCheck, label: "My Attendance", route: "/staff/attendance", roles: ['STAFF'] },
-  { 
-    icon: FileText, 
-    label: "Grievance", 
-    route: "/grievances", 
-    roles: ['STAFF'],
+  {
+    icon: FileText,
+    label: "Grievance",
+    route: "/grievances",
+    roles: ['STAFF', 'ADMIN'],
     submenu: [
       { label: "New Grievance", route: "/grievances/new", icon: Plus },
       { label: "Old Grievance", route: "/grievances/view", icon: Search },
       { label: "Office Grievance", route: "/grievances/office", icon: Plus }
     ]
   },
-  { icon: Users, label: "Log Visitor", route: "/visitors/new", roles: ['STAFF'] },
-  { icon: Cake, label: "Add Birthday", route: "/birthday/new", roles: ['STAFF'] },
-  { icon: Train, label: "Train EQ Request", route: "/train-eq/new", roles: ['STAFF'] },
-  { icon: Calendar, label: "Add Invitation", route: "/tour-program/new", roles: ['STAFF'] },
-  { icon: Star, label: "Event Reports", route: "/events/report", roles: ['STAFF'] },
-  { icon: Newspaper, label: "Add News", route: "/news-intelligence/new", roles: ['STAFF'] },
+  // Merged module: one single-page form logs a person's details (incl. an
+  // optional DOB that flows into View Birthdays + the dashboard popup).
+  // (Old /visitors/new and /birthday/new still resolve.)
+  { icon: Users, label: "Add Visitor/Birthday", route: "/people/new", roles: ['STAFF', 'ADMIN'] },
+  { icon: Train, label: "Train EQ Request", route: "/train-eq/new", roles: ['STAFF', 'ADMIN'] },
+  { icon: Calendar, label: "Add Invitation", route: "/tour-program/new", roles: ['STAFF', 'ADMIN'] },
+  { icon: Star, label: "Event Reports", route: "/events/report", roles: ['STAFF', 'ADMIN'] },
+  { icon: Newspaper, label: "Add News", route: "/news-intelligence/new", roles: ['STAFF', 'ADMIN'] },
 
   // Admin - Main Actions
-  { icon: Zap, label: "Action Center", route: "/admin/action-center", roles: ['ADMIN'] },
+  // Verification removed: grievances + Train EQ go active on creation and
+  // surface on the shared "All Tasks" board, so the Action Center and
+  // "Verify Grievances" queue are retired (routes/pages kept for rollback).
   { icon: TrendingUp, label: "Task Tracker", route: "/admin/task-tracker", roles: ['ADMIN'] },
-  { icon: CheckCircle, label: "Verify Grievances", route: "/grievances/verify", roles: ['ADMIN'] },
   { icon: Train, label: "Train EQ Queue", route: "/train-eq/queue", roles: ['ADMIN'] },
   { icon: ClipboardList, label: "Tour Invitations", route: "/tour-program/pending", roles: ['ADMIN'] },
   { icon: Star, label: "Events", route: "/admin/events", roles: ['ADMIN'] },

@@ -1,14 +1,32 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, CheckCircle2, Clock, FileX, Loader2 } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock, FileX, Loader2, LogOut } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import type { CsvColumn } from "@/lib/exportCsv";
 import {
   attendanceApi,
   type AttendanceRow,
   type AttendanceStatus,
 } from "@/lib/api";
+
+const HISTORY_CSV_COLUMNS: CsvColumn<AttendanceRow>[] = [
+  { header: "Date", value: (row) => row?.date ?? "" },
+  { header: "Status", value: (row) => row?.status ?? "" },
+  { header: "Reason", value: (row) => row?.reason ?? "" },
+  {
+    header: "Checked In",
+    value: (row) =>
+      row?.markedAt ? new Date(row.markedAt).toLocaleString() : "",
+  },
+  {
+    header: "Checked Out",
+    value: (row) =>
+      row?.checkOutAt ? new Date(row.checkOutAt).toLocaleString() : "",
+  },
+];
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
   PRESENT: "Present",
@@ -38,6 +56,8 @@ export default function StaffAttendance() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<AttendanceStatus | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [checkOutError, setCheckOutError] = useState<string | null>(null);
 
   // Apply-card state (Half Day / Leave).
   const [applyType, setApplyType] = useState<ApplyType>("LEAVE");
@@ -104,6 +124,25 @@ export default function StaffAttendance() {
       setPresentError(msg);
     } finally {
       setSubmitting(null);
+    }
+  };
+
+  const handleCheckOut = async () => {
+    setCheckOutError(null);
+    setCheckingOut(true);
+    try {
+      const next = await attendanceApi.checkOut();
+      setToday(next);
+      const page = await attendanceApi.getMyHistory({ limit: 50 });
+      setHistory(page.rows);
+      setNextCursor(page.nextCursor);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to check out.";
+      setCheckOutError(msg);
+    } finally {
+      setCheckingOut(false);
     }
   };
 
@@ -181,6 +220,11 @@ export default function StaffAttendance() {
 
   const todayIST = todayISTString();
   const presentMarkedToday = today?.date === todayIST && today?.status === "PRESENT";
+  // Check-out only makes sense once you're in for the day (present / half day).
+  const canCheckOut =
+    today?.date === todayIST &&
+    (today?.status === "PRESENT" || today?.status === "HALF_DAY");
+  const checkedOutToday = today?.date === todayIST && !!today?.checkOutAt;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -211,22 +255,35 @@ export default function StaffAttendance() {
                 {loading ? (
                   <p className="text-sm text-muted-foreground">Loading…</p>
                 ) : today && today.date === todayIST ? (
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <Badge className={STATUS_TONE[today.status]}>
-                      {today.status === "ABSENT"
-                        ? "Absent"
-                        : STATUS_LABEL[today.status as AttendanceStatus]}
-                    </Badge>
-                    {today.reason && (
-                      <span className="text-sm text-muted-foreground">
-                        Reason: {today.reason}
-                      </span>
-                    )}
-                    {today.markedAt && (
-                      <span className="text-xs text-muted-foreground ml-auto">
-                        Marked at {new Date(today.markedAt).toLocaleString()}
-                      </span>
-                    )}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <Badge className={STATUS_TONE[today.status]}>
+                        {today.status === "ABSENT"
+                          ? "Absent"
+                          : STATUS_LABEL[today.status as AttendanceStatus]}
+                      </Badge>
+                      {today.reason && (
+                        <span className="text-sm text-muted-foreground">
+                          Reason: {today.reason}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                      {today.markedAt && (
+                        <span className="inline-flex items-center gap-1">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                          Checked in at{" "}
+                          {new Date(today.markedAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                      {today.checkOutAt && (
+                        <span className="inline-flex items-center gap-1">
+                          <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                          Checked out at{" "}
+                          {new Date(today.checkOutAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
@@ -234,24 +291,47 @@ export default function StaffAttendance() {
                   </p>
                 )}
 
-                <Button
-                  disabled={submitting !== null || presentMarkedToday}
-                  onClick={handleMarkPresent}
-                  className="w-full h-14 text-base bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
-                >
-                  {submitting === "PRESENT" ? (
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                  ) : (
-                    <CheckCircle2 className="h-5 w-5 mr-2" />
-                  )}
-                  {presentMarkedToday
-                    ? "Already marked present today"
-                    : "Mark me present (today)"}
-                </Button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Button
+                    disabled={submitting !== null || presentMarkedToday}
+                    onClick={handleMarkPresent}
+                    className="h-14 text-base bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+                  >
+                    {submitting === "PRESENT" ? (
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    ) : (
+                      <CheckCircle2 className="h-5 w-5 mr-2" />
+                    )}
+                    {presentMarkedToday
+                      ? "Already marked present today"
+                      : "Mark me present (today)"}
+                  </Button>
+
+                  <Button
+                    disabled={!canCheckOut || checkingOut || checkedOutToday}
+                    onClick={handleCheckOut}
+                    variant="outline"
+                    className="h-14 text-base border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                  >
+                    {checkingOut ? (
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    ) : (
+                      <LogOut className="h-5 w-5 mr-2" />
+                    )}
+                    {checkedOutToday
+                      ? "Checked out for today"
+                      : "Check out (leaving)"}
+                  </Button>
+                </div>
 
                 {presentError && (
                   <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
                     {presentError}
+                  </p>
+                )}
+                {checkOutError && (
+                  <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+                    {checkOutError}
                   </p>
                 )}
               </CardContent>
@@ -407,8 +487,13 @@ export default function StaffAttendance() {
 
             {/* HISTORY */}
             <Card className="rounded-2xl shadow-sm border border-indigo-100">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <CardTitle className="text-lg">My History</CardTitle>
+                <ExportCsvButton
+                  rows={history}
+                  columns={HISTORY_CSV_COLUMNS}
+                  filename="my-attendance"
+                />
               </CardHeader>
               <CardContent>
                 {loading ? (
@@ -425,7 +510,8 @@ export default function StaffAttendance() {
                           <th className="py-2 pr-4">Date</th>
                           <th className="py-2 pr-4">Status</th>
                           <th className="py-2 pr-4">Reason</th>
-                          <th className="py-2">Marked At</th>
+                          <th className="py-2 pr-4">Checked In</th>
+                          <th className="py-2">Checked Out</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -442,9 +528,14 @@ export default function StaffAttendance() {
                             <td className="py-2 pr-4 text-muted-foreground">
                               {row.reason ?? "—"}
                             </td>
-                            <td className="py-2 text-muted-foreground">
+                            <td className="py-2 pr-4 text-muted-foreground">
                               {row.markedAt
                                 ? new Date(row.markedAt).toLocaleString()
+                                : "—"}
+                            </td>
+                            <td className="py-2 text-muted-foreground">
+                              {row.checkOutAt
+                                ? new Date(row.checkOutAt).toLocaleString()
                                 : "—"}
                             </td>
                           </tr>

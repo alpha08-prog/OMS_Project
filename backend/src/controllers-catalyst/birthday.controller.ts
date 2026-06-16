@@ -31,12 +31,18 @@ import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import type { AuthenticatedRequest } from '../types';
 
 const BIRTHDAY_TABLE = 'Birthday';
+const VISITOR_TABLE = 'Visitor';
+const PASSENGER_TABLE = 'TrainPassenger';
 
-/** Reshape a Catalyst Birthday row → JSON the frontend expects. */
+/** Reshape a Catalyst Birthday row → JSON the frontend expects.
+ *  `source` distinguishes a real Birthday row from a DOB pulled in from
+ *  another module (Visitor / Train passenger); only BIRTHDAY rows are
+ *  editable/deletable. */
 function shapeBirthday(
   row: CatalystRow,
   createdBy?: { id: string; name: string; email: string } | null
 ) {
+  const source = (row.__source as string) ?? 'BIRTHDAY';
   return {
     id: String(row.ROWID),
     name: row.name,
@@ -51,7 +57,83 @@ function shapeBirthday(
     updatedAt: row.MODIFIEDTIME,
     createdById: row.createdById,
     createdBy: createdBy ?? null,
+    // Where this DOB came from + whether it can be edited/deleted here.
+    source,
+    canDelete: source === 'BIRTHDAY',
   };
+}
+
+/**
+ * Union of every DOB-bearing record across the office, normalised to look like
+ * Birthday rows so the existing filter/sort/hydrate code works unchanged.
+ *   - Birthday table  (real entries — editable)
+ *   - Visitor table   (visitors logged with a DOB)
+ *   - TrainPassenger  (primary passengers logged with a DOB)
+ * Non-Birthday rows get a prefixed ROWID so their ids never collide with real
+ * Birthday ids, and are flagged read-only via __source.
+ */
+async function collectBirthdaySources(): Promise<CatalystRow[]> {
+  const out: CatalystRow[] = [];
+
+  try {
+    const rows = await listAllRows(BIRTHDAY_TABLE);
+    for (const r of rows) {
+      if (!r.dob) continue;
+      out.push({ ...r, __source: 'BIRTHDAY' });
+    }
+  } catch {
+    /* table missing — skip */
+  }
+
+  try {
+    const rows = await listAllRows(VISITOR_TABLE);
+    for (const r of rows) {
+      if (!r.dob) continue;
+      out.push({
+        ROWID: `visitor-${String(r.ROWID)}`,
+        name: r.name,
+        phone: r.phone ?? null,
+        dob: r.dob,
+        relation: r.designation ? String(r.designation) : 'Visitor',
+        notes: r.purpose ?? null,
+        designation: r.designation ?? null,
+        constituency: r.constituency ?? null,
+        wardVillage: r.wardVillage ?? null,
+        CREATEDTIME: r.CREATEDTIME,
+        MODIFIEDTIME: r.MODIFIEDTIME,
+        createdById: r.createdById ?? null,
+        __source: 'VISITOR',
+      });
+    }
+  } catch {
+    /* table missing — skip */
+  }
+
+  try {
+    const rows = await listAllRows(PASSENGER_TABLE);
+    for (const r of rows) {
+      if (!r.dob) continue;
+      out.push({
+        ROWID: `train-${String(r.ROWID)}`,
+        name: r.passengerName,
+        phone: null,
+        dob: r.dob,
+        relation: 'Train Passenger',
+        notes: null,
+        designation: null,
+        constituency: null,
+        wardVillage: null,
+        CREATEDTIME: r.CREATEDTIME,
+        MODIFIEDTIME: r.MODIFIEDTIME,
+        createdById: null,
+        __source: 'TRAIN',
+      });
+    }
+  } catch {
+    /* table missing — skip */
+  }
+
+  return out;
 }
 
 /** Look up users from cached Catalyst AppUser. Best-effort. */
@@ -150,7 +232,7 @@ export async function getBirthdays(
     );
     const { search, relation, month, startDate, endDate } = req.query as Record<string, string>;
 
-    let rows = await listAllRows(BIRTHDAY_TABLE);
+    let rows = await collectBirthdaySources();
 
     if (startDate) {
       const start = new Date(startDate).getTime();
@@ -220,14 +302,14 @@ export async function getTodayBirthdays(
     const month = today.getMonth() + 1;
     const day = today.getDate();
 
-    const rows = await listAllRows(BIRTHDAY_TABLE);
+    const rows = await collectBirthdaySources();
     const matched = rows
       .filter((r) => {
         if (!r.dob) return false;
         const d = new Date(r.dob);
         return d.getMonth() + 1 === month && d.getDate() === day;
       })
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
     const data = await hydrate(matched);
     sendSuccess(res, data, "Today's birthdays retrieved successfully");
@@ -251,7 +333,7 @@ export async function getUpcomingBirthdays(
       wanted.add(d.getMonth() * 100 + d.getDate());
     }
 
-    const rows = await listAllRows(BIRTHDAY_TABLE);
+    const rows = await collectBirthdaySources();
     const matched = rows.filter((r) => {
       if (!r.dob) return false;
       const d = new Date(r.dob);
@@ -355,7 +437,7 @@ export async function getTodayBirthdayCount(): Promise<number> {
   const month = today.getMonth() + 1;
   const day = today.getDate();
   try {
-    const rows = await listAllRows(BIRTHDAY_TABLE);
+    const rows = await collectBirthdaySources();
     return rows.filter((r) => {
       if (!r.dob) return false;
       const d = new Date(r.dob);

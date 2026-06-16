@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Newspaper,
@@ -18,6 +18,9 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { SearchBar } from "@/components/common/SearchBar";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import type { CsvColumn } from "@/lib/exportCsv";
 import { newsApi, type NewsIntelligence, type NewsPriority } from "@/lib/api";
 import {
   Dialog,
@@ -44,6 +47,29 @@ export default function NewsIntelligenceView() {
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [search, setSearch] = useState("");
+
+  // Client-side text filter over headline + description.
+  const filteredNews = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    if (!s) return news;
+    return news.filter((item) =>
+      [item.headline, item.description].some((field) =>
+        (field ?? "").toLowerCase().includes(s)
+      )
+    );
+  }, [news, search]);
+
+  const csvColumns: CsvColumn<NewsIntelligence>[] = [
+    { header: "Headline", value: (r) => r.headline },
+    { header: "Category", value: (r) => r.category },
+    { header: "Priority", value: (r) => r.priority },
+    { header: "Source", value: (r) => r.mediaSource },
+    { header: "Region", value: (r) => r.region },
+    { header: "Description", value: (r) => r.description },
+    { header: "Created By", value: (r) => r.createdBy?.name },
+    { header: "Created", value: (r) => new Date(r.createdAt).toLocaleString() },
+  ];
 
   const fetchNews = useCallback(async () => {
     setLoading(true);
@@ -225,7 +251,7 @@ export default function NewsIntelligenceView() {
 
           {/* Filters */}
           <Card className="rounded-2xl border border-indigo-100">
-            <CardContent className="px-5 py-5">
+            <CardContent className="px-5 py-5 space-y-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
                 <div className="flex items-center gap-2 lg:flex-1 lg:min-w-0">
                   <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -251,25 +277,39 @@ export default function NewsIntelligenceView() {
                   onEndDateChange={setEndDate}
                 />
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <SearchBar
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search headline or description"
+                  className="w-full sm:w-72"
+                />
+                <ExportCsvButton
+                  rows={filteredNews}
+                  columns={csvColumns}
+                  filename="news-intelligence"
+                  className="sm:ml-auto"
+                />
+              </div>
             </CardContent>
           </Card>
 
           {/* News List */}
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
-              <CardTitle>Intelligence Feed ({news.length})</CardTitle>
+              <CardTitle>Intelligence Feed ({filteredNews.length})</CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-4">
               {loading ? (
                 <p className="text-muted-foreground text-center py-8">Loading news...</p>
-              ) : news.length === 0 ? (
+              ) : filteredNews.length === 0 ? (
                 <div className="text-center py-8">
                   <Newspaper className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-muted-foreground">No news entries found</p>
                 </div>
               ) : (
-                news.map((item) => (
+                filteredNews.map((item) => (
                   <div
                     key={item.id}
                     className={`p-4 rounded-xl border bg-white ${getCardStyle(item.priority)} hover:shadow-md transition`}

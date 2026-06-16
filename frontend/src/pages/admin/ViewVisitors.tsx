@@ -12,7 +12,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { visitorApi } from "@/lib/api";
+import { visitorApi, type Visitor } from "@/lib/api";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import type { CsvColumn } from "@/lib/exportCsv";
 
 export default function ViewVisitors() {
   const [dateFilter, setDateFilter] = useState("");
@@ -67,6 +69,19 @@ export default function ViewVisitors() {
     return d.toISOString().slice(0, 10);
   };
 
+  const csvColumns: CsvColumn<Visitor>[] = [
+    { header: "Name", value: (v) => v.name },
+    { header: "Designation", value: (v) => v.designation },
+    { header: "Phone", value: (v) => v.phone },
+    { header: "DOB", value: (v) => v.dob },
+    { header: "Purpose", value: (v) => v.purpose },
+    { header: "Referenced By", value: (v) => v.referencedBy },
+    { header: "Constituency", value: (v) => v.constituency },
+    { header: "Ward/Village", value: (v) => v.wardVillage },
+    { header: "Visit Date", value: (v) => v.visitDate },
+    { header: "Logged By", value: (v) => v.createdBy?.name },
+  ];
+
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
@@ -75,13 +90,20 @@ export default function ViewVisitors() {
         <div className="w-full min-h-screen bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
           <div className="max-w-7xl mx-auto space-y-6">
 
-            <div>
-              <h1 className="text-2xl font-semibold text-indigo-900">
-                View Visitors
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Visitor entries logged by staff
-              </p>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-semibold text-indigo-900">
+                  View Visitors
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Visitor entries logged by staff
+                </p>
+              </div>
+              <ExportCsvButton
+                rows={filteredVisitors}
+                columns={csvColumns}
+                filename="visitors"
+              />
             </div>
 
             <Card className="rounded-2xl border border-indigo-100">

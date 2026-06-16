@@ -19,6 +19,8 @@ import {
 import { Users, UserPlus, Search, RefreshCw, ShieldCheck, ShieldAlert, Mail, Phone } from "lucide-react";
 import { authApi, type User } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import type { CsvColumn } from "@/lib/exportCsv";
 
 function roleBadgeClass(role: string): string {
   switch (role) {
@@ -83,6 +85,13 @@ export default function UserList() {
       return haystack.includes(s);
     });
   }, [users, search, roleFilter]);
+
+  const csvColumns: CsvColumn<ExtendedUser>[] = [
+    { header: "Name", value: (u) => u.name },
+    { header: "Email", value: (u) => u.email },
+    { header: "Role", value: (u) => u.role },
+    { header: "Phone", value: (u) => u.phone },
+  ];
 
   // Per-role counts (computed before role filter is applied — these are
   // global counts, not filtered counts).
@@ -180,6 +189,11 @@ export default function UserList() {
                     <SelectItem value="SUPER_ADMIN">Super Admin</SelectItem>
                   </SelectContent>
                 </Select>
+                <ExportCsvButton
+                  rows={filtered}
+                  columns={csvColumns}
+                  filename="users"
+                />
               </CardContent>
             </Card>
 

@@ -39,6 +39,7 @@ import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import { cacheClear } from '../lib/cache';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import { emitNotification } from './notification.controller';
+import { autoCreateSelfTask } from './task.controller';
 import type {
   AuthenticatedRequest,
   TourProgramFilters,
@@ -66,7 +67,8 @@ function parseInt0(v: unknown): number | null {
 function shapeTour(
   row: CatalystRow,
   createdBy?: { id: string; name: string; email: string } | null,
-  completedBy?: { id: string; name: string; email: string } | null
+  completedBy?: { id: string; name: string; email: string } | null,
+  lastEditedBy?: { id: string; name: string; email: string } | null
 ) {
   return {
     id: String(row.ROWID),
@@ -98,6 +100,10 @@ function shapeTour(
     completedById: row.completedById ?? null,
     createdBy: createdBy ?? null,
     completedBy: completedBy ?? null,
+    // Edit audit — who last edited this tour and when (security trail).
+    lastEditedById: row.lastEditedById ?? null,
+    lastEditedAt: row.lastEditedAt ?? null,
+    lastEditedBy: lastEditedBy ?? null,
   };
 }
 
@@ -133,13 +139,15 @@ async function hydrate(rows: CatalystRow[]): Promise<any[]> {
   for (const r of safe) {
     if (r.createdById) ids.add(String(r.createdById));
     if (r.completedById) ids.add(String(r.completedById));
+    if (r.lastEditedById) ids.add(String(r.lastEditedById));
   }
   const users = await lookupUsers(ids);
   return safe.map((r) =>
     shapeTour(
       r,
       users.get(String(r.createdById)) ?? null,
-      r.completedById ? users.get(String(r.completedById)) ?? null : null
+      r.completedById ? users.get(String(r.completedById)) ?? null : null,
+      r.lastEditedById ? users.get(String(r.lastEditedById)) ?? null : null
     )
   );
 }
@@ -201,6 +209,18 @@ export async function createTourProgram(
       createdById: req.user.id,
       completedById: null,
       googleCalendarEventId: null,
+    });
+
+    // Auto self-assign: the tour invitation becomes a task owned by its creator
+    // so it shows up on the shared Tasks board. The admin still makes the
+    // ACCEPT/REGRET decision separately. Best-effort.
+    await autoCreateSelfTask({
+      userId: req.user.id,
+      title: `Tour: ${eventName}`,
+      taskType: 'TOUR_PROGRAM',
+      referenceId: String(row.ROWID),
+      referenceType: 'TOUR_PROGRAM',
+      description: typeof description === 'string' ? description.slice(0, 500) : null,
     });
 
     const [shaped] = await hydrate([row]);
@@ -380,6 +400,12 @@ export async function updateTourProgram(
     }
     if (body.attendeesCount !== undefined) {
       updateData.attendeesCount = parseInt0(body.attendeesCount);
+    }
+
+    // Edit audit — stamp who edited and when (never client-controlled).
+    if (req.user) {
+      updateData.lastEditedById = req.user.id;
+      updateData.lastEditedAt = nowCatalystIST();
     }
 
     const updated = await updateRow(TOUR_TABLE, updateData as any);

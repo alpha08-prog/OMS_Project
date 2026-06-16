@@ -74,13 +74,17 @@ function shapeTask(
 ) {
   return {
     id: String(row.ROWID),
-    title: row.title,
+    title: row.title ?? '',
     description: row.description ?? null,
-    taskType: row.taskType,
-    status: row.status,
+    // Default legacy/blank rows so the frontend can always render + .replace().
+    taskType: row.taskType ?? 'GENERAL',
+    status: row.status ?? 'ASSIGNED',
     priority: row.priorities ?? 'NORMAL', // Catalyst → frontend mapping
     referenceId: row.referenceId ?? null,
     referenceType: row.referenceType ?? null,
+    // Reference number of the linked record (e.g. a grievance's GRV-YYYY-NNNN).
+    // Filled in by attachGrievanceRefs for GRIEVANCE tasks; null otherwise.
+    referenceNo: null as string | null,
     progressNotes: row.progressNotes ?? null,
     progressPercent: parseInteger(row.progressPercent),
     assignedAt: row.CREATEDTIME, // Catalyst auto-timestamp
@@ -164,6 +168,37 @@ async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
       users.get(String(r.assignedById)) ?? null
     )
   );
+}
+
+/**
+ * For GRIEVANCE-type tasks, resolve the linked grievance's reference number
+ * (GRV-YYYY-NNNN, falling back to GRV-<rowid>) and set it on each task's
+ * `referenceNo` so the Task Tracker / All Tasks boards can show + search by it.
+ * Best-effort: a lookup failure just leaves referenceNo null.
+ */
+async function attachGrievanceRefs(tasks: any[]): Promise<void> {
+  const ids = new Set<string>();
+  for (const t of tasks) {
+    if (t.referenceType === 'GRIEVANCE' && t.referenceId) ids.add(String(t.referenceId));
+  }
+  if (ids.size === 0) return;
+  try {
+    const grievances = await listAllRows('Grievance');
+    const byId = new Map<string, string>();
+    for (const g of grievances) {
+      const rid = String(g.ROWID);
+      if (ids.has(rid)) {
+        byId.set(rid, g.grievanceNumber ? String(g.grievanceNumber) : `GRV-${rid}`);
+      }
+    }
+    for (const t of tasks) {
+      if (t.referenceType === 'GRIEVANCE' && t.referenceId) {
+        t.referenceNo = byId.get(String(t.referenceId)) ?? null;
+      }
+    }
+  } catch {
+    /* Grievance table unreadable — leave referenceNo null */
+  }
 }
 
 /**
@@ -286,6 +321,46 @@ async function recentHistoryByTaskId(
     );
   }
   return out;
+}
+
+/**
+ * Create a task assigned to the creator themselves — no admin assignment step.
+ * Called when a staff/admin files a grievance or tour so the item immediately
+ * shows up on the shared Tasks board ("auto self-assigned"). Best-effort:
+ * never throws to the caller, since a notification/task failure must not fail
+ * the underlying grievance/tour creation.
+ */
+export async function autoCreateSelfTask(params: {
+  userId: string;
+  title: string;
+  taskType: string;
+  referenceId: string;
+  referenceType: string;
+  priority?: string;
+  description?: string | null;
+}): Promise<void> {
+  try {
+    await insertRow(TASK_TABLE, {
+      title: params.title,
+      description: params.description ?? null,
+      taskType: VALID_TASK_TYPES.has(params.taskType) ? params.taskType : 'GENERAL',
+      status: 'ASSIGNED',
+      priorities: params.priority || 'NORMAL',
+      referenceId: params.referenceId,
+      referenceType: params.referenceType,
+      progressNotes: null,
+      progressPercent: 0,
+      dueDate: null,
+      startedAt: null,
+      completedAt: null,
+      // Self-assigned: creator is both the assignee and the assigner.
+      assignedToId: params.userId,
+      assignedById: params.userId,
+      groupId: null,
+    });
+  } catch (err) {
+    console.warn('[task] autoCreateSelfTask failed', err);
+  }
 }
 
 // ── Endpoints ─────────────────────────────────────────────────────────────
@@ -676,6 +751,7 @@ export async function getTasks(
     }
 
     const tasks = await attachUsers(pageRows);
+    await attachGrievanceRefs(tasks);
     const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
@@ -683,6 +759,164 @@ export async function getTasks(
     sendSuccess(res, tasks, 'Tasks retrieved successfully', 200, meta);
   } catch (error) {
     sendServerError(res, 'Failed to get tasks', error);
+  }
+}
+
+/**
+ * GET /api/tasks/all — EVERY task, visible to ANY authenticated user.
+ *
+ * Powers the shared "All Tasks" board: everyone can see what's pending across
+ * the office. Supports the same filters as the admin list plus a free-text
+ * `search` over title/description.
+ */
+export async function getAllTasks(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { page, limit, skip } = parsePagination(
+      req.query as { page?: string; limit?: string }
+    );
+    const { status, taskType, assignedToId, priority, startDate, endDate, search } =
+      req.query as Record<string, string>;
+
+    let rows = await listAllRows(TASK_TABLE);
+    if (status) rows = rows.filter((r) => r.status === status);
+    if (taskType) rows = rows.filter((r) => r.taskType === taskType);
+    if (assignedToId) rows = rows.filter((r) => String(r.assignedToId) === assignedToId);
+    if (priority) rows = rows.filter((r) => r.priorities === priority);
+    if (startDate) {
+      const start = new Date(startDate).getTime();
+      rows = rows.filter((r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate).getTime();
+      rows = rows.filter((r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end);
+    }
+    if (search) {
+      const q = String(search).toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          String(r.title ?? '').toLowerCase().includes(q) ||
+          String(r.description ?? '').toLowerCase().includes(q)
+      );
+    }
+
+    rows.sort(taskListCompare);
+    const total = rows.length;
+    const pageRows = rows.slice(skip, skip + limit);
+
+    const tasks = await attachUsers(pageRows);
+    await attachGrievanceRefs(tasks);
+    const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
+    for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
+
+    const meta = calculatePaginationMeta(total, page, limit);
+    sendSuccess(res, tasks, 'All tasks retrieved successfully', 200, meta);
+  } catch (error) {
+    sendServerError(res, 'Failed to get all tasks', error);
+  }
+}
+
+/**
+ * PATCH /api/tasks/:id/edit — shared edit for the All-Tasks board.
+ *
+ * ANY authenticated user may change the status and/or add a remark. Every
+ * change is recorded in TaskHistory with the editor's id + timestamp, so the
+ * audit timeline always shows who edited/remarked and when.
+ */
+export async function editTaskShared(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      sendError(res, 'Not authenticated', 401);
+      return;
+    }
+    const { id } = req.params;
+    const { status, progressNotes } = req.body as {
+      status?: string;
+      progressNotes?: string;
+    };
+
+    const existing = await getRow(TASK_TABLE, id);
+    if (!existing) {
+      sendNotFound(res, 'Task not found');
+      return;
+    }
+    if (status && !VALID_TASK_STATUS.has(status)) {
+      sendError(res, `Invalid status: ${status}`);
+      return;
+    }
+    const note = typeof progressNotes === 'string' ? progressNotes.trim() : '';
+    if (!status && !note) {
+      sendError(res, 'Provide a status change or a remark');
+      return;
+    }
+
+    const updateData: Record<string, unknown> = { ROWID: id };
+    if (status) {
+      updateData.status = status;
+      if (status === 'IN_PROGRESS' && !existing.startedAt) {
+        updateData.startedAt = nowCatalystIST();
+      }
+      if (status === 'COMPLETED') {
+        updateData.completedAt = nowCatalystIST();
+        updateData.progressPercent = 100;
+      }
+    }
+    if (note) updateData.progressNotes = note;
+
+    // Audit entry attributed to whoever made the edit.
+    await insertRow(HISTORY_TABLE, {
+      taskId: id,
+      note: note || `Status changed to ${status}`,
+      status: status || null,
+      createdById: req.user.id,
+    });
+
+    const updated = await updateRow(TASK_TABLE, updateData as any);
+    const [shaped] = await attachUsers([updated]);
+    const historyMap = await recentHistoryByTaskId([id], 20);
+    shaped.progressHistory = historyMap.get(id) ?? [];
+    sendSuccess(res, shaped, 'Task updated successfully');
+  } catch (error) {
+    sendServerError(res, 'Failed to update task', error);
+  }
+}
+
+/**
+ * GET /api/tasks/:id/audit — full audit timeline for ANY task, visible to any
+ * authenticated user (the shared board needs everyone to see who edited/
+ * remarked and when). Read-only sibling of the staff-scoped getTaskHistory.
+ */
+export async function getTaskAudit(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const task = await getRow(TASK_TABLE, id);
+    if (!task) {
+      sendNotFound(res, 'Task not found');
+      return;
+    }
+    const allHistory = await listAllRows(HISTORY_TABLE);
+    const matched = allHistory.filter((h) => h.taskId === id);
+    matched.sort((a, b) => {
+      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
+      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
+      return tb - ta;
+    });
+    const creatorIds = new Set(matched.map((h) => String(h.createdById)).filter(Boolean));
+    const creators = await lookupUsers(creatorIds);
+    const history = matched.map((h) =>
+      shapeHistory(h, creators.get(String(h.createdById)) ?? null)
+    );
+    sendSuccess(res, history, 'Task audit timeline retrieved successfully');
+  } catch (error) {
+    sendServerError(res, 'Failed to get task audit', error);
   }
 }
 
@@ -755,6 +989,7 @@ export async function getMyTasks(
     // other staff working on the same multi-assigned task. This is the
     // "+N others assigned" badge data the staff dashboard renders.
     const tasks = await attachUsersWithCoAssignees(pageRows);
+    await attachGrievanceRefs(tasks);
     const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 

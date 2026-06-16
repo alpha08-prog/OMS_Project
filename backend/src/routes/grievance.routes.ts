@@ -4,6 +4,7 @@ import {
   createGrievance,
   getGrievances,
   getGrievanceById,
+  getGrievanceTimeline,
   updateGrievance,
   verifyGrievance,
   updateGrievanceStatus,
@@ -51,6 +52,7 @@ router.post('/', staffOnly, validate(createGrievanceValidation), createGrievance
 router.get('/', getGrievances);
 router.get('/queue/verification', adminOnly, getVerificationQueue);
 router.get('/:id', validate(idParamValidation), getGrievanceById);
+router.get('/:id/timeline', validate(idParamValidation), getGrievanceTimeline);
 router.put('/:id', validate(idParamValidation), updateGrievance);
 router.patch('/:id/verify', adminOnly, validate(idParamValidation), verifyGrievance);
 router.patch('/:id/status', adminOnly, validate([...idParamValidation, ...updateStatusValidation]), updateGrievanceStatus);

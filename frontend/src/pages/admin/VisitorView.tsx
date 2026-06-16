@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { visitorApi, type Visitor } from "@/lib/api";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import type { CsvColumn } from "@/lib/exportCsv";
 import {
   Dialog,
   DialogContent,
@@ -130,6 +132,19 @@ export default function VisitorView() {
     const today = new Date().toDateString();
     return visitDate === today;
   });
+
+  const csvColumns: CsvColumn<Visitor>[] = [
+    { header: "Name", value: (v) => v.name },
+    { header: "Designation", value: (v) => v.designation },
+    { header: "Phone", value: (v) => v.phone },
+    { header: "DOB", value: (v) => v.dob },
+    { header: "Purpose", value: (v) => v.purpose },
+    { header: "Referenced By", value: (v) => v.referencedBy },
+    { header: "Constituency", value: (v) => v.constituency },
+    { header: "Ward/Village", value: (v) => v.wardVillage },
+    { header: "Visit Date", value: (v) => v.visitDate },
+    { header: "Logged By", value: (v) => v.createdBy?.name },
+  ];
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -248,6 +263,14 @@ export default function VisitorView() {
                     Clear
                   </Button>
                 )}
+              </div>
+
+              <div className="ml-auto">
+                <ExportCsvButton
+                  rows={visitors}
+                  columns={csvColumns}
+                  filename="visitors"
+                />
               </div>
             </CardContent>
           </Card>

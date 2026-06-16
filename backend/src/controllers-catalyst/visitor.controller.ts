@@ -30,12 +30,11 @@ import {
   sendServerError,
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
-import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { lookupUsers } from '../lib/catalyst-user-lookup';
 import { useZCQL } from '../config/feature-flags';
 import type { AuthenticatedRequest, VisitorFilters } from '../types';
 
 const VISITOR_TABLE = 'Visitor';
-const USER_TABLE = 'User';
 
 /** Reshape a Catalyst row into the JSON shape the frontend expects. */
 function shapeVisitor(
@@ -61,10 +60,10 @@ function shapeVisitor(
 }
 
 /**
- * Best-effort lookup of creator user info. Returns the rows shaped with the
- * createdBy block populated where possible. If the User table doesn't exist
- * in Catalyst yet (we haven't migrated it), createdBy stays null — acceptable
- * during the parallel-migration period.
+ * Best-effort lookup of creator user info. Resolved via lookupUsers, which
+ * queries the AppUser table and handles both Catalyst ROWIDs and legacy UUID
+ * ids (createdById can be either form). If AppUser is unreachable, createdBy
+ * stays null.
  */
 async function attachCreators(rows: CatalystRow[]): Promise<any[]> {
   // Guard against undefined entries — some Catalyst endpoints return shapes
@@ -74,17 +73,11 @@ async function attachCreators(rows: CatalystRow[]): Promise<any[]> {
   const creatorIds = new Set(safe.map((r) => r.createdById).filter(Boolean));
   if (creatorIds.size === 0) return safe.map((r) => shapeVisitor(r));
 
-  const byId = new Map<string, { id: string; name: string; email: string }>();
+  let byId = new Map<string, { id: string; name: string; email: string }>();
   try {
-    const users = await getCachedTableList(USER_TABLE, 200);
-    for (const u of users) {
-      const id = String(u.ROWID);
-      if (creatorIds.has(id)) {
-        byId.set(id, { id, name: u.name, email: u.email });
-      }
-    }
+    byId = await lookupUsers(creatorIds as Set<string>);
   } catch {
-    // User table may not exist yet — silently skip the join.
+    // AppUser unreachable — leave creator null.
   }
 
   return safe.map((r) => shapeVisitor(r, byId.get(String(r.createdById)) ?? null));

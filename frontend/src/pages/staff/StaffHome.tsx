@@ -11,6 +11,8 @@ import {
   CheckCircle2,
   Clock,
   FileX,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +35,7 @@ export default function StaffHome() {
   const [userName, setUserName] = useState("Staff Member");
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRow | null>(null);
   const [attendanceSubmitting, setAttendanceSubmitting] = useState<AttendanceStatus | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
 
   useEffect(() => {
     // Get user name from localStorage
@@ -127,6 +130,24 @@ export default function StaffHome() {
     }
   };
 
+  const handleCheckOut = async () => {
+    setCheckingOut(true);
+    try {
+      const next = await attendanceApi.checkOut();
+      setTodayAttendance(next);
+    } catch (e) {
+      console.error("Failed to check out", e);
+    } finally {
+      setCheckingOut(false);
+    }
+  };
+
+  // getMyToday returns today's row (or null), so no date comparison is needed.
+  const canCheckOut =
+    todayAttendance?.status === "PRESENT" ||
+    todayAttendance?.status === "HALF_DAY";
+  const checkedOut = !!todayAttendance?.checkOutAt;
+
   return (
     <div className="flex min-h-screen bg-background">
       {/* Sidebar */}
@@ -167,7 +188,7 @@ export default function StaffHome() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {todayAttendance ? (
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span
                       className={
                         "px-3 py-1 rounded-full text-sm font-medium " +
@@ -184,17 +205,40 @@ export default function StaffHome() {
                     </span>
                     {todayAttendance.markedAt && (
                       <span className="text-xs text-muted-foreground">
-                        at {new Date(todayAttendance.markedAt).toLocaleTimeString()}
+                        in {new Date(todayAttendance.markedAt).toLocaleTimeString()}
                       </span>
                     )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="ml-auto"
-                      onClick={() => navigate("/staff/attendance")}
-                    >
-                      Change
-                    </Button>
+                    {todayAttendance.checkOutAt && (
+                      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                        <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                        out {new Date(todayAttendance.checkOutAt).toLocaleTimeString()}
+                      </span>
+                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      {canCheckOut && !checkedOut && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                          disabled={checkingOut}
+                          onClick={handleCheckOut}
+                        >
+                          {checkingOut ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                          ) : (
+                            <LogOut className="h-4 w-4 mr-1" />
+                          )}
+                          Check out
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate("/staff/attendance")}
+                      >
+                        Change
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

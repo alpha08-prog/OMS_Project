@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { birthdayApi, type Birthday } from "@/lib/api";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import type { CsvColumn } from "@/lib/exportCsv";
 import { RefreshCw, Cake, Gift, Calendar, Phone, User, Trash2 } from "lucide-react";
 import {
   Dialog,
@@ -120,6 +122,17 @@ export default function Birthdays() {
     return date.getDate() === today.getDate() && date.getMonth() === today.getMonth();
   };
 
+  const csvColumns: CsvColumn<Birthday>[] = [
+    { header: "Name", value: (b) => b.name },
+    { header: "DOB", value: (b) => b.dob },
+    { header: "Relation", value: (b) => b.relation },
+    { header: "Phone", value: (b) => b.phone },
+    { header: "Constituency", value: (b) => b.constituency },
+    { header: "Ward/Village", value: (b) => b.wardVillage },
+    { header: "Notes", value: (b) => b.notes },
+    { header: "Added By", value: (b) => b.createdBy?.name },
+  ];
+
   const getRelationBadgeColor = (relation: string) => {
     switch (relation) {
       case 'VIP': return 'bg-purple-100 text-purple-800';
@@ -128,6 +141,17 @@ export default function Birthdays() {
       case 'Party Worker': return 'bg-orange-100 text-orange-800';
       case 'Media': return 'bg-green-100 text-green-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getSourceBadge = (source?: Birthday['source']) => {
+    switch (source) {
+      case 'VISITOR':
+        return { label: 'Visitor', className: 'bg-teal-100 text-teal-800' };
+      case 'TRAIN':
+        return { label: 'Train', className: 'bg-indigo-100 text-indigo-800' };
+      default:
+        return { label: 'Birthday', className: 'bg-pink-100 text-pink-800' };
     }
   };
 
@@ -274,6 +298,14 @@ export default function Birthdays() {
                       Clear Filters
                     </Button>
                   )}
+
+                  <div className="flex-shrink-0 sm:ml-auto">
+                    <ExportCsvButton
+                      rows={birthdays}
+                      columns={csvColumns}
+                      filename="birthdays"
+                    />
+                  </div>
                 </div>
 
                 <div className="mt-4 pt-4 border-t">
@@ -358,8 +390,11 @@ export default function Birthdays() {
                           <User className="h-5 w-5 text-pink-600" />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-medium text-pink-900 flex items-center gap-2">
+                          <p className="font-medium text-pink-900 flex items-center gap-2 flex-wrap">
                             {b.name}
+                            <Badge className={`${getSourceBadge(b.source).className} text-xs px-2 py-0`}>
+                              {getSourceBadge(b.source).label}
+                            </Badge>
                             {isTodayBirthday(b.dob) && (
                               <span className="text-lg">🎉</span>
                             )}
@@ -396,17 +431,29 @@ export default function Birthdays() {
                             Today!
                           </Badge>
                         )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => {
-                            setSelectedBirthday(b);
-                            setDeleteDialogOpen(true);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {b.canDelete ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => {
+                              setSelectedBirthday(b);
+                              setDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled
+                            className="text-muted-foreground cursor-not-allowed"
+                            title="Manage from the originating record"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))

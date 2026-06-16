@@ -2,9 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   historyApi,
   grievanceApi,
+  tourProgramApi,
   type HistoryItem,
   type HistoryStats,
   type HistoryItemType,
+  type Grievance,
+  type TourProgram,
+  type CreateGrievanceRequest,
+  type GrievanceType,
+  type GrievancePriority,
+  type GrievanceStatus,
 } from "../../lib/api";
 import {
   Card,
@@ -21,6 +28,8 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import { Textarea } from "../../components/ui/textarea";
 import { Badge } from "../../components/ui/badge";
 import {
   Table,
@@ -37,6 +46,9 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { DashboardSidebar } from "../../components/layout/DashboardSidebar";
+import { SearchBar } from "../../components/common/SearchBar";
+import { ExportCsvButton } from "../../components/common/ExportCsvButton";
+import type { CsvColumn } from "../../lib/exportCsv";
 import {
   History,
   FileCheck,
@@ -50,7 +62,26 @@ import {
   Eye,
   TrendingUp,
   RotateCcw,
+  Pencil,
 } from "lucide-react";
+
+const GRIEVANCE_TYPES: GrievanceType[] = [
+  "WATER", "ROAD", "POLICE", "HEALTH", "TRANSFER", "FINANCIAL_AID",
+  "ELECTRICITY", "EDUCATION", "HOUSING", "TEMPLE_VISIT", "OTHER",
+];
+const GRIEVANCE_STATUSES: GrievanceStatus[] = [
+  "OPEN", "IN_PROGRESS", "VERIFIED", "RESOLVED", "REJECTED",
+];
+const GRIEVANCE_PRIORITIES: GrievancePriority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+
+/** ISO string → value a datetime-local input expects (local time, no seconds). */
+function toLocalInput(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function AdminHistory() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -59,6 +90,14 @@ export default function AdminHistory() {
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
   const [reopenLoading, setReopenLoading] = useState(false);
   const [reopenError, setReopenError] = useState<string | null>(null);
+
+  // Inline edit (grievance / tour). On open we fetch the FULL record via
+  // getById since the history row only carries a partial `details` object.
+  const [editItem, setEditItem] = useState<HistoryItem | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const isCreatedBy = (value: unknown): value is { name: string; email: string } => {
     if (!value || typeof value !== 'object') return false;
@@ -69,6 +108,28 @@ export default function AdminHistory() {
   // Filters
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [actionFilter, setActionFilter] = useState<string>("ALL");
+  const [search, setSearch] = useState("");
+
+  // Client-side text filter over the loaded page of history rows.
+  const filteredHistory = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    if (!s) return history;
+    return history.filter((item) =>
+      [item.title, item.description].some((field) =>
+        (field ?? "").toLowerCase().includes(s)
+      )
+    );
+  }, [history, search]);
+
+  const csvColumns: CsvColumn<HistoryItem>[] = [
+    { header: "Type", value: (r) => r.type },
+    { header: "Title", value: (r) => r.title },
+    { header: "Description", value: (r) => r.description },
+    { header: "Action", value: (r) => r.action },
+    { header: "Status", value: (r) => r.status },
+    { header: "Action By", value: (r) => r.actionBy?.name },
+    { header: "Action At", value: (r) => new Date(r.actionAt).toLocaleString() },
+  ];
 
   const actionOptions = useMemo(() => {
     if (typeFilter === "ALL") {
@@ -240,6 +301,111 @@ export default function AdminHistory() {
       );
     } finally {
       setReopenLoading(false);
+    }
+  };
+
+  // Only grievances and tours are editable — train requests are not.
+  const isEditable = (item: HistoryItem | null): boolean =>
+    Boolean(item && (item.type === "GRIEVANCE" || item.type === "TOUR_PROGRAM"));
+
+  // Open the edit dialog: fetch the FULL record (the history row's `details`
+  // is only a partial), pre-fill the form, then show the dialog.
+  const openEdit = async (item: HistoryItem) => {
+    if (!isEditable(item)) return;
+    setSelectedItem(null);
+    setEditError(null);
+    setEditForm({});
+    setEditItem(item);
+    setEditLoading(true);
+    try {
+      if (item.type === "GRIEVANCE") {
+        const g: Grievance = await grievanceApi.getById(item.id);
+        setEditForm({
+          petitionerName: g.petitionerName ?? "",
+          mobileNumber: g.mobileNumber ?? "",
+          constituency: g.constituency ?? "",
+          wardVillage: g.wardVillage ?? "",
+          grievanceType: g.grievanceType ?? "",
+          description: g.description ?? "",
+          monetaryValue: g.monetaryValue != null ? String(g.monetaryValue) : "",
+          status: g.status ?? "",
+          priority: g.priority ?? "MEDIUM",
+        });
+      } else if (item.type === "TOUR_PROGRAM") {
+        const tp: TourProgram = await tourProgramApi.getById(item.id);
+        setEditForm({
+          eventName: tp.eventName ?? "",
+          organizer: tp.organizer ?? "",
+          organizerPhone: tp.organizerPhone ?? "",
+          organizerEmail: tp.organizerEmail ?? "",
+          dateTime: toLocalInput(tp.dateTime),
+          venue: tp.venue ?? "",
+          venueLink: tp.venueLink ?? "",
+          description: tp.description ?? "",
+          referencedBy: tp.referencedBy ?? "",
+        });
+      }
+    } catch (err: unknown) {
+      setEditError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to load record for editing."
+      );
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const editChange = (field: string, value: string) =>
+    setEditForm((p) => ({ ...p, [field]: value }));
+
+  const saveEdit = async () => {
+    if (!editItem) return;
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      if (editItem.type === "GRIEVANCE") {
+        const monetary = (editForm.monetaryValue ?? "").trim();
+        const parsed = monetary === "" ? undefined : Number(monetary);
+        if (parsed !== undefined && !Number.isFinite(parsed)) {
+          setEditError("Monetary value must be a valid number.");
+          setEditSaving(false);
+          return;
+        }
+        const payload: Partial<CreateGrievanceRequest> & { status?: GrievanceStatus } = {
+          petitionerName: editForm.petitionerName,
+          mobileNumber: editForm.mobileNumber,
+          constituency: editForm.constituency,
+          wardVillage: editForm.wardVillage,
+          grievanceType: editForm.grievanceType as GrievanceType,
+          description: editForm.description,
+          priority: editForm.priority as GrievancePriority,
+          status: editForm.status as GrievanceStatus,
+          monetaryValue: parsed,
+        };
+        await grievanceApi.update(editItem.id, payload);
+      } else if (editItem.type === "TOUR_PROGRAM") {
+        await tourProgramApi.update(editItem.id, {
+          eventName: editForm.eventName,
+          organizer: editForm.organizer,
+          organizerPhone: editForm.organizerPhone || undefined,
+          organizerEmail: editForm.organizerEmail || undefined,
+          dateTime: editForm.dateTime ? new Date(editForm.dateTime).toISOString() : undefined,
+          venue: editForm.venue,
+          venueLink: editForm.venueLink || undefined,
+          description: editForm.description || undefined,
+          referencedBy: editForm.referencedBy || undefined,
+        });
+      }
+      setEditItem(null);
+      // Refresh the list (and counters) using the page's existing fetchers.
+      await Promise.all([fetchHistory(), fetchStats()]);
+    } catch (err: unknown) {
+      setEditError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to save changes."
+      );
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -450,7 +616,7 @@ export default function AdminHistory() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 pt-1">
+              <div className="flex flex-wrap items-center gap-2 pt-1">
                 <Button onClick={handleFilter} className="h-10 bg-indigo-600 hover:bg-indigo-700">
                   Apply
                 </Button>
@@ -458,6 +624,17 @@ export default function AdminHistory() {
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Reset
                 </Button>
+                <SearchBar
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search title or description"
+                  className="w-full sm:w-64 sm:ml-auto"
+                />
+                <ExportCsvButton
+                  rows={filteredHistory}
+                  columns={csvColumns}
+                  filename="action-history"
+                />
               </div>
             </CardContent>
           </Card>
@@ -472,7 +649,7 @@ export default function AdminHistory() {
                 <div className="flex items-center justify-center py-12">
                   <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
                 </div>
-              ) : history.length === 0 ? (
+              ) : filteredHistory.length === 0 ? (
                 <div className="text-center py-12">
                   <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-muted-foreground">No actions found</p>
@@ -492,7 +669,7 @@ export default function AdminHistory() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {history.map((item) => (
+                      {filteredHistory.map((item) => (
                         <TableRow key={`${item.type}-${item.id}`} className="hover:bg-indigo-50/50">
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -512,13 +689,26 @@ export default function AdminHistory() {
                             {formatDate(item.actionAt)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setSelectedItem(item)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setSelectedItem(item)}
+                                title="View details"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              {isEditable(item) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openEdit(item)}
+                                  title="Edit record"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -639,6 +829,12 @@ export default function AdminHistory() {
                 )}
 
                 <div className="flex items-center justify-end gap-2">
+                  {isEditable(selectedItem) && (
+                    <Button variant="outline" onClick={() => openEdit(selectedItem)}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
                   {isGrievanceReopenable(selectedItem) && (
                     <Button
                       onClick={handleReopen}
@@ -655,6 +851,150 @@ export default function AdminHistory() {
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Dialog — grievance & tour only. Pre-filled from the full record. */}
+        <Dialog
+          open={!!editItem}
+          onOpenChange={(open) => {
+            if (!open && !editSaving) {
+              setEditItem(null);
+              setEditError(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {editItem && getTypeIcon(editItem.type)}
+                Edit {editItem?.title}
+              </DialogTitle>
+            </DialogHeader>
+
+            {editLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
+              </div>
+            ) : editItem ? (
+              <div className="space-y-4">
+                {editItem.type === "GRIEVANCE" ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Petitioner Name</Label>
+                      <Input value={editForm.petitionerName ?? ""} onChange={(e) => editChange("petitionerName", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Mobile Number</Label>
+                      <Input value={editForm.mobileNumber ?? ""} onChange={(e) => editChange("mobileNumber", e.target.value)} maxLength={10} />
+                    </div>
+                    <div>
+                      <Label>Constituency</Label>
+                      <Input value={editForm.constituency ?? ""} onChange={(e) => editChange("constituency", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Ward / Village</Label>
+                      <Input value={editForm.wardVillage ?? ""} onChange={(e) => editChange("wardVillage", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Type</Label>
+                      <Select value={editForm.grievanceType ?? ""} onValueChange={(v) => editChange("grievanceType", v)}>
+                        <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                        <SelectContent>
+                          {GRIEVANCE_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>{t.replace(/_/g, " ")}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Monetary Value</Label>
+                      <Input type="number" value={editForm.monetaryValue ?? ""} onChange={(e) => editChange("monetaryValue", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Status</Label>
+                      <Select value={editForm.status ?? ""} onValueChange={(v) => editChange("status", v)}>
+                        <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                        <SelectContent>
+                          {GRIEVANCE_STATUSES.map((s) => (
+                            <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Priority</Label>
+                      <Select value={editForm.priority ?? ""} onValueChange={(v) => editChange("priority", v)}>
+                        <SelectTrigger><SelectValue placeholder="Select priority" /></SelectTrigger>
+                        <SelectContent>
+                          {GRIEVANCE_PRIORITIES.map((p) => (
+                            <SelectItem key={p} value={p}>{p}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Label>Description</Label>
+                      <Textarea value={editForm.description ?? ""} onChange={(e) => editChange("description", e.target.value)} className="min-h-[90px]" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Event Name</Label>
+                      <Input value={editForm.eventName ?? ""} onChange={(e) => editChange("eventName", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Organizer</Label>
+                      <Input value={editForm.organizer ?? ""} onChange={(e) => editChange("organizer", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Organizer Phone</Label>
+                      <Input value={editForm.organizerPhone ?? ""} onChange={(e) => editChange("organizerPhone", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Organizer Email</Label>
+                      <Input value={editForm.organizerEmail ?? ""} onChange={(e) => editChange("organizerEmail", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Date &amp; Time</Label>
+                      <Input type="datetime-local" value={editForm.dateTime ?? ""} onChange={(e) => editChange("dateTime", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Venue</Label>
+                      <Input value={editForm.venue ?? ""} onChange={(e) => editChange("venue", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Venue Link</Label>
+                      <Input value={editForm.venueLink ?? ""} onChange={(e) => editChange("venueLink", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Referenced By</Label>
+                      <Input value={editForm.referencedBy ?? ""} onChange={(e) => editChange("referencedBy", e.target.value)} />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Label>Description</Label>
+                      <Textarea value={editForm.description ?? ""} onChange={(e) => editChange("description", e.target.value)} className="min-h-[90px]" />
+                    </div>
+                  </div>
+                )}
+
+                {editError && (
+                  <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-sm">
+                    {editError}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 border-t pt-4">
+                  <Button variant="outline" onClick={() => setEditItem(null)} disabled={editSaving}>
+                    Cancel
+                  </Button>
+                  <Button onClick={saveEdit} disabled={editSaving} className="bg-indigo-600 hover:bg-indigo-700">
+                    {editSaving ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </DialogContent>
         </Dialog>
       </main>

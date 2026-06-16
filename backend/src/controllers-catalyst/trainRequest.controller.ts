@@ -99,6 +99,7 @@ function shapePassenger(row: CatalystRow) {
     name: row.passengerName,
     age: parseInt0(row.age),
     gender: row.gender,
+    dob: row.dob ?? null,
     berthPreference: row.berthPreference ?? null,
     seatNumber: row.seatNumber ?? null,
     coachNumber: row.coachNumber ?? null,
@@ -221,6 +222,8 @@ async function writePassengers(
         passengerName: name,
         age: parseInt0(p.age),
         gender: gender || 'OTHER',
+        // DOB of the (primary) passenger — feeds the shared birthday module.
+        dob: p.dob ? toCatalystDate(p.dob) : null,
         berthPreference: p.berthPreference ?? null,
         seatNumber: p.seatNumber ?? null,
         coachNumber: p.coachNumber ?? null,

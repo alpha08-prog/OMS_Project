@@ -33,13 +33,13 @@ import {
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import { cacheClear } from '../lib/cache';
-import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { lookupUsers } from '../lib/catalyst-user-lookup';
 import { useZCQL } from '../config/feature-flags';
 import { emitNotification } from './notification.controller';
+import { autoCreateSelfTask } from './task.controller';
 import type { AuthenticatedRequest, GrievanceFilters } from '../types';
 
 const GRIEVANCE_TABLE = 'Grievance';
-const USER_TABLE = 'User';
 
 // Enum validation sets
 const VALID_TYPES = new Set([
@@ -118,10 +118,17 @@ function invalidateStatCaches() {
 function shapeGrievance(
   row: CatalystRow,
   createdBy?: { id: string; name: string; email: string } | null,
-  verifiedBy?: { id: string; name: string; email: string } | null
+  verifiedBy?: { id: string; name: string; email: string } | null,
+  lastEditedBy?: { id: string; name: string; email: string } | null
 ) {
   return {
     id: String(row.ROWID),
+    // Human-friendly reference: prefer the stored short sequential number
+    // (GRV-YYYY-NNNN); fall back to the ROWID form for legacy rows / before the
+    // grievanceNumber column exists. Searchable + used for the progress timeline.
+    referenceNo: row.grievanceNumber
+      ? String(row.grievanceNumber)
+      : `GRV-${String(row.ROWID)}`,
     petitionerName: row.petitionerName,
     mobileNumber: row.mobileNumber,
     constituency: row.constituency,
@@ -162,6 +169,10 @@ function shapeGrievance(
     showMobileOnLetter: parseBool(row.showMobileOnLetter),
     createdBy: createdBy ?? null,
     verifiedBy: verifiedBy ?? null,
+    // Edit audit — who last edited this grievance and when (security trail).
+    lastEditedById: row.lastEditedById ?? null,
+    lastEditedAt: row.lastEditedAt ?? null,
+    lastEditedBy: lastEditedBy ?? null,
   };
 }
 
@@ -205,7 +216,8 @@ function normalizeServicesRequested(
 
 /**
  * For each grievance, attach the createdBy + verifiedBy user info.
- * Done in a single User-table fetch since these IDs are likely shared.
+ * Resolved via lookupUsers, which queries the AppUser table and handles both
+ * Catalyst ROWIDs and legacy UUID ids (createdById can be either form).
  */
 async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
   const safe = rows.filter((r): r is CatalystRow => Boolean(r));
@@ -215,26 +227,24 @@ async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
   for (const r of safe) {
     if (r.createdById) ids.add(String(r.createdById));
     if (r.verifiedById) ids.add(String(r.verifiedById));
+    if (r.lastEditedById) ids.add(String(r.lastEditedById));
   }
 
-  const byId = new Map<string, { id: string; name: string; email: string }>();
+  let byId = new Map<string, { id: string; name: string; email: string }>();
   if (ids.size > 0) {
     try {
-      const users = await getCachedTableList(USER_TABLE);
-      for (const u of users) {
-        const id = String(u.ROWID);
-        if (ids.has(id)) byId.set(id, { id, name: u.name, email: u.email });
-      }
+      byId = await lookupUsers(ids);
     } catch {
-      // User table may not exist in Catalyst yet — skip the join.
+      // AppUser unreachable — leave creator/verifier/editor null.
     }
   }
 
   return safe.map((r) =>
     shapeGrievance(
       r,
-      byId.get(String(r.createdById)) ?? null,
-      r.verifiedById ? byId.get(String(r.verifiedById)) ?? null : null
+      (r.createdById && byId.get(String(r.createdById))) || null,
+      (r.verifiedById && byId.get(String(r.verifiedById))) || null,
+      (r.lastEditedById && byId.get(String(r.lastEditedById))) || null
     )
   );
 }
@@ -242,6 +252,30 @@ async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
 /**
  * POST /api/grievances
  */
+/**
+ * Best-effort sequential reference number: GRV-<IST year>-NNNN. Scans existing
+ * grievanceNumber values for the current year and returns max+1. Not
+ * transaction-safe — adequate for office-scale concurrency.
+ */
+async function nextGrievanceNumber(): Promise<string> {
+  const istYear = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCFullYear();
+  const prefix = `GRV-${istYear}-`;
+  let maxSeq = 0;
+  try {
+    const rows = await listAllRows(GRIEVANCE_TABLE);
+    for (const r of rows) {
+      const num = String(r.grievanceNumber ?? '');
+      if (num.startsWith(prefix)) {
+        const seq = parseInt(num.slice(prefix.length), 10);
+        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+      }
+    }
+  } catch {
+    /* table unreadable — fall back to 1 */
+  }
+  return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
+}
+
 export async function createGrievance(
   req: AuthenticatedRequest,
   res: Response
@@ -379,6 +413,36 @@ export async function createGrievance(
 
     const row = await insertRow(GRIEVANCE_TABLE, grievancePayload);
 
+    // Assign a short sequential reference number (GRV-YYYY-NNNN). Done as a
+    // separate best-effort update so creation still succeeds if the
+    // `grievanceNumber` column isn't in Catalyst yet — the reference then falls
+    // back to the ROWID form at the read layer until the column is added.
+    try {
+      const grievanceNumber = await nextGrievanceNumber();
+      await updateRow(GRIEVANCE_TABLE, { ROWID: String(row.ROWID), grievanceNumber });
+      row.grievanceNumber = grievanceNumber;
+    } catch (err) {
+      console.warn('[grievance] Could not assign grievanceNumber (column missing?)', err);
+    }
+
+    // Auto self-assign: the grievance immediately becomes a task owned by its
+    // creator (no admin verification/assignment step) so it surfaces on the
+    // shared Tasks board. Best-effort — never fails the grievance creation.
+    const refNo = row.grievanceNumber
+      ? String(row.grievanceNumber)
+      : `GRV-${String(row.ROWID)}`;
+    await autoCreateSelfTask({
+      userId: req.user.id,
+      // Reference number in the title so the grievance is findable by id on the
+      // shared All Tasks board (its search matches the title).
+      title: `Grievance ${refNo}: ${grievanceType} - ${petitionerName}`,
+      taskType: 'GRIEVANCE',
+      referenceId: String(row.ROWID),
+      referenceType: 'GRIEVANCE',
+      priority: finalPriority === 'CRITICAL' || finalPriority === 'HIGH' ? 'HIGH' : 'NORMAL',
+      description: typeof description === 'string' ? description.slice(0, 500) : null,
+    });
+
     invalidateStatCaches();
     const [shaped] = await attachUsers([row]);
     sendSuccess(res, shaped, 'Grievance created successfully', 201);
@@ -431,10 +495,21 @@ function buildGrievanceZCQL(
     conditions.push(`constituency LIKE '%${q}%'`);
   }
   if (filters.search) {
-    const q = zcqlEscapeValue(String(filters.search));
-    conditions.push(
-      `(petitionerName LIKE '%${q}%' OR mobileNumber LIKE '%${q}%' OR description LIKE '%${q}%')`
-    );
+    const raw = String(filters.search).trim();
+    const q = zcqlEscapeValue(raw);
+    const clauses = [
+      `petitionerName LIKE '%${q}%'`,
+      `mobileNumber LIKE '%${q}%'`,
+      `description LIKE '%${q}%'`,
+      `grievanceNumber LIKE '%${q}%'`,
+      `constituency LIKE '%${q}%'`,
+      `wardVillage LIKE '%${q}%'`,
+      `grievanceType LIKE '%${q}%'`,
+    ];
+    // Legacy "GRV-<rowid>" reference → match the ROWID directly.
+    const m = raw.match(/^GRV-(\d+)$/i);
+    if (m) clauses.push(`ROWID = ${m[1]}`);
+    conditions.push(`(${clauses.join(' OR ')})`);
   }
   if (filters.startDate) {
     const start = toCatalystDate(filters.startDate as unknown as string);
@@ -465,7 +540,11 @@ export async function getGrievances(
       req.query as { page?: string; limit?: string }
     );
     const filters = req.query as GrievanceFilters;
-    if (useZCQL()) {
+    // Free-text search (incl. reference number / GRV-<rowid>) always runs through
+    // the JS path: it reliably matches grievanceNumber + ROWID and scans the
+    // whole table, sidestepping ZCQL LIKE/ROWID quirks. ZCQL still handles the
+    // common filtered/sorted list when there's no search term.
+    if (useZCQL() && !filters.search) {
       const baseQuery = buildGrievanceZCQL(req.user, filters);
       // Catalyst ZCQL caps LIMIT at 300; +1 for hasMore probe → user limit ≤ 299.
       const safeLimit = zcqlSafeLimit(limit);
@@ -509,12 +588,19 @@ export async function getGrievances(
       rows = rows.filter((r) => (r.constituency || '').toLowerCase().includes(q));
     }
     if (filters.search) {
-      const q = String(filters.search).toLowerCase();
+      const raw = String(filters.search).trim();
+      const q = raw.toLowerCase();
+      const rowidMatch = raw.match(/^GRV-(\d+)$/i);
       rows = rows.filter(
         (r) =>
           (r.petitionerName || '').toLowerCase().includes(q) ||
           (r.mobileNumber || '').includes(q) ||
-          (r.description || '').toLowerCase().includes(q)
+          (r.description || '').toLowerCase().includes(q) ||
+          (r.constituency || '').toLowerCase().includes(q) ||
+          (r.wardVillage || '').toLowerCase().includes(q) ||
+          (r.grievanceType || '').toLowerCase().includes(q) ||
+          String(r.grievanceNumber || '').toLowerCase().includes(q) ||
+          (rowidMatch ? String(r.ROWID) === rowidMatch[1] : false)
       );
     }
     if (filters.startDate) {
@@ -595,6 +681,9 @@ export async function updateGrievance(
     delete body.CREATEDTIME;
     delete body.MODIFIEDTIME;
     delete body.CREATORID;
+    // Derived/immutable: referenceNo is not a column; grievanceNumber is fixed.
+    delete body.referenceNo;
+    delete body.grievanceNumber;
 
     if (body.grievanceType && !VALID_TYPES.has(body.grievanceType)) {
       sendError(res, `Invalid grievanceType: ${body.grievanceType}`);
@@ -645,7 +734,14 @@ export async function updateGrievance(
       body.showMobileOnLetter = Boolean(body.showMobileOnLetter);
     }
 
+    // Edit audit — stamp who edited and when. Never let the client override it.
+    if (req.user) {
+      body.lastEditedById = req.user.id;
+      body.lastEditedAt = nowCatalystIST();
+    }
+
     const updated = await updateRow(GRIEVANCE_TABLE, { ROWID: id, ...body });
+    invalidateStatCaches();
     const [shaped] = await attachUsers([updated]);
     sendSuccess(res, shaped, 'Grievance updated successfully');
   } catch (error) {
@@ -739,6 +835,111 @@ export async function updateGrievanceStatus(
     sendSuccess(res, shaped, 'Grievance status updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update grievance status', error);
+  }
+}
+
+/**
+ * GET /api/grievances/:id/timeline
+ *
+ * Progress timeline for a single grievance — created + edited events plus every
+ * remark/status update recorded on its linked task(s) (TaskHistory). Lets a
+ * user search a reference number and see the full history of that grievance.
+ */
+export async function getGrievanceTimeline(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const grievance = await getRow(GRIEVANCE_TABLE, id);
+    if (!grievance) {
+      sendNotFound(res, 'Grievance not found');
+      return;
+    }
+
+    type Event = {
+      at: string | null;
+      byId: string | null;
+      by: string | null;
+      type: 'CREATED' | 'EDITED' | 'REMARK';
+      note: string;
+      status: string | null;
+    };
+    const events: Event[] = [];
+
+    events.push({
+      at: grievance.CREATEDTIME ?? null,
+      byId: grievance.createdById ? String(grievance.createdById) : null,
+      by: null,
+      type: 'CREATED',
+      note: 'Grievance created',
+      status: grievance.status ?? null,
+    });
+    if (grievance.lastEditedAt) {
+      events.push({
+        at: String(grievance.lastEditedAt),
+        byId: grievance.lastEditedById ? String(grievance.lastEditedById) : null,
+        by: null,
+        type: 'EDITED',
+        note: 'Grievance edited',
+        status: grievance.status ?? null,
+      });
+    }
+
+    // Linked task(s) → their TaskHistory entries (remarks / status changes).
+    let taskRows: CatalystRow[] = [];
+    try {
+      taskRows = await executeZCQL<CatalystRow>(
+        `SELECT * FROM Task WHERE referenceId = '${zcqlEscapeValue(id)}'`
+      );
+    } catch {
+      taskRows = [];
+    }
+    const taskIds = new Set(taskRows.map((t) => String(t.ROWID)));
+    if (taskIds.size > 0) {
+      try {
+        const history = await listAllRows('TaskHistory');
+        for (const h of history) {
+          if (!h.taskId || !taskIds.has(String(h.taskId))) continue;
+          events.push({
+            at: h.CREATEDTIME ?? null,
+            byId: h.createdById ? String(h.createdById) : null,
+            by: null,
+            type: 'REMARK',
+            note: String(h.note ?? ''),
+            status: h.status ? String(h.status) : null,
+          });
+        }
+      } catch {
+        /* TaskHistory table missing — skip */
+      }
+    }
+
+    // Resolve actor names in one batch.
+    const ids = new Set<string>();
+    for (const e of events) if (e.byId) ids.add(e.byId);
+    const users = ids.size ? await lookupUsers(ids) : new Map();
+    for (const e of events) e.by = e.byId ? users.get(e.byId)?.name ?? null : null;
+
+    events.sort((a, b) => {
+      const ta = a.at ? new Date(a.at).getTime() : 0;
+      const tb = b.at ? new Date(b.at).getTime() : 0;
+      return ta - tb;
+    });
+
+    sendSuccess(
+      res,
+      {
+        referenceNo: grievance.grievanceNumber
+          ? String(grievance.grievanceNumber)
+          : `GRV-${String(grievance.ROWID)}`,
+        status: grievance.status ?? null,
+        timeline: events,
+      },
+      'Grievance timeline retrieved'
+    );
+  } catch (error) {
+    sendServerError(res, 'Failed to get grievance timeline', error);
   }
 }
 
