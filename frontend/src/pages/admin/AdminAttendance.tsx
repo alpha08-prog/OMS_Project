@@ -1,14 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Loader2, LogOut } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import type { CsvColumn } from "@/lib/exportCsv";
 import {
   attendanceApi,
   type AttendanceRow,
   type AttendanceStats,
   type AttendanceAggregate,
+  type AttendanceAggregateRow,
 } from "@/lib/api";
+
+function extractApiMessage(err: unknown, fallback: string): string {
+  return (
+    (err as { response?: { data?: { message?: string } } })?.response?.data
+      ?.message ?? fallback
+  );
+}
 
 type ViewMode = "day" | "month" | "year";
 
@@ -55,6 +66,56 @@ export default function AdminAttendance() {
 
   const [loading, setLoading] = useState(true);
 
+  // The admin's own attendance for today (admins mark in/out just like staff).
+  const [myToday, setMyToday] = useState<AttendanceRow | null>(null);
+  const [marking, setMarking] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [myError, setMyError] = useState<string | null>(null);
+  // Bumped after I mark/check-out so both my card and the day list re-fetch.
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const todayStr = todayISTString();
+  const myPresent = myToday?.date === todayStr && myToday?.status === "PRESENT";
+  const myCanCheckOut =
+    myToday?.date === todayStr &&
+    (myToday?.status === "PRESENT" || myToday?.status === "HALF_DAY");
+  const myCheckedOut = myToday?.date === todayStr && !!myToday?.checkOutAt;
+
+  useEffect(() => {
+    attendanceApi
+      .getMyToday()
+      .then(setMyToday)
+      .catch((e) => console.error("Failed to load my attendance", e));
+  }, [reloadKey]);
+
+  const handleMarkPresent = async () => {
+    setMyError(null);
+    setMarking(true);
+    try {
+      const next = await attendanceApi.mark("PRESENT");
+      setMyToday(next);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setMyError(extractApiMessage(err, "Failed to mark attendance."));
+    } finally {
+      setMarking(false);
+    }
+  };
+
+  const handleCheckOut = async () => {
+    setMyError(null);
+    setCheckingOut(true);
+    try {
+      const next = await attendanceApi.checkOut();
+      setMyToday(next);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setMyError(extractApiMessage(err, "Failed to check out."));
+    } finally {
+      setCheckingOut(false);
+    }
+  };
+
   const dayRange = useMemo(() => {
     if (mode === "day") return { startDate: date, endDate: date };
     if (mode === "month") {
@@ -96,7 +157,7 @@ export default function AdminAttendance() {
     return () => {
       cancelled = true;
     };
-  }, [mode, date, month, year, dayRange]);
+  }, [mode, date, month, year, dayRange, reloadKey]);
 
   // ── Day mode derived data ─────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -144,6 +205,32 @@ export default function AdminAttendance() {
     return { present, halfDay, leave, marked };
   }, [aggregate]);
 
+  // ── CSV export config — adapts to the active view mode ───────────────
+  const dayCsvColumns: CsvColumn<AttendanceRow>[] = [
+    { header: "Staff", value: (row) => row?.userName ?? "" },
+    { header: "Date", value: (row) => row?.date ?? "" },
+    { header: "Status", value: (row) => row?.status ?? "" },
+    { header: "Reason", value: (row) => row?.reason ?? "" },
+    {
+      header: "Checked In",
+      value: (row) =>
+        row?.markedAt ? new Date(row.markedAt).toLocaleString() : "",
+    },
+    {
+      header: "Checked Out",
+      value: (row) =>
+        row?.checkOutAt ? new Date(row.checkOutAt).toLocaleString() : "",
+    },
+  ];
+
+  const summaryCsvColumns: CsvColumn<AttendanceAggregateRow>[] = [
+    { header: "Staff", value: (row) => row?.userName ?? "" },
+    { header: "Present", value: (row) => row?.present ?? 0 },
+    { header: "Half Day", value: (row) => row?.halfDay ?? 0 },
+    { header: "Leave", value: (row) => row?.leave ?? 0 },
+    { header: "Days Marked", value: (row) => row?.totalMarked ?? 0 },
+  ];
+
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
@@ -180,6 +267,80 @@ export default function AdminAttendance() {
                 ))}
               </div>
             </div>
+
+            {/* My own attendance — admins check in / out like staff */}
+            <Card className="rounded-2xl shadow-sm border border-indigo-100">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  My Attendance — {todayStr}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                  {myToday && myToday.date === todayStr ? (
+                    <>
+                      <Badge className={STATUS_TONE[myToday.status] ?? ""}>
+                        {myToday.status.replace("_", " ")}
+                      </Badge>
+                      {myToday.markedAt && (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                          Checked in at{" "}
+                          {new Date(myToday.markedAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                      {myToday.checkOutAt && (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                          Checked out at{" "}
+                          {new Date(myToday.checkOutAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">
+                      You haven't marked yourself present today.
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    disabled={marking || myPresent}
+                    onClick={handleMarkPresent}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+                  >
+                    {marking ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                    )}
+                    {myPresent ? "Marked present" : "Mark me present"}
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    disabled={!myCanCheckOut || checkingOut || myCheckedOut}
+                    onClick={handleCheckOut}
+                    className="border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                  >
+                    {checkingOut ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <LogOut className="h-4 w-4 mr-2" />
+                    )}
+                    {myCheckedOut ? "Checked out" : "Check out (leaving)"}
+                  </Button>
+                </div>
+
+                {myError && (
+                  <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+                    {myError}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Picker for the active mode */}
             <Card className="rounded-2xl border border-indigo-100">
@@ -271,6 +432,11 @@ export default function AdminAttendance() {
                           {s.replace("_", " ")}
                         </Button>
                       ))}
+                      <ExportCsvButton
+                        rows={filtered}
+                        columns={dayCsvColumns}
+                        filename="attendance-day"
+                      />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -286,7 +452,8 @@ export default function AdminAttendance() {
                               <th className="py-2 pr-4">Staff</th>
                               <th className="py-2 pr-4">Status</th>
                               <th className="py-2 pr-4">Reason</th>
-                              <th className="py-2">Marked At</th>
+                              <th className="py-2 pr-4">Checked In</th>
+                              <th className="py-2">Checked Out</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -301,9 +468,14 @@ export default function AdminAttendance() {
                                 <td className="py-2 pr-4 text-muted-foreground">
                                   {row.reason ?? "—"}
                                 </td>
-                                <td className="py-2 text-muted-foreground">
+                                <td className="py-2 pr-4 text-muted-foreground">
                                   {row.markedAt
                                     ? new Date(row.markedAt).toLocaleString()
+                                    : "—"}
+                                </td>
+                                <td className="py-2 text-muted-foreground">
+                                  {row.checkOutAt
+                                    ? new Date(row.checkOutAt).toLocaleString()
                                     : "—"}
                                 </td>
                               </tr>
@@ -348,10 +520,15 @@ export default function AdminAttendance() {
                 </div>
 
                 <Card className="rounded-2xl shadow-sm border border-indigo-100">
-                  <CardHeader>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2">
                     <CardTitle className="text-lg">
                       Per-Staff Totals — {mode === "month" ? month : year}
                     </CardTitle>
+                    <ExportCsvButton
+                      rows={aggregate?.staff ?? []}
+                      columns={summaryCsvColumns}
+                      filename="attendance-summary"
+                    />
                   </CardHeader>
                   <CardContent>
                     {loading ? (

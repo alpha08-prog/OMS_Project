@@ -45,8 +45,25 @@ export type TempleServiceCode =
   | 'POOJA'
   | 'ACCOMMODATION'
 
+export type GrievanceTimelineEvent = {
+  at: string | null
+  by: string | null
+  byId: string | null
+  type: 'CREATED' | 'EDITED' | 'REMARK'
+  note: string
+  status: string | null
+}
+
+export type GrievanceTimeline = {
+  referenceNo: string
+  status: string | null
+  timeline: GrievanceTimelineEvent[]
+}
+
 export type Grievance = {
   id: string
+  // Human-friendly unique reference (e.g. "GRV-37719000000076188").
+  referenceNo?: string
   petitionerName: string
   mobileNumber: string
   constituency: string
@@ -79,6 +96,10 @@ export type Grievance = {
   visitDateTo?: string | null
   servicesRequested?: Array<TempleServiceCode | `OTHER:${string}`>
   showMobileOnLetter?: boolean
+  // Edit audit — who last edited this grievance and when.
+  lastEditedById?: string | null
+  lastEditedAt?: string | null
+  lastEditedBy?: { id: string; name: string; email: string } | null
 }
 
 export type CreateGrievanceRequest = {
@@ -203,6 +224,9 @@ export type TrainPassengerInput = {
   name: string
   gender?: 'MALE' | 'FEMALE' | 'OTHER'
   age?: number
+  /** Date of birth (YYYY-MM-DD). Captured for the primary passenger and fed
+   *  into the shared birthday module. */
+  dob?: string
   /**
    * Current waitlist / booking status string (e.g. "WL/12", "RAC/3", "CNF").
    * Stored on TrainPassenger.currentStatus and rendered in the letter's W/L column.
@@ -262,6 +286,10 @@ export type TourProgram = {
   createdAt: string
   createdBy: { id: string; name: string; email: string }
   createdById?: string
+  // Edit audit — who last edited this tour and when.
+  lastEditedById?: string | null
+  lastEditedAt?: string | null
+  lastEditedBy?: { id: string; name: string; email: string } | null
 }
 
 export type CreateTourProgramRequest = {
@@ -285,10 +313,15 @@ export type Birthday = {
   dob: string
   relation: string
   notes?: string
+  designation?: string
   constituency?: string
   wardVillage?: string
   createdAt: string
   createdBy?: { id: string; name: string; email: string }
+  // Where this DOB came from (BIRTHDAY entry, VISITOR log, or TRAIN passenger)
+  // and whether it can be edited/deleted from the Birthdays page.
+  source?: 'BIRTHDAY' | 'VISITOR' | 'TRAIN'
+  canDelete?: boolean
 }
 
 export type CreateBirthdayRequest = {
@@ -529,9 +562,17 @@ export const grievanceApi = {
     return res.data.data
   },
 
-  update: async (id: string, data: Partial<CreateGrievanceRequest>) => {
+  // PUT /:id is open to any authenticated user and accepts status too, so the
+  // shared "anyone can edit" flow can change status without the admin-only
+  // /status endpoint.
+  update: async (id: string, data: Partial<CreateGrievanceRequest> & { status?: GrievanceStatus }) => {
     const res = await http.put<ApiResponse<Grievance>>(`/grievances/${id}`, data)
     return res.data.data
+  },
+
+  getTimeline: async (id: string): Promise<GrievanceTimeline> => {
+    const res = await http.get<ApiResponse<GrievanceTimeline>>(`/grievances/${id}/timeline`)
+    return res.data.data ?? { referenceNo: '', status: null, timeline: [] }
   },
 
   verify: async (id: string) => {
@@ -1094,6 +1135,8 @@ export type TaskAssignment = {
   priority: string
   referenceId?: string
   referenceType?: string
+  // Linked record's reference number (e.g. a grievance's GRV-YYYY-NNNN).
+  referenceNo?: string | null
   progressNotes?: string
   progressPercent: number
   assignedAt: string
@@ -1198,6 +1241,25 @@ export const taskApi = {
   getAll: async (params?: Record<string, string>) => {
     const res = await http.get<ApiResponse<TaskAssignment[]>>('/tasks', { params })
     return res.data
+  },
+
+  // Shared "All Tasks" board — every task, visible to any authenticated user.
+  getAllShared: async (params?: Record<string, string>) => {
+    const res = await http.get<ApiResponse<TaskAssignment[]>>('/tasks/all', { params })
+    return res.data
+  },
+
+  // Shared edit — any authenticated user may change status / add a remark.
+  // Each change is recorded in the audit timeline with editor + timestamp.
+  editShared: async (id: string, data: { status?: TaskStatus; progressNotes?: string }) => {
+    const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/edit`, data)
+    return res.data.data
+  },
+
+  // Full audit timeline for any task (read-only, visible to everyone).
+  getAudit: async (id: string) => {
+    const res = await http.get<ApiResponse<TaskProgressHistory[]>>(`/tasks/${id}/audit`)
+    return res.data.data
   },
 
   getMyTasks: async (params?: Record<string, string>) => {
@@ -1397,6 +1459,7 @@ export type AttendanceRow = {
   status: AttendanceStatus | 'ABSENT'
   reason: string | null
   markedAt: string | null
+  checkOutAt: string | null
   createdAt: string | null
   updatedAt: string | null
 }
@@ -1439,6 +1502,13 @@ export const attendanceApi = {
   // future/past dates for PRESENT / HALF_DAY. Leave undefined to mean today.
   mark: async (status: AttendanceStatus, reason?: string, date?: string) => {
     const res = await http.post<ApiResponse<AttendanceRow>>('/attendance', { status, reason, date })
+    return res.data.data
+  },
+
+  // Stamp the check-out (leave-for-the-day) time on today's row. Requires the
+  // caller to have already marked present/half-day today.
+  checkOut: async (): Promise<AttendanceRow> => {
+    const res = await http.post<ApiResponse<AttendanceRow>>('/attendance/checkout', {})
     return res.data.data
   },
 

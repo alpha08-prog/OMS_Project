@@ -44,6 +44,9 @@ const CreateUser = lazy(() => import("./pages/admin/CreateUser"));
 const UserList = lazy(() => import("./pages/admin/UserList"));
 const StaffAttendance = lazy(() => import("./pages/staff/StaffAttendance"));
 const AdminAttendance = lazy(() => import("./pages/admin/AdminAttendance"));
+// Shared task board (all roles) + merged Visitor/Birthday "Add Person" form.
+const AllTasks = lazy(() => import("./pages/tasks/AllTasks"));
+const AddPerson = lazy(() => import("./pages/people/AddPerson"));
 
 function PageFallback() {
   return (
@@ -183,11 +186,29 @@ export default function App() {
           }
         />
 
+        {/* Shared task board — visible & editable to every authenticated role. */}
+        <Route
+          path="/tasks/all"
+          element={
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
+              <AllTasks />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Data Entry Routes (Staff) */}
+        <Route
+          path="/people/new"
+          element={
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
+              <AddPerson />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/grievances/new"
           element={
-            <ProtectedRoute allowedRoles={['STAFF']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
               <GrievanceCreate />
             </ProtectedRoute>
           }
@@ -195,7 +216,7 @@ export default function App() {
         <Route
           path="/grievances/office"
           element={
-            <ProtectedRoute allowedRoles={['STAFF']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
               <OfficeGrievanceCreate />
             </ProtectedRoute>
           }
@@ -211,7 +232,7 @@ export default function App() {
         <Route
           path="/visitors/new"
           element={
-            <ProtectedRoute allowedRoles={['STAFF']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
               <VisitorCreate />
             </ProtectedRoute>
           }
@@ -219,7 +240,7 @@ export default function App() {
         <Route
           path="/train-eq/new"
           element={
-            <ProtectedRoute allowedRoles={['STAFF']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
               <TrainEQCreate />
             </ProtectedRoute>
           }
@@ -227,7 +248,7 @@ export default function App() {
         <Route
           path="/tour-program/new"
           element={
-            <ProtectedRoute allowedRoles={['STAFF']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
               <TourProgramCreate />
             </ProtectedRoute>
           }
@@ -235,7 +256,7 @@ export default function App() {
         <Route
           path="/events/report"
           element={
-            <ProtectedRoute allowedRoles={['STAFF']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
               <EventReport />
             </ProtectedRoute>
           }
@@ -243,7 +264,7 @@ export default function App() {
         <Route
           path="/news-intelligence/new"
           element={
-            <ProtectedRoute allowedRoles={['STAFF']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
               <NewsIntelligenceCreate />
             </ProtectedRoute>
           }
@@ -251,7 +272,7 @@ export default function App() {
         <Route
           path="/birthday/new"
           element={
-            <ProtectedRoute allowedRoles={['STAFF']}>
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
               <BirthdayCreate />
             </ProtectedRoute>
           }

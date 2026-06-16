@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { SearchBar } from "@/components/common/SearchBar";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { trainRequestApi, type TrainRequest } from "@/lib/api";
+import type { CsvColumn } from "@/lib/exportCsv";
 import {
   Select,
   SelectContent,
@@ -28,6 +31,7 @@ export default function TrainEQQueue() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [search, setSearch] = useState("");
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -64,6 +68,34 @@ export default function TrainEQQueue() {
     }
   };
 
+  // Client-side text search across the obvious fields.
+  const filteredRequests = requests.filter((r) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      r.passengerName.toLowerCase().includes(q) ||
+      r.pnrNumber.toLowerCase().includes(q) ||
+      r.fromStation.toLowerCase().includes(q) ||
+      r.toStation.toLowerCase().includes(q)
+    );
+  });
+
+  // CSV export — mirrors the currently filtered/visible rows.
+  const csvColumns: CsvColumn<TrainRequest>[] = [
+    { header: "Passenger", value: (r) => r.passengerName },
+    { header: "PNR", value: (r) => r.pnrNumber },
+    { header: "Contact", value: (r) => r.contactNumber },
+    { header: "Train Name", value: (r) => r.trainName },
+    { header: "Train No", value: (r) => r.trainNumber },
+    { header: "Class", value: (r) => r.journeyClass },
+    { header: "Journey Date", value: (r) => r.dateOfJourney },
+    { header: "From", value: (r) => r.fromStation },
+    { header: "To", value: (r) => r.toStation },
+    { header: "Status", value: (r) => r.status },
+    { header: "Created By", value: (r) => r.createdBy?.name },
+    { header: "Created", value: (r) => new Date(r.createdAt).toLocaleString() },
+  ];
+
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
@@ -81,6 +113,12 @@ export default function TrainEQQueue() {
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-2 shrink-0">
+              <SearchBar
+                value={search}
+                onChange={setSearch}
+                placeholder="Search passenger, PNR, station…"
+                className="w-[240px]"
+              />
               <DateRangeFilter
                 startDate={startDate}
                 endDate={endDate}
@@ -100,6 +138,11 @@ export default function TrainEQQueue() {
                   </SelectContent>
                 </Select>
               </div>
+              <ExportCsvButton
+                rows={filteredRequests}
+                columns={csvColumns}
+                filename="train-eq-requests"
+              />
               <Button variant="outline" onClick={fetchRequests} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
@@ -116,19 +159,19 @@ export default function TrainEQQueue() {
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
               <CardTitle>
-                {statusFilter === "ALL" ? "All" : statusFilter} EQ Requests ({requests.length})
+                {statusFilter === "ALL" ? "All" : statusFilter} EQ Requests ({filteredRequests.length})
               </CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-4">
               {loading ? (
                 <p className="text-muted-foreground text-center py-8">Loading requests...</p>
-              ) : requests.length === 0 ? (
+              ) : filteredRequests.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No train EQ requests in this filter.</p>
                 </div>
               ) : (
-                requests.map((r) => (
+                filteredRequests.map((r) => (
                   <div
                     key={r.id}
                     className="flex items-center gap-4 p-4 rounded-xl border bg-white"

@@ -255,17 +255,22 @@ export async function getAdminHistory(
       else if (parseBool(g.isVerified)) actionLabel = 'Verified';
 
       const actionAt = g.verifiedAt || g.MODIFIEDTIME || g.CREATEDTIME;
+      const refNo = g.grievanceNumber
+        ? String(g.grievanceNumber)
+        : `GRV-${String(g.ROWID)}`;
 
       items.push({
         id: String(g.ROWID),
         type: 'GRIEVANCE',
         action: actionLabel,
-        title: `Grievance - ${String(g.grievanceType ?? '').replace(/_/g, ' ')}`,
+        // Reference number in the title so Action History search finds it by id.
+        title: `Grievance ${refNo} - ${String(g.grievanceType ?? '').replace(/_/g, ' ')}`,
         description: `${g.petitionerName ?? ''} • ${g.constituency ?? ''}`,
         actionBy: userFor(userMap, g.verifiedById),
         actionAt,
         status: String(g.status ?? ''),
         details: {
+          referenceNo: refNo,
           petitionerName: g.petitionerName,
           mobileNumber: g.mobileNumber,
           constituency: g.constituency,

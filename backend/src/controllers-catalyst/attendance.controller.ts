@@ -9,7 +9,8 @@
  *                        because `date` is reserved in ZCQL
  *   status   (text)    — PRESENT / HALF_DAY / LEAVE
  *   reason   (text)    — optional, populated when status = LEAVE
- *   markedAt (datetime) — when the staff actually tapped the button
+ *   markedAt (datetime) — check-in: when the user marked themselves present
+ *   checkOutAt (datetime) — check-out: when the user left for the day (optional)
  *
  * Absent is *auto-derived*: total active STAFF − (PRESENT + HALF_DAY + LEAVE)
  * for a given date. There is no ABSENT row.
@@ -145,6 +146,7 @@ function shapeAttendance(row: CatalystRow) {
     status: row.status as AttendanceStatus,
     reason: row.reason ?? null,
     markedAt: row.markedAt ?? row.CREATEDTIME ?? null,
+    checkOutAt: row.checkOutAt ?? null,
     createdAt: row.CREATEDTIME ?? null,
     updatedAt: row.MODIFIEDTIME ?? null,
   };
@@ -208,6 +210,8 @@ export async function markAttendance(
         status,
         reason: status === 'LEAVE' ? trimmedReason : null,
         markedAt: nowIso,
+        // A leave day has no check-out; clear any stale value from a prior mark.
+        ...(status === 'LEAVE' ? { checkOutAt: null } : {}),
       });
       sendSuccess(res, shapeAttendance(updated), 'Attendance updated');
       return;
@@ -225,6 +229,45 @@ export async function markAttendance(
     sendSuccess(res, shapeAttendance(inserted), 'Attendance marked', 201);
   } catch (error) {
     sendServerError(res, 'Failed to mark attendance', error);
+  }
+}
+
+/**
+ * POST /api/attendance/checkout — record that the user is leaving for the day.
+ *
+ * Stamps `checkOutAt` on today's row. Requires the user to have already marked
+ * themselves present/half-day today (you can't check out of a day you never
+ * checked into). LEAVE days have no check-out. Idempotent-ish: re-tapping just
+ * refreshes the timestamp to the latest tap.
+ */
+export async function checkOutAttendance(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      sendError(res, 'Not authenticated', 401);
+      return;
+    }
+
+    const today = todayIST();
+    const existing = await resolveAttendanceRow(req.user.id, today);
+    if (!existing) {
+      sendError(res, 'Mark your attendance before checking out', 400);
+      return;
+    }
+    if (existing.status === 'LEAVE') {
+      sendError(res, 'Cannot check out on a leave day', 400);
+      return;
+    }
+
+    const updated = await updateRow(ATTENDANCE_TABLE, {
+      ROWID: String(existing.ROWID),
+      checkOutAt: nowCatalystIST(),
+    });
+    sendSuccess(res, shapeAttendance(updated), 'Checked out for the day');
+  } catch (error) {
+    sendServerError(res, 'Failed to check out', error);
   }
 }
 
@@ -556,6 +599,7 @@ export async function getAllAttendance(
           status: 'ABSENT',
           reason: null,
           markedAt: null,
+          checkOutAt: null,
           createdAt: null,
           updatedAt: null,
         }));

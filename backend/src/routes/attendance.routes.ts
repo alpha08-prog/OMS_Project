@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import {
   markAttendance,
+  checkOutAttendance,
   markLeaveRange,
   getMyToday,
   getMyHistory,
@@ -38,8 +39,10 @@ const leaveRangeValidation = [
 
 router.use(authenticate);
 
-// Staff endpoints — any authenticated user may mark/view their own row.
+// Staff endpoints — any authenticated user (incl. admins) may mark/view their
+// own row. staffOnly = STAFF + ADMIN + SUPER_ADMIN.
 router.post('/', staffOnly, validate(markAttendanceValidation), markAttendance);
+router.post('/checkout', staffOnly, checkOutAttendance);
 router.post(
   '/leave-range',
   staffOnly,

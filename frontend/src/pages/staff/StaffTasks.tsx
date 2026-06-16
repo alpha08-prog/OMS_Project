@@ -20,6 +20,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import type { CsvColumn } from "@/lib/exportCsv";
 import { taskApi, type TaskAssignment, type TaskStatus, type TaskProgressHistory } from "@/lib/api";
 import {
   Dialog,
@@ -46,6 +49,7 @@ export default function StaffTasks() {
   const [selectedTask, setSelectedTask] = useState<TaskAssignment | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   // Per-card collapse state. Tasks default to collapsed (just title + badges
@@ -258,9 +262,14 @@ export default function StaffTasks() {
 
   // Sort tasks for display: active (non-completed) first, completed pushed to
   // the bottom. Within each group, newest assignment first so a fresh task
-  // shows up at the top of the list.
+  // shows up at the top of the list. The client-side title search is applied
+  // here too, so pagination and CSV export both operate on the visible set.
   const sortedTasks = useMemo(() => {
-    return [...tasks].sort((a, b) => {
+    const term = searchQuery.trim().toLowerCase();
+    const matched = term
+      ? tasks.filter((t) => (t.title ?? "").toLowerCase().includes(term))
+      : tasks;
+    return [...matched].sort((a, b) => {
       const aDone = a.status === 'COMPLETED' ? 1 : 0;
       const bDone = b.status === 'COMPLETED' ? 1 : 0;
       if (aDone !== bDone) return aDone - bDone;
@@ -268,7 +277,19 @@ export default function StaffTasks() {
       const bAt = new Date(b.assignedAt).getTime();
       return bAt - aAt;
     });
-  }, [tasks]);
+  }, [tasks, searchQuery]);
+
+  // CSV columns for My Tasks. Exports the currently searched/visible rows
+  // (all of them, not just the current page).
+  const csvColumns: CsvColumn<TaskAssignment>[] = [
+    { header: "Title", value: (t) => t.title },
+    { header: "Type", value: (t) => t.taskType },
+    { header: "Status", value: (t) => t.status },
+    { header: "Priority", value: (t) => t.priority },
+    { header: "Due", value: (t) => t.dueDate },
+    { header: "Assigned By", value: (t) => t.assignedBy?.name },
+    { header: "Created", value: (t) => new Date(t.createdAt).toLocaleString() },
+  ];
 
   // Client-side pagination — 10 rows per page on My Tasks.
   const pager = usePagination(sortedTasks, 10);
@@ -377,6 +398,18 @@ export default function StaffTasks() {
                   endDate={endDate}
                   onStartDateChange={setStartDate}
                   onEndDateChange={setEndDate}
+                />
+                <SearchBar
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  placeholder="Search by title…"
+                  className="w-full sm:w-64"
+                />
+                <ExportCsvButton
+                  rows={sortedTasks}
+                  columns={csvColumns}
+                  filename="my-tasks"
+                  className="ml-auto"
                 />
               </CardContent>
             </Card>

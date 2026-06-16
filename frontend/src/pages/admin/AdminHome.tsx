@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { FileCheck, Printer, Train, ClipboardList, UserCheck } from "lucide-react";
+import { FileCheck, Printer, Train, ClipboardList, UserCheck, CheckCircle2, LogOut, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { BirthdayWidget } from "@/components/dashboard/BirthdayWidget";
-import { grievanceApi, trainRequestApi, tourProgramApi, statsApi, attendanceApi, type Grievance, type TrainRequest, type TourProgram, type AttendanceStats } from "@/lib/api";
+import { grievanceApi, trainRequestApi, tourProgramApi, statsApi, attendanceApi, type Grievance, type TrainRequest, type TourProgram, type AttendanceStats, type AttendanceRow } from "@/lib/api";
 
 export default function AdminHome() {
   const navigate = useNavigate();
@@ -22,8 +22,40 @@ export default function AdminHome() {
   const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats | null>(null);
 
+  // The admin's own attendance for today (admins check in / out like staff).
+  const [myToday, setMyToday] = useState<AttendanceRow | null>(null);
+  const [marking, setMarking] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Admin");
+
+  const myPresent = myToday?.status === "PRESENT";
+  const myCanCheckOut =
+    myToday?.status === "PRESENT" || myToday?.status === "HALF_DAY";
+  const myCheckedOut = !!myToday?.checkOutAt;
+
+  const handleMarkPresent = async () => {
+    setMarking(true);
+    try {
+      setMyToday(await attendanceApi.mark("PRESENT"));
+    } catch (e) {
+      console.error("Failed to mark attendance", e);
+    } finally {
+      setMarking(false);
+    }
+  };
+
+  const handleCheckOut = async () => {
+    setCheckingOut(true);
+    try {
+      setMyToday(await attendanceApi.checkOut());
+    } catch (e) {
+      console.error("Failed to check out", e);
+    } finally {
+      setCheckingOut(false);
+    }
+  };
 
   useEffect(() => {
     const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
@@ -38,13 +70,14 @@ export default function AdminHome() {
       setLoading(true);
       try {
         // 1. Stats API — single cached call, gives all counts instantly
-        const [stats, grievancesRes, trainRes, tourRes, attendance] = await Promise.all([
+        const [stats, grievancesRes, trainRes, tourRes, attendance, mine] = await Promise.all([
           statsApi.getSummary(),
           // Small previews: only 5 rows, DB-filtered
           grievanceApi.getAll({ isVerified: 'false', limit: '5' }),
           trainRequestApi.getAll({ status: 'PENDING', limit: '5' }),
           tourProgramApi.getAll({ decision: 'PENDING', limit: '5' }),
           attendanceApi.getTodayStats().catch(() => null),
+          attendanceApi.getMyToday().catch(() => null),
         ]);
 
         // Counts from stats cache
@@ -57,6 +90,7 @@ export default function AdminHome() {
         setPendingTrainRequests(Array.isArray(trainRes?.data) ? trainRes.data : []);
         setPendingTourPrograms(Array.isArray(tourRes?.data) ? tourRes.data : []);
         setAttendanceStats(attendance);
+        setMyToday(mine);
       } catch (error) {
         console.error('Failed to fetch pending items:', error);
         setGrievanceCount(0);
@@ -109,6 +143,77 @@ export default function AdminHome() {
                 </Button>
               </CardHeader>
               <CardContent>
+                {/* My own check-in / check-out */}
+                <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                  <span className="text-sm font-medium text-indigo-900">You:</span>
+                  {myToday ? (
+                    <>
+                      <span
+                        className={
+                          "px-2.5 py-0.5 rounded-full text-xs font-medium " +
+                          (myToday.status === "PRESENT"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : myToday.status === "HALF_DAY"
+                            ? "bg-amber-100 text-amber-800"
+                            : myToday.status === "LEAVE"
+                            ? "bg-sky-100 text-sky-800"
+                            : "bg-rose-100 text-rose-800")
+                        }
+                      >
+                        {myToday.status.replace("_", " ")}
+                      </span>
+                      {myToday.markedAt && (
+                        <span className="text-xs text-muted-foreground">
+                          in {new Date(myToday.markedAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                      {myToday.checkOutAt && (
+                        <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                          <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                          out {new Date(myToday.checkOutAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      Not marked present yet.
+                    </span>
+                  )}
+                  <div className="ml-auto flex items-center gap-2">
+                    {!myPresent && (
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        disabled={marking}
+                        onClick={handleMarkPresent}
+                      >
+                        {marking ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4 mr-1" />
+                        )}
+                        Mark present
+                      </Button>
+                    )}
+                    {myCanCheckOut && !myCheckedOut && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                        disabled={checkingOut}
+                        onClick={handleCheckOut}
+                      >
+                        {checkingOut ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                        ) : (
+                          <LogOut className="h-4 w-4 mr-1" />
+                        )}
+                        Check out
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
                 {attendanceStats ? (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
@@ -139,12 +244,12 @@ export default function AdminHome() {
               <Card className="rounded-2xl border border-indigo-100">
                 <CardContent className="p-5 space-y-3">
                   <FileCheck className="h-6 w-6 text-indigo-700" />
-                  <h3 className="font-semibold">Verify Grievances</h3>
+                  <h3 className="font-semibold">Grievances</h3>
                   <p className="text-sm text-muted-foreground">
                     {grievanceCount === null ? "Loading…" : `${grievanceCount} pending verification`}
                   </p>
-                  <Button size="sm" onClick={() => navigate("/grievances/verify")} className="w-full">
-                    Open Queue
+                  <Button size="sm" onClick={() => navigate("/grievances/view")} className="w-full">
+                    Open Grievances
                   </Button>
                 </CardContent>
               </Card>
@@ -230,10 +335,13 @@ export default function AdminHome() {
                                 )}
                               </div>
                               <p className="text-muted-foreground">
+                                {g.referenceNo && (
+                                  <span className="font-mono text-indigo-700">{g.referenceNo} • </span>
+                                )}
                                 {g.petitionerName} • {new Date(g.createdAt).toLocaleDateString()}
                               </p>
                             </div>
-                            <Button size="sm" variant="outline" onClick={() => navigate("/grievances/verify")}>
+                            <Button size="sm" variant="outline" onClick={() => navigate("/grievances/view")}>
                               Review
                             </Button>
                           </div>

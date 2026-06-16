@@ -37,6 +37,7 @@ export default function TrainEQCreate() {
     primaryPassengerName: string;
     primaryGender: Gender;
     primaryAge: string;
+    primaryDob: string;
     primaryWaitlist: string;
     additionalTravellers: string;
     pnrNumber: string;
@@ -54,6 +55,7 @@ export default function TrainEQCreate() {
     primaryPassengerName: "",
     primaryGender: "",
     primaryAge: "",
+    primaryDob: "",
     primaryWaitlist: "",
     additionalTravellers: "0",
     pnrNumber: "",
@@ -295,6 +297,7 @@ export default function TrainEQCreate() {
             name: primaryName,
             gender: formData.primaryGender || undefined,
             age: primaryAgeStr ? Number(primaryAgeStr) : undefined,
+            dob: formData.primaryDob || undefined,
             currentStatus: formData.primaryWaitlist.trim() || undefined,
           },
         ],
@@ -518,6 +521,22 @@ export default function TrainEQCreate() {
                                 handleChange("primaryWaitlist", e.target.value)
                               }
                             />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-12 gap-3">
+                          <div className="col-span-12 md:col-span-6">
+                            <Label>Date of Birth</Label>
+                            <Input
+                              type="date"
+                              value={formData.primaryDob}
+                              onChange={(e) =>
+                                handleChange("primaryDob", e.target.value)
+                              }
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Used for birthday reminders.
+                            </p>
                           </div>
                         </div>
 

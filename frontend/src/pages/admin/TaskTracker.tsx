@@ -17,6 +17,7 @@ import {
   User,
   ChevronDown,
   ChevronRight,
+  Pencil,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,11 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
-import { taskApi, type TaskAssignment, type TaskStatus, type TaskTrackingData, type TaskType } from "@/lib/api";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import type { CsvColumn } from "@/lib/exportCsv";
+import { taskApi, type TaskAssignment, type TaskProgressHistory, type TaskStatus, type TaskTrackingData, type TaskType } from "@/lib/api";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -47,11 +52,23 @@ export default function AdminTaskTracker() {
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [selectedTask, setSelectedTask] = useState<TaskAssignment | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  
+
+  // Edit / Remark dialog: lets an admin change status and/or add a remark on
+  // any task. Each save is recorded in the audit timeline via taskApi.editShared.
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTask, setEditTask] = useState<TaskAssignment | null>(null);
+  const [editStatus, setEditStatus] = useState<TaskStatus>("ASSIGNED");
+  const [editRemark, setEditRemark] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<TaskProgressHistory[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterStaff, setFilterStaff] = useState<string>("all");
   const [filterTaskType, setFilterTaskType] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
@@ -127,20 +144,39 @@ export default function AdminTaskTracker() {
     // First fetch shows the loading state; subsequent polls are silent.
     fetchData({ background: initialFetchDone.current });
     // Poll every 20s so admin sees staff progress updates without manual
-    // refresh. Pause while the task-details dialog is open -- a background
-    // refetch during interaction is a known source of click-handler perf
-    // violations (re-render right when the user clicks).
-    if (detailsOpen) return;
+    // refresh. Pause while the task-details or edit dialog is open -- a
+    // background refetch during interaction is a known source of click-handler
+    // perf violations (re-render right when the user clicks).
+    if (detailsOpen || editOpen) return;
     const id = setInterval(() => fetchData({ background: true }), 20_000);
     return () => clearInterval(id);
-  }, [detailsOpen, startDate, endDate]);
+  }, [detailsOpen, editOpen, startDate, endDate]);
 
+  const searchTerm = searchQuery.trim().toLowerCase();
   const filteredTasks = tasks.filter(task => {
     if (filterTaskType !== "all" && task.taskType !== filterTaskType) return false;
     if (filterStatus !== "all" && task.status !== filterStatus) return false;
     if (filterStaff !== "all" && task.assignedTo?.id !== filterStaff) return false;
+    if (searchTerm) {
+      const haystack = `${task.referenceNo ?? ""} ${task.title ?? ""} ${task.assignedTo?.name ?? ""}`.toLowerCase();
+      if (!haystack.includes(searchTerm)) return false;
+    }
     return true;
   });
+
+  // CSV columns for the admin task tracker. Exports the currently
+  // filtered/searched rows (all of them, not just the current page).
+  const csvColumns: CsvColumn<TaskAssignment>[] = [
+    { header: "Reference No", value: (t) => t.referenceNo ?? "" },
+    { header: "Title", value: (t) => t.title },
+    { header: "Type", value: (t) => t.taskType },
+    { header: "Status", value: (t) => t.status },
+    { header: "Priority", value: (t) => t.priority },
+    { header: "Assigned To", value: (t) => t.assignedTo?.name },
+    { header: "Assigned By", value: (t) => t.assignedBy?.name },
+    { header: "Due", value: (t) => t.dueDate },
+    { header: "Created", value: (t) => new Date(t.createdAt).toLocaleString() },
+  ];
 
   // Client-side pagination — 10 rows per page on the admin task tracker.
   const pager = usePagination(filteredTasks, 10);
@@ -194,6 +230,54 @@ export default function AdminTaskTracker() {
   const handleViewDetails = (task: TaskAssignment) => {
     setSelectedTask(task);
     setDetailsOpen(true);
+  };
+
+  // Open the Edit / Remark dialog for a task: seed the form with the task's
+  // current status, clear any previous remark/error, then load its full audit
+  // timeline so the admin can see prior activity before adding their own.
+  const handleOpenEdit = async (task: TaskAssignment) => {
+    setEditTask(task);
+    setEditStatus(task.status);
+    setEditRemark("");
+    setEditError(null);
+    setEditOpen(true);
+    setAuditEntries([]);
+    setAuditLoading(true);
+    try {
+      const entries = await taskApi.getAudit(task.id);
+      setAuditEntries(Array.isArray(entries) ? entries : []);
+    } catch (error) {
+      console.error("Failed to load task audit timeline:", error);
+      setAuditEntries([]);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTask) return;
+    const statusChanged = editStatus !== editTask.status;
+    const remark = editRemark.trim();
+    // Require something to record: either a status change or a non-empty remark.
+    if (!statusChanged && !remark) {
+      setEditError("Add a remark or change the status before saving.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await taskApi.editShared(editTask.id, {
+        status: statusChanged ? editStatus : undefined,
+        progressNotes: remark || undefined,
+      });
+      await fetchData();
+      setEditOpen(false);
+    } catch (error) {
+      console.error("Failed to save task edit:", error);
+      setEditError("Failed to save changes. Please try again.");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   // Deep-link: notifications ship the admin to /admin/task-tracker?id=<row>.
@@ -510,6 +594,21 @@ export default function AdminTaskTracker() {
                   )}
                 </div>
 
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                  <SearchBar
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    placeholder="Search by title or staff…"
+                    className="flex-1 min-w-0"
+                  />
+                  <ExportCsvButton
+                    rows={filteredTasks}
+                    columns={csvColumns}
+                    filename="task-tracker"
+                    className="flex-shrink-0"
+                  />
+                </div>
+
                 <div className="mt-4 pt-4 border-t">
                   <DateRangeFilter
                     startDate={startDate}
@@ -568,11 +667,23 @@ export default function AdminTaskTracker() {
                               <Badge variant="outline">{taskTypeLabel(task.taskType)}</Badge>
                             </div>
                             <p className="text-sm text-muted-foreground">
+                              {task.referenceNo && (
+                                <span className="font-mono text-indigo-700">{task.referenceNo} • </span>
+                              )}
                               Assigned to: <span className="font-medium">{task.assignedTo?.name ?? '—'}</span>
                             </p>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2 flex-shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-indigo-600"
+                            onClick={() => handleOpenEdit(task)}
+                          >
+                            <Pencil className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
                           <Button size="sm" variant="outline" onClick={() => handleViewDetails(task)}>
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -733,6 +844,113 @@ export default function AdminTaskTracker() {
                       Mark as Resolved
                     </Button>
                   )}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit / Remark Dialog */}
+        <Dialog open={editOpen} onOpenChange={(open) => { if (!editSaving) setEditOpen(open); }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit / Add Remark</DialogTitle>
+            </DialogHeader>
+
+            {editTask && (
+              <div className="space-y-4">
+                <div>
+                  <p className="font-semibold text-indigo-900 break-words">{editTask.title}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Assigned to: <span className="font-medium">{editTask.assignedTo?.name ?? '—'}</span>
+                  </p>
+                </div>
+
+                {/* Status */}
+                <div className="space-y-1.5">
+                  <label htmlFor="edit-task-status" className="text-sm font-medium">
+                    Status
+                  </label>
+                  <select
+                    id="edit-task-status"
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
+                    disabled={editSaving}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="ASSIGNED">Assigned</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="ON_HOLD">On Hold</option>
+                  </select>
+                </div>
+
+                {/* Remark */}
+                <div className="space-y-1.5">
+                  <label htmlFor="edit-task-remark" className="text-sm font-medium">
+                    Remark <span className="font-normal text-muted-foreground">(optional)</span>
+                  </label>
+                  <Textarea
+                    id="edit-task-remark"
+                    value={editRemark}
+                    onChange={(e) => setEditRemark(e.target.value)}
+                    disabled={editSaving}
+                    placeholder="Add a remark visible in the activity timeline…"
+                  />
+                </div>
+
+                {editError && (
+                  <p className="text-sm text-red-600" role="alert">{editError}</p>
+                )}
+
+                {/* Activity timeline */}
+                <div className="pt-2 border-t">
+                  <p className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                    <Clock className="h-3 w-3" />
+                    Activity timeline
+                  </p>
+                  {auditLoading ? (
+                    <p className="text-xs text-muted-foreground italic pl-1">Loading activity…</p>
+                  ) : auditEntries.length > 0 ? (
+                    <div className="space-y-3 pl-1 max-h-60 overflow-y-auto">
+                      {auditEntries.map((entry) => (
+                        <div key={entry.id} className="relative pl-4 border-l border-indigo-100">
+                          <div className="absolute -left-[2.5px] top-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+                              <span>{formatDateTime(entry.createdAt)}</span>
+                              <span>•</span>
+                              <span>{entry.createdBy?.name ?? 'Unknown'}</span>
+                              {entry.status && (
+                                <>
+                                  <span>•</span>
+                                  <span className="font-medium text-indigo-600">
+                                    {entry.status.replace('_', ' ')}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            <span className="text-sm text-gray-700">{entry.note}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic pl-1">No activity yet</p>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditOpen(false)}
+                    disabled={editSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSaveEdit} disabled={editSaving}>
+                    {editSaving ? 'Saving…' : 'Save'}
+                  </Button>
                 </div>
               </div>
             )}

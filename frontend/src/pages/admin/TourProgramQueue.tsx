@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar, CheckCircle, XCircle, RefreshCw, MapPin, User, Clock, Eye, UserPlus } from "lucide-react";
+import { Calendar, CheckCircle, XCircle, RefreshCw, MapPin, User, Clock, Eye, UserPlus, Pencil } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { SearchBar } from "@/components/common/SearchBar";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { tourProgramApi, taskApi, type TourProgram } from "@/lib/api";
+import type { CsvColumn } from "@/lib/exportCsv";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +56,24 @@ export default function TourProgramQueue() {
   const [decisionFilter, setDecisionFilter] = useState<string>("ALL");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [search, setSearch] = useState("");
+
+  // Edit dialog state — available to all roles; does NOT touch the decision flow.
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editProgram, setEditProgram] = useState<TourProgram | null>(null);
+  const [editForm, setEditForm] = useState({
+    eventName: "",
+    organizer: "",
+    organizerPhone: "",
+    organizerEmail: "",
+    dateTime: "",
+    venue: "",
+    venueLink: "",
+    description: "",
+    referencedBy: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const fetchPrograms = async () => {
     setLoading(true);
@@ -111,6 +132,81 @@ export default function TourProgramQueue() {
     setSelectedProgram(program);
     setDecisionNote("");
     setDetailsOpen(true);
+  };
+
+  // Convert an ISO date string to the value a datetime-local input expects (local time, no seconds).
+  const toLocalInput = (iso?: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const handleOpenEdit = (program: TourProgram) => {
+    setEditProgram(program);
+    setEditError(null);
+    setEditForm({
+      eventName: program.eventName ?? "",
+      organizer: program.organizer ?? "",
+      organizerPhone: program.organizerPhone ?? "",
+      organizerEmail: program.organizerEmail ?? "",
+      dateTime: toLocalInput(program.dateTime || program.eventDate),
+      venue: program.venue ?? "",
+      venueLink: program.venueLink ?? "",
+      description: program.description ?? "",
+      referencedBy: program.referencedBy ?? "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editProgram) return;
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      // Build a diff of only the fields the user actually changed.
+      const original = {
+        eventName: editProgram.eventName ?? "",
+        organizer: editProgram.organizer ?? "",
+        organizerPhone: editProgram.organizerPhone ?? "",
+        organizerEmail: editProgram.organizerEmail ?? "",
+        dateTime: toLocalInput(editProgram.dateTime || editProgram.eventDate),
+        venue: editProgram.venue ?? "",
+        venueLink: editProgram.venueLink ?? "",
+        description: editProgram.description ?? "",
+        referencedBy: editProgram.referencedBy ?? "",
+      };
+      const changed: Partial<typeof editForm> = {};
+      (Object.keys(editForm) as (keyof typeof editForm)[]).forEach((key) => {
+        if (editForm[key] !== original[key]) changed[key] = editForm[key];
+      });
+
+      if (Object.keys(changed).length === 0) {
+        setEditDialogOpen(false);
+        return;
+      }
+
+      // dateTime from a datetime-local input is local; convert back to ISO for the API.
+      const payload: Record<string, string> = { ...changed };
+      if (changed.dateTime !== undefined) {
+        const d = new Date(changed.dateTime);
+        if (isNaN(d.getTime())) {
+          setEditError("Please enter a valid date and time.");
+          setSavingEdit(false);
+          return;
+        }
+        payload.dateTime = d.toISOString();
+      }
+
+      await tourProgramApi.update(editProgram.id, payload);
+      setEditDialogOpen(false);
+      await fetchPrograms();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes");
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const handleOpenAssign = (program: TourProgram) => {
@@ -201,6 +297,28 @@ export default function TourProgramQueue() {
     };
   };
 
+  // Client-side text search across the obvious fields.
+  const filteredPrograms = programs.filter((p) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      p.eventName.toLowerCase().includes(q) ||
+      p.organizer.toLowerCase().includes(q) ||
+      p.venue.toLowerCase().includes(q)
+    );
+  });
+
+  // CSV export — mirrors the currently filtered/visible rows.
+  const csvColumns: CsvColumn<TourProgram>[] = [
+    { header: "Event", value: (p) => p.eventName },
+    { header: "Organizer", value: (p) => p.organizer },
+    { header: "Date/Time", value: (p) => p.dateTime },
+    { header: "Venue", value: (p) => p.venue },
+    { header: "Decision", value: (p) => p.decision },
+    { header: "Created By", value: (p) => p.createdBy?.name },
+    { header: "Created", value: (p) => new Date(p.createdAt).toLocaleString() },
+  ];
+
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
@@ -218,6 +336,12 @@ export default function TourProgramQueue() {
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-2 shrink-0">
+              <SearchBar
+                value={search}
+                onChange={setSearch}
+                placeholder="Search event, organizer, venue…"
+                className="w-[240px]"
+              />
               <DateRangeFilter
                 startDate={startDate}
                 endDate={endDate}
@@ -236,6 +360,11 @@ export default function TourProgramQueue() {
                 </SelectContent>
               </Select>
               </div>
+              <ExportCsvButton
+                rows={filteredPrograms}
+                columns={csvColumns}
+                filename="tour-invitations"
+              />
               <Button variant="outline" onClick={fetchPrograms} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
@@ -252,14 +381,14 @@ export default function TourProgramQueue() {
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
               <CardTitle>
-              {decisionFilter === "ACCEPTED" ? "Accepted" : decisionFilter === "REGRET" ? "Regret" : "Pending"} Invitations ({programs.length})
+              {decisionFilter === "ACCEPTED" ? "Accepted" : decisionFilter === "REGRET" ? "Regret" : "Pending"} Invitations ({filteredPrograms.length})
             </CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-4">
               {loading ? (
                 <p className="text-muted-foreground text-center py-8">Loading invitations...</p>
-              ) : programs.length === 0 ? (
+              ) : filteredPrograms.length === 0 ? (
                 <div className="text-center py-8">
                   <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
                   <p className="text-muted-foreground">No pending invitations!</p>
@@ -268,7 +397,7 @@ export default function TourProgramQueue() {
                   </p>
                 </div>
               ) : (
-                programs.map((p) => {
+                filteredPrograms.map((p) => {
                   const { date, time } = formatDateTime(p.eventDate || p.dateTime);
                   return (
                     <div
@@ -315,17 +444,30 @@ export default function TourProgramQueue() {
                           <p className="text-xs text-muted-foreground">
                             Submitted by: {p.createdBy?.name || 'Unknown'} • {new Date(p.createdAt).toLocaleDateString()}
                           </p>
+                          {p.lastEditedAt && (
+                            <p className="text-xs text-muted-foreground italic">
+                              Last edited by {p.lastEditedBy?.name ?? 'Unknown'} on {new Date(p.lastEditedAt).toLocaleString()}
+                            </p>
+                          )}
                         </div>
                       </div>
 
                       <div className="flex gap-2 flex-shrink-0">
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => handleViewDetails(p)}
                         >
                           <Eye className="h-4 w-4 mr-1" />
                           View
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenEdit(p)}
+                        >
+                          <Pencil className="h-4 w-4 mr-1" />
+                          Edit
                         </Button>
                         <Button 
                           size="sm" 
@@ -410,6 +552,12 @@ export default function TourProgramQueue() {
                     <p className="text-sm text-muted-foreground">Description</p>
                     <p className="mt-1 p-3 bg-gray-50 rounded-lg">{selectedProgram.description}</p>
                   </div>
+                )}
+
+                {selectedProgram.lastEditedAt && (
+                  <p className="text-xs text-muted-foreground italic">
+                    Last edited by {selectedProgram.lastEditedBy?.name ?? 'Unknown'} on {new Date(selectedProgram.lastEditedAt).toLocaleString()}
+                  </p>
                 )}
 
                 <div className="pt-2 border-t">
@@ -562,6 +710,137 @@ export default function TourProgramQueue() {
                     <CheckCircle className="h-4 w-4 mr-2" />
                     Verify and Assign to Staff
                   </>
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Tour Dialog — editable details, available to all roles. Decision flow untouched. */}
+        <Dialog
+          open={editDialogOpen}
+          onOpenChange={(open) => {
+            setEditDialogOpen(open);
+            if (!open) setEditError(null);
+          }}
+        >
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="h-5 w-5" />
+                Edit Tour Program
+              </DialogTitle>
+              <DialogDescription>
+                Update the tour details. Your name and the time will be recorded.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 pt-2">
+              {editError && (
+                <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-sm">
+                  {editError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <Label htmlFor="edit-eventName">Event Name</Label>
+                  <Input
+                    id="edit-eventName"
+                    value={editForm.eventName}
+                    onChange={(e) => setEditForm((f) => ({ ...f, eventName: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-organizer">Organizer</Label>
+                  <Input
+                    id="edit-organizer"
+                    value={editForm.organizer}
+                    onChange={(e) => setEditForm((f) => ({ ...f, organizer: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-organizerPhone">Organizer Phone</Label>
+                  <Input
+                    id="edit-organizerPhone"
+                    value={editForm.organizerPhone}
+                    onChange={(e) => setEditForm((f) => ({ ...f, organizerPhone: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-organizerEmail">Organizer Email</Label>
+                  <Input
+                    id="edit-organizerEmail"
+                    type="email"
+                    value={editForm.organizerEmail}
+                    onChange={(e) => setEditForm((f) => ({ ...f, organizerEmail: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-dateTime">Date &amp; Time</Label>
+                  <Input
+                    id="edit-dateTime"
+                    type="datetime-local"
+                    value={editForm.dateTime}
+                    onChange={(e) => setEditForm((f) => ({ ...f, dateTime: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-venue">Venue</Label>
+                  <Input
+                    id="edit-venue"
+                    value={editForm.venue}
+                    onChange={(e) => setEditForm((f) => ({ ...f, venue: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label htmlFor="edit-venueLink">Venue Link</Label>
+                  <Input
+                    id="edit-venueLink"
+                    value={editForm.venueLink}
+                    onChange={(e) => setEditForm((f) => ({ ...f, venueLink: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label htmlFor="edit-referencedBy">Referenced By</Label>
+                  <Input
+                    id="edit-referencedBy"
+                    value={editForm.referencedBy}
+                    onChange={(e) => setEditForm((f) => ({ ...f, referencedBy: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label htmlFor="edit-description">Description</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={editForm.description}
+                    onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                    className="mt-1 resize-y min-h-[100px]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)} disabled={savingEdit}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveEdit} disabled={savingEdit}>
+                {savingEdit ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Changes"
                 )}
               </Button>
             </div>

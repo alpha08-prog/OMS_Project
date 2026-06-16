@@ -3,6 +3,9 @@ import { body, param } from 'express-validator';
 import {
   createTask,
   getTasks,
+  getAllTasks,
+  editTaskShared,
+  getTaskAudit,
   getTaskGroups,
   getMyTasks,
   getTaskById,
@@ -74,6 +77,16 @@ const updateStatusValidation = [
 ];
 
 router.use(authenticate);
+
+// Shared "All Tasks" board — visible to and editable by ANY authenticated user.
+// Registered before the parametrised routes so '/all' isn't swallowed by '/:id'.
+router.get('/all', getAllTasks);
+router.get('/:id/audit', validate(idParamValidation), getTaskAudit);
+router.patch(
+  '/:id/edit',
+  validate([...idParamValidation, ...updateProgressValidation]),
+  editTaskShared
+);
 
 // Staff routes
 router.get('/my-tasks', staffOnly, getMyTasks);
