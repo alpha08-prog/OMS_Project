@@ -1,25 +1,48 @@
 import { useEffect, useState } from "react";
-import { FileCheck, Printer, Train, ClipboardList, UserCheck, CheckCircle2, LogOut, Loader2 } from "lucide-react";
+import {
+  FileCheck,
+  Printer,
+  Train,
+  ClipboardList,
+  UserCheck,
+  CheckCircle2,
+  LogOut,
+  Loader2,
+  Users,
+  Cake,
+  Newspaper,
+  ArrowRight,
+  CalendarClock,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { BirthdayWidget } from "@/components/dashboard/BirthdayWidget";
-import { grievanceApi, trainRequestApi, tourProgramApi, statsApi, attendanceApi, type Grievance, type TrainRequest, type TourProgram, type AttendanceStats, type AttendanceRow } from "@/lib/api";
+import {
+  grievanceApi,
+  tourProgramApi,
+  statsApi,
+  attendanceApi,
+  type DashboardStats,
+  type Grievance,
+  type TourProgram,
+  type AttendanceStats,
+  type AttendanceRow,
+} from "@/lib/api";
 
 export default function AdminHome() {
   const navigate = useNavigate();
 
-  // Counts from the cached stats API (fast)
-  const [grievanceCount, setGrievanceCount] = useState<number | null>(null);
-  const [trainCount, setTrainCount] = useState<number | null>(null);
-  const [tourCount, setTourCount] = useState<number | null>(null);
+  // Office-wide counts from the cached stats API (single fast call).
+  const [stats, setStats] = useState<DashboardStats | null>(null);
 
-  // Preview lists (small fetches — just enough to show names)
-  const [pendingGrievances, setPendingGrievances] = useState<Grievance[]>([]);
-  const [pendingTrainRequests, setPendingTrainRequests] = useState<TrainRequest[]>([]);
-  const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
+  // The only items that still need a human decision now that Train EQ
+  // auto-approves and grievances no longer require a verification step:
+  // active (OPEN) grievances and tour programs awaiting a decision.
+  const [openGrievances, setOpenGrievances] = useState<Grievance[]>([]);
+  const [pendingTours, setPendingTours] = useState<TourProgram[]>([]);
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats | null>(null);
 
   // The admin's own attendance for today (admins check in / out like staff).
@@ -34,6 +57,13 @@ export default function AdminHome() {
   const myCanCheckOut =
     myToday?.status === "PRESENT" || myToday?.status === "HALF_DAY";
   const myCheckedOut = !!myToday?.checkOutAt;
+
+  const today = new Date().toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   const handleMarkPresent = async () => {
     setMarking(true);
@@ -58,47 +88,39 @@ export default function AdminHome() {
   };
 
   useEffect(() => {
-    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
+    const userStr = localStorage.getItem("user") || sessionStorage.getItem("user");
     if (userStr) {
       try {
         const user = JSON.parse(userStr);
         setUserName(user.name || "Admin");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 1. Stats API — single cached call, gives all counts instantly
-        const [stats, grievancesRes, trainRes, tourRes, attendance, mine] = await Promise.all([
+        const [summary, grievancesRes, tourRes, attendance, mine] = await Promise.all([
           statsApi.getSummary(),
-          // Small previews: only 5 rows, DB-filtered
-          grievanceApi.getAll({ isVerified: 'false', limit: '5' }),
-          trainRequestApi.getAll({ status: 'PENDING', limit: '5' }),
-          tourProgramApi.getAll({ decision: 'PENDING', limit: '5' }),
+          // Active grievances that still need handling + tour decisions awaiting
+          // a call — small DB-filtered previews, just enough for names.
+          grievanceApi.getAll({ status: "OPEN", limit: "5" }),
+          tourProgramApi.getAll({ decision: "PENDING", limit: "5" }),
           attendanceApi.getTodayStats().catch(() => null),
           attendanceApi.getMyToday().catch(() => null),
         ]);
 
-        // Counts from stats cache
-        setGrievanceCount(stats?.grievances?.pendingVerification ?? 0);
-        setTrainCount(stats?.trainRequests?.pending ?? 0);
-        setTourCount(stats?.tourPrograms?.pending ?? 0);
-
-        // Preview rows
-        setPendingGrievances(Array.isArray(grievancesRes?.data) ? grievancesRes.data : []);
-        setPendingTrainRequests(Array.isArray(trainRes?.data) ? trainRes.data : []);
-        setPendingTourPrograms(Array.isArray(tourRes?.data) ? tourRes.data : []);
+        setStats(summary ?? null);
+        setOpenGrievances(Array.isArray(grievancesRes?.data) ? grievancesRes.data : []);
+        setPendingTours(Array.isArray(tourRes?.data) ? tourRes.data : []);
         setAttendanceStats(attendance);
         setMyToday(mine);
       } catch (error) {
-        console.error('Failed to fetch pending items:', error);
-        setGrievanceCount(0);
-        setTrainCount(0);
-        setTourCount(0);
-        setPendingGrievances([]);
-        setPendingTrainRequests([]);
-        setPendingTourPrograms([]);
+        console.error("Failed to fetch dashboard data:", error);
+        setStats(null);
+        setOpenGrievances([]);
+        setPendingTours([]);
       } finally {
         setLoading(false);
       }
@@ -107,7 +129,60 @@ export default function AdminHome() {
     fetchData();
   }, []);
 
-  const totalPending = (grievanceCount ?? 0) + (trainCount ?? 0) + (tourCount ?? 0);
+  // KPI tiles — at-a-glance office numbers, each linking to its module.
+  const kpis = [
+    {
+      label: "Open Grievances",
+      value: stats?.grievances.open,
+      sub: stats
+        ? `${stats.grievances.total} total · ${stats.grievances.resolved} resolved`
+        : "",
+      icon: FileCheck,
+      accent: "text-indigo-700 bg-indigo-100",
+      to: "/grievances/view",
+    },
+    {
+      label: "Train EQ Letters",
+      value: stats?.trainRequests.total,
+      sub: "Auto-approved · ready to print",
+      icon: Train,
+      accent: "text-purple-700 bg-purple-100",
+      to: "/train-eq/queue",
+    },
+    {
+      label: "Upcoming Tours",
+      value: stats?.tourPrograms.upcoming,
+      sub: stats && stats.tourPrograms.pending > 0
+        ? `${stats.tourPrograms.pending} awaiting decision`
+        : "No pending decisions",
+      icon: ClipboardList,
+      accent: "text-amber-700 bg-amber-100",
+      to: "/tour-program/pending",
+    },
+    {
+      label: "Visitors Today",
+      value: stats?.visitors.today,
+      sub: stats
+        ? `${stats.birthdays.today} birthday${stats.birthdays.today === 1 ? "" : "s"} today`
+        : "",
+      icon: Users,
+      accent: "text-emerald-700 bg-emerald-100",
+      to: "/admin/visitors",
+    },
+  ];
+
+  // Compact navigation strip — the everyday destinations.
+  const quickActions = [
+    { label: "Grievances", icon: FileCheck, to: "/grievances/view" },
+    { label: "Print Center", icon: Printer, to: "/admin/print-center" },
+    { label: "Train EQ", icon: Train, to: "/train-eq/queue" },
+    { label: "Tour Decisions", icon: ClipboardList, to: "/tour-program/pending" },
+    { label: "Visitors", icon: Users, to: "/admin/visitors" },
+    { label: "News", icon: Newspaper, to: "/news/view" },
+    { label: "Birthdays", icon: Cake, to: "/admin/birthdays" },
+  ];
+
+  const attentionCount = openGrievances.length + pendingTours.length;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -117,18 +192,46 @@ export default function AdminHome() {
         <div className="w-full bg-gradient-to-b from-indigo-50/60 to-white px-6 py-6">
           <div className="max-w-7xl mx-auto space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="text-2xl font-semibold text-indigo-900">
                   Welcome, {userName}
                 </h1>
-                <p className="text-sm text-muted-foreground">
-                  Verification & Letter Management
-                </p>
+                <p className="text-sm text-muted-foreground">{today}</p>
               </div>
               <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
-                ADMIN ACCESS
+                ADMIN
               </span>
+            </div>
+
+            {/* KPI ROW */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {kpis.map((k) => (
+                <button
+                  key={k.label}
+                  type="button"
+                  onClick={() => navigate(k.to)}
+                  className="text-left"
+                >
+                  <Card className="rounded-2xl border border-indigo-100 transition hover:shadow-md hover:-translate-y-0.5 h-full">
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between">
+                        <div className={`p-2 rounded-xl ${k.accent}`}>
+                          <k.icon className="h-5 w-5" />
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <p className="mt-3 text-3xl font-bold text-slate-900 tabular-nums">
+                        {k.value ?? (loading ? "…" : 0)}
+                      </p>
+                      <p className="text-sm font-medium text-slate-700">{k.label}</p>
+                      {k.sub && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{k.sub}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </button>
+              ))}
             </div>
 
             {/* ATTENDANCE TODAY */}
@@ -239,102 +342,83 @@ export default function AdminHome() {
               </CardContent>
             </Card>
 
-            {/* PRIMARY ACTIONS */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className="rounded-2xl border border-indigo-100">
-                <CardContent className="p-5 space-y-3">
-                  <FileCheck className="h-6 w-6 text-indigo-700" />
-                  <h3 className="font-semibold">Grievances</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {grievanceCount === null ? "Loading…" : `${grievanceCount} pending verification`}
-                  </p>
-                  <Button size="sm" onClick={() => navigate("/grievances/view")} className="w-full">
-                    Open Grievances
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border border-indigo-100">
-                <CardContent className="p-5 space-y-3">
-                  <Printer className="h-6 w-6 text-indigo-700" />
-                  <h3 className="font-semibold">Print Letters</h3>
-                  <p className="text-sm text-muted-foreground">Generate and print official letters</p>
-                  <Button size="sm" onClick={() => navigate("/admin/print-center")} className="w-full">
-                    Print Center
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border border-indigo-100">
-                <CardContent className="p-5 space-y-3">
-                  <Train className="h-6 w-6 text-indigo-700" />
-                  <h3 className="font-semibold">Train EQ Letters</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {trainCount === null ? "Loading…" : `${trainCount} pending approval`}
-                  </p>
-                  <Button size="sm" onClick={() => navigate("/train-eq/queue")} className="w-full">
-                    View Requests
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border border-indigo-100">
-                <CardContent className="p-5 space-y-3">
-                  <ClipboardList className="h-6 w-6 text-indigo-700" />
-                  <h3 className="font-semibold">Tour Decisions</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {tourCount === null ? "Loading…" : `${tourCount} pending decisions`}
-                  </p>
-                  <Button size="sm" onClick={() => navigate("/tour-program/pending")} className="w-full">
-                    Review
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* PENDING APPROVALS + BIRTHDAY WIDGET */}
+            {/* NEEDS ATTENTION + BIRTHDAY WIDGET */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <Card className="rounded-2xl shadow-sm border border-indigo-100 h-full">
                   <CardHeader className="flex-row items-center justify-between">
-                    <CardTitle className="text-lg">Pending Approvals</CardTitle>
-                    <Badge variant={totalPending > 0 ? "destructive" : "secondary"}>
-                      {totalPending} Pending
+                    <CardTitle className="text-lg">Needs Attention</CardTitle>
+                    <Badge variant={attentionCount > 0 ? "destructive" : "secondary"}>
+                      {attentionCount} item{attentionCount === 1 ? "" : "s"}
                     </Badge>
                   </CardHeader>
 
-                  <CardContent className="space-y-4 text-sm">
+                  <CardContent className="space-y-3 text-sm">
                     {loading ? (
-                      <p className="text-muted-foreground">Loading pending items…</p>
-                    ) : totalPending === 0 ? (
-                      <p className="text-muted-foreground">All caught up! No pending approvals.</p>
+                      <p className="text-muted-foreground">Loading…</p>
+                    ) : attentionCount === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 text-center">
+                        <CheckCircle2 className="h-10 w-10 text-emerald-500 mb-2" />
+                        <p className="font-medium text-slate-700">All caught up!</p>
+                        <p className="text-muted-foreground">
+                          No open grievances or pending tour decisions.
+                        </p>
+                      </div>
                     ) : (
                       <>
-                        {pendingGrievances.map((g) => (
-                          <div key={g.id} className="flex items-center justify-between gap-3">
+                        {pendingTours.map((tour) => (
+                          <div
+                            key={tour.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-amber-100 bg-amber-50/40 p-3"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <CalendarClock className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+                                <p className="font-medium truncate">Tour – {tour.eventName}</p>
+                              </div>
+                              <p className="text-muted-foreground truncate">
+                                {tour.organizer}
+                                {tour.dateTime && ` • ${new Date(tour.dateTime).toLocaleDateString()}`}
+                              </p>
+                            </div>
+                            <Button size="sm" variant="outline" onClick={() => navigate("/tour-program/pending")}>
+                              Decide
+                            </Button>
+                          </div>
+                        ))}
+
+                        {openGrievances.map((g) => (
+                          <div
+                            key={g.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-indigo-100 bg-indigo-50/30 p-3"
+                          >
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <p className="font-medium">Grievance – {g.grievanceType}</p>
-                                {g.source === 'OFFICE' && (
+                                <FileCheck className="h-3.5 w-3.5 text-indigo-600 flex-shrink-0" />
+                                <p className="font-medium truncate">
+                                  Grievance – {g.grievanceType}
+                                </p>
+                                {g.source === "OFFICE" && (
                                   <Badge className="text-[10px] px-1.5 py-0 h-4 bg-indigo-600 hover:bg-indigo-600 text-white">
                                     OFFICE
                                   </Badge>
                                 )}
-                                {g.priority && g.priority !== 'MEDIUM' && (
+                                {g.priority && g.priority !== "MEDIUM" && (
                                   <Badge
                                     className={`text-[10px] px-1.5 py-0 h-4 text-white ${
-                                      g.priority === 'CRITICAL'
-                                        ? 'bg-red-600 hover:bg-red-600'
-                                        : g.priority === 'HIGH'
-                                          ? 'bg-orange-500 hover:bg-orange-500'
-                                          : 'bg-slate-400 hover:bg-slate-400'
+                                      g.priority === "CRITICAL"
+                                        ? "bg-red-600 hover:bg-red-600"
+                                        : g.priority === "HIGH"
+                                        ? "bg-orange-500 hover:bg-orange-500"
+                                        : "bg-slate-400 hover:bg-slate-400"
                                     }`}
                                   >
-                                    {g.priority === 'CRITICAL' ? '🚨 ' : ''}{g.priority}
+                                    {g.priority === "CRITICAL" ? "🚨 " : ""}
+                                    {g.priority}
                                   </Badge>
                                 )}
                               </div>
-                              <p className="text-muted-foreground">
+                              <p className="text-muted-foreground truncate">
                                 {g.referenceNo && (
                                   <span className="font-mono text-indigo-700">{g.referenceNo} • </span>
                                 )}
@@ -342,35 +426,7 @@ export default function AdminHome() {
                               </p>
                             </div>
                             <Button size="sm" variant="outline" onClick={() => navigate("/grievances/view")}>
-                              Review
-                            </Button>
-                          </div>
-                        ))}
-
-                        {pendingTrainRequests.map((t) => (
-                          <div key={t.id} className="flex items-center justify-between">
-                            <div>
-                              <p className="font-medium">Train EQ – {t.passengerName}</p>
-                              <p className="text-muted-foreground">
-                                PNR: {t.pnrNumber} • {new Date(t.createdAt).toLocaleDateString()}
-                              </p>
-                            </div>
-                            <Button size="sm" variant="outline" onClick={() => navigate("/train-eq/queue")}>
-                              Review
-                            </Button>
-                          </div>
-                        ))}
-
-                        {pendingTourPrograms.map((tour) => (
-                          <div key={tour.id} className="flex items-center justify-between">
-                            <div>
-                              <p className="font-medium">Tour – {tour.eventName}</p>
-                              <p className="text-muted-foreground">
-                                {tour.organizer} • Decision Pending
-                              </p>
-                            </div>
-                            <Button size="sm" variant="outline" onClick={() => navigate("/tour-program/pending")}>
-                              Decide
+                              Open
                             </Button>
                           </div>
                         ))}
@@ -384,6 +440,28 @@ export default function AdminHome() {
                 <BirthdayWidget />
               </div>
             </div>
+
+            {/* QUICK ACTIONS */}
+            <Card className="rounded-2xl border border-indigo-100">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                  {quickActions.map((a) => (
+                    <button
+                      key={a.label}
+                      type="button"
+                      onClick={() => navigate(a.to)}
+                      className="flex flex-col items-center gap-2 rounded-xl border border-slate-100 bg-white p-3 text-center transition hover:border-indigo-200 hover:bg-indigo-50/50"
+                    >
+                      <a.icon className="h-5 w-5 text-indigo-700" />
+                      <span className="text-xs font-medium text-slate-700">{a.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </main>
