@@ -590,18 +590,31 @@ export async function getGrievances(
     if (filters.search) {
       const raw = String(filters.search).trim();
       const q = raw.toLowerCase();
-      const rowidMatch = raw.match(/^GRV-(\d+)$/i);
-      rows = rows.filter(
-        (r) =>
+      // A "GRV-<rowid>" or bare "<rowid>" search → the digits to match on the
+      // ROWID directly. This finds a grievance by its ROWID-based reference even
+      // when it also has a sequential grievanceNumber. 6+ digits so short
+      // numeric searches aren't mistaken for a ROWID.
+      const rowidMatch = raw.match(/^(?:GRV-)?(\d{6,})$/i);
+      rows = rows.filter((r) => {
+        // The SAME human reference the UI shows: the sequential grievanceNumber
+        // (GRV-YYYY-NNNN) when present, else the ROWID fallback (GRV-<rowid>).
+        // `includes` means pasting any displayed reference — full or partial —
+        // finds the row.
+        const refNo = (r.grievanceNumber
+          ? String(r.grievanceNumber)
+          : `GRV-${String(r.ROWID)}`
+        ).toLowerCase();
+        return (
           (r.petitionerName || '').toLowerCase().includes(q) ||
           (r.mobileNumber || '').includes(q) ||
           (r.description || '').toLowerCase().includes(q) ||
           (r.constituency || '').toLowerCase().includes(q) ||
           (r.wardVillage || '').toLowerCase().includes(q) ||
           (r.grievanceType || '').toLowerCase().includes(q) ||
-          String(r.grievanceNumber || '').toLowerCase().includes(q) ||
+          refNo.includes(q) ||
           (rowidMatch ? String(r.ROWID) === rowidMatch[1] : false)
-      );
+        );
+      });
     }
     if (filters.startDate) {
       const start = new Date(filters.startDate as unknown as string).getTime();

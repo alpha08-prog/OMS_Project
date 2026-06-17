@@ -873,6 +873,7 @@ export const historyApi = {
     action?: string
     startDate?: string
     endDate?: string
+    search?: string
     page?: number
     limit?: number
   }) => {

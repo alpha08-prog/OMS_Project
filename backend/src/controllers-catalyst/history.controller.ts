@@ -90,7 +90,13 @@ export async function getAdminHistory(
     const { page, limit, skip } = parsePagination(
       req.query as { page?: string; limit?: string }
     );
-    const { type, action, startDate, endDate } = req.query as Record<string, string>;
+    const { type, action, startDate, endDate, search } = req.query as Record<string, string>;
+    // Free-text search (matches title, description, status, and the detail
+    // fields — including a grievance's reference number e.g. GRV-2026-0001).
+    // When present we must scan the FULL dataset, so the ZCQL fast-path (which
+    // only fetches enough rows for the current page) is bypassed below.
+    const searchTerm = (search ?? '').trim().toLowerCase();
+    const wantsSearch = searchTerm.length > 0;
 
     const grievanceActions = ['VERIFIED', 'RESOLVED', 'REJECTED', 'IN_PROGRESS'];
     const trainActions = ['APPROVED', 'REJECTED', 'REGRET', 'ACCEPTED', 'RESOLVED'];
@@ -116,7 +122,7 @@ export async function getAdminHistory(
     const [grievances, trainRequests, tours] = await Promise.all([
       (async (): Promise<CatalystRow[]> => {
         if (!shouldFetchGrievances) return [];
-        if (useZCQL()) {
+        if (useZCQL() && !wantsSearch) {
           const conditions: string[] = [];
           if (action === 'RESOLVED') conditions.push(`status = 'RESOLVED'`);
           else if (action === 'REJECTED') conditions.push(`status = 'REJECTED'`);
@@ -156,7 +162,7 @@ export async function getAdminHistory(
 
       (async (): Promise<CatalystRow[]> => {
         if (!shouldFetchTrainRequests) return [];
-        if (useZCQL()) {
+        if (useZCQL() && !wantsSearch) {
           const conditions: string[] = [];
           if (action === 'APPROVED' || action === 'ACCEPTED') {
             conditions.push(`status = 'APPROVED'`);
@@ -199,7 +205,7 @@ export async function getAdminHistory(
 
       (async (): Promise<CatalystRow[]> => {
         if (!shouldFetchTourPrograms) return [];
-        if (useZCQL()) {
+        if (useZCQL() && !wantsSearch) {
           const conditions: string[] = [];
           if (action === 'ACCEPTED') conditions.push(`decision = 'ACCEPTED'`);
           else if (action === 'REGRET') conditions.push(`decision = 'REGRET'`);
@@ -341,8 +347,26 @@ export async function getAdminHistory(
       (a, b) => new Date(b.actionAt).getTime() - new Date(a.actionAt).getTime()
     );
 
-    const total = items.length;
-    const paginated = items.slice(skip, skip + limit);
+    // Apply free-text search across the shaped items (so the grievance
+    // reference number, petitioner, PNR, organiser, etc. are all searchable)
+    // BEFORE paginating, so a match on any page surfaces correctly.
+    const matched = wantsSearch
+      ? items.filter((it) => {
+          const haystack = [
+            it.title,
+            it.description,
+            it.action,
+            it.status,
+            JSON.stringify(it.details ?? {}),
+          ]
+            .join(' ')
+            .toLowerCase();
+          return haystack.includes(searchTerm);
+        })
+      : items;
+
+    const total = matched.length;
+    const paginated = matched.slice(skip, skip + limit);
 
     const meta = calculatePaginationMeta(total, page, limit);
     sendSuccess(res, paginated, 'History retrieved successfully', 200, meta);
