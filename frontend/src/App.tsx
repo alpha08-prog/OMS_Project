@@ -27,6 +27,8 @@ const Birthdays = lazy(() => import("./pages/admin/Birthdays"));
 const VisitorView = lazy(() => import("./pages/admin/VisitorView"));
 const ActionCenter = lazy(() => import("./pages/admin/ActionCenter"));
 const TaskTracker = lazy(() => import("./pages/admin/TaskTracker"));
+const AdminOfficeTasks = lazy(() => import("./pages/admin/AdminOfficeTasks"));
+const AdminActivityLog = lazy(() => import("./pages/admin/AdminActivityLog"));
 const GrievanceVerification = lazy(() => import("./pages/admin/GrievienceVerification"));
 const TrainEQQueue = lazy(() => import("./pages/admin/TrainEQQueue"));
 const ViewVisitors = lazy(() => import("./pages/admin/ViewVisitors"));
@@ -44,6 +46,7 @@ const CreateUser = lazy(() => import("./pages/admin/CreateUser"));
 const UserList = lazy(() => import("./pages/admin/UserList"));
 const StaffAttendance = lazy(() => import("./pages/staff/StaffAttendance"));
 const AdminAttendance = lazy(() => import("./pages/admin/AdminAttendance"));
+const AdminMeetings = lazy(() => import("./pages/admin/AdminMeetings"));
 // Shared task board (all roles) + merged Visitor/Birthday "Add Person" form.
 const AllTasks = lazy(() => import("./pages/tasks/AllTasks"));
 const AddPerson = lazy(() => import("./pages/people/AddPerson"));
@@ -133,6 +136,22 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['ADMIN']}>
               <TaskTracker />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/office-tasks"
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+              <AdminOfficeTasks />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/activity"
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+              <AdminActivityLog />
             </ProtectedRoute>
           }
         />
@@ -334,6 +353,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
               <AdminAttendance />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/meetings"
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+              <AdminMeetings />
             </ProtectedRoute>
           }
         />

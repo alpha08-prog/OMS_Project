@@ -16,12 +16,14 @@ import {
   disconnectCalendar,
   createTourCalendarEvent,
   createCustomGoogleEvent,
+  createMeetingGoogleEvent,
   isCalendarConnected,
 } from '../services/google.service';
 import type { AuthenticatedRequest } from '../types';
 
 const TOUR_TABLE = 'TourProgram';
 const CUSTOM_EVENT_TABLE = 'CustomCalendarEvent';
+const MEETING_TABLE = 'Meeting';
 
 function parseBool(v: unknown): boolean {
   if (typeof v === 'boolean') return v;
@@ -114,6 +116,14 @@ export async function getCalendarEvents(req: AuthenticatedRequest, res: Response
       /* CustomCalendarEvent table not created yet — skip silently */
     }
 
+    // Meetings (admin-only module) — best-effort; table may not exist yet.
+    let meetings: CatalystRow[] = [];
+    try {
+      meetings = await listAllRows(MEETING_TABLE);
+    } catch {
+      /* Meeting table not created yet — skip silently */
+    }
+
     const tourPrograms = await listAllRows(TOUR_TABLE);
     const acceptedTours = tourPrograms
       .filter((t) => t.decision === 'ACCEPTED')
@@ -148,6 +158,26 @@ export async function getCalendarEvents(req: AuthenticatedRequest, res: Response
           type: 'CUSTOM' as const,
           description: e.description ?? null,
           googleSynced: false,
+        })),
+      ...meetings
+        .filter(
+          (m) => String(m.status ?? 'SCHEDULED').toUpperCase() !== 'CANCELLED'
+        )
+        .sort(
+          (a, b) =>
+            new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()
+        )
+        .map((m) => ({
+          id: `meeting-${String(m.ROWID)}`,
+          title: m.title,
+          start: m.dateTime,
+          end: m.dateTime
+            ? new Date(new Date(m.dateTime).getTime() + 60 * 60 * 1000).toISOString()
+            : null,
+          type: 'MEETING' as const,
+          location: m.location ?? null,
+          description: m.agenda ?? m.summary ?? null,
+          googleSynced: !!m.googleCalendarEventId,
         })),
     ];
 
@@ -310,11 +340,47 @@ export async function syncAllToursToCalendar(req: AuthenticatedRequest, res: Res
       }
     }
 
-    const total = tours.length + customEvents.length;
-    const synced = toursSynced + customSynced;
+    // ── Meetings: sync unsynced, non-cancelled meetings ─────────────────
+    let meetings: CatalystRow[] = [];
+    try {
+      const all = await listAllRows(MEETING_TABLE);
+      meetings = all.filter(
+        (m) =>
+          String(m.status ?? 'SCHEDULED').toUpperCase() !== 'CANCELLED' &&
+          !m.googleCalendarEventId
+      );
+    } catch {
+      // Meeting table may not exist — skip silently. Tours/custom still ran.
+    }
+
+    let meetingsSynced = 0;
+    for (const meeting of meetings) {
+      try {
+        const googleEventId = await createMeetingGoogleEvent(req.user!.id, {
+          id: String(meeting.ROWID),
+          title: String(meeting.title),
+          dateTime: String(meeting.dateTime),
+          location: meeting.location ?? null,
+          attendees: meeting.attendees ?? null,
+          agenda: meeting.agenda ?? null,
+        });
+        if (googleEventId) {
+          await updateRow(MEETING_TABLE, {
+            ROWID: String(meeting.ROWID),
+            googleCalendarEventId: googleEventId,
+          });
+          meetingsSynced++;
+        }
+      } catch (err) {
+        console.error(`Failed to sync meeting ${meeting.ROWID}:`, err);
+      }
+    }
+
+    const total = tours.length + customEvents.length + meetings.length;
+    const synced = toursSynced + customSynced + meetingsSynced;
     sendSuccess(
       res,
-      { synced, total, toursSynced, customSynced },
+      { synced, total, toursSynced, customSynced, meetingsSynced },
       `Synced ${synced} of ${total} events to Google Calendar`
     );
   } catch (error) {

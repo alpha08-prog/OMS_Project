@@ -14,6 +14,8 @@ import googleRoutes from './google.routes';
 import uploadRoutes from './upload.routes';
 import notificationRoutes from './notification.routes';
 import attendanceRoutes from './attendance.routes';
+import meetingRoutes from './meeting.routes';
+import activityRoutes from './activity.routes';
 
 const router = Router();
 
@@ -43,5 +45,7 @@ router.use('/google', googleRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/attendance', attendanceRoutes);
+router.use('/meetings', meetingRoutes);
+router.use('/activity', activityRoutes);
 
 export default router;

@@ -441,6 +441,9 @@ export async function createGrievance(
       referenceType: 'GRIEVANCE',
       priority: finalPriority === 'CRITICAL' || finalPriority === 'HIGH' ? 'HIGH' : 'NORMAL',
       description: typeof description === 'string' ? description.slice(0, 500) : null,
+      // OFFICE grievances route through the admin-assignment flow (unassigned
+      // task → admin assigns → assignee's My Tasks); PUBLIC self-assign as before.
+      source: finalSource,
     });
 
     invalidateStatCaches();

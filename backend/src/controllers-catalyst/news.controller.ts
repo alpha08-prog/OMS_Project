@@ -13,12 +13,13 @@ import {
   insertRow,
   listAllRows,
   getRow,
-  updateRow,
   deleteRow,
   executeZCQL,
   zcqlEscapeValue,
   zcqlSafeLimit,
   toCatalystDate,
+  nowCatalystIST,
+  updateRowTolerant,
   CatalystRow,
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
@@ -48,7 +49,8 @@ const VALID_PRIORITIES = new Set(['NORMAL', 'HIGH', 'CRITICAL']);
 /** Reshape a Catalyst News row → JSON the frontend expects (priority, not newsPriority). */
 function shapeNews(
   row: CatalystRow,
-  createdBy?: { id: string; name: string; email: string } | null
+  createdBy?: { id: string; name: string; email: string } | null,
+  lastEditedBy?: { id: string; name: string; email: string } | null
 ) {
   return {
     id: String(row.ROWID),
@@ -61,8 +63,12 @@ function shapeNews(
     imageUrl: row.imageUrl ?? null,
     createdAt: row.CREATEDTIME,
     updatedAt: row.MODIFIEDTIME,
-    createdById: row.createdById,
+    createdById: row.createdById ?? null,
     createdBy: createdBy ?? null,
+    // Edit audit — who last edited this news entry and when (security trail).
+    lastEditedById: row.lastEditedById ?? null,
+    lastEditedAt: row.lastEditedAt ?? null,
+    lastEditedBy: lastEditedBy ?? null,
   };
 }
 
@@ -95,10 +101,17 @@ async function hydrate(rows: CatalystRow[]): Promise<any[]> {
   const safe = rows.filter((r): r is CatalystRow => Boolean(r));
   if (safe.length === 0) return [];
   const ids = new Set<string>();
-  for (const r of safe) if (r.createdById) ids.add(String(r.createdById));
+  for (const r of safe) {
+    if (r.createdById) ids.add(String(r.createdById));
+    if (r.lastEditedById) ids.add(String(r.lastEditedById));
+  }
   const users = await lookupUsers(ids);
   return safe.map((r) =>
-    shapeNews(r, users.get(String(r.createdById)) ?? null)
+    shapeNews(
+      r,
+      (r.createdById && users.get(String(r.createdById))) || null,
+      (r.lastEditedById && users.get(String(r.lastEditedById))) || null
+    )
   );
 }
 
@@ -352,7 +365,18 @@ export async function updateNews(
       updateData.newsPriority = prio; // map to Catalyst column
     }
 
-    const updated = await updateRow(NEWS_TABLE, updateData as any);
+    // Edit audit — stamp who edited and when. Never let the client override it.
+    if (req.user) {
+      updateData.lastEditedById = req.user.id;
+      updateData.lastEditedAt = nowCatalystIST();
+    }
+
+    // updateRowTolerant retries without the audit columns if Catalyst's schema
+    // doesn't have them yet, so the edit still succeeds before the migration.
+    const updated = await updateRowTolerant(NEWS_TABLE, updateData as any, [
+      'lastEditedById',
+      'lastEditedAt',
+    ]);
     const [shaped] = await hydrate([updated]);
     sendSuccess(res, shaped, 'News updated successfully');
   } catch (error) {

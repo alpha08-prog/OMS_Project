@@ -20,6 +20,7 @@ import {
   listAllRows,
   getRow,
   updateRow,
+  updateRowTolerant,
   deleteRow,
   toCatalystDate,
   nowCatalystIST,
@@ -96,7 +97,7 @@ function shapeTour(
     googleCalendarEventId: row.googleCalendarEventId ?? null,
     createdAt: row.CREATEDTIME,
     updatedAt: row.MODIFIEDTIME,
-    createdById: row.createdById,
+    createdById: row.createdById ?? null,
     completedById: row.completedById ?? null,
     createdBy: createdBy ?? null,
     completedBy: completedBy ?? null,
@@ -408,7 +409,13 @@ export async function updateTourProgram(
       updateData.lastEditedAt = nowCatalystIST();
     }
 
-    const updated = await updateRow(TOUR_TABLE, updateData as any);
+    // Tolerate a Catalyst schema that doesn't have the audit columns yet —
+    // the update still succeeds (minus the stamp) until they're added.
+    const updated = await updateRowTolerant(
+      TOUR_TABLE,
+      updateData as { ROWID: string | number; [column: string]: any },
+      ['lastEditedById', 'lastEditedAt']
+    );
     const [shaped] = await hydrate([updated]);
     sendSuccess(res, shaped, 'Tour program updated successfully');
   } catch (error) {

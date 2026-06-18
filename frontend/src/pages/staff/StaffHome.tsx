@@ -54,29 +54,38 @@ export default function StaffHome() {
       try {
         const entries: RecentEntry[] = [];
         
-        // Fetch recent grievances
-        const grievancesRes = await grievanceApi.getAll({ limit: '3' });
-        grievancesRes.data.forEach((g: Grievance) => {
+        // Fetch all four dashboard lists in PARALLEL. Previously these were
+        // four serial awaits, so the dashboard's wall time was the SUM of all
+        // four round-trips (the main cause of the 2-3s load). Now it's the
+        // slowest single call. Each has its own catch so one failure leaves the
+        // others intact.
+        const [grievancesRes, visitorsRes, trainRes, rejectedRes] = await Promise.all([
+          grievanceApi.getAll({ limit: '3' }).catch(() => null),
+          visitorApi.getAll({ limit: '3' }).catch(() => null),
+          trainRequestApi.getAll({ limit: '3' }).catch(() => null),
+          // Staff scope: the /grievances list endpoint already returns only the
+          // current user's records when role is STAFF.
+          grievanceApi.getAll({ status: 'REJECTED', limit: '5' }).catch((rejErr) => {
+            console.error('Failed to fetch rejected grievances:', rejErr);
+            return null;
+          }),
+        ]);
+
+        (grievancesRes?.data ?? []).forEach((g: Grievance) => {
           entries.push({
             type: 'Grievance',
             title: `${g.grievanceType} - ${g.petitionerName}`,
             date: new Date(g.createdAt).toLocaleDateString(),
           });
         });
-
-        // Fetch recent visitors
-        const visitorsRes = await visitorApi.getAll({ limit: '3' });
-        visitorsRes.data.forEach((v: Visitor) => {
+        (visitorsRes?.data ?? []).forEach((v: Visitor) => {
           entries.push({
             type: 'Visitor',
             title: `${v.designation} - ${v.name}`,
             date: new Date(v.createdAt).toLocaleDateString(),
           });
         });
-
-        // Fetch recent train requests
-        const trainRes = await trainRequestApi.getAll({ limit: '3' });
-        trainRes.data.forEach((t: TrainRequest) => {
+        (trainRes?.data ?? []).forEach((t: TrainRequest) => {
           entries.push({
             type: 'Train EQ',
             title: `PNR ${t.pnrNumber}`,
@@ -88,16 +97,7 @@ export default function StaffHome() {
         entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setRecentEntries(entries.slice(0, 5));
 
-        // Pull rejected grievances so the staff sees them on the dashboard.
-        // Staff scope: the /grievances list endpoint already returns only the
-        // current user's records when role is STAFF.
-        try {
-          const rejectedRes = await grievanceApi.getAll({ status: 'REJECTED', limit: '5' });
-          setRejectedGrievances(rejectedRes.data ?? []);
-        } catch (rejErr) {
-          console.error('Failed to fetch rejected grievances:', rejErr);
-          setRejectedGrievances([]);
-        }
+        setRejectedGrievances(rejectedRes?.data ?? []);
       } catch (error) {
         console.error('Failed to fetch recent entries:', error);
       } finally {
