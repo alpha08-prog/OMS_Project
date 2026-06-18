@@ -109,17 +109,15 @@ export default function AdminHistory() {
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [actionFilter, setActionFilter] = useState<string>("ALL");
   const [search, setSearch] = useState("");
+  // Search is server-side so it spans every page (e.g. find a grievance by its
+  // GRV-YYYY-NNNN reference even when it's not on the current page). Debounce
+  // the input so we don't fire a request on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Client-side text filter over the loaded page of history rows.
-  const filteredHistory = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    if (!s) return history;
-    return history.filter((item) =>
-      [item.title, item.description].some((field) =>
-        (field ?? "").toLowerCase().includes(s)
-      )
-    );
-  }, [history, search]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const csvColumns: CsvColumn<HistoryItem>[] = [
     { header: "Type", value: (r) => r.type },
@@ -177,6 +175,7 @@ export default function AdminHistory() {
       if (actionFilter !== "ALL") params.action = actionFilter;
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
+      if (debouncedSearch) params.search = debouncedSearch;
 
       console.log('History - Fetching with params:', params);
       const res = await historyApi.getHistory(params);
@@ -201,7 +200,7 @@ export default function AdminHistory() {
     } finally {
       setLoading(false);
     }
-  }, [actionFilter, endDate, page, startDate, typeFilter]);
+  }, [actionFilter, debouncedSearch, endDate, page, startDate, typeFilter]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -221,7 +220,7 @@ export default function AdminHistory() {
 
   useEffect(() => {
     setPage(1);
-  }, [typeFilter, actionFilter, startDate, endDate]);
+  }, [typeFilter, actionFilter, startDate, endDate, debouncedSearch]);
 
   const handleFilter = () => {
     setPage(1);
@@ -627,11 +626,12 @@ export default function AdminHistory() {
                 <SearchBar
                   value={search}
                   onChange={setSearch}
-                  placeholder="Search title or description"
-                  className="w-full sm:w-64 sm:ml-auto"
+                  onSubmit={() => setDebouncedSearch(search.trim())}
+                  placeholder="Search by ID (e.g. GRV-2026-0001), name, PNR…"
+                  className="w-full sm:w-72 sm:ml-auto"
                 />
                 <ExportCsvButton
-                  rows={filteredHistory}
+                  rows={history}
                   columns={csvColumns}
                   filename="action-history"
                 />
@@ -649,10 +649,12 @@ export default function AdminHistory() {
                 <div className="flex items-center justify-center py-12">
                   <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
                 </div>
-              ) : filteredHistory.length === 0 ? (
+              ) : history.length === 0 ? (
                 <div className="text-center py-12">
                   <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No actions found</p>
+                  <p className="text-muted-foreground">
+                    {debouncedSearch ? `No actions match "${debouncedSearch}"` : "No actions found"}
+                  </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -669,7 +671,7 @@ export default function AdminHistory() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredHistory.map((item) => (
+                      {history.map((item) => (
                         <TableRow key={`${item.type}-${item.id}`} className="hover:bg-indigo-50/50">
                           <TableCell>
                             <div className="flex items-center gap-2">

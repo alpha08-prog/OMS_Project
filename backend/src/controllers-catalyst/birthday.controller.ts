@@ -121,7 +121,10 @@ async function collectBirthdaySources(): Promise<CatalystRow[]> {
       name: r.passengerName,
       phone: null,
       dob: r.dob,
-      relation: 'Train Passenger',
+      // Train EQ passengers default to the standard "Other" category so the
+      // value matches the relation dropdown/filter set. The TRAIN source
+      // badge still marks where the DOB came from.
+      relation: 'Other',
       notes: null,
       designation: null,
       constituency: null,
