@@ -441,8 +441,9 @@ export async function createGrievance(
       referenceType: 'GRIEVANCE',
       priority: finalPriority === 'CRITICAL' || finalPriority === 'HIGH' ? 'HIGH' : 'NORMAL',
       description: typeof description === 'string' ? description.slice(0, 500) : null,
-      // OFFICE grievances route through the admin-assignment flow (unassigned
-      // task → admin assigns → assignee's My Tasks); PUBLIC self-assign as before.
+      // Both PUBLIC and OFFICE grievances self-assign to their creator. OFFICE
+      // ones surface on the admin Office Tasks page (admin-managed, editable by
+      // admins only); PUBLIC ones go to the shared "All Tasks" board.
       source: finalSource,
     });
 
@@ -687,6 +688,21 @@ export async function updateGrievance(
 ): Promise<void> {
   try {
     const { id } = req.params;
+
+    // Office grievances are admin-managed (Office Tasks page) — staff cannot
+    // edit them, even by calling this endpoint directly. Admins/Super Admins
+    // are unaffected. PUBLIC grievances stay editable by their creator.
+    if (req.user?.role === 'STAFF') {
+      const existing = await getRow(GRIEVANCE_TABLE, id);
+      if (
+        existing &&
+        String(existing.source ?? 'PUBLIC').toUpperCase() === 'OFFICE'
+      ) {
+        sendError(res, 'Office grievances can only be edited by an admin', 403);
+        return;
+      }
+    }
+
     const body = { ...req.body };
     // Strip immutable fields
     delete body.id;

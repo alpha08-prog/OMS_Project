@@ -112,6 +112,7 @@ const allMenuItems: MenuItem[] = [
   { icon: Calendar, label: "Tour Program", route: "/home?popup=tour", roles: ['SUPER_ADMIN'] },
   { icon: Newspaper, label: "News", route: "/home?popup=news", roles: ['SUPER_ADMIN'] },
   { icon: Star, label: "Events", route: "/home?popup=events", roles: ['SUPER_ADMIN'] },
+  { icon: CalendarClock, label: "Meetings", route: "/home?popup=meetings", roles: ['SUPER_ADMIN'] },
 
   // Common
   { icon: UserCircle, label: "My Profile", route: "/profile", roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },

@@ -11,14 +11,16 @@ import {
   AlertTriangle,
   CalendarDays,
   Star,
+  CalendarClock,
 } from "lucide-react";
-import { statsApi, type DashboardStats } from "../lib/api";
+import { statsApi, meetingApi, type DashboardStats } from "../lib/api";
 import { Card, CardContent } from "../components/ui/card";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import { SuperAdminGrievancesContent } from "./admin/SuperAdminGrievances";
 import { SuperAdminTourProgramsContent } from "./admin/SuperAdminTourPrograms";
 import { SuperAdminNewsContent } from "./admin/SuperAdminNews";
 import { SuperAdminEventsContent } from "./admin/SuperAdminEventsContent";
+import { SuperAdminMeetingsContent } from "./admin/SuperAdminMeetings";
 
 type StatItem = {
   label: string;
@@ -47,6 +49,8 @@ const Home = () => {
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  // Upcoming-meeting count for the Meetings stat tile (best-effort).
+  const [upcomingMeetings, setUpcomingMeetings] = useState<number | null>(null);
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -60,6 +64,12 @@ const Home = () => {
     };
 
     fetchStats();
+
+    // Separate, non-blocking fetch for the upcoming-meeting count.
+    meetingApi
+      .getAll({ scope: "upcoming" })
+      .then((rows) => setUpcomingMeetings(rows.length))
+      .catch((error) => console.error("Failed to fetch meetings:", error));
   }, []);
 
   // Active grievances only (resolved hidden on the SUPER_ADMIN dashboard).
@@ -103,6 +113,15 @@ const Home = () => {
       color: "text-emerald-600",
       bg: "bg-emerald-50",
       to: "/home?popup=events",
+    },
+    {
+      label: "Meetings",
+      value: upcomingMeetings === null ? "—" : upcomingMeetings,
+      sub: "upcoming · view summaries",
+      icon: CalendarClock,
+      color: "text-sky-600",
+      bg: "bg-sky-50",
+      to: "/home?popup=meetings",
     },
   ];
 
@@ -155,7 +174,7 @@ const Home = () => {
         </div>
 
         {/* ── Stats Grid (each tile navigates to its detail page) ─────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {statItems.map((s) => (
             <button
               key={s.label}
@@ -215,6 +234,7 @@ const Home = () => {
           {popup === 'tour' && <SuperAdminTourProgramsContent />}
           {popup === 'news' && <SuperAdminNewsContent />}
           {popup === 'events' && <SuperAdminEventsContent />}
+          {popup === 'meetings' && <SuperAdminMeetingsContent />}
         </DialogContent>
       </Dialog>
     </div>

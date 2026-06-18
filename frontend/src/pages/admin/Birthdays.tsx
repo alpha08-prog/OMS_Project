@@ -349,6 +349,9 @@ export default function Birthdays() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        {b.isOfficial && (
+                          <Badge className="bg-blue-600 hover:bg-blue-600 text-white">Official</Badge>
+                        )}
                         <Badge className={getRelationBadgeColor(b.relation)}>{b.relation}</Badge>
                         <Badge variant="outline">🎂 {formatDate(b.dob)}</Badge>
                       </div>
@@ -395,6 +398,11 @@ export default function Birthdays() {
                             <Badge className={`${getSourceBadge(b.source).className} text-xs px-2 py-0`}>
                               {getSourceBadge(b.source).label}
                             </Badge>
+                            {b.isOfficial && (
+                              <Badge className="bg-blue-600 hover:bg-blue-600 text-white text-xs px-2 py-0">
+                                Official
+                              </Badge>
+                            )}
                             {isTodayBirthday(b.dob) && (
                               <span className="text-lg">🎉</span>
                             )}

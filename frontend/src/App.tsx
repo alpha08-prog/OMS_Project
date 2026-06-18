@@ -40,6 +40,7 @@ const EventsView = lazy(() => import("./pages/admin/EventsView"));
 const SuperAdminTourPrograms = lazy(() => import("./pages/admin/SuperAdminTourPrograms"));
 const SuperAdminGrievances = lazy(() => import("./pages/admin/SuperAdminGrievances"));
 const SuperAdminNews = lazy(() => import("./pages/admin/SuperAdminNews"));
+const SuperAdminMeetings = lazy(() => import("./pages/admin/SuperAdminMeetings"));
 const AdminCalendar = lazy(() => import("./pages/admin/AdminCalendar"));
 const Profile = lazy(() => import("./pages/Profile"));
 const CreateUser = lazy(() => import("./pages/admin/CreateUser"));
@@ -337,6 +338,15 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
               <SuperAdminNews />
+            </ProtectedRoute>
+          }
+        />
+        {/* Super Admin — read-only meetings overview with summaries */}
+        <Route
+          path="/super-admin/meetings"
+          element={
+            <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+              <SuperAdminMeetings />
             </ProtectedRoute>
           }
         />

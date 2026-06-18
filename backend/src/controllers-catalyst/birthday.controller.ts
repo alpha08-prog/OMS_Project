@@ -35,6 +35,14 @@ const BIRTHDAY_TABLE = 'Birthday';
 const VISITOR_TABLE = 'Visitor';
 const PASSENGER_TABLE = 'TrainPassenger';
 
+/** Catalyst serialises boolean columns as "true"/"false" strings — coerce. */
+function parseBool(v: unknown): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') return v.toLowerCase() === 'true';
+  if (typeof v === 'number') return v !== 0;
+  return Boolean(v);
+}
+
 /** Reshape a Catalyst Birthday row → JSON the frontend expects.
  *  `source` distinguishes a real Birthday row from a DOB pulled in from
  *  another module (Visitor / Train passenger); only BIRTHDAY rows are
@@ -55,6 +63,14 @@ function shapeBirthday(
     designation: row.designation ?? null,
     constituency: row.constituency ?? null,
     wardVillage: row.wardVillage ?? null,
+    // Whether this person is a serving official — marks their birthday in the
+    // UI. Prefer the explicit isOfficial flag (carried from the Visitor row);
+    // fall back to a designation/relation of "Official" so it still works
+    // before the Catalyst column is added.
+    isOfficial:
+      parseBool(row.isOfficial) ||
+      String(row.designation ?? '').toLowerCase() === 'official' ||
+      String(row.relation ?? '').toLowerCase() === 'official',
     createdAt: row.CREATEDTIME,
     updatedAt: row.MODIFIEDTIME,
     createdById: row.createdById ?? null,
@@ -107,6 +123,8 @@ async function collectBirthdaySources(): Promise<CatalystRow[]> {
       designation: r.designation ?? null,
       constituency: r.constituency ?? null,
       wardVillage: r.wardVillage ?? null,
+      // Carry the serving-official flag through so the birthday feed can mark it.
+      isOfficial: r.isOfficial ?? null,
       CREATEDTIME: r.CREATEDTIME,
       MODIFIEDTIME: r.MODIFIEDTIME,
       createdById: r.createdById ?? null,

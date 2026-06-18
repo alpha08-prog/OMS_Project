@@ -466,6 +466,29 @@ export async function insertRow(
   return result.data[0];
 }
 
+/**
+ * Insert a row, retrying once without the given optional columns if the first
+ * attempt fails. Lets controllers write columns (e.g. `isOfficial`) that may
+ * not exist yet in the Catalyst schema — the insert still succeeds (minus those
+ * columns) until they're added in the console. Mirror of updateRowTolerant.
+ */
+export async function insertRowTolerant(
+  tableName: string,
+  row: Record<string, any>,
+  optionalColumns: string[] = []
+): Promise<CatalystRow> {
+  try {
+    return await insertRow(tableName, row);
+  } catch (err) {
+    if (optionalColumns.some((k) => k in row)) {
+      const rest = { ...row };
+      for (const k of optionalColumns) delete rest[k];
+      return await insertRow(tableName, rest);
+    }
+    throw err;
+  }
+}
+
 /** Update a row. Pass ROWID + the columns to change. */
 export async function updateRow(
   tableName: string,

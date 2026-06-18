@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { Loader2, Pencil, Clock, History as HistoryIcon } from "lucide-react";
+import {
+  Loader2,
+  Pencil,
+  Clock,
+  History as HistoryIcon,
+  CheckCircle2,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +68,9 @@ export default function AllTasks() {
   const [audit, setAudit] = useState<TaskProgressHistory[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
 
+  // Inline quick-status update (no dialog). Records an audit entry via editShared.
+  const [busyId, setBusyId] = useState<string | null>(null);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -117,6 +126,24 @@ export default function AllTasks() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  // One-click status change straight from the row (e.g. Assigned → In Progress
+  // / On Hold / Completed). Each change is logged in the audit timeline.
+  const quickStatus = async (task: TaskAssignment, status: TaskStatus) => {
+    if (status === task.status) return;
+    setBusyId(task.id);
+    try {
+      await taskApi.editShared(task.id, { status });
+      await load();
+    } catch (err: unknown) {
+      alert(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to update status."
+      );
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -271,10 +298,45 @@ export default function AllTasks() {
                               {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}
                             </td>
                             <td className="py-2">
-                              <Button size="sm" variant="outline" onClick={() => openEdit(t)}>
-                                <Pencil className="h-3.5 w-3.5 mr-1" />
-                                Edit
-                              </Button>
+                              <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                                <select
+                                  className={selectCls}
+                                  value={t.status ?? "ASSIGNED"}
+                                  disabled={busyId === t.id}
+                                  onChange={(e) =>
+                                    quickStatus(t, e.target.value as TaskStatus)
+                                  }
+                                  title="Change status"
+                                >
+                                  {STATUS_OPTIONS.map((s) => (
+                                    <option key={s} value={s}>
+                                      {s.replace("_", " ")}
+                                    </option>
+                                  ))}
+                                </select>
+                                {t.status !== "COMPLETED" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={busyId === t.id}
+                                    onClick={() => quickStatus(t, "COMPLETED")}
+                                    className="border-green-300 bg-green-50 text-green-800 hover:bg-green-100 hover:text-green-900"
+                                  >
+                                    {busyId === t.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <>
+                                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                        Complete
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
+                                <Button size="sm" variant="outline" onClick={() => openEdit(t)}>
+                                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                                  Edit
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         ))}

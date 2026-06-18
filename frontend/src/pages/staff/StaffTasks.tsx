@@ -459,6 +459,11 @@ export default function StaffTasks() {
                               {getStatusBadge(task.status)}
                               {getPriorityBadge(task.priority)}
                               <Badge variant="outline">{task.taskType}</Badge>
+                              {task.source === 'OFFICE' && (
+                                <Badge className="bg-indigo-600 text-white hover:bg-indigo-600">
+                                  Office
+                                </Badge>
+                              )}
                               {task.coAssignees && task.coAssignees.length > 0 && (
                                 <Badge
                                   variant="outline"
@@ -541,9 +546,14 @@ export default function StaffTasks() {
                           )}
                         </div>
 
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2 items-end">
                           {/*
-                            Action buttons by status:
+                            Office grievances are admin-managed: staff can SEE them
+                            here (and their progress) but cannot edit — so no action
+                            buttons, just a read-only note. The backend also blocks
+                            staff edits to office tasks.
+
+                            For non-office tasks, action buttons by status:
                             - ASSIGNED  -> Start Task (Update Progress is intentionally
                               hidden until the task is actually started, so progress
                               entries always belong to a started task).
@@ -553,7 +563,20 @@ export default function StaffTasks() {
                               assigned the task.
                             - COMPLETED -> no further action available.
                           */}
-                          {task.status === 'ASSIGNED' ? (
+                          {task.source === 'OFFICE' ? (
+                            <div className="text-right max-w-[150px]">
+                              <Badge
+                                variant="outline"
+                                className="border-indigo-200 bg-indigo-50 text-indigo-700"
+                              >
+                                Admin-managed
+                              </Badge>
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                Office grievance — view only. An admin tracks &amp;
+                                updates this.
+                              </p>
+                            </div>
+                          ) : task.status === 'ASSIGNED' ? (
                             <Button
                               size="sm"
                               disabled={updating}

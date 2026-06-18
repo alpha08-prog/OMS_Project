@@ -314,9 +314,15 @@ export default function StaffHistory() {
     fetchSubmissions();
   }, [fetchSubmissions]);
 
-  // Only grievances and tours are editable (same as elsewhere in the app).
-  const isEditable = (item: SubmissionItem) =>
-    item.type === "GRIEVANCE" || item.type === "TOUR_PROGRAM";
+  // Tours are editable; grievances are editable only when PUBLIC. Office
+  // grievances are admin-managed (Office Tasks page) — staff cannot edit them.
+  const isEditable = (item: SubmissionItem) => {
+    if (item.type === "TOUR_PROGRAM") return true;
+    if (item.type === "GRIEVANCE") {
+      return (item.details as Grievance).source !== "OFFICE";
+    }
+    return false;
+  };
 
   const openEdit = (item: SubmissionItem) => {
     setEditError(null);

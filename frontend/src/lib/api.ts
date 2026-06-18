@@ -148,6 +148,8 @@ export type Visitor = {
   referencedBy?: string
   constituency?: string
   wardVillage?: string
+  // True when logged as a serving official — marks their birthday accordingly.
+  isOfficial?: boolean
   visitDate: string
   createdAt: string
   createdBy: { id: string; name: string; email: string }
@@ -162,6 +164,9 @@ export type CreateVisitorRequest = {
   referencedBy?: string
   constituency?: string
   wardVillage?: string
+  // When true, the person is marked as an official (vs a normal visitor) and
+  // their birthday is flagged "Official" in View Birthdays + the dashboard.
+  isOfficial?: boolean
 }
 
 // News Types
@@ -316,6 +321,8 @@ export type Birthday = {
   designation?: string
   constituency?: string
   wardVillage?: string
+  // True when this person is a serving official — shows an "Official" badge.
+  isOfficial?: boolean
   createdAt: string
   createdBy?: { id: string; name: string; email: string }
   // Where this DOB came from (BIRTHDAY entry, VISITOR log, or TRAIN passenger)

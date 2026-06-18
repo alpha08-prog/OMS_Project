@@ -11,7 +11,7 @@
  */
 import { Response } from 'express';
 import {
-  insertRow,
+  insertRowTolerant,
   listAllRows,
   getRow,
   updateRowTolerant,
@@ -36,6 +36,17 @@ import type { AuthenticatedRequest, VisitorFilters } from '../types';
 
 const VISITOR_TABLE = 'Visitor';
 
+/**
+ * Catalyst returns boolean columns as the strings "true"/"false" rather than
+ * actual booleans. Coerce to a real boolean.
+ */
+function parseBool(v: unknown): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') return v.toLowerCase() === 'true';
+  if (typeof v === 'number') return v !== 0;
+  return Boolean(v);
+}
+
 /** Reshape a Catalyst row into the JSON shape the frontend expects. */
 function shapeVisitor(
   row: CatalystRow,
@@ -52,6 +63,10 @@ function shapeVisitor(
     referencedBy: row.referencedBy,
     constituency: row.constituency ?? null,
     wardVillage: row.wardVillage ?? null,
+    // Whether this person is a serving official — drives the "Official" mark on
+    // their birthday (View Birthdays + dashboard). Defaults false for legacy
+    // rows / before the Catalyst column exists.
+    isOfficial: parseBool(row.isOfficial),
     visitDate: row.visitDate,
     createdById: row.createdById ?? null,
     createdAt: row.CREATEDTIME,
@@ -113,7 +128,7 @@ export async function createVisitor(
       return;
     }
 
-    const { name, designation, phone, dob, purpose, referencedBy, visitDate, constituency, wardVillage } = req.body;
+    const { name, designation, phone, dob, purpose, referencedBy, visitDate, constituency, wardVillage, isOfficial } = req.body;
 
     const payload: Record<string, unknown> = {
       name,
@@ -122,13 +137,18 @@ export async function createVisitor(
       dob: toCatalystDate(dob),
       purpose,
       referencedBy,
+      // Serving-official flag. Stored as a real boolean; the tolerant insert
+      // below drops it if the Catalyst column hasn't been added yet.
+      isOfficial: Boolean(isOfficial),
       visitDate: toCatalystDate(visitDate) || nowCatalystIST(),
       createdById: req.user.id,
     };
     if (constituency) payload.constituency = constituency;
     if (wardVillage) payload.wardVillage = wardVillage;
 
-    const row = await insertRow(VISITOR_TABLE, payload);
+    // insertRowTolerant retries without `isOfficial` if Catalyst rejects the
+    // write (column missing) so logging a visitor never fails on the new flag.
+    const row = await insertRowTolerant(VISITOR_TABLE, payload, ['isOfficial']);
 
     const [shaped] = await attachCreators([row]);
     sendSuccess(res, shaped, 'Visitor logged successfully', 201);
@@ -290,7 +310,7 @@ export async function updateVisitor(
 ): Promise<void> {
   try {
     const { id } = req.params;
-    const { name, designation, phone, dob, purpose, referencedBy, visitDate, constituency, wardVillage } = req.body;
+    const { name, designation, phone, dob, purpose, referencedBy, visitDate, constituency, wardVillage, isOfficial } = req.body;
 
     const updateData: Record<string, unknown> = { ROWID: id };
     if (name !== undefined) updateData.name = name;
@@ -302,6 +322,7 @@ export async function updateVisitor(
     if (visitDate !== undefined) updateData.visitDate = toCatalystDate(visitDate);
     if (constituency !== undefined) updateData.constituency = constituency;
     if (wardVillage !== undefined) updateData.wardVillage = wardVillage;
+    if (isOfficial !== undefined) updateData.isOfficial = Boolean(isOfficial);
 
     // Edit audit — stamp who edited and when. Never let the client override it.
     if (req.user) {
@@ -310,10 +331,11 @@ export async function updateVisitor(
     }
 
     // updateRowTolerant tolerates a Catalyst schema that doesn't have the audit
-    // columns yet — it retries without them if Catalyst rejects the write.
+    // / isOfficial columns yet — it retries without them if Catalyst rejects.
     const updated = await updateRowTolerant(VISITOR_TABLE, updateData as any, [
       'lastEditedById',
       'lastEditedAt',
+      'isOfficial',
     ]);
     const [shaped] = await attachCreators([updated]);
     sendSuccess(res, shaped, 'Visitor updated successfully');

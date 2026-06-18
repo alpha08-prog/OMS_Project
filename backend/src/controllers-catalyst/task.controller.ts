@@ -334,20 +334,54 @@ async function recentHistoryByTaskId(
  * the underlying grievance/tour creation.
  */
 /**
- * Insert a Task row, tolerating a Catalyst schema that predates the `source`
- * column: if the first insert fails, retry once without `source`. Keeps the
- * existing task flow working until the `source` column is added in the console.
+ * Insert a Task row, tolerating a Catalyst schema that's missing one of the
+ * newer optional columns. A missing column makes the whole insert fail, which
+ * (for auto-created self-tasks) would silently drop the task and it would never
+ * appear in My Tasks. So we degrade gracefully:
+ *   1. Try the full row.
+ *   2. Retry without the newer optional columns (`source`, `groupId`).
+ *   3. Last resort: insert only the long-standing core columns.
+ * The core columns have always existed, so step 3 effectively guarantees the
+ * task is created.
  */
 async function insertTaskRow(row: Record<string, any>): Promise<CatalystRow> {
   try {
     return await insertRow(TASK_TABLE, row);
   } catch (err) {
-    if ('source' in row) {
-      const { source: _source, ...rest } = row;
-      void _source;
-      return await insertRow(TASK_TABLE, rest);
+    // Step 2 — drop the newer optional columns that may not exist yet.
+    if ('source' in row || 'groupId' in row) {
+      const rest = { ...row };
+      delete rest.source;
+      delete rest.groupId;
+      try {
+        return await insertRow(TASK_TABLE, rest);
+      } catch {
+        /* fall through to the minimal-core retry */
+      }
     }
-    throw err;
+    // Step 3 — minimal core column set the Task table has always had.
+    const CORE = [
+      'title',
+      'description',
+      'taskType',
+      'status',
+      'priorities',
+      'referenceId',
+      'referenceType',
+      'assignedToId',
+      'assignedById',
+      'progressNotes',
+      'progressPercent',
+      'dueDate',
+      'startedAt',
+      'completedAt',
+    ];
+    const minimal: Record<string, any> = {};
+    for (const k of CORE) if (k in row) minimal[k] = row[k];
+    // If we never actually stripped anything (the failure wasn't a missing
+    // optional column), rethrow the original error rather than masking it.
+    if (Object.keys(minimal).length === Object.keys(row).length) throw err;
+    return await insertRow(TASK_TABLE, minimal);
   }
 }
 
@@ -362,16 +396,17 @@ export async function autoCreateSelfTask(params: {
   source?: string;
 }): Promise<void> {
   try {
-    // OFFICE-sourced work uses the admin-assignment flow: the task is created
-    // UNASSIGNED and an admin assigns it to a staff member (PATCH /tasks/:id/assign),
-    // after which it appears in that staff member's My Tasks. It is NOT
-    // self-assigned and is hidden from the shared "All Tasks" board for staff.
+    // The task is ALWAYS self-assigned to its creator (the person who entered
+    // it) — there is no separate assignment step. OFFICE-sourced work differs
+    // only by `source`: it surfaces on the admin Office Tasks page, is hidden
+    // from the shared "All Tasks" board + staff My Tasks, and may be edited by
+    // admins only (enforced in editTaskShared / updateTaskProgress).
     const isOffice = String(params.source ?? 'PUBLIC').toUpperCase() === 'OFFICE';
     await insertTaskRow({
       title: params.title,
       description: params.description ?? null,
       taskType: VALID_TASK_TYPES.has(params.taskType) ? params.taskType : 'GENERAL',
-      status: isOffice ? 'UNASSIGNED' : 'ASSIGNED',
+      status: 'ASSIGNED',
       priorities: params.priority || 'NORMAL',
       referenceId: params.referenceId,
       referenceType: params.referenceType,
@@ -381,9 +416,8 @@ export async function autoCreateSelfTask(params: {
       dueDate: null,
       startedAt: null,
       completedAt: null,
-      // PUBLIC: self-assigned (creator is assignee + assigner). OFFICE: left
-      // unassigned for an admin to assign.
-      assignedToId: isOffice ? null : params.userId,
+      // Self-assigned: the creator is both assignee and assigner.
+      assignedToId: params.userId,
       assignedById: params.userId,
       groupId: null,
     });
@@ -812,11 +846,71 @@ export async function getTasks(
     const { page, limit, skip } = parsePagination(
       req.query as { page?: string; limit?: string }
     );
-    const { status, taskType, assignedToId, priority, startDate, endDate } =
+    const { status, taskType, assignedToId, priority, startDate, endDate, source } =
       req.query as Record<string, string>;
 
     let pageRows: CatalystRow[];
     let total: number;
+
+    // ── Source filter (e.g. the Office Tasks page) ──────────────────────────
+    // A task counts as OFFICE if its own row says so OR it's linked to an OFFICE
+    // grievance. The grievance check makes this robust even before the
+    // Task.source column exists (Grievance.source is authoritative — office
+    // grievances can't be created without it). Runs over the full table so no
+    // office task is ever missed behind pagination.
+    if (source) {
+      const wantOffice = source.toUpperCase() === 'OFFICE';
+      let rows = await listAllRows(TASK_TABLE);
+
+      const officeGrievanceIds = new Set<string>();
+      try {
+        const grievances = await listAllRows('Grievance');
+        for (const g of grievances) {
+          if (String(g.source ?? 'PUBLIC').toUpperCase() === 'OFFICE') {
+            officeGrievanceIds.add(String(g.ROWID));
+          }
+        }
+      } catch {
+        /* Grievance table unreadable — fall back to the row's own source. */
+      }
+
+      const isOfficeTask = (r: CatalystRow) =>
+        String(r.source ?? 'PUBLIC').toUpperCase() === 'OFFICE' ||
+        (r.referenceType === 'GRIEVANCE' &&
+          Boolean(r.referenceId) &&
+          officeGrievanceIds.has(String(r.referenceId)));
+
+      rows = rows.filter((r) => (wantOffice ? isOfficeTask(r) : !isOfficeTask(r)));
+      if (status) rows = rows.filter((r) => r.status === status);
+      if (taskType) rows = rows.filter((r) => r.taskType === taskType);
+      if (assignedToId) rows = rows.filter((r) => String(r.assignedToId) === assignedToId);
+      if (priority) rows = rows.filter((r) => r.priorities === priority);
+      if (startDate) {
+        const start = new Date(startDate).getTime();
+        rows = rows.filter((r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start);
+      }
+      if (endDate) {
+        const end = new Date(endDate).getTime();
+        rows = rows.filter((r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end);
+      }
+      rows.sort(taskListCompare);
+      total = rows.length;
+      const officePageRows = rows.slice(skip, skip + limit);
+
+      const tasks = await attachUsers(officePageRows);
+      const [, historyMap] = await Promise.all([
+        attachGrievanceRefs(tasks),
+        recentHistoryByTaskId(officePageRows.map((r) => String(r.ROWID))),
+      ]);
+      for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
+      // Stamp the resolved source so the client identifies it even when the
+      // Task.source column is absent.
+      if (wantOffice) for (const t of tasks) t.source = 'OFFICE';
+
+      const meta = calculatePaginationMeta(total, page, limit);
+      sendSuccess(res, tasks, 'Tasks retrieved successfully', 200, meta);
+      return;
+    }
 
     if (useZCQL()) {
       const baseQuery = buildTaskZCQL({
@@ -963,6 +1057,15 @@ export async function editTaskShared(
       sendNotFound(res, 'Task not found');
       return;
     }
+    // Office tasks are admin-managed only — staff (even the creator/assignee)
+    // cannot edit them. PUBLIC tasks stay editable by any authenticated user.
+    if (
+      String(existing.source ?? 'PUBLIC').toUpperCase() === 'OFFICE' &&
+      req.user.role === 'STAFF'
+    ) {
+      sendError(res, 'Office tasks can only be edited by an admin', 403);
+      return;
+    }
     if (status && !VALID_TASK_STATUS.has(status)) {
       sendError(res, `Invalid status: ${status}`);
       return;
@@ -1055,6 +1158,9 @@ export async function getMyTasks(
     );
     const { status, startDate, endDate } = req.query as Record<string, string>;
 
+    // My Tasks shows EVERY task assigned to the staff member — including office
+    // grievances they entered (those are read-only in the UI; staff edits are
+    // blocked server-side in updateTaskProgress/editTaskShared).
     let pageRows: CatalystRow[];
     let total: number;
 
@@ -1165,6 +1271,14 @@ export async function updateTaskProgress(
     const existing = await getRow(TASK_TABLE, id);
     if (!existing) {
       sendNotFound(res, 'Task not found');
+      return;
+    }
+    // Office tasks are admin-managed only — staff cannot update their progress.
+    if (
+      String(existing.source ?? 'PUBLIC').toUpperCase() === 'OFFICE' &&
+      req.user.role === 'STAFF'
+    ) {
+      sendError(res, 'Office tasks can only be edited by an admin', 403);
       return;
     }
     if (existing.assignedToId !== req.user.id && req.user.role === 'STAFF') {

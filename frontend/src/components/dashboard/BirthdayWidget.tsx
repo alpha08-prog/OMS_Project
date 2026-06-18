@@ -56,7 +56,14 @@ export function BirthdayWidget() {
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-foreground truncate">{person.name}</p>
+                  <p className="font-medium text-foreground truncate flex items-center gap-1.5">
+                    <span className="truncate">{person.name}</span>
+                    {person.isOfficial && (
+                      <span className="shrink-0 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                        Official
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {person.relation}
                   </p>

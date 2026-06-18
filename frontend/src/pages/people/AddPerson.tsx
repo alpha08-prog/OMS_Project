@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -38,6 +39,10 @@ export default function AddPerson() {
     referencedBy: "",
     purpose: "",
   });
+  // When checked, the person is logged as a serving official — their birthday is
+  // then marked "Official" in View Birthdays + the dashboard. Unchecked = a
+  // normal visitor.
+  const [isOfficial, setIsOfficial] = useState(false);
 
   const change = (field: string, value: string) => {
     setForm((p) => ({ ...p, [field]: value }));
@@ -63,6 +68,7 @@ export default function AddPerson() {
         referencedBy: form.referencedBy || undefined,
         constituency: form.constituency || undefined,
         wardVillage: form.wardVillage.trim() || undefined,
+        isOfficial,
       });
       setSuccess(true);
       setTimeout(() => navigate("/staff/home"), 1500);
@@ -150,6 +156,27 @@ export default function AddPerson() {
                       />
                       <p className="text-xs text-muted-foreground mt-1">
                         Shows up in View Birthdays &amp; the dashboard popup.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Official flag — when checked, the birthday is marked
+                      "Official"; otherwise the person is a normal visitor. */}
+                  <div className="flex items-start gap-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                    <Checkbox
+                      id="isOfficial"
+                      checked={isOfficial}
+                      onCheckedChange={(v) => setIsOfficial(v === true)}
+                      className="mt-0.5"
+                    />
+                    <div className="space-y-0.5">
+                      <Label htmlFor="isOfficial" className="cursor-pointer">
+                        This person is an official
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Tick if they're already a serving official — their
+                        birthday is then marked as "Official". Leave unchecked
+                        for a normal visitor.
                       </p>
                     </div>
                   </div>

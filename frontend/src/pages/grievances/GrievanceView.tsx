@@ -89,6 +89,26 @@ const STATUS_OPTIONS: GrievanceStatus[] = [
 const PRIORITY_OPTIONS: GrievancePriority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
 export default function GrievanceView() {
+  // Current user role — office grievances are admin-managed, so staff get a
+  // read-only view of them (no Edit button). Admin/Super Admin can still edit.
+  const userRole = (() => {
+    const fromStore =
+      sessionStorage.getItem("user_role") || localStorage.getItem("user_role");
+    if (fromStore) return fromStore;
+    const userStr = sessionStorage.getItem("user") || localStorage.getItem("user");
+    if (userStr) {
+      try {
+        return (JSON.parse(userStr) as { role?: string }).role ?? null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  })();
+  // Staff cannot edit OFFICE grievances; everyone can edit PUBLIC ones.
+  const canEdit = (g: Grievance) =>
+    userRole !== "STAFF" || (g.source ?? "PUBLIC") !== "OFFICE";
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [grievances, setGrievances] = useState<Grievance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -626,14 +646,16 @@ export default function GrievanceView() {
                           <Eye className="h-4 w-4 mr-1" />
                           View
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEdit(g)}
-                        >
-                          <Pencil className="h-4 w-4 mr-1" />
-                          Edit
-                        </Button>
+                        {canEdit(g) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEdit(g)}
+                          >
+                            <Pencil className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
+                        )}
                         {g.grievanceType === "TEMPLE_VISIT" && (
                           <Button
                             size="sm"
@@ -821,10 +843,12 @@ export default function GrievanceView() {
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Close
                   </Button>
-                  <Button variant="outline" onClick={() => handleEdit(selectedGrievance)}>
-                    <Pencil className="h-4 w-4 mr-1" />
-                    Edit
-                  </Button>
+                  {canEdit(selectedGrievance) && (
+                    <Button variant="outline" onClick={() => handleEdit(selectedGrievance)}>
+                      <Pencil className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                  )}
                   {selectedGrievance.grievanceType === "TEMPLE_VISIT" && (
                     <Button
                       variant="outline"
