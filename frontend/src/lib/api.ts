@@ -421,6 +421,8 @@ export const API_URL = normalizeApiUrl(
 export const http = axios.create({
   baseURL: API_URL,
   withCredentials: true,
+  // Fail a stalled request after 30s instead of leaving the spinner up forever.
+  timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -1114,7 +1116,7 @@ export const pdfApi = {
 }
 
 // Task API
-export type TaskStatus = 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD'
+export type TaskStatus = 'UNASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD'
 export type TaskType = 'GRIEVANCE' | 'TRAIN_REQUEST' | 'TOUR_PROGRAM' | 'GENERAL'
 
 // Other staff working on the same multi-assigned task. Empty array for
@@ -1131,6 +1133,8 @@ export type TaskAssignment = {
   title: string
   description?: string
   taskType: TaskType
+  // PUBLIC = shared board; OFFICE = admin-assignment flow, hidden from staff board.
+  source?: 'PUBLIC' | 'OFFICE'
   status: TaskStatus
   priority: string
   referenceId?: string
@@ -1230,6 +1234,19 @@ export const taskApi = {
     return res.data.data
   },
 
+  // Admin assigns an EXISTING (unassigned) task to a staff member — the office
+  // flow. The task then appears in that staff member's My Tasks.
+  assign: async (id: string, assignedToId: string) => {
+    const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/assign`, { assignedToId })
+    return res.data.data
+  },
+
+  // Active staff members, for the assignment dropdown.
+  getStaff: async (): Promise<{ id: string; name: string; email: string }[]> => {
+    const res = await http.get<ApiResponse<{ id: string; name: string; email: string }[]>>('/tasks/staff')
+    return res.data.data ?? []
+  },
+
   // Admin-only consolidated view: tasks with the same groupId collapse into
   // one TaskGroup with an assignees[] list (so 1 task assigned to 5 staff
   // shows as 1 card, not 5 rows).
@@ -1309,9 +1326,10 @@ export type CalendarEvent = {
   title: string
   start: string | Date
   end: string | Date
-  type: 'TOUR' | 'CUSTOM'
+  type: 'TOUR' | 'CUSTOM' | 'MEETING'
   organizer?: string
   venue?: string
+  location?: string
   description?: string
   googleSynced: boolean
 }
@@ -1572,6 +1590,113 @@ export const attendanceApi = {
   getAggregate: async (params: { startDate: string; endDate: string }): Promise<AttendanceAggregate> => {
     const res = await http.get<ApiResponse<AttendanceAggregate>>('/attendance/aggregate', { params })
     return res.data.data ?? { startDate: params.startDate, endDate: params.endDate, totalStaff: 0, staff: [] }
+  },
+}
+
+// ===========================================
+// Meetings (admin-only)
+// ===========================================
+
+export type MeetingStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
+
+export interface Meeting {
+  id: string
+  title: string
+  dateTime: string
+  location: string | null
+  attendees: string | null
+  agenda: string | null
+  status: MeetingStatus
+  summary: string | null
+  createdById: string | null
+  createdBy: { id: string; name: string; email: string } | null
+  createdAt: string
+  updatedAt: string
+  lastEditedById: string | null
+  lastEditedBy: { id: string; name: string; email: string } | null
+  lastEditedAt: string | null
+  googleSynced: boolean
+}
+
+export const meetingApi = {
+  create: async (data: {
+    title: string
+    dateTime: string
+    location?: string
+    attendees?: string
+    agenda?: string
+  }): Promise<Meeting> => {
+    const res = await http.post<ApiResponse<Meeting>>('/meetings', data)
+    return res.data.data
+  },
+
+  // Returns all meetings (upcoming + past), newest first. `scope` narrows to
+  // one side of "now"; omit it to get the full list and split client-side.
+  getAll: async (params?: {
+    status?: MeetingStatus
+    scope?: 'upcoming' | 'past'
+    page?: string
+    limit?: string
+  }): Promise<Meeting[]> => {
+    const res = await http.get<ApiResponse<Meeting[]>>('/meetings', { params })
+    return res.data.data ?? []
+  },
+
+  getById: async (id: string): Promise<Meeting> => {
+    const res = await http.get<ApiResponse<Meeting>>(`/meetings/${id}`)
+    return res.data.data
+  },
+
+  update: async (
+    id: string,
+    data: Partial<{
+      title: string
+      dateTime: string
+      location: string | null
+      attendees: string | null
+      agenda: string | null
+      status: MeetingStatus
+      summary: string | null
+    }>
+  ): Promise<Meeting> => {
+    const res = await http.patch<ApiResponse<Meeting>>(`/meetings/${id}`, data)
+    return res.data.data
+  },
+
+  remove: async (id: string): Promise<void> => {
+    await http.delete<ApiResponse<null>>(`/meetings/${id}`)
+  },
+}
+
+// ===========================================
+// Activity Log (admin) — global who-did-what-when feed
+// ===========================================
+
+export type ActivityAction = 'CREATED' | 'EDITED'
+
+export interface ActivityEvent {
+  entity: string
+  entityId: string
+  label: string
+  action: ActivityAction
+  at: string | null
+  byId: string | null
+  by: string | null
+}
+
+export const activityApi = {
+  getAll: async (params?: {
+    entity?: string
+    action?: ActivityAction
+    search?: string
+    page?: string
+    limit?: string
+  }): Promise<{ rows: ActivityEvent[]; total: number }> => {
+    const res = await http.get<ApiResponse<ActivityEvent[]>>('/activity', { params })
+    return {
+      rows: res.data.data ?? [],
+      total: res.data.meta?.total ?? (res.data.data?.length ?? 0),
+    }
   },
 }
 

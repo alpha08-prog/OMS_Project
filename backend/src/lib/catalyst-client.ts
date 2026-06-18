@@ -10,6 +10,7 @@
  * token is cached in-process and re-fetched ~1 minute before expiry.
  */
 import https from 'https';
+import { recordCatalystCall } from './request-metrics';
 
 interface AccessTokenCache {
   token: string;
@@ -25,8 +26,11 @@ let tokenCache: AccessTokenCache | null = null;
 const keepAliveAgent = new https.Agent({
   keepAlive: true,
   keepAliveMsecs: 30_000,
-  maxSockets: 50,
-  maxFreeSockets: 10,
+  // Raised for concurrency: ~25 simultaneous users, and each request now fans
+  // out into several PARALLEL Catalyst calls (was serial). 50 sockets would
+  // queue under that burst; 128 lets the parallel fan-out run without blocking.
+  maxSockets: 128,
+  maxFreeSockets: 20,
 });
 
 function env(key: string, fallback?: string): string {
@@ -122,6 +126,50 @@ async function getAccessToken(): Promise<string> {
   return tokenCache.token;
 }
 
+/**
+ * Diagnostic snapshot of how this process is configured to reach Catalyst.
+ * Secrets-safe (never returns the client secret / refresh token). Logged once
+ * at boot so prod logs reveal the repo-unknowable facts: which Catalyst
+ * environment the request header targets, and whether it was set explicitly or
+ * silently defaulted to 'Development'.
+ */
+export function catalystRuntimeInfo(): {
+  environment: string;
+  environmentExplicit: boolean;
+  apiHost: string;
+  accountsHost: string;
+  projectId: string;
+  oauthConfigured: boolean;
+} {
+  const safe = (fn: () => string): string => {
+    try {
+      return fn();
+    } catch {
+      return '<unset>';
+    }
+  };
+  let oauthConfigured = true;
+  try {
+    envEither('OMS_CATALYST_CLIENT_ID', 'CATALYST_CLIENT_ID');
+    envEither('OMS_CATALYST_CLIENT_SECRET', 'CATALYST_CLIENT_SECRET');
+    envEither('OMS_CATALYST_REFRESH_TOKEN', 'CATALYST_REFRESH_TOKEN');
+  } catch {
+    oauthConfigured = false;
+  }
+  return {
+    environment: safe(() =>
+      envEither('OMS_CATALYST_ENVIRONMENT', 'CATALYST_ENVIRONMENT', 'Development')
+    ),
+    environmentExplicit: Boolean(
+      process.env.OMS_CATALYST_ENVIRONMENT?.trim() || process.env.CATALYST_ENVIRONMENT?.trim()
+    ),
+    apiHost: safe(apiHost),
+    accountsHost: safe(accountsHost),
+    projectId: safe(projectId),
+    oauthConfigured,
+  };
+}
+
 interface RequestOptions {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   path: string;
@@ -130,7 +178,10 @@ interface RequestOptions {
 }
 
 async function apiCall<T = any>(opts: RequestOptions): Promise<T> {
+  // Diagnostic: did this call have to mint a fresh OAuth token (cold token cache)?
+  const tokenWasCached = !!(tokenCache && tokenCache.expiresAt > Date.now());
   const token = await getAccessToken();
+  const tokenFetched = !tokenWasCached;
 
   let path = `/baas/v1/project/${projectId()}${opts.path}`;
   if (opts.query) {
@@ -157,6 +208,15 @@ async function apiCall<T = any>(opts: RequestOptions): Promise<T> {
     headers['Content-Length'] = String(Buffer.byteLength(bodyString));
   }
 
+  // Diagnostic timing: record this round-trip's wall time against the current
+  // request so the per-request perf log can sum Catalyst calls. The OAuth grant
+  // (if any) happened above and is reflected by `tokenFetched`, not in `ms`.
+  const startNs = process.hrtime.bigint();
+  const recordTiming = (): void => {
+    const ms = Number(process.hrtime.bigint() - startNs) / 1e6;
+    recordCatalystCall({ method: opts.method, path: opts.path, ms, tokenFetched });
+  };
+
   return new Promise<T>((resolve, reject) => {
     const req = https.request(
       {
@@ -170,6 +230,7 @@ async function apiCall<T = any>(opts: RequestOptions): Promise<T> {
         let raw = '';
         res.on('data', (c) => (raw += c.toString()));
         res.on('end', () => {
+          recordTiming();
           if (res.statusCode && res.statusCode >= 400) {
             reject(
               Object.assign(new Error(`Catalyst ${res.statusCode}: ${raw.substring(0, 300)}`), {
@@ -187,7 +248,10 @@ async function apiCall<T = any>(opts: RequestOptions): Promise<T> {
         });
       }
     );
-    req.on('error', reject);
+    req.on('error', (err) => {
+      recordTiming();
+      reject(err);
+    });
     if (bodyString) req.write(bodyString);
     req.end();
   });
@@ -419,6 +483,29 @@ export async function updateRow(
   const fresh = await getRow(tableName, row.ROWID);
   if (!fresh) throw new Error(`Row ${row.ROWID} not found after update`);
   return fresh;
+}
+
+/**
+ * Update a row, retrying once without the given optional columns if the first
+ * attempt fails. Lets controllers stamp audit columns (lastEditedById /
+ * lastEditedAt) that may not exist yet in the Catalyst schema — the update
+ * still succeeds (minus the audit stamp) until those columns are added.
+ */
+export async function updateRowTolerant(
+  tableName: string,
+  row: { ROWID: string | number; [column: string]: any },
+  optionalColumns: string[] = []
+): Promise<CatalystRow> {
+  try {
+    return await updateRow(tableName, row);
+  } catch (err) {
+    if (optionalColumns.some((k) => k in row)) {
+      const rest = { ...row };
+      for (const k of optionalColumns) delete rest[k];
+      return await updateRow(tableName, rest);
+    }
+    throw err;
+  }
 }
 
 /** Delete a row by ROWID. */

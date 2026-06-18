@@ -5,6 +5,9 @@ import dotenv from 'dotenv';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import config, { isWildcardAllowed } from './config';
+import { withRequestMetrics } from './lib/request-metrics';
+import { catalystRuntimeInfo } from './lib/catalyst-client';
+import { useZCQL } from './config/feature-flags';
 
 // Load environment variables
 dotenv.config();
@@ -68,6 +71,36 @@ if (config.nodeEnv === 'development') {
     next();
   });
 }
+
+// ── DIAGNOSTIC: per-request performance log (remove once latency is resolved) ──
+// One line per request: total wall time, how many Catalyst round-trips it made
+// and their summed time, whether a fresh OAuth token was minted, whether this
+// was the FIRST request since boot (cold-start sentinel), and process uptime.
+// This single line distinguishes a cold-start tax (first request slow, rest
+// fast) from the every-request serial-round-trip floor (every request slow with
+// catalyst=3-4 calls dominating total). Runs in ALL environments on purpose.
+let firstRequestSeen = false;
+app.use((req, res, next) => {
+  const startNs = process.hrtime.bigint();
+  const cold = !firstRequestSeen;
+  firstRequestSeen = true;
+  withRequestMetrics((metrics) => {
+    res.on('finish', () => {
+      const totalMs = Number(process.hrtime.bigint() - startNs) / 1e6;
+      const calls = metrics.catalystCalls;
+      const catalystMs = calls.reduce((sum, c) => sum + c.ms, 0);
+      const tokenFetched = calls.some((c) => c.tokenFetched);
+      console.log(
+        `[perf] ${req.method} ${req.originalUrl} ` +
+          `total=${totalMs.toFixed(0)}ms ` +
+          `catalyst=${calls.length}calls/${catalystMs.toFixed(0)}ms ` +
+          `tokenFetch=${tokenFetched} cold=${cold} ` +
+          `up=${process.uptime().toFixed(0)}s status=${res.statusCode}`
+      );
+    });
+    next();
+  });
+});
 
 // ===========================================
 // Routes
@@ -157,6 +190,17 @@ app.listen(PORT, () => {
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
   `);
+
+  // ── DIAGNOSTIC: one-shot boot line exposing the repo-unknowable prod facts ──
+  // Confirms which Catalyst datastore environment the header targets (and if it
+  // was silently defaulted), whether ZCQL is on, and the resolved nodeEnv/runtime.
+  const cat = catalystRuntimeInfo();
+  console.log(
+    `[boot] nodeEnv=${config.nodeEnv} catalystRuntime=${config.isCatalystRuntime} ` +
+      `node=${process.version} useZCQL=${useZCQL()} ` +
+      `catalystEnv=${cat.environment}${cat.environmentExplicit ? '' : ' (DEFAULTED!)'} ` +
+      `apiHost=${cat.apiHost} oauthConfigured=${cat.oauthConfigured}`
+  );
 });
 
 export default app;

@@ -19,6 +19,7 @@ import {
   deleteRow,
   toCatalystDate,
   nowCatalystIST,
+  updateRowTolerant,
   executeZCQL,
   zcqlEscapeValue,
   zcqlSafeLimit,
@@ -60,7 +61,8 @@ function shapeTrainRequest(
   row: CatalystRow,
   createdBy?: { id: string; name: string; email: string } | null,
   approvedBy?: { id: string; name: string; email: string } | null,
-  passengers: any[] = []
+  passengers: any[] = [],
+  lastEditedBy?: { id: string; name: string; email: string } | null
 ) {
   return {
     id: String(row.ROWID),
@@ -82,13 +84,17 @@ function shapeTrainRequest(
     approvedAt: row.approvedAt ?? null,
     rejectionReason: row.rejectionReason ?? null,
     signatureData: row.signatureData ?? null,
-    createdById: row.createdById,
+    createdById: row.createdById ?? null,
     approvedById: row.approvedById ?? null,
     createdAt: row.CREATEDTIME,
     updatedAt: row.MODIFIEDTIME,
     createdBy: createdBy ?? null,
     approvedBy: approvedBy ?? null,
     train_passengers: passengers,
+    // Edit audit — who last edited this train request and when (security trail).
+    lastEditedById: row.lastEditedById ?? null,
+    lastEditedAt: row.lastEditedAt ?? null,
+    lastEditedBy: lastEditedBy ?? null,
   };
 }
 
@@ -166,16 +172,21 @@ async function hydrate(rows: CatalystRow[]): Promise<any[]> {
   for (const r of safe) {
     if (r.createdById) userIds.add(String(r.createdById));
     if (r.approvedById) userIds.add(String(r.approvedById));
+    if (r.lastEditedById) userIds.add(String(r.lastEditedById));
   }
-  const users = await lookupUsers(userIds);
-  const passengersMap = await passengersByRequestId(safe.map((r) => String(r.ROWID)));
+  // Independent reads — run in parallel instead of two serial round-trips.
+  const [users, passengersMap] = await Promise.all([
+    lookupUsers(userIds),
+    passengersByRequestId(safe.map((r) => String(r.ROWID))),
+  ]);
 
   return safe.map((r) =>
     shapeTrainRequest(
       r,
       users.get(String(r.createdById)) ?? null,
       r.approvedById ? users.get(String(r.approvedById)) ?? null : null,
-      passengersMap.get(String(r.ROWID)) ?? []
+      passengersMap.get(String(r.ROWID)) ?? [],
+      r.lastEditedById ? users.get(String(r.lastEditedById)) ?? null : null
     )
   );
 }
@@ -635,7 +646,18 @@ export async function updateTrainRequest(
       updateData.status = body.status;
     }
 
-    const updated = await updateRow(TRAIN_TABLE, updateData as any);
+    // Edit audit — stamp who edited and when. Never let the client override it.
+    // Written via updateRowTolerant so it still succeeds on a Catalyst schema
+    // that doesn't have the audit columns yet.
+    if (req.user) {
+      updateData.lastEditedById = req.user.id;
+      updateData.lastEditedAt = nowCatalystIST();
+    }
+
+    const updated = await updateRowTolerant(TRAIN_TABLE, updateData as any, [
+      'lastEditedById',
+      'lastEditedAt',
+    ]);
 
     // If passengers array provided, replace all existing passengers
     // (delete + reinsert). Validation runs synchronously up-front;

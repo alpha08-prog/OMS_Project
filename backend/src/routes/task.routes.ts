@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, param } from 'express-validator';
 import {
   createTask,
+  assignTask,
   getTasks,
   getAllTasks,
   editTaskShared,
@@ -100,6 +101,7 @@ router.patch(
 
 // Admin routes
 router.post('/', adminOnly, validate(createTaskValidation), createTask);
+router.patch('/:id/assign', adminOnly, validate(idParamValidation), assignTask);
 router.get('/tracking', adminOnly, getTaskTracking);
 router.get('/staff', adminOnly, getStaffMembers);
 router.patch(

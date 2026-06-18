@@ -13,9 +13,10 @@ import {
   insertRow,
   listAllRows,
   getRow,
-  updateRow,
+  updateRowTolerant,
   deleteRow,
   toCatalystDate,
+  nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
   CatalystRow,
@@ -40,7 +41,8 @@ const PASSENGER_TABLE = 'TrainPassenger';
  *  editable/deletable. */
 function shapeBirthday(
   row: CatalystRow,
-  createdBy?: { id: string; name: string; email: string } | null
+  createdBy?: { id: string; name: string; email: string } | null,
+  lastEditedBy?: { id: string; name: string; email: string } | null
 ) {
   const source = (row.__source as string) ?? 'BIRTHDAY';
   return {
@@ -55,8 +57,12 @@ function shapeBirthday(
     wardVillage: row.wardVillage ?? null,
     createdAt: row.CREATEDTIME,
     updatedAt: row.MODIFIEDTIME,
-    createdById: row.createdById,
+    createdById: row.createdById ?? null,
     createdBy: createdBy ?? null,
+    // Edit audit — who last edited this entry and when (security trail).
+    lastEditedById: row.lastEditedById ?? null,
+    lastEditedAt: row.lastEditedAt ?? null,
+    lastEditedBy: lastEditedBy ?? null,
     // Where this DOB came from + whether it can be edited/deleted here.
     source,
     canDelete: source === 'BIRTHDAY',
@@ -75,62 +81,56 @@ function shapeBirthday(
 async function collectBirthdaySources(): Promise<CatalystRow[]> {
   const out: CatalystRow[] = [];
 
-  try {
-    const rows = await listAllRows(BIRTHDAY_TABLE);
-    for (const r of rows) {
-      if (!r.dob) continue;
-      out.push({ ...r, __source: 'BIRTHDAY' });
-    }
-  } catch {
-    /* table missing — skip */
+  // Fetch the three DOB sources in parallel — they're independent full-table
+  // reads. Previously these ran as three serial round-trips to Catalyst. Each
+  // falls back to an empty list if its table is missing/unreachable.
+  const [birthdayRows, visitorRows, passengerRows] = await Promise.all([
+    listAllRows(BIRTHDAY_TABLE).catch(() => [] as CatalystRow[]),
+    listAllRows(VISITOR_TABLE).catch(() => [] as CatalystRow[]),
+    listAllRows(PASSENGER_TABLE).catch(() => [] as CatalystRow[]),
+  ]);
+
+  for (const r of birthdayRows) {
+    if (!r.dob) continue;
+    out.push({ ...r, __source: 'BIRTHDAY' });
   }
 
-  try {
-    const rows = await listAllRows(VISITOR_TABLE);
-    for (const r of rows) {
-      if (!r.dob) continue;
-      out.push({
-        ROWID: `visitor-${String(r.ROWID)}`,
-        name: r.name,
-        phone: r.phone ?? null,
-        dob: r.dob,
-        relation: r.designation ? String(r.designation) : 'Visitor',
-        notes: r.purpose ?? null,
-        designation: r.designation ?? null,
-        constituency: r.constituency ?? null,
-        wardVillage: r.wardVillage ?? null,
-        CREATEDTIME: r.CREATEDTIME,
-        MODIFIEDTIME: r.MODIFIEDTIME,
-        createdById: r.createdById ?? null,
-        __source: 'VISITOR',
-      });
-    }
-  } catch {
-    /* table missing — skip */
+  for (const r of visitorRows) {
+    if (!r.dob) continue;
+    out.push({
+      ROWID: `visitor-${String(r.ROWID)}`,
+      name: r.name,
+      phone: r.phone ?? null,
+      dob: r.dob,
+      relation: r.designation ? String(r.designation) : 'Visitor',
+      notes: r.purpose ?? null,
+      designation: r.designation ?? null,
+      constituency: r.constituency ?? null,
+      wardVillage: r.wardVillage ?? null,
+      CREATEDTIME: r.CREATEDTIME,
+      MODIFIEDTIME: r.MODIFIEDTIME,
+      createdById: r.createdById ?? null,
+      __source: 'VISITOR',
+    });
   }
 
-  try {
-    const rows = await listAllRows(PASSENGER_TABLE);
-    for (const r of rows) {
-      if (!r.dob) continue;
-      out.push({
-        ROWID: `train-${String(r.ROWID)}`,
-        name: r.passengerName,
-        phone: null,
-        dob: r.dob,
-        relation: 'Train Passenger',
-        notes: null,
-        designation: null,
-        constituency: null,
-        wardVillage: null,
-        CREATEDTIME: r.CREATEDTIME,
-        MODIFIEDTIME: r.MODIFIEDTIME,
-        createdById: null,
-        __source: 'TRAIN',
-      });
-    }
-  } catch {
-    /* table missing — skip */
+  for (const r of passengerRows) {
+    if (!r.dob) continue;
+    out.push({
+      ROWID: `train-${String(r.ROWID)}`,
+      name: r.passengerName,
+      phone: null,
+      dob: r.dob,
+      relation: 'Train Passenger',
+      notes: null,
+      designation: null,
+      constituency: null,
+      wardVillage: null,
+      CREATEDTIME: r.CREATEDTIME,
+      MODIFIEDTIME: r.MODIFIEDTIME,
+      createdById: null,
+      __source: 'TRAIN',
+    });
   }
 
   return out;
@@ -165,10 +165,17 @@ async function hydrate(rows: CatalystRow[]): Promise<any[]> {
   const safe = rows.filter((r): r is CatalystRow => Boolean(r));
   if (safe.length === 0) return [];
   const ids = new Set<string>();
-  for (const r of safe) if (r.createdById) ids.add(String(r.createdById));
+  for (const r of safe) {
+    if (r.createdById) ids.add(String(r.createdById));
+    if (r.lastEditedById) ids.add(String(r.lastEditedById));
+  }
   const users = await lookupUsers(ids);
   return safe.map((r) =>
-    shapeBirthday(r, users.get(String(r.createdById)) ?? null)
+    shapeBirthday(
+      r,
+      (r.createdById && users.get(String(r.createdById))) || null,
+      (r.lastEditedById && users.get(String(r.lastEditedById))) || null
+    )
   );
 }
 
@@ -404,7 +411,17 @@ export async function updateBirthday(
     if (wardVillage !== undefined)
       updateData.wardVillage = wardVillage?.trim() || null;
 
-    const updated = await updateRow(BIRTHDAY_TABLE, updateData as any);
+    // Edit audit — stamp who edited and when. Never let the client override it.
+    if (req.user) {
+      const _audit = { lastEditedById: req.user.id, lastEditedAt: nowCatalystIST() };
+      Object.assign(updateData, _audit);
+    }
+
+    const updated = await updateRowTolerant(
+      BIRTHDAY_TABLE,
+      updateData as any,
+      ['lastEditedById', 'lastEditedAt']
+    );
     const [shaped] = await hydrate([updated]);
     sendSuccess(res, shaped, 'Birthday entry updated successfully');
   } catch (error) {

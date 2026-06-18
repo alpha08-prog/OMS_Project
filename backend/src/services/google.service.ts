@@ -217,6 +217,74 @@ export async function createCustomGoogleEvent(
   return result.data.id ?? null;
 }
 
+/**
+ * Push a Meeting to the user's primary Google Calendar.
+ *
+ * `dateTime` is the IST wall-clock string ("YYYY-MM-DD HH:mm:ss") as stored in
+ * Catalyst. We attach an explicit Asia/Kolkata timeZone so Google places the
+ * event at the correct hour instead of misreading the wall-clock as UTC
+ * (which would drift it +5.5h). Returns the new Google event id, or null if
+ * the user isn't connected.
+ */
+export async function createMeetingGoogleEvent(
+  userId: string,
+  meeting: {
+    id: string;
+    title: string;
+    dateTime: string;
+    location?: string | null;
+    attendees?: string | null;
+    agenda?: string | null;
+  }
+): Promise<string | null> {
+  const accessToken = await getValidAccessToken(userId);
+  if (!accessToken) return null;
+
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    googleRedirectUri
+  );
+  auth.setCredentials({ access_token: accessToken });
+
+  const calendar = google.calendar({ version: 'v3', auth });
+
+  // Parse the IST wall-clock as a UTC instant purely so we can add the 1-hour
+  // block and reformat. The timeZone field below tells Google these strings are
+  // Asia/Kolkata wall-times, so there's no ±5.5h drift.
+  const base = new Date(`${meeting.dateTime.replace(' ', 'T')}Z`);
+  const endBase = new Date(base.getTime() + 60 * 60 * 1000);
+  const wall = (d: Date) => d.toISOString().slice(0, 19); // YYYY-MM-DDTHH:mm:ss
+
+  const description = [
+    meeting.agenda ? `Agenda: ${meeting.agenda}` : '',
+    meeting.attendees ? `Attendees: ${meeting.attendees}` : '',
+    `OMS Meeting ID: ${meeting.id}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const result = await calendar.events.insert({
+    calendarId: 'primary',
+    requestBody: {
+      summary: `[OMS] ${meeting.title}`,
+      location: meeting.location || undefined,
+      description,
+      start: { dateTime: wall(base), timeZone: 'Asia/Kolkata' },
+      end: { dateTime: wall(endBase), timeZone: 'Asia/Kolkata' },
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'email', minutes: 24 * 60 },
+          { method: 'popup', minutes: 30 },
+        ],
+      },
+    },
+  });
+
+  return result.data.id ?? null;
+}
+
 export async function disconnectCalendar(userId: string): Promise<void> {
   const user = await readAppUser(userId);
   if (!user) return;

@@ -6,7 +6,7 @@ import { enUS } from "date-fns/locale/en-US";
 import jsPDF from "jspdf";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { API_URL, googleCalendarApi, type CalendarEvent } from "@/lib/api";
+import { API_URL, googleCalendarApi, meetingApi, type CalendarEvent, type MeetingStatus } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CalendarCheck, CalendarX, Loader2, MapPin, User, Plus, RefreshCw, Clock, Download, FileText } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from "@/components/ui/sheet";
+import { CalendarCheck, CalendarX, Loader2, MapPin, User, Plus, RefreshCw, Clock, Download, FileText, CalendarClock, CheckCircle2, Trash2 } from "lucide-react";
 
 // ─── date-fns localizer ───────────────────────────────────────────────────────
 const locales = { "en-US": enUS };
@@ -26,8 +34,9 @@ const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales
 
 // ─── event colour coding ──────────────────────────────────────────────────────
 const EVENT_COLORS: Record<string, { backgroundColor: string; color: string; borderColor: string }> = {
-  TOUR:   { backgroundColor: "#f59e0b", color: "#1e1b4b", borderColor: "#d97706" },
-  CUSTOM: { backgroundColor: "#6366f1", color: "#ffffff", borderColor: "#4f46e5" },
+  TOUR:    { backgroundColor: "#f59e0b", color: "#1e1b4b", borderColor: "#d97706" },
+  CUSTOM:  { backgroundColor: "#6366f1", color: "#ffffff", borderColor: "#4f46e5" },
+  MEETING: { backgroundColor: "#0ea5e9", color: "#ffffff", borderColor: "#0284c7" },
 };
 
 function eventStyleGetter(event: CalendarEvent) {
@@ -64,7 +73,15 @@ function downloadEventPdf(event: CalendarEvent) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   doc.setTextColor(99, 102, 241); // indigo-500
-  doc.text(event.type === "TOUR" ? "Tour Program" : "Custom Event", margin, y);
+  doc.text(
+    event.type === "TOUR"
+      ? "Tour Program"
+      : event.type === "MEETING"
+      ? "Meeting"
+      : "Custom Event",
+    margin,
+    y
+  );
   y += 24;
 
   // Divider
@@ -96,6 +113,10 @@ function downloadEventPdf(event: CalendarEvent) {
   if (event.type === "TOUR") {
     if (event.organizer) writeField("Organizer", event.organizer);
     if (event.venue) writeField("Venue", event.venue);
+  }
+
+  if (event.type === "MEETING" && event.location) {
+    writeField("Location", event.location);
   }
 
   if (event.description) writeField("Description", event.description);
@@ -132,9 +153,13 @@ function EventDetailDialog({ event, onClose }: { event: CalendarEvent | null; on
 
             <div className="space-y-3 pt-1">
               <Badge variant="outline" className={
-                event.type === "TOUR" ? "border-amber-400 text-amber-700" : "border-indigo-400 text-indigo-700"
+                event.type === "TOUR"
+                  ? "border-amber-400 text-amber-700"
+                  : event.type === "MEETING"
+                  ? "border-sky-400 text-sky-700"
+                  : "border-indigo-400 text-indigo-700"
               }>
-                {event.type === "TOUR" ? "Tour Program" : "Custom Event"}
+                {event.type === "TOUR" ? "Tour Program" : event.type === "MEETING" ? "Meeting" : "Custom Event"}
               </Badge>
 
               <div className="flex items-start gap-2 text-sm text-gray-700">
@@ -158,6 +183,13 @@ function EventDetailDialog({ event, onClose }: { event: CalendarEvent | null; on
                 <div className="flex items-center gap-2 text-sm text-gray-700">
                   <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
                   <span>{event.venue}</span>
+                </div>
+              )}
+
+              {event.type === "MEETING" && event.location && (
+                <div className="flex items-center gap-2 text-sm text-gray-700">
+                  <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
+                  <span>{event.location}</span>
                 </div>
               )}
 
@@ -211,6 +243,34 @@ export default function AdminCalendar() {
   const [newDescription, setNewDescription] = useState("");
   const [adding, setAdding] = useState(false);
   const [syncing, setSyncing] = useState(false);
+
+  // Schedule-meeting dialog (created straight from the calendar)
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [sched, setSched] = useState({
+    title: "",
+    date: "",
+    time: "10:00",
+    location: "",
+    attendees: "",
+    agenda: "",
+  });
+  const [scheduling, setScheduling] = useState(false);
+
+  // Meeting note-app side sheet (opened by clicking a meeting on the calendar)
+  const [meetingSheetOpen, setMeetingSheetOpen] = useState(false);
+  const [meetingId, setMeetingId] = useState<string | null>(null);
+  const [meetingLoading, setMeetingLoading] = useState(false);
+  const [meetingSaving, setMeetingSaving] = useState(false);
+  const [mForm, setMForm] = useState({
+    title: "",
+    date: "",
+    time: "",
+    location: "",
+    attendees: "",
+    agenda: "",
+    status: "SCHEDULED" as MeetingStatus,
+    summary: "",
+  });
 
   // Show success / error banners from OAuth redirect query params
   useEffect(() => {
@@ -314,6 +374,141 @@ export default function AdminCalendar() {
     }
   };
 
+  // ── Meetings: create / open / save / delete straight from the calendar ──────
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  // Open the schedule dialog prefilled with a date/time (slot click or button).
+  const openScheduleDialog = (when?: Date) => {
+    const d = when ?? new Date();
+    const midnight = d.getHours() === 0 && d.getMinutes() === 0;
+    setSched({
+      title: "",
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      time: midnight ? "10:00" : `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      location: "",
+      attendees: "",
+      agenda: "",
+    });
+    setScheduleOpen(true);
+  };
+
+  // Clicking an empty slot on the calendar schedules a meeting there.
+  const handleSelectSlot = (slot: { start: Date }) => openScheduleDialog(slot.start);
+
+  const handleScheduleMeeting = async () => {
+    if (!sched.title.trim() || !sched.date) {
+      alert("Please enter a title and date.");
+      return;
+    }
+    setScheduling(true);
+    try {
+      await meetingApi.create({
+        title: sched.title.trim(),
+        dateTime: `${sched.date}T${sched.time || "10:00"}:00`,
+        location: sched.location.trim() || undefined,
+        attendees: sched.attendees.trim() || undefined,
+        agenda: sched.agenda.trim() || undefined,
+      });
+      setScheduleOpen(false);
+      loadEvents();
+    } catch {
+      alert("Failed to schedule meeting.");
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  // Route a calendar click: meetings open the editable note sheet; everything
+  // else keeps the existing read-only detail dialog.
+  const handleSelectEvent = (e: CalendarEvent) => {
+    if (e.type === "MEETING") {
+      openMeetingSheet(String(e.id).replace(/^meeting-/, ""));
+    } else {
+      setSelectedEvent(e);
+    }
+  };
+
+  const openMeetingSheet = async (rowId: string) => {
+    setMeetingId(rowId);
+    setMeetingSheetOpen(true);
+    setMeetingLoading(true);
+    try {
+      const m = await meetingApi.getById(rowId);
+      const [datePart, timePart] = String(m.dateTime ?? "").replace(" ", "T").split("T");
+      setMForm({
+        title: m.title ?? "",
+        date: datePart ?? "",
+        time: (timePart ?? "").slice(0, 5),
+        location: m.location ?? "",
+        attendees: m.attendees ?? "",
+        agenda: m.agenda ?? "",
+        status: m.status,
+        summary: m.summary ?? "",
+      });
+    } catch {
+      alert("Failed to load meeting.");
+      setMeetingSheetOpen(false);
+    } finally {
+      setMeetingLoading(false);
+    }
+  };
+
+  const handleSaveMeeting = async () => {
+    if (!meetingId) return;
+    if (!mForm.title.trim() || !mForm.date) {
+      alert("Title and date are required.");
+      return;
+    }
+    setMeetingSaving(true);
+    try {
+      await meetingApi.update(meetingId, {
+        title: mForm.title.trim(),
+        dateTime: `${mForm.date}T${mForm.time || "10:00"}:00`,
+        location: mForm.location.trim() || null,
+        attendees: mForm.attendees.trim() || null,
+        agenda: mForm.agenda.trim() || null,
+        status: mForm.status,
+        summary: mForm.summary.trim() || null,
+      });
+      setMeetingSheetOpen(false);
+      loadEvents();
+    } catch {
+      alert("Failed to save meeting.");
+    } finally {
+      setMeetingSaving(false);
+    }
+  };
+
+  const handleMarkComplete = async () => {
+    if (!meetingId) return;
+    setMeetingSaving(true);
+    try {
+      await meetingApi.update(meetingId, { status: "COMPLETED" });
+      setMForm((f) => ({ ...f, status: "COMPLETED" }));
+      loadEvents();
+    } catch {
+      alert("Failed to update meeting.");
+    } finally {
+      setMeetingSaving(false);
+    }
+  };
+
+  const handleDeleteMeeting = async () => {
+    if (!meetingId) return;
+    if (!window.confirm("Delete this meeting? This cannot be undone.")) return;
+    setMeetingSaving(true);
+    try {
+      await meetingApi.remove(meetingId);
+      setMeetingSheetOpen(false);
+      loadEvents();
+    } catch {
+      alert("Failed to delete meeting.");
+    } finally {
+      setMeetingSaving(false);
+    }
+  };
+
   // ── Normalize events: parse strings → Date, clamp end to same day, ensure minimum 1-hour duration
   const calendarEvents = useMemo(() =>
     events.map((ev) => {
@@ -359,12 +554,17 @@ export default function AdminCalendar() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold text-indigo-900">Calendar</h1>
-            <p className="text-sm text-gray-500">Accepted tour programs & your custom events</p>
+            <p className="text-sm text-gray-500">Meetings, accepted tour programs &amp; custom events — click any empty slot to schedule a meeting</p>
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Schedule Meeting button */}
+            <Button size="sm" onClick={() => openScheduleDialog()} className="bg-sky-600 hover:bg-sky-700 text-white">
+              <CalendarClock className="h-3.5 w-3.5 mr-1.5" /> Schedule Meeting
+            </Button>
+
             {/* Add Event button */}
-            <Button size="sm" onClick={() => setAddDialogOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+            <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
               <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Event
             </Button>
 
@@ -409,6 +609,9 @@ export default function AdminCalendar() {
         {/* Legend */}
         <div className="flex items-center gap-4 text-xs text-gray-500">
           <span className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-3 rounded-sm bg-sky-500" /> Meetings
+          </span>
+          <span className="flex items-center gap-1.5">
             <span className="inline-block w-3 h-3 rounded-sm bg-amber-400" /> Tour Programs
           </span>
           <span className="flex items-center gap-1.5">
@@ -430,12 +633,19 @@ export default function AdminCalendar() {
             startAccessor="start"
             endAccessor="end"
             titleAccessor="title"
+            tooltipAccessor={(e: CalendarEvent) =>
+              e.type === "MEETING"
+                ? `${e.title}${e.description ? " — " + e.description : ""} (click to add notes)`
+                : e.title
+            }
+            selectable
+            onSelectSlot={handleSelectSlot}
             view={view}
             onView={setView}
             date={date}
             onNavigate={setDate}
             eventPropGetter={eventStyleGetter}
-            onSelectEvent={(e: CalendarEvent) => setSelectedEvent(e)}
+            onSelectEvent={handleSelectEvent}
             scrollToTime={scrollToTime}
             style={{ height: "100%", padding: "12px" }}
             popup
@@ -482,6 +692,141 @@ export default function AdminCalendar() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Schedule Meeting Dialog (from a calendar slot or the header button) */}
+      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule Meeting</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label>Title *</Label>
+              <Input value={sched.title} onChange={(e) => setSched({ ...sched, title: e.target.value })} placeholder="e.g. Review with department heads" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Date *</Label>
+                <Input type="date" value={sched.date} onChange={(e) => setSched({ ...sched, date: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Time</Label>
+                <Input type="time" value={sched.time} onChange={(e) => setSched({ ...sched, time: e.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input value={sched.location} onChange={(e) => setSched({ ...sched, location: e.target.value })} placeholder="e.g. Conference room" />
+            </div>
+            <div className="space-y-2">
+              <Label>Attendees</Label>
+              <Input value={sched.attendees} onChange={(e) => setSched({ ...sched, attendees: e.target.value })} placeholder="Comma-separated names" />
+            </div>
+            <div className="space-y-2">
+              <Label>Agenda</Label>
+              <Textarea value={sched.agenda} onChange={(e) => setSched({ ...sched, agenda: e.target.value })} rows={2} placeholder="Purpose / agenda" />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setScheduleOpen(false)}>Cancel</Button>
+              <Button onClick={handleScheduleMeeting} disabled={scheduling} className="bg-sky-600 hover:bg-sky-700 text-white">
+                {scheduling ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CalendarClock className="h-4 w-4 mr-1" />}
+                Schedule
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Meeting note-app side sheet — click a meeting on the calendar */}
+      <Sheet open={meetingSheetOpen} onOpenChange={setMeetingSheetOpen}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto flex flex-col">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <CalendarClock className="h-5 w-5 text-sky-600" /> Meeting
+            </SheetTitle>
+            <SheetDescription>Edit the details and write the summary / remarks.</SheetDescription>
+          </SheetHeader>
+
+          {meetingLoading ? (
+            <div className="flex flex-1 items-center justify-center gap-2 text-muted-foreground py-12">
+              <Loader2 className="h-5 w-5 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <div className="flex-1 space-y-4 py-4">
+              <div className="space-y-1.5">
+                <Label>Title</Label>
+                <Input value={mForm.title} onChange={(e) => setMForm({ ...mForm, title: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Date</Label>
+                  <Input type="date" value={mForm.date} onChange={(e) => setMForm({ ...mForm, date: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Time</Label>
+                  <Input type="time" value={mForm.time} onChange={(e) => setMForm({ ...mForm, time: e.target.value })} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Location</Label>
+                <Input value={mForm.location} onChange={(e) => setMForm({ ...mForm, location: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Attendees</Label>
+                <Input value={mForm.attendees} onChange={(e) => setMForm({ ...mForm, attendees: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Agenda</Label>
+                <Textarea value={mForm.agenda} onChange={(e) => setMForm({ ...mForm, agenda: e.target.value })} rows={2} />
+              </div>
+
+              {/* The "note app" — summary / remarks */}
+              <div className="space-y-1.5">
+                <Label className="text-sky-800 font-semibold flex items-center gap-1.5">
+                  <FileText className="h-4 w-4" /> Notes / Summary
+                </Label>
+                <Textarea
+                  value={mForm.summary}
+                  onChange={(e) => setMForm({ ...mForm, summary: e.target.value })}
+                  rows={8}
+                  placeholder="Write what was discussed / decided…"
+                  className="resize-y"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <Label className="shrink-0">Status</Label>
+                <select
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={mForm.status}
+                  onChange={(e) => setMForm({ ...mForm, status: e.target.value as MeetingStatus })}
+                >
+                  <option value="SCHEDULED">Scheduled</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+                {mForm.status !== "COMPLETED" && (
+                  <Button size="sm" variant="outline" onClick={handleMarkComplete} disabled={meetingSaving} className="text-emerald-700 border-emerald-300 hover:bg-emerald-50">
+                    <CheckCircle2 className="h-4 w-4 mr-1" /> Mark complete
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <SheetFooter className="flex-row items-center justify-between gap-2 sm:justify-between border-t pt-4">
+            <Button variant="outline" onClick={handleDeleteMeeting} disabled={meetingSaving || meetingLoading} className="text-rose-700 border-rose-200 hover:bg-rose-50">
+              <Trash2 className="h-4 w-4 mr-1" /> Delete
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setMeetingSheetOpen(false)} disabled={meetingSaving}>Close</Button>
+              <Button onClick={handleSaveMeeting} disabled={meetingSaving || meetingLoading} className="bg-sky-600 hover:bg-sky-700 text-white">
+                {meetingSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null} Save
+              </Button>
+            </div>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

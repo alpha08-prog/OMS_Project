@@ -21,6 +21,9 @@ import {
   UserCircle,
   UserPlus,
   UserCheck,
+  CalendarClock,
+  Briefcase,
+  Activity,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -75,10 +78,12 @@ const allMenuItems: MenuItem[] = [
   // surface on the shared "All Tasks" board, so the Action Center and
   // "Verify Grievances" queue are retired (routes/pages kept for rollback).
   { icon: TrendingUp, label: "Task Tracker", route: "/admin/task-tracker", roles: ['ADMIN'] },
+  { icon: Briefcase, label: "Office Tasks", route: "/admin/office-tasks", roles: ['ADMIN'] },
   { icon: Train, label: "Train EQ Queue", route: "/train-eq/queue", roles: ['ADMIN'] },
   { icon: ClipboardList, label: "Tour Invitations", route: "/tour-program/pending", roles: ['ADMIN'] },
   { icon: Star, label: "Events", route: "/admin/events", roles: ['ADMIN'] },
   { icon: Calendar, label: "Calendar", route: "/admin/calendar", roles: ['ADMIN'] },
+  { icon: CalendarClock, label: "Meetings", route: "/admin/meetings", roles: ['ADMIN'] },
   { icon: Users, label: "View Visitors", route: "/admin/visitors", roles: ["ADMIN"] },
   { icon: UserCheck, label: "Staff Attendance", route: "/admin/attendance", roles: ['ADMIN', 'SUPER_ADMIN'] },
   {
@@ -97,6 +102,7 @@ const allMenuItems: MenuItem[] = [
   { icon: Printer, label: "Print Center", route: "/admin/print-center", roles: ['ADMIN'] },
   { icon: Printer, label: "Print Center", route: "/staff/print-center", roles: ['STAFF'] },
   { icon: History, label: "Action History", route: "/admin/history", roles: ['ADMIN'] },
+  { icon: Activity, label: "Activity Log", route: "/admin/activity", roles: ['ADMIN', 'SUPER_ADMIN'] },
   { icon: Gift, label: "View Birthdays", route: "/admin/birthdays", roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
 
   // Super Admin — these don't navigate to separate pages. They stay on

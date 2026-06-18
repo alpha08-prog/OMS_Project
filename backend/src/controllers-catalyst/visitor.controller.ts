@@ -14,7 +14,7 @@ import {
   insertRow,
   listAllRows,
   getRow,
-  updateRow,
+  updateRowTolerant,
   deleteRow,
   toCatalystDate,
   nowCatalystIST,
@@ -39,7 +39,8 @@ const VISITOR_TABLE = 'Visitor';
 /** Reshape a Catalyst row into the JSON shape the frontend expects. */
 function shapeVisitor(
   row: CatalystRow,
-  creator?: { id: string; name: string; email: string } | null
+  creator?: { id: string; name: string; email: string } | null,
+  lastEditedBy?: { id: string; name: string; email: string } | null
 ) {
   return {
     id: String(row.ROWID),
@@ -52,35 +53,51 @@ function shapeVisitor(
     constituency: row.constituency ?? null,
     wardVillage: row.wardVillage ?? null,
     visitDate: row.visitDate,
-    createdById: row.createdById,
+    createdById: row.createdById ?? null,
     createdAt: row.CREATEDTIME,
     updatedAt: row.MODIFIEDTIME,
     createdBy: creator ?? null,
+    // Edit audit — who last edited this visitor and when (security trail).
+    lastEditedById: row.lastEditedById ?? null,
+    lastEditedAt: row.lastEditedAt ?? null,
+    lastEditedBy: lastEditedBy ?? null,
   };
 }
 
 /**
- * Best-effort lookup of creator user info. Resolved via lookupUsers, which
- * queries the AppUser table and handles both Catalyst ROWIDs and legacy UUID
- * ids (createdById can be either form). If AppUser is unreachable, createdBy
- * stays null.
+ * Best-effort lookup of creator + last-editor user info. Resolved via
+ * lookupUsers, which queries the AppUser table and handles both Catalyst
+ * ROWIDs and legacy UUID ids (createdById / lastEditedById can be either
+ * form). If AppUser is unreachable, createdBy / lastEditedBy stay null.
  */
 async function attachCreators(rows: CatalystRow[]): Promise<any[]> {
   // Guard against undefined entries — some Catalyst endpoints return shapes
   // we don't fully control.
   const safe = rows.filter((r): r is CatalystRow => Boolean(r));
   if (safe.length === 0) return [];
-  const creatorIds = new Set(safe.map((r) => r.createdById).filter(Boolean));
-  if (creatorIds.size === 0) return safe.map((r) => shapeVisitor(r));
 
-  let byId = new Map<string, { id: string; name: string; email: string }>();
-  try {
-    byId = await lookupUsers(creatorIds as Set<string>);
-  } catch {
-    // AppUser unreachable — leave creator null.
+  const ids = new Set<string>();
+  for (const r of safe) {
+    if (r.createdById) ids.add(String(r.createdById));
+    if (r.lastEditedById) ids.add(String(r.lastEditedById));
   }
 
-  return safe.map((r) => shapeVisitor(r, byId.get(String(r.createdById)) ?? null));
+  let byId = new Map<string, { id: string; name: string; email: string }>();
+  if (ids.size > 0) {
+    try {
+      byId = await lookupUsers(ids);
+    } catch {
+      // AppUser unreachable — leave creator/editor null.
+    }
+  }
+
+  return safe.map((r) =>
+    shapeVisitor(
+      r,
+      (r.createdById && byId.get(String(r.createdById))) || null,
+      (r.lastEditedById && byId.get(String(r.lastEditedById))) || null
+    )
+  );
 }
 
 /**
@@ -286,7 +303,18 @@ export async function updateVisitor(
     if (constituency !== undefined) updateData.constituency = constituency;
     if (wardVillage !== undefined) updateData.wardVillage = wardVillage;
 
-    const updated = await updateRow(VISITOR_TABLE, updateData as any);
+    // Edit audit — stamp who edited and when. Never let the client override it.
+    if (req.user) {
+      updateData.lastEditedById = req.user.id;
+      updateData.lastEditedAt = nowCatalystIST();
+    }
+
+    // updateRowTolerant tolerates a Catalyst schema that doesn't have the audit
+    // columns yet — it retries without them if Catalyst rejects the write.
+    const updated = await updateRowTolerant(VISITOR_TABLE, updateData as any, [
+      'lastEditedById',
+      'lastEditedAt',
+    ]);
     const [shaped] = await attachCreators([updated]);
     sendSuccess(res, shaped, 'Visitor updated successfully');
   } catch (error) {

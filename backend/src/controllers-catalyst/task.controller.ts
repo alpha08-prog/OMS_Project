@@ -40,7 +40,7 @@ const TASK_TABLE = 'Task';
 const HISTORY_TABLE = 'TaskHistory';
 
 const VALID_TASK_TYPES = new Set(['GRIEVANCE', 'TRAIN_REQUEST', 'TOUR_PROGRAM', 'GENERAL']);
-const VALID_TASK_STATUS = new Set(['ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD']);
+const VALID_TASK_STATUS = new Set(['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD']);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -78,6 +78,9 @@ function shapeTask(
     description: row.description ?? null,
     // Default legacy/blank rows so the frontend can always render + .replace().
     taskType: row.taskType ?? 'GENERAL',
+    // PUBLIC tasks show on the shared board; OFFICE tasks use the admin-assignment
+    // flow and are hidden from staff on the board (visible to admins + the assignee).
+    source: (row.source as string) ?? 'PUBLIC',
     status: row.status ?? 'ASSIGNED',
     priority: row.priorities ?? 'NORMAL', // Catalyst → frontend mapping
     referenceId: row.referenceId ?? null,
@@ -330,6 +333,24 @@ async function recentHistoryByTaskId(
  * never throws to the caller, since a notification/task failure must not fail
  * the underlying grievance/tour creation.
  */
+/**
+ * Insert a Task row, tolerating a Catalyst schema that predates the `source`
+ * column: if the first insert fails, retry once without `source`. Keeps the
+ * existing task flow working until the `source` column is added in the console.
+ */
+async function insertTaskRow(row: Record<string, any>): Promise<CatalystRow> {
+  try {
+    return await insertRow(TASK_TABLE, row);
+  } catch (err) {
+    if ('source' in row) {
+      const { source: _source, ...rest } = row;
+      void _source;
+      return await insertRow(TASK_TABLE, rest);
+    }
+    throw err;
+  }
+}
+
 export async function autoCreateSelfTask(params: {
   userId: string;
   title: string;
@@ -338,23 +359,31 @@ export async function autoCreateSelfTask(params: {
   referenceType: string;
   priority?: string;
   description?: string | null;
+  source?: string;
 }): Promise<void> {
   try {
-    await insertRow(TASK_TABLE, {
+    // OFFICE-sourced work uses the admin-assignment flow: the task is created
+    // UNASSIGNED and an admin assigns it to a staff member (PATCH /tasks/:id/assign),
+    // after which it appears in that staff member's My Tasks. It is NOT
+    // self-assigned and is hidden from the shared "All Tasks" board for staff.
+    const isOffice = String(params.source ?? 'PUBLIC').toUpperCase() === 'OFFICE';
+    await insertTaskRow({
       title: params.title,
       description: params.description ?? null,
       taskType: VALID_TASK_TYPES.has(params.taskType) ? params.taskType : 'GENERAL',
-      status: 'ASSIGNED',
+      status: isOffice ? 'UNASSIGNED' : 'ASSIGNED',
       priorities: params.priority || 'NORMAL',
       referenceId: params.referenceId,
       referenceType: params.referenceType,
+      source: isOffice ? 'OFFICE' : 'PUBLIC',
       progressNotes: null,
       progressPercent: 0,
       dueDate: null,
       startedAt: null,
       completedAt: null,
-      // Self-assigned: creator is both the assignee and the assigner.
-      assignedToId: params.userId,
+      // PUBLIC: self-assigned (creator is assignee + assigner). OFFICE: left
+      // unassigned for an admin to assign.
+      assignedToId: isOffice ? null : params.userId,
       assignedById: params.userId,
       groupId: null,
     });
@@ -459,6 +488,7 @@ export async function createTask(
       title: title.trim(),
       description: description?.trim() || null,
       taskType,
+      source: 'PUBLIC', // admin-created tasks are normal board tasks
       status: 'ASSIGNED',
       priorities: priority || 'NORMAL', // Catalyst column is `priorities`
       referenceId: referenceId || null,
@@ -473,7 +503,7 @@ export async function createTask(
     };
 
     const rows = await Promise.all(
-      ids.map((id) => insertRow(TASK_TABLE, { ...baseRow, assignedToId: id }))
+      ids.map((id) => insertTaskRow({ ...baseRow, assignedToId: id }))
     );
 
     // Fire one in-app notification per assignee. Best-effort — emit helper
@@ -500,6 +530,81 @@ export async function createTask(
     sendSuccess(res, shaped, message, 201);
   } catch (error: any) {
     sendServerError(res, error?.message || 'Failed to create task', error);
+  }
+}
+
+/**
+ * PATCH /api/tasks/:id/assign — admin assigns an EXISTING task to a staff
+ * member. Drives the office flow: a staff-created office grievance produces an
+ * UNASSIGNED office task that an admin assigns here; it then shows in the
+ * assignee's My Tasks (and stays hidden from the shared board for other staff).
+ */
+export async function assignTask(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      sendError(res, 'Not authenticated', 401);
+      return;
+    }
+    const { id } = req.params;
+    const { assignedToId } = req.body as { assignedToId?: string };
+    if (!assignedToId) {
+      sendError(res, 'assignedToId is required');
+      return;
+    }
+
+    const existing = await getRow(TASK_TABLE, id);
+    if (!existing) {
+      sendNotFound(res, 'Task not found');
+      return;
+    }
+
+    // Validate the assignee is an active staff member.
+    const allUsers = await getCachedTableList('AppUser');
+    const u = allUsers.find(
+      (x) =>
+        String(x.ROWID) === String(assignedToId) ||
+        (x.legacyId && String(x.legacyId) === String(assignedToId))
+    );
+    if (!u) {
+      sendError(res, `Staff member ${assignedToId} not found`, 404);
+      return;
+    }
+    if (String(u.role).toUpperCase() !== 'STAFF') {
+      sendError(res, `Can only assign tasks to staff members (${u.name})`);
+      return;
+    }
+    const active = u.isActive === true || u.isActive === 'true';
+    if (!active) {
+      sendError(res, `Staff member ${u.name} is inactive`);
+      return;
+    }
+
+    const updated = await updateRow(TASK_TABLE, {
+      ROWID: id,
+      assignedToId: String(assignedToId),
+      assignedById: req.user.id,
+      status: 'ASSIGNED',
+    });
+
+    // Notify the assignee.
+    await emitNotifications([String(assignedToId)], {
+      type: 'TASK_ASSIGNED',
+      title: `New task: ${existing.title}`,
+      body: existing.description
+        ? String(existing.description).slice(0, 200)
+        : `Type: ${existing.taskType}`,
+      link: `/staff/tasks?id=${encodeURIComponent(String(id))}`,
+      referenceId: String(id),
+      referenceType: 'TASK',
+    });
+
+    const [shaped] = await attachUsers([updated]);
+    sendSuccess(res, shaped, 'Task assigned successfully');
+  } catch (error: any) {
+    sendServerError(res, error?.message || 'Failed to assign task', error);
   }
 }
 
@@ -750,9 +855,13 @@ export async function getTasks(
       pageRows = rows.slice(skip, skip + limit);
     }
 
+    // attachGrievanceRefs and recentHistoryByTaskId are independent Catalyst
+    // reads — run them in parallel instead of two serial round-trips.
     const tasks = await attachUsers(pageRows);
-    await attachGrievanceRefs(tasks);
-    const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
+    const [, historyMap] = await Promise.all([
+      attachGrievanceRefs(tasks),
+      recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID))),
+    ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
     const meta = calculatePaginationMeta(total, page, limit);
@@ -781,6 +890,11 @@ export async function getAllTasks(
       req.query as Record<string, string>;
 
     let rows = await listAllRows(TASK_TABLE);
+    // Office tasks use the admin-assignment flow and are hidden from the shared
+    // board for staff — only admins (and the assignee, via My Tasks) see them.
+    if (req.user?.role === 'STAFF') {
+      rows = rows.filter((r) => String(r.source ?? 'PUBLIC').toUpperCase() !== 'OFFICE');
+    }
     if (status) rows = rows.filter((r) => r.status === status);
     if (taskType) rows = rows.filter((r) => r.taskType === taskType);
     if (assignedToId) rows = rows.filter((r) => String(r.assignedToId) === assignedToId);
@@ -806,9 +920,13 @@ export async function getAllTasks(
     const total = rows.length;
     const pageRows = rows.slice(skip, skip + limit);
 
+    // attachGrievanceRefs and recentHistoryByTaskId are independent Catalyst
+    // reads — run them in parallel instead of two serial round-trips.
     const tasks = await attachUsers(pageRows);
-    await attachGrievanceRefs(tasks);
-    const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
+    const [, historyMap] = await Promise.all([
+      attachGrievanceRefs(tasks),
+      recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID))),
+    ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
     const meta = calculatePaginationMeta(total, page, limit);
@@ -988,9 +1106,13 @@ export async function getMyTasks(
     // Use the co-assignee-aware variant so each task carries a list of
     // other staff working on the same multi-assigned task. This is the
     // "+N others assigned" badge data the staff dashboard renders.
+    // attachGrievanceRefs and recentHistoryByTaskId are independent Catalyst
+    // reads — run them in parallel instead of two serial round-trips.
     const tasks = await attachUsersWithCoAssignees(pageRows);
-    await attachGrievanceRefs(tasks);
-    const historyMap = await recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID)));
+    const [, historyMap] = await Promise.all([
+      attachGrievanceRefs(tasks),
+      recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID))),
+    ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
     const meta = calculatePaginationMeta(total, page, limit);
