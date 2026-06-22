@@ -50,6 +50,31 @@ const VALID_GENDERS = new Set(['MALE', 'FEMALE', 'OTHER']);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Best-effort sequential reference number: TREQ-<IST year>-NNNN. Scans existing
+ * trainRequestNumber values for the current year and returns max+1. Not
+ * transaction-safe — adequate for office-scale concurrency. Mirrors
+ * nextGrievanceNumber().
+ */
+async function nextTrainRequestNumber(): Promise<string> {
+  const istYear = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCFullYear();
+  const prefix = `TREQ-${istYear}-`;
+  let maxSeq = 0;
+  try {
+    const rows = await listAllRows(TRAIN_TABLE);
+    for (const r of rows) {
+      const num = String(r.trainRequestNumber ?? '');
+      if (num.startsWith(prefix)) {
+        const seq = parseInt(num.slice(prefix.length), 10);
+        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+      }
+    }
+  } catch {
+    /* table unreadable — fall back to 1 */
+  }
+  return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
+}
+
 function parseInt0(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : Number(v);
@@ -66,6 +91,12 @@ function shapeTrainRequest(
 ) {
   return {
     id: String(row.ROWID),
+    // Human-friendly reference: the stored sequential number (TREQ-YYYY-NNNN)
+    // when present, else a ROWID-based fallback (TREQ-<rowid>) for legacy rows
+    // / before the `trainRequestNumber` column is added in Catalyst.
+    referenceNo: row.trainRequestNumber
+      ? String(row.trainRequestNumber)
+      : `TREQ-${String(row.ROWID)}`,
     pnrNumber: row.pnrNumber,
     passengerName: row.passengerName,
     journeyClass: row.journeyClass,
@@ -455,6 +486,19 @@ export async function createTrainRequest(
       }
     }
 
+    // Assign a short sequential reference number (TREQ-YYYY-NNNN). Best-effort,
+    // post-insert update so creation still succeeds if the `trainRequestNumber`
+    // column isn't in Catalyst yet — the reference then falls back to the ROWID
+    // form (TREQ-<rowid>) at the read layer until the column is added. Done
+    // after dedupe so a lost-race row never burns a sequence number.
+    try {
+      const trainRequestNumber = await nextTrainRequestNumber();
+      await updateRow(TRAIN_TABLE, { ROWID: String(row.ROWID), trainRequestNumber });
+      row.trainRequestNumber = trainRequestNumber;
+    } catch (err) {
+      console.warn('[trainRequest] Could not assign trainRequestNumber (column missing?)', err);
+    }
+
     // Best-effort passenger persistence. Schema/table issues are logged
     // inside writePassengers and don't fail the request; the train request
     // itself was already created above.
@@ -481,10 +525,18 @@ function buildTrainZCQL(
     conditions.push(`status = '${zcqlEscapeValue(String(filters.status))}'`);
   }
   if (filters.search) {
-    const q = zcqlEscapeValue(String(filters.search));
-    conditions.push(
-      `(passengerName LIKE '%${q}%' OR pnrNumber LIKE '%${q}%' OR trainName LIKE '%${q}%')`
-    );
+    const raw = String(filters.search).trim();
+    const q = zcqlEscapeValue(raw);
+    const clauses = [
+      `passengerName LIKE '%${q}%'`,
+      `pnrNumber LIKE '%${q}%'`,
+      `trainName LIKE '%${q}%'`,
+      `trainRequestNumber LIKE '%${q}%'`,
+    ];
+    // Legacy "TREQ-<rowid>" reference → match the ROWID directly.
+    const m = raw.match(/^TREQ-(\d+)$/i);
+    if (m) clauses.push(`ROWID = ${m[1]}`);
+    conditions.push(`(${clauses.join(' OR ')})`);
   }
   if (filters.startDate) {
     const start = toCatalystDate(filters.startDate as unknown as string);
@@ -514,7 +566,11 @@ export async function getTrainRequests(
     let pageRows: CatalystRow[];
     let total: number;
 
-    if (useZCQL()) {
+    // Free-text search (incl. reference number / TREQ-<rowid>) always runs
+    // through the JS path: it reliably matches trainRequestNumber + ROWID and
+    // scans the whole table, sidestepping ZCQL quirks and a possibly-missing
+    // trainRequestNumber column. ZCQL still handles the common list with no search.
+    if (useZCQL() && !filters.search) {
       const baseQuery = buildTrainZCQL(req.user, filters);
       const safeLimit = zcqlSafeLimit(limit);
       const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
@@ -529,13 +585,25 @@ export async function getTrainRequests(
       }
       if (filters.status) rows = rows.filter((r) => r.status === filters.status);
       if (filters.search) {
-        const q = String(filters.search).toLowerCase();
-        rows = rows.filter(
-          (r) =>
+        const raw = String(filters.search).trim();
+        const q = raw.toLowerCase();
+        // "TREQ-<rowid>" or a bare ROWID search → the digits to match directly.
+        const rowidMatch = raw.match(/^(?:TREQ-)?(\d{6,})$/i);
+        rows = rows.filter((r) => {
+          // The SAME human reference the UI shows: trainRequestNumber
+          // (TREQ-YYYY-NNNN) when present, else the ROWID fallback (TREQ-<rowid>).
+          const refNo = (r.trainRequestNumber
+            ? String(r.trainRequestNumber)
+            : `TREQ-${String(r.ROWID)}`
+          ).toLowerCase();
+          return (
             (r.passengerName || '').toLowerCase().includes(q) ||
             (r.pnrNumber || '').includes(q) ||
-            (r.trainName || '').toLowerCase().includes(q)
-        );
+            (r.trainName || '').toLowerCase().includes(q) ||
+            refNo.includes(q) ||
+            (rowidMatch ? String(r.ROWID) === rowidMatch[1] : false)
+          );
+        });
       }
       if (filters.startDate) {
         const start = new Date(filters.startDate as unknown as string).getTime();

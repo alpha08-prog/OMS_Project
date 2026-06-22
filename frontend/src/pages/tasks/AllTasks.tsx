@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Loader2,
   Pencil,
   Clock,
   History as HistoryIcon,
   CheckCircle2,
+  Eye,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,7 +50,16 @@ const CSV_COLUMNS: CsvColumn<TaskAssignment>[] = [
   { header: "Created", value: (t) => (t.createdAt ? new Date(t.createdAt).toLocaleString() : "") },
 ];
 
+// Linked-record types that have a deep-linkable detail view today. Grievances
+// open their full details (+ timeline + attachments) on the View Grievances page.
+const RECORD_LABEL: Record<string, string> = {
+  GRIEVANCE: "grievance",
+  TOUR_PROGRAM: "tour program",
+  TRAIN_REQUEST: "train request",
+};
+
 export default function AllTasks() {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -68,6 +80,12 @@ export default function AllTasks() {
   const [audit, setAudit] = useState<TaskProgressHistory[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
 
+  // Read-only details dialog. Shows the full task + its activity timeline, plus
+  // a jump to the linked source record (e.g. the grievance) when available.
+  const [viewing, setViewing] = useState<TaskAssignment | null>(null);
+  const [viewAudit, setViewAudit] = useState<TaskProgressHistory[]>([]);
+  const [viewAuditLoading, setViewAuditLoading] = useState(false);
+
   // Inline quick-status update (no dialog). Records an audit entry via editShared.
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -86,6 +104,28 @@ export default function AllTasks() {
   useEffect(() => {
     load();
   }, []);
+
+  // Open the read-only details view for a task and load its activity timeline.
+  const openView = async (task: TaskAssignment) => {
+    setViewing(task);
+    setViewAudit([]);
+    setViewAuditLoading(true);
+    try {
+      setViewAudit(await taskApi.getAudit(task.id));
+    } catch (err) {
+      console.error("Failed to load activity timeline", err);
+    } finally {
+      setViewAuditLoading(false);
+    }
+  };
+
+  // Jump to the linked source record. Only grievances have a deep-linkable
+  // detail page today (View Grievances opens the row by ?id=).
+  const openLinkedRecord = (task: TaskAssignment) => {
+    if (task.referenceType === "GRIEVANCE" && task.referenceId) {
+      navigate(`/grievances/view?id=${encodeURIComponent(task.referenceId)}`);
+    }
+  };
 
   const openEdit = async (task: TaskAssignment) => {
     setEditing(task);
@@ -332,6 +372,10 @@ export default function AllTasks() {
                                     )}
                                   </Button>
                                 )}
+                                <Button size="sm" variant="outline" onClick={() => openView(t)}>
+                                  <Eye className="h-3.5 w-3.5 mr-1" />
+                                  View
+                                </Button>
                                 <Button size="sm" variant="outline" onClick={() => openEdit(t)}>
                                   <Pencil className="h-3.5 w-3.5 mr-1" />
                                   Edit
@@ -435,6 +479,128 @@ export default function AllTasks() {
                   ))}
                 </ul>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Read-only details view */}
+      {viewing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-auto rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-indigo-900 break-words">
+                  {viewing.title}
+                </h2>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <Badge className={STATUS_TONE[viewing.status ?? ""] ?? ""}>
+                    {viewing.status ? viewing.status.replace("_", " ") : "—"}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {(viewing.taskType ?? "GENERAL").replace("_", " ")}
+                  </span>
+                  {viewing.referenceNo && (
+                    <span className="font-mono text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                      {viewing.referenceNo}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Assigned to</p>
+                <p className="font-medium">{viewing.assignedTo?.name ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Priority</p>
+                <p className="font-medium">{viewing.priority ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Due</p>
+                <p className="font-medium">
+                  {viewing.dueDate ? new Date(viewing.dueDate).toLocaleDateString() : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Created</p>
+                <p className="font-medium">
+                  {viewing.createdAt ? new Date(viewing.createdAt).toLocaleString() : "—"}
+                </p>
+              </div>
+            </div>
+
+            {viewing.description && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Description</p>
+                <p className="whitespace-pre-wrap text-sm bg-gray-50 rounded-lg p-3">
+                  {viewing.description}
+                </p>
+              </div>
+            )}
+
+            {viewing.progressNotes && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Latest remark</p>
+                <p className="whitespace-pre-wrap text-sm">{viewing.progressNotes}</p>
+              </div>
+            )}
+
+            {/* Jump to the linked source record (grievance, etc.) */}
+            {viewing.referenceType === "GRIEVANCE" && viewing.referenceId && (
+              <Button
+                variant="outline"
+                className="w-full border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                onClick={() => openLinkedRecord(viewing)}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Open {RECORD_LABEL[viewing.referenceType] ?? "record"}
+              </Button>
+            )}
+
+            {/* Activity timeline */}
+            <div className="border-t pt-3">
+              <p className="text-xs font-semibold text-gray-700 flex items-center gap-1 mb-2">
+                <HistoryIcon className="h-3.5 w-3.5" /> Activity timeline
+              </p>
+              {viewAuditLoading ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : viewAudit.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No activity yet.</p>
+              ) : (
+                <ul className="space-y-2 max-h-48 overflow-auto">
+                  {viewAudit.map((h) => (
+                    <li key={h.id} className="text-xs">
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {h.createdAt ? new Date(h.createdAt).toLocaleString() : ""}
+                        {" • "}
+                        <span className="font-medium text-gray-700">
+                          {h.createdBy?.name ?? "Unknown"}
+                        </span>
+                        {h.status && (
+                          <Badge className={STATUS_TONE[h.status] ?? ""}>
+                            {h.status.replace("_", " ")}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-gray-700">{h.note}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setViewing(null)}>
+                Close
+              </Button>
+              <Button onClick={() => { const t = viewing; setViewing(null); openEdit(t); }}>
+                <Pencil className="h-4 w-4 mr-1" />
+                Edit
+              </Button>
             </div>
           </div>
         </div>

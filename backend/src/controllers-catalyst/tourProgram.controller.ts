@@ -73,6 +73,12 @@ function shapeTour(
 ) {
   return {
     id: String(row.ROWID),
+    // Human-friendly reference: the stored sequential number (TOUR-YYYY-NNNN)
+    // when present, else a ROWID-based fallback (TOUR-<rowid>) for legacy rows
+    // / before the `tourNumber` column is added in Catalyst.
+    referenceNo: row.tourNumber
+      ? String(row.tourNumber)
+      : `TOUR-${String(row.ROWID)}`,
     eventName: row.eventName,
     organizer: row.organizer,
     dateTime: row.dateTime,
@@ -158,6 +164,30 @@ function invalidateCaches() {
   cacheClear('dashboard_stats');
 }
 
+/**
+ * Best-effort sequential reference number: TOUR-<IST year>-NNNN. Scans existing
+ * tourNumber values for the current year and returns max+1. Not transaction-safe
+ * — adequate for office-scale concurrency. Mirrors nextGrievanceNumber().
+ */
+async function nextTourNumber(): Promise<string> {
+  const istYear = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCFullYear();
+  const prefix = `TOUR-${istYear}-`;
+  let maxSeq = 0;
+  try {
+    const rows = await listAllRows(TOUR_TABLE);
+    for (const r of rows) {
+      const num = String(r.tourNumber ?? '');
+      if (num.startsWith(prefix)) {
+        const seq = parseInt(num.slice(prefix.length), 10);
+        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+      }
+    }
+  } catch {
+    /* table unreadable — fall back to 1 */
+  }
+  return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
+}
+
 // ── Endpoints ─────────────────────────────────────────────────────────────
 
 /** POST /api/tour-programs */
@@ -212,12 +242,27 @@ export async function createTourProgram(
       googleCalendarEventId: null,
     });
 
+    // Assign a short sequential reference number (TOUR-YYYY-NNNN). Best-effort,
+    // separate post-insert update so creation still succeeds if the `tourNumber`
+    // column isn't in Catalyst yet — the reference then falls back to the ROWID
+    // form (TOUR-<rowid>) at the read layer until the column is added.
+    try {
+      const tourNumber = await nextTourNumber();
+      await updateRow(TOUR_TABLE, { ROWID: String(row.ROWID), tourNumber });
+      row.tourNumber = tourNumber;
+    } catch (err) {
+      console.warn('[tour] Could not assign tourNumber (column missing?)', err);
+    }
+
     // Auto self-assign: the tour invitation becomes a task owned by its creator
     // so it shows up on the shared Tasks board. The admin still makes the
     // ACCEPT/REGRET decision separately. Best-effort.
+    const refNo = row.tourNumber ? String(row.tourNumber) : `TOUR-${String(row.ROWID)}`;
     await autoCreateSelfTask({
       userId: req.user.id,
-      title: `Tour: ${eventName}`,
+      // Reference number in the title so the tour is findable by id on the
+      // shared task boards (their search matches the title).
+      title: `Tour ${refNo}: ${eventName}`,
       taskType: 'TOUR_PROGRAM',
       referenceId: String(row.ROWID),
       referenceType: 'TOUR_PROGRAM',
@@ -243,10 +288,18 @@ function buildTourZCQL(filters: TourProgramFilters, staffId?: string): string {
     conditions.push(`decision = '${zcqlEscapeValue(String(filters.decision))}'`);
   }
   if (filters.search) {
-    const q = zcqlEscapeValue(String(filters.search));
-    conditions.push(
-      `(eventName LIKE '%${q}%' OR organizer LIKE '%${q}%' OR venue LIKE '%${q}%')`
-    );
+    const raw = String(filters.search).trim();
+    const q = zcqlEscapeValue(raw);
+    const clauses = [
+      `eventName LIKE '%${q}%'`,
+      `organizer LIKE '%${q}%'`,
+      `venue LIKE '%${q}%'`,
+      `tourNumber LIKE '%${q}%'`,
+    ];
+    // Legacy "TOUR-<rowid>" reference → match the ROWID directly.
+    const m = raw.match(/^TOUR-(\d+)$/i);
+    if (m) clauses.push(`ROWID = ${m[1]}`);
+    conditions.push(`(${clauses.join(' OR ')})`);
   }
   if (filters.startDate) {
     const start = toCatalystDate(filters.startDate as unknown as string);
@@ -277,7 +330,11 @@ export async function getTourPrograms(
     // Scope to creator for STAFF role; admins see everything.
     const staffId = req.user?.role === 'STAFF' ? req.user.id : undefined;
 
-    if (useZCQL()) {
+    // Free-text search (incl. reference number / TOUR-<rowid>) always runs
+    // through the JS path: it reliably matches tourNumber + ROWID and scans the
+    // whole table, sidestepping ZCQL quirks and a possibly-missing tourNumber
+    // column. ZCQL still handles the common filtered/sorted list with no search.
+    if (useZCQL() && !filters.search) {
       const baseQuery = buildTourZCQL(filters, staffId);
       const safeLimit = zcqlSafeLimit(limit);
       const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
@@ -293,13 +350,25 @@ export async function getTourPrograms(
         rows = rows.filter((r) => r.decision === filters.decision);
       }
       if (filters.search) {
-        const q = String(filters.search).toLowerCase();
-        rows = rows.filter(
-          (r) =>
+        const raw = String(filters.search).trim();
+        const q = raw.toLowerCase();
+        // "TOUR-<rowid>" or a bare ROWID search → the digits to match directly.
+        const rowidMatch = raw.match(/^(?:TOUR-)?(\d{6,})$/i);
+        rows = rows.filter((r) => {
+          // The SAME human reference the UI shows: tourNumber (TOUR-YYYY-NNNN)
+          // when present, else the ROWID fallback (TOUR-<rowid>).
+          const refNo = (r.tourNumber
+            ? String(r.tourNumber)
+            : `TOUR-${String(r.ROWID)}`
+          ).toLowerCase();
+          return (
             (r.eventName || '').toLowerCase().includes(q) ||
             (r.organizer || '').toLowerCase().includes(q) ||
-            (r.venue || '').toLowerCase().includes(q)
-        );
+            (r.venue || '').toLowerCase().includes(q) ||
+            refNo.includes(q) ||
+            (rowidMatch ? String(r.ROWID) === rowidMatch[1] : false)
+          );
+        });
       }
       if (filters.startDate) {
         const start = new Date(filters.startDate as unknown as string).getTime();

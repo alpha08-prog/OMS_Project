@@ -203,6 +203,8 @@ export type TrainRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RESOLVED
 
 export type TrainRequest = {
   id: string
+  /** Human-friendly reference (TREQ-YYYY-NNNN, or TREQ-<rowid> fallback). */
+  referenceNo?: string | null
   passengerName: string
   pnrNumber: string
   contactNumber?: string
@@ -264,6 +266,8 @@ export type TourDecision = TourProgramDecision // alias for backward compatibili
 
 export type TourProgram = {
   id: string
+  /** Human-friendly reference (TOUR-YYYY-NNNN, or TOUR-<rowid> fallback). */
+  referenceNo?: string | null
   eventName: string
   organizer: string
   organizerPhone?: string

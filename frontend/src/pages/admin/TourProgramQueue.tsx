@@ -297,11 +297,12 @@ export default function TourProgramQueue() {
     };
   };
 
-  // Client-side text search across the obvious fields.
+  // Client-side text search across the obvious fields (incl. reference number).
   const filteredPrograms = programs.filter((p) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
+      (p.referenceNo ?? "").toLowerCase().includes(q) ||
       p.eventName.toLowerCase().includes(q) ||
       p.organizer.toLowerCase().includes(q) ||
       p.venue.toLowerCase().includes(q)
@@ -310,6 +311,7 @@ export default function TourProgramQueue() {
 
   // CSV export — mirrors the currently filtered/visible rows.
   const csvColumns: CsvColumn<TourProgram>[] = [
+    { header: "Reference No", value: (p) => p.referenceNo ?? "" },
     { header: "Event", value: (p) => p.eventName },
     { header: "Organizer", value: (p) => p.organizer },
     { header: "Date/Time", value: (p) => p.dateTime },
@@ -339,7 +341,7 @@ export default function TourProgramQueue() {
               <SearchBar
                 value={search}
                 onChange={setSearch}
-                placeholder="Search event, organizer, venue…"
+                placeholder="Search ref no, event, organizer, venue…"
                 className="w-[240px]"
               />
               <DateRangeFilter
@@ -410,9 +412,14 @@ export default function TourProgramQueue() {
                         </div>
 
                         <div className="space-y-1">
-                          <p className="font-medium text-indigo-900">
-                            {p.eventName}
-                            <Badge className="ml-2 bg-amber-100 text-amber-800" variant="outline">
+                          <p className="font-medium text-indigo-900 flex flex-wrap items-center gap-2">
+                            <span>{p.eventName}</span>
+                            {p.referenceNo && (
+                              <span className="font-mono text-xs font-normal text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                                {p.referenceNo}
+                              </span>
+                            )}
+                            <Badge className="bg-amber-100 text-amber-800" variant="outline">
                               Pending
                             </Badge>
                           </p>
@@ -512,6 +519,14 @@ export default function TourProgramQueue() {
             
             {selectedProgram && (
               <div className="space-y-4 w-full overflow-x-hidden p-1">
+                {selectedProgram.referenceNo && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Reference No</span>
+                    <span className="font-mono text-sm font-semibold text-indigo-800 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5">
+                      {selectedProgram.referenceNo}
+                    </span>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Event Name</p>

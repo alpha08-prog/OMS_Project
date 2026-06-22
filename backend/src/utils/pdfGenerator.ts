@@ -73,6 +73,9 @@ interface TrainEQLetter {
   toStation: string;
   senderName: string;
   senderDesignation: string;
+  // Primary passenger's contact number — printed just under his name in the
+  // passenger table.
+  contactNumber?: string;
   // Additional passenger names for multiple passengers
   additionalPassengers?: string[];
   // Structured passenger rows (preferred over name strings when supplied —
@@ -526,8 +529,10 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     let y = Math.max(headerTop + 85, rightY + 10);
 
     // ── Reference number + Date row ───────────────────────────────────────
+    // Print the last 4 digits of this EQ's document id right after "PS/".
+    const eqShort = (documentId || '').slice(-4).toUpperCase();
     doc.font('Helvetica').fontSize(10).fillColor(COLORS.black)
-      .text('No. M(CA, F & PD And MNRE) Addl. PS/', margin, y, { lineBreak: false });
+      .text(`No. M(CA, F & PD And MNRE) Addl. PS/${eqShort}`, margin, y, { lineBreak: false });
     doc.text(`Date : ${data.date}`, pageWidth - margin - 180, y, { width: 180, align: 'left', lineBreak: false });
     y += 24;
 
@@ -545,14 +550,16 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     // ── Body with fill-ins ────────────────────────────────────────────────
     doc.font('Helvetica').fontSize(11);
 
-    // "Please arrange to release <berths> Berths from Emergency"
+    // "Please arrange to release <berths> Berths from Emergency Quota"
+    // ("Emergency Quota" kept together on this line — Quota no longer wraps.)
     doc.text('Please arrange to release ', margin, y, { continued: true })
       .font('Helvetica-Bold').text(String(berthCount), { continued: true })
-      .font('Helvetica').text(' Berths from Emergency');
+      .font('Helvetica').text(' Berths from Emergency Quota');
     y = doc.y + 2;
 
-    // "Quota for the following persons who are Travelling by Train No. <num>"
-    doc.text('Quota for the following persons who are Travelling by Train No. ', margin, y, { continued: true })
+    // "for the following persons who are Travelling by Train No. <num>"
+    // (Train number stays on this line with its label.)
+    doc.text('for the following persons who are Travelling by Train No. ', margin, y, { continued: true })
       .font('Helvetica-Bold').text(data.trainNumber || '_____');
     y = doc.y + 4;
 
@@ -568,7 +575,7 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
       .font('Helvetica-Bold').text(data.toStation || '_____', { continued: true })
       .font('Helvetica').text(' in ', { continued: true })
       .font('Helvetica-Bold').text(data.journeyClass || '_____', { continued: true })
-      .font('Helvetica').text(' on ', { continued: true })
+      .font('Helvetica').text(' class on ', { continued: true })
       .font('Helvetica-Bold').text(data.journeyDate || '_____');
     y = doc.y + 14;
 
@@ -588,21 +595,37 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     doc.font('Helvetica').fontSize(10).fillColor(COLORS.black);
     if (rows.length === 0) {
       // No names at all — render at least one blank row so the grid isn't empty.
-      doc.text('1', colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
-      doc.text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
+      doc.font('Helvetica').text('1', colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
+      // PNR in bold (per the EQ letter format).
+      doc.font('Helvetica-Bold').text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
       y += 16;
     } else {
       rows.forEach((p, i) => {
-        doc.text(String(i + 1), colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
-        doc.text(p.name, colX[1] + 4, y, { width: colW[1] - 8, lineBreak: false });
+        doc.font('Helvetica').fontSize(10).fillColor(COLORS.black)
+          .text(String(i + 1), colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
+        // Passenger name in bold.
+        doc.font('Helvetica-Bold').text(p.name, colX[1] + 4, y, { width: colW[1] - 8, lineBreak: false });
         const sa = sexAgeCell(p);
-        if (sa) doc.text(sa, colX[2] + 4, y, { width: colW[2] - 8, lineBreak: false });
-        // PNR shows only on the first row (one PNR covers all passengers).
+        if (sa) {
+          doc.font('Helvetica').text(sa, colX[2] + 4, y, { width: colW[2] - 8, lineBreak: false });
+        }
+        // PNR (and the primary's mobile) show only on the first row — one PNR
+        // covers all passengers. PNR is printed in bold.
         if (i === 0) {
-          doc.text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
+          doc.font('Helvetica-Bold').text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
         }
         if (p.waitlist && String(p.waitlist).trim()) {
-          doc.text(String(p.waitlist).trim(), colX[4] + 4, y, { width: colW[4] - 8, lineBreak: false });
+          doc.font('Helvetica').text(String(p.waitlist).trim(), colX[4] + 4, y, { width: colW[4] - 8, lineBreak: false });
+        }
+        // Primary passenger's mobile number, printed just under his name.
+        if (i === 0 && data.contactNumber && data.contactNumber.trim()) {
+          doc.font('Helvetica').fontSize(8.5).fillColor(COLORS.gray)
+            .text(`Mob: ${data.contactNumber.trim()}`, colX[1] + 4, y + 12, {
+              width: colW[1] - 8,
+              lineBreak: false,
+            });
+          doc.fontSize(10).fillColor(COLORS.black);
+          y += 12; // extra room so the mobile line doesn't collide with the next row
         }
         y += 16;
       });
@@ -938,7 +961,10 @@ export function generateTempleVisitLetter(
     let y: number;
 
     if (letterheadMode) {
-      y = 145;
+      // Start the body below the pre-printed letterhead zone. Expressed as a
+      // fraction of page height (not a fixed 145pt that was tuned for A5) so
+      // it lands correctly on the A4 letterhead the office actually prints on.
+      y = Math.round(doc.page.height * 0.23);
     } else {
       // ── Letterhead — left officer block ────────────────────────────────
       doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.navy)
@@ -1009,10 +1035,16 @@ export function generateTempleVisitLetter(
     y += 28;
 
     // ── Salutation + Subject ──────────────────────────────────────────────
-    doc.font('Helvetica').fontSize(11).text('Dear Sir,', margin, y, { lineBreak: false });
-    y += 22;
-    doc.font('Helvetica-Bold').text(`Sub: ${data.subject}`, margin, y, { width: innerWidth, lineBreak: false });
+    // "Dear Sir," is bold and at the left margin; the subject is bold and
+    // first-line-indented, matching the office's standard letter format.
+    const bodyIndent = 36;
+    doc.font('Helvetica-Bold').fontSize(11).text('Dear Sir,', margin, y, { lineBreak: false });
     y += 24;
+    doc.font('Helvetica-Bold').text(`Sub: ${data.subject}`, margin, y, {
+      width: innerWidth,
+      indent: bodyIndent,
+    });
+    y = doc.y + 16;
 
     // ── Body ──────────────────────────────────────────────────────────────
     doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
@@ -1028,7 +1060,7 @@ export function generateTempleVisitLetter(
         (data.mobileLine ? ` ${data.mobileLine}` : '')
     );
     bodyParas.push(
-      `I am directed by Hon'ble Minister to request you to kindly arrange ${data.servicesRequestedText} ` +
+      `I am directed by Hon'ble Union Minister to request you to kindly arrange ${data.servicesRequestedText} ` +
         `on above said ${data.visitDateLine.startsWith('from') ? 'dates' : 'date'} for them and oblige.`
     );
 
@@ -1036,9 +1068,10 @@ export function generateTempleVisitLetter(
       doc.text(p, margin, y, {
         width: innerWidth,
         align: 'justify',
-        lineGap: 4,
+        indent: bodyIndent,
+        lineGap: 6,
       });
-      y = doc.y + 12;
+      y = doc.y + 14;
     });
 
     // ── Closing + signature + recipient ───────────────────────────────────
@@ -1057,7 +1090,16 @@ export function generateTempleVisitLetter(
     // rendered) footer, but not so low that there's a sea of whitespace
     // between the signature and the address. Tuned by eye against the
     // sample letter; bump the reserve to push the block higher.
-    const bottomReserve = letterheadMode ? 265 : 250;
+    // Anchor the recipient block near the page bottom but with guaranteed
+    // clearance above the pre-printed physical footer. The footer zone on the
+    // office's A4 letterhead (Delhi/Hubballi office addresses + tel/fax) runs
+    // about the bottom ~90pt, so the reserve must exceed that or the recipient
+    // address overprints the footer. Expressed as a fraction of page height
+    // (≈0.22 → 185pt on A4) so the block ends at ~78% — sitting well clear of
+    // the footer, matching the office's sample letter.
+    const bottomReserve = letterheadMode
+      ? Math.round(doc.page.height * 0.22)
+      : 250;
     const recipientStartY = Math.max(
       bodyEndY + 90,
       doc.page.height - bottomReserve - recipientLineCount * recipientLineHeight
@@ -1069,13 +1111,21 @@ export function generateTempleVisitLetter(
     //   +70 : signer name (right-aligned, bold)
     // The wider gap between "Yours sincerely" and the printed signer name
     // gives space for a hand-written signature on the printed letter.
+    //
+    // Anchor the closing just under the body (not floated to the middle of the
+    // gap) so "With regards," / "Thanking you," reads as a natural continuation
+    // of the letter instead of drifting halfway down toward the footer. Capped
+    // so an unusually long body can't push the signature into the recipient
+    // block.
     const sigBlockHeight = 70;
-    const gapMid = (bodyEndY + recipientStartY) / 2;
-    const closingY = Math.max(bodyEndY + 18, gapMid - sigBlockHeight / 2);
+    const closingY = Math.min(
+      bodyEndY + 30,
+      recipientStartY - sigBlockHeight - 24
+    );
 
     doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
     doc.text(data.closing, margin, closingY, { lineBreak: false });
-    doc.text('Yours sincerely', margin, closingY + 20, {
+    doc.text('Yours sincerely,', margin, closingY + 20, {
       width: innerWidth,
       align: 'right',
       lineBreak: false,
@@ -1087,10 +1137,11 @@ export function generateTempleVisitLetter(
     });
 
     // Recipient block (bottom-left, like a footer address). Anchored to the
-    // page bottom so it visually balances the header zone above the body.
-    doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
+    // page bottom so it visually balances the header zone above the body. The
+    // first line (the office/designation) is bold, like the sample letter.
     let recipY = recipientStartY;
-    data.recipientLines.forEach((line) => {
+    data.recipientLines.forEach((line, i) => {
+      doc.font(i === 0 ? 'Helvetica-Bold' : 'Helvetica').fontSize(11).fillColor(COLORS.black);
       doc.text(line, margin, recipY, { width: innerWidth, lineBreak: false });
       recipY += recipientLineHeight;
     });

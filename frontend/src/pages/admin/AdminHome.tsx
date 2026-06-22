@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   FileCheck,
+  FileText,
   Printer,
   Train,
   ClipboardList,
@@ -10,6 +11,7 @@ import {
   Loader2,
   Users,
   Cake,
+  Calendar,
   Newspaper,
   ArrowRight,
   CalendarClock,
@@ -339,6 +341,58 @@ export default function AdminHome() {
                 ) : (
                   <p className="text-sm text-muted-foreground">Loading attendance…</p>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* QUICK ENTRY ACTIONS — same data-entry shortcuts staff get, so
+                admins can create records directly without hunting the sidebar. */}
+            <Card className="rounded-2xl shadow-sm border border-indigo-100">
+              <CardHeader>
+                <CardTitle className="text-lg">Quick Entry</CardTitle>
+              </CardHeader>
+
+              <CardContent>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                  <Button
+                    onClick={() => navigate("/grievances/new")}
+                    className="h-24 flex flex-col gap-2 bg-amber-500 text-black hover:bg-amber-600"
+                  >
+                    <FileText className="h-6 w-6" />
+                    <span className="text-sm font-medium">New Grievance</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => navigate("/train-eq/new")}
+                    className="h-24 flex flex-col gap-2 bg-indigo-600 text-white hover:bg-indigo-700"
+                  >
+                    <Train className="h-6 w-6" />
+                    <span className="text-sm font-medium">Train EQ</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => navigate("/people/new")}
+                    className="h-24 flex flex-col gap-2 bg-slate-700 text-white hover:bg-slate-800"
+                  >
+                    <Users className="h-6 w-6" />
+                    <span className="text-sm font-medium">Visitor / Birthday</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => navigate("/tour-program/new")}
+                    className="h-24 flex flex-col gap-2 bg-sky-600 text-white hover:bg-sky-700"
+                  >
+                    <Calendar className="h-6 w-6" />
+                    <span className="text-sm font-medium">Tour Program</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => navigate("/news-intelligence/new")}
+                    className="h-24 flex flex-col gap-2 bg-teal-600 text-white hover:bg-teal-700"
+                  >
+                    <Newspaper className="h-6 w-6" />
+                    <span className="text-sm font-medium">News Entry</span>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 

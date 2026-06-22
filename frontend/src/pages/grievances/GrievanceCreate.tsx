@@ -361,6 +361,11 @@ export default function GrievanceCreate() {
                         <SelectItem value="ELECTRICITY">Electricity</SelectItem>
                         <SelectItem value="EDUCATION">Education</SelectItem>
                         <SelectItem value="HOUSING">Housing</SelectItem>
+                        <SelectItem value="Revenue">Revenue</SelectItem>
+                        <SelectItem value="RDPR">RDPR</SelectItem>
+                        <SelectItem value="Railway">Railway</SelectItem>
+                        <SelectItem value="Agriculture">Agriculture</SelectItem>
+                        <SelectItem value="Job">Job</SelectItem>
                         <SelectItem value="TEMPLE_VISIT">
                           Temple Visit (Darshan Letter)
                         </SelectItem>

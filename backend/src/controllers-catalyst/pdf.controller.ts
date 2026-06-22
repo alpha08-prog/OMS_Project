@@ -201,6 +201,7 @@ export async function generateTrainEQPDF(
         toStation: String(row.toStation),
         senderName: 'Shri Pralhad Joshi',
         senderDesignation: "Hon'ble Union Minister",
+        contactNumber: row.contactNumber ? String(row.contactNumber) : undefined,
         passengerDetails: passengerDetails.length > 0 ? passengerDetails : undefined,
         numberOfPassengers,
         documentId,
@@ -279,6 +280,10 @@ export async function previewTrainEQ(
     const fromStation = String(row.fromStation || '');
     const toStation = String(row.toStation || '');
     const pnrNumber = String(row.pnrNumber || '');
+    const contactNumber = row.contactNumber ? String(row.contactNumber) : '';
+    // Last 4 digits of this EQ's document id — printed right after "PS/".
+    const documentId = `EQ${id.replace(/-/g, '').slice(-12).toUpperCase()}`;
+    const eqShort = documentId.slice(-4);
 
     const sexAgeOf = (p: TrainEQPassenger): string => {
       const g = (p.gender || '').toString().trim().toUpperCase();
@@ -290,14 +295,18 @@ export async function previewTrainEQ(
 
     const tableRows =
       previewRows.length === 0
-        ? `<tr><td>1</td><td></td><td></td><td>${pnrNumber}</td><td></td></tr>`
+        ? `<tr><td>1</td><td></td><td></td><td><strong>${pnrNumber}</strong></td><td></td></tr>`
         : previewRows
             .map(
               (p, i) => `<tr>
                 <td>${i + 1}</td>
-                <td>${p.name}</td>
+                <td><strong>${p.name}</strong>${
+                  i === 0 && contactNumber
+                    ? `<br><span style="font-size:10px;color:#666;font-weight:normal;">Mob: ${contactNumber}</span>`
+                    : ''
+                }</td>
                 <td>${sexAgeOf(p)}</td>
-                <td>${i === 0 ? pnrNumber : ''}</td>
+                <td>${i === 0 ? `<strong>${pnrNumber}</strong>` : ''}</td>
                 <td>${p.waitlist ? String(p.waitlist) : ''}</td>
               </tr>`
             )
@@ -356,7 +365,7 @@ export async function previewTrainEQ(
   </div>
 
   <div class="meta">
-    <span>No. M(CA, F &amp; PD And MNRE) Addl. PS/</span>
+    <span>No. M(CA, F &amp; PD And MNRE) Addl. PS/${eqShort}</span>
     <span>Date : ${date}</span>
   </div>
 
@@ -369,14 +378,14 @@ export async function previewTrainEQ(
   <p style="font-size:12px;">Sir,</p>
 
   <div class="body">
-    <p>Please arrange to release <span class="blank">${berthCount}</span> Berths from Emergency
-    Quota for the following persons who are Travelling by Train No. <span class="blank">${trainNumber || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span></p>
+    <p>Please arrange to release <span class="blank">${berthCount}</span> Berths from Emergency Quota
+    for the following persons who are Travelling by Train No. <span class="blank">${trainNumber || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span></p>
 
     <p>Train Name <span class="blank">${trainName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span></p>
 
     <p>From <span class="blank">${fromStation || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>
     To <span class="blank">${toStation || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>
-    in <span class="blank">${journeyClass || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>
+    in <span class="blank">${journeyClass || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span> class
     on <span class="blank">${journeyDate}</span></p>
   </div>
 
@@ -1056,7 +1065,10 @@ export async function generateTempleVisitPDF(
       })();
     });
 
-    generateTempleVisitLetter(built.data, res);
+    // A4 to match the office's physical pre-printed letterhead stationery.
+    // (Train EQ uses A5 — a smaller pre-printed form — but the darshan letter
+    // is a full-size letterhead.)
+    generateTempleVisitLetter(built.data, res, 'A4');
   } catch (error) {
     sendServerError(res, 'Failed to generate temple-visit PDF', error);
   }
@@ -1165,8 +1177,10 @@ export async function previewTempleVisit(
     .meta { display: flex; margin: 0 0 18px 0; font-size: 11px; }
     .meta .ref { flex: 1; text-align: left; }
     .meta .date { flex: 1; text-align: right; }
-    .subject { font-weight: bold; margin: 12px 0 18px 0; font-size: 12px; }
+    .subject { font-weight: bold; margin: 12px 0 18px 0; font-size: 12px; text-indent: 2.5em; }
+    .salutation { font-size: 12px; font-weight: bold; }
     .body { font-size: 12px; line-height: 1.9; text-align: justify; }
+    .body p { text-indent: 2.5em; }
     /* Closing sits left-aligned; "Yours sincerely" wraps to the next line and
        is right-aligned with extra breathing room before the signer name so
        the signature has space to be added on a printed letter. */
@@ -1192,28 +1206,30 @@ export async function previewTempleVisit(
       <span class="date">Date: ${escapeHtml(d.date)}</span>
     </div>
 
-    <p style="font-size:12px;">Dear Sir,</p>
+    <p class="salutation">Dear Sir,</p>
     <div class="subject">Sub: ${escapeHtml(d.subject)}</div>
 
     <div class="body">
       <p>The Bearer of this letter ${escapeHtml(d.petitionerName)} and ${d.memberCount} ${memberWord}
          from ${escapeHtml(d.originLine)} are on pilgrimage to the Holy Shrine of ${escapeHtml(d.deityLine)}
          ${escapeHtml(d.visitDateLine)}.${d.mobileLine ? ' ' + escapeHtml(d.mobileLine) : ''}</p>
-      <p>I am directed by Hon'ble Minister to request you to kindly arrange ${escapeHtml(d.servicesRequestedText)} on above said ${dateWord} for them and oblige.</p>
+      <p>I am directed by Hon'ble Union Minister to request you to kindly arrange ${escapeHtml(d.servicesRequestedText)} on above said ${dateWord} for them and oblige.</p>
     </div>
   </div>
 
   <div class="sig-group">
     <div class="closing">
       <span class="left">${escapeHtml(d.closing)}</span>
-      <span class="right">Yours sincerely</span>
+      <span class="right">Yours sincerely,</span>
     </div>
     <div class="signer">${escapeHtml(d.signerName)}</div>
   </div>
 
   <div class="recipient-group">
     <div class="recipient">
-      ${d.recipientLines.map((l) => escapeHtml(l)).join('<br>')}
+      ${d.recipientLines
+        .map((l, i) => (i === 0 ? `<strong>${escapeHtml(l)}</strong>` : escapeHtml(l)))
+        .join('<br>')}
     </div>
 
     <div class="footer-zone">Reserved for pre-printed footer</div>

@@ -85,8 +85,8 @@ function shapeTask(
     priority: row.priorities ?? 'NORMAL', // Catalyst → frontend mapping
     referenceId: row.referenceId ?? null,
     referenceType: row.referenceType ?? null,
-    // Reference number of the linked record (e.g. a grievance's GRV-YYYY-NNNN).
-    // Filled in by attachGrievanceRefs for GRIEVANCE tasks; null otherwise.
+    // Reference number of the linked record (grievance GRV-/tour TOUR-/train
+    // TREQ-). Filled in by attachReferenceNumbers for linked tasks; null otherwise.
     referenceNo: null as string | null,
     progressNotes: row.progressNotes ?? null,
     progressPercent: parseInteger(row.progressPercent),
@@ -174,33 +174,62 @@ async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
 }
 
 /**
- * For GRIEVANCE-type tasks, resolve the linked grievance's reference number
- * (GRV-YYYY-NNNN, falling back to GRV-<rowid>) and set it on each task's
- * `referenceNo` so the Task Tracker / All Tasks boards can show + search by it.
- * Best-effort: a lookup failure just leaves referenceNo null.
+ * Resolve each task's linked record reference number and set it on
+ * `referenceNo` so the Task Tracker / All Tasks / Office Tasks boards can show +
+ * search by it. Handles all linked record types:
+ *   - GRIEVANCE     → GRV-YYYY-NNNN  (fallback GRV-<rowid>)
+ *   - TOUR_PROGRAM  → TOUR-YYYY-NNNN (fallback TOUR-<rowid>)
+ *   - TRAIN_REQUEST → TREQ-YYYY-NNNN (fallback TREQ-<rowid>)
+ * Best-effort: a per-type lookup failure just leaves those tasks' referenceNo
+ * null. Each record table is read once, in parallel.
  */
-async function attachGrievanceRefs(tasks: any[]): Promise<void> {
-  const ids = new Set<string>();
+async function attachReferenceNumbers(tasks: any[]): Promise<void> {
+  const idsByType: Record<string, Set<string>> = {
+    GRIEVANCE: new Set(),
+    TOUR_PROGRAM: new Set(),
+    TRAIN_REQUEST: new Set(),
+  };
   for (const t of tasks) {
-    if (t.referenceType === 'GRIEVANCE' && t.referenceId) ids.add(String(t.referenceId));
+    if (!t.referenceId) continue;
+    const bucket = idsByType[t.referenceType as string];
+    if (bucket) bucket.add(String(t.referenceId));
   }
-  if (ids.size === 0) return;
-  try {
-    const grievances = await listAllRows('Grievance');
-    const byId = new Map<string, string>();
-    for (const g of grievances) {
-      const rid = String(g.ROWID);
-      if (ids.has(rid)) {
-        byId.set(rid, g.grievanceNumber ? String(g.grievanceNumber) : `GRV-${rid}`);
+
+  const refByType: Record<string, Map<string, string>> = {
+    GRIEVANCE: new Map(),
+    TOUR_PROGRAM: new Map(),
+    TRAIN_REQUEST: new Map(),
+  };
+
+  // (Catalyst table, ids, type key, number column, ROWID-fallback prefix)
+  const sources: Array<[string, Set<string>, string, string, string]> = [
+    ['Grievance', idsByType.GRIEVANCE, 'GRIEVANCE', 'grievanceNumber', 'GRV'],
+    ['TourProgram', idsByType.TOUR_PROGRAM, 'TOUR_PROGRAM', 'tourNumber', 'TOUR'],
+    ['TrainRequest', idsByType.TRAIN_REQUEST, 'TRAIN_REQUEST', 'trainRequestNumber', 'TREQ'],
+  ];
+
+  await Promise.all(
+    sources.map(async ([table, ids, type, numberCol, prefix]) => {
+      if (ids.size === 0) return;
+      try {
+        const rows = await listAllRows(table);
+        const map = refByType[type];
+        for (const r of rows) {
+          const rid = String(r.ROWID);
+          if (ids.has(rid)) {
+            map.set(rid, r[numberCol] ? String(r[numberCol]) : `${prefix}-${rid}`);
+          }
+        }
+      } catch {
+        /* table unreadable — leave these refs null */
       }
-    }
-    for (const t of tasks) {
-      if (t.referenceType === 'GRIEVANCE' && t.referenceId) {
-        t.referenceNo = byId.get(String(t.referenceId)) ?? null;
-      }
-    }
-  } catch {
-    /* Grievance table unreadable — leave referenceNo null */
+    })
+  );
+
+  for (const t of tasks) {
+    if (!t.referenceId) continue;
+    const map = refByType[t.referenceType as string];
+    if (map) t.referenceNo = map.get(String(t.referenceId)) ?? null;
   }
 }
 
@@ -899,7 +928,7 @@ export async function getTasks(
 
       const tasks = await attachUsers(officePageRows);
       const [, historyMap] = await Promise.all([
-        attachGrievanceRefs(tasks),
+        attachReferenceNumbers(tasks),
         recentHistoryByTaskId(officePageRows.map((r) => String(r.ROWID))),
       ]);
       for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
@@ -949,11 +978,11 @@ export async function getTasks(
       pageRows = rows.slice(skip, skip + limit);
     }
 
-    // attachGrievanceRefs and recentHistoryByTaskId are independent Catalyst
+    // attachReferenceNumbers and recentHistoryByTaskId are independent Catalyst
     // reads — run them in parallel instead of two serial round-trips.
     const tasks = await attachUsers(pageRows);
     const [, historyMap] = await Promise.all([
-      attachGrievanceRefs(tasks),
+      attachReferenceNumbers(tasks),
       recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID))),
     ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
@@ -1014,11 +1043,11 @@ export async function getAllTasks(
     const total = rows.length;
     const pageRows = rows.slice(skip, skip + limit);
 
-    // attachGrievanceRefs and recentHistoryByTaskId are independent Catalyst
+    // attachReferenceNumbers and recentHistoryByTaskId are independent Catalyst
     // reads — run them in parallel instead of two serial round-trips.
     const tasks = await attachUsers(pageRows);
     const [, historyMap] = await Promise.all([
-      attachGrievanceRefs(tasks),
+      attachReferenceNumbers(tasks),
       recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID))),
     ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
@@ -1212,11 +1241,11 @@ export async function getMyTasks(
     // Use the co-assignee-aware variant so each task carries a list of
     // other staff working on the same multi-assigned task. This is the
     // "+N others assigned" badge data the staff dashboard renders.
-    // attachGrievanceRefs and recentHistoryByTaskId are independent Catalyst
+    // attachReferenceNumbers and recentHistoryByTaskId are independent Catalyst
     // reads — run them in parallel instead of two serial round-trips.
     const tasks = await attachUsersWithCoAssignees(pageRows);
     const [, historyMap] = await Promise.all([
-      attachGrievanceRefs(tasks),
+      attachReferenceNumbers(tasks),
       recentHistoryByTaskId(pageRows.map((r) => String(r.ROWID))),
     ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];

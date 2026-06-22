@@ -68,11 +68,12 @@ export default function TrainEQQueue() {
     }
   };
 
-  // Client-side text search across the obvious fields.
+  // Client-side text search across the obvious fields (incl. reference number).
   const filteredRequests = requests.filter((r) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
+      (r.referenceNo ?? "").toLowerCase().includes(q) ||
       r.passengerName.toLowerCase().includes(q) ||
       r.pnrNumber.toLowerCase().includes(q) ||
       r.fromStation.toLowerCase().includes(q) ||
@@ -82,6 +83,7 @@ export default function TrainEQQueue() {
 
   // CSV export — mirrors the currently filtered/visible rows.
   const csvColumns: CsvColumn<TrainRequest>[] = [
+    { header: "Reference No", value: (r) => r.referenceNo ?? "" },
     { header: "Passenger", value: (r) => r.passengerName },
     { header: "PNR", value: (r) => r.pnrNumber },
     { header: "Contact", value: (r) => r.contactNumber },
@@ -116,7 +118,7 @@ export default function TrainEQQueue() {
               <SearchBar
                 value={search}
                 onChange={setSearch}
-                placeholder="Search passenger, PNR, station…"
+                placeholder="Search ref no, passenger, PNR, station…"
                 className="w-[240px]"
               />
               <DateRangeFilter
@@ -183,6 +185,11 @@ export default function TrainEQQueue() {
                     <div className="min-w-0 flex-1">
                       <p className="font-medium flex flex-wrap items-center gap-2">
                         <span>{r.passengerName}</span>
+                        {r.referenceNo && (
+                          <span className="font-mono text-xs font-normal text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                            {r.referenceNo}
+                          </span>
+                        )}
                         <Badge variant="outline">{r.status}</Badge>
                       </p>
                       <p className="text-sm text-muted-foreground">

@@ -303,12 +303,12 @@ export default function StaffHome() {
                   </Button>
 
                   <Button
-                    onClick={() => navigate("/visitors/new")}
+                    onClick={() => navigate("/people/new")}
                     className="h-24 flex flex-col gap-2 bg-slate-700 text-white hover:bg-slate-800"
                   >
                     <Users className="h-6 w-6" />
                     <span className="text-sm font-medium">
-                      Visitor Entry
+                      Visitor / Birthday
                     </span>
                   </Button>
 
