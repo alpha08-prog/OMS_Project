@@ -153,7 +153,13 @@ export async function createVisitor(
     const [shaped] = await attachCreators([row]);
     sendSuccess(res, shaped, 'Visitor logged successfully', 201);
   } catch (error) {
-    sendServerError(res, 'Failed to log visitor', error);
+    // Surface the underlying Catalyst reason (e.g. a missing/invalid column)
+    // instead of a generic message — same pattern as createGrievance.
+    const msg =
+      error instanceof Error && error.message
+        ? `Failed to log visitor: ${error.message}`
+        : 'Failed to log visitor';
+    sendServerError(res, msg, error);
   }
 }
 
