@@ -53,7 +53,18 @@ const VALID_TASK_STATUS = new Set(['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COM
 // it falls back to Patil's real ids, so the deployed app keeps working with his
 // actual account. The first id is stamped on forwarded rows; the full set
 // decides who is allowed to see the forwarded queue.
-const DEFAULT_FORWARD_TO_IDS = ['37807000000030336', '37807000000012006'];
+// All ids below belong to the SAME person (Shri. Mallikarjungouda Patil) across
+// different Catalyst environments — every one of them may view the forwarded
+// queue. The FIRST id is also the canonical recipient stamped on newly-forwarded
+// rows, so it must be his id in THIS project: 37719000000085050 (his row has no
+// legacyId, so his login resolves to that ROWID — it MUST be in the set or
+// getForwardedTasks() returns [] for him). The 37807* ids are his account in the
+// other environment; kept here so tasks forwarded under them still surface too.
+const DEFAULT_FORWARD_TO_IDS = [
+  '37719000000085050',
+  '37807000000030336',
+  '37807000000012006',
+];
 const CONFIGURED_FORWARD_TO_IDS = (process.env.OMS_FORWARD_TO_IDS || '')
   .split(',')
   .map((s) => s.trim())
