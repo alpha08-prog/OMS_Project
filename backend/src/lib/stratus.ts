@@ -94,6 +94,25 @@ function adminTokenFromReq(req: Request | undefined): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
 }
 
+/**
+ * Catalyst's /bucket/signature and /bucket/object endpoints require the
+ * project SECRET KEY in an `X-ZC-PROJECT-SECRET-KEY` header. Inside AppSail
+ * Catalyst injects it on every incoming request as `x-zc-project-secret-key`,
+ * so we forward that; falls back to an env var for environments/paths where
+ * the header isn't present. Without it the signature call 404s with
+ * "X-ZC-PROJECT-SECRET-KEY not found" and uploads/downloads fail.
+ */
+function projectSecretKey(req?: Request): string | undefined {
+  const h = (req?.headers ?? {}) as Record<string, unknown>;
+  const fromReq = h['x-zc-project-secret-key'] || h['X-ZC-PROJECT-SECRET-KEY'];
+  if (typeof fromReq === 'string' && fromReq.length > 0) return fromReq;
+  return readEnv(
+    'X_ZC_PROJECT_SECRET_KEY',
+    'CATALYST_PROJECT_SECRET_KEY',
+    'OMS_CATALYST_PROJECT_SECRET_KEY'
+  );
+}
+
 async function getAccessToken(req?: Request): Promise<string> {
   // Inside AppSail — token comes in on the request itself.
   if (isInsideCatalyst()) {
@@ -216,6 +235,10 @@ async function fetchBucketSignatureQs(req?: Request): Promise<string> {
     Accept: 'application/vnd.catalyst.v2+json',
     'User-Agent': 'zcatalyst-node/3.4.0',
   };
+  // Required by /bucket/signature — forwarded from the AppSail-injected request
+  // header (or env). Without it Catalyst 404s with "X-ZC-PROJECT-SECRET-KEY not found".
+  const secretKey = projectSecretKey(req);
+  if (secretKey) headers['X-ZC-PROJECT-SECRET-KEY'] = secretKey;
 
   const res = await fetch(url, { method: 'POST', headers });
   const text = await res.text();
@@ -265,17 +288,17 @@ export async function deleteObject(req: Request, key: string): Promise<void> {
   const url =
     `${API_DOMAIN}/baas/v1/project/${projectId()}` +
     `/bucket/object?bucket_name=${bucketName()}&object_key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Zoho-oauthtoken ${token}`,
-      PROJECT_ID: projectId() || '',
-      'X-Catalyst-Environment': env,
-      Environment: env,
-      'X-CATALYST-USER': 'admin',
-      Accept: 'application/vnd.catalyst.v2+json',
-    },
-  });
+  const headers: Record<string, string> = {
+    Authorization: `Zoho-oauthtoken ${token}`,
+    PROJECT_ID: projectId() || '',
+    'X-Catalyst-Environment': env,
+    Environment: env,
+    'X-CATALYST-USER': 'admin',
+    Accept: 'application/vnd.catalyst.v2+json',
+  };
+  const secretKey = projectSecretKey(req);
+  if (secretKey) headers['X-ZC-PROJECT-SECRET-KEY'] = secretKey;
+  const res = await fetch(url, { method: 'DELETE', headers });
   if (res.status === 404) return;
   if (!res.ok) {
     const text = await res.text().catch(() => '<unreadable>');
