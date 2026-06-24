@@ -23,8 +23,35 @@ import type { Request } from 'express';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { getCatalystApp } from './catalyst';
 
 const DEFAULT_BUCKET = 'oms-attachments';
+
+/**
+ * Are we running inside Catalyst (AppSail / Functions)? Catalyst injects these
+ * env vars at runtime. This decides our Stratus strategy:
+ *
+ *   - INSIDE AppSail (prod/dev deploy): go through the official SDK. Inside
+ *     AppSail the SDK assembles the auth combination /bucket/signature actually
+ *     requires — the injected admin-cred-token TOGETHER WITH the injected
+ *     `x-zc-project-secret-key` and project-key headers. Neither stock token
+ *     works alone there (admin token alone -> "X-ZC-PROJECT-SECRET-KEY not
+ *     found"; env refresh token -> OAUTH_SCOPE_MISMATCH if it lacks the Stratus
+ *     scope). And the Tomcat cold-start 400 doesn't occur on AppSail's internal
+ *     connection, so the SDK works there.
+ *
+ *   - LOCAL dev: the SDK's first /bucket/* call over the public internet hits
+ *     the IN-DC Tomcat cold-start 400 that no warmup clears for the SDK, so we
+ *     use the hand-rolled fetch flow (warmup GET keeps the undici connection
+ *     warm) with a full-scope refresh-token OAuth token.
+ */
+function isInsideCatalyst(): boolean {
+  return Boolean(
+    process.env.X_ZOHO_CATALYST_LISTEN_PORT ||
+      process.env.CATALYST_PROJECT_KEY_NAME ||
+      process.env.X_ZC_PROJECT_KEY
+  );
+}
 
 /**
  * Read an env var with fallback names. Production AppSail uses the
@@ -248,6 +275,23 @@ export async function uploadObject(
   body: Buffer,
   contentType: string
 ): Promise<void> {
+  // AppSail: let the SDK assemble the correct auth (admin-cred-token +
+  // x-zc-project-secret-key + project-key). No cold-start on the internal conn.
+  if (isInsideCatalyst()) {
+    const ok = await getCatalystApp(req)
+      .stratus()
+      .bucket(bucketName())
+      .putObject(key, body, {
+        overwrite: true,
+        contentType: contentType || 'application/octet-stream',
+      });
+    if (ok === false) {
+      throw new Error(`Stratus putObject reported failure for key "${key}"`);
+    }
+    return;
+  }
+
+  // Local dev: hand-rolled signed PUT (warmup-friendly, refresh-token auth).
   const qs = await fetchBucketSignatureQs(req);
   const putUrl = `${bucketBaseUrl()}/_signed/${encodeURI(key)}?${qs}`;
   const res = await fetch(putUrl, {
@@ -271,6 +315,22 @@ export async function uploadObject(
  * Bucket.deleteObjects implementation.)
  */
 export async function deleteObject(req: Request, key: string): Promise<void> {
+  // AppSail: SDK delete (it issues the correct admin PUT under the hood).
+  if (isInsideCatalyst()) {
+    try {
+      await getCatalystApp(req).stratus().bucket(bucketName()).deleteObject(key);
+    } catch (err) {
+      const msg = (err as Error)?.message ?? '';
+      if (/not[\s_-]?found/i.test(msg) || /404/.test(msg)) return;
+      throw err;
+    }
+    return;
+  }
+
+  // Local dev: hand-rolled. The admin object-delete is a PUT (not DELETE) to
+  // /bucket/object with a JSON body listing the keys — that's what Catalyst's
+  // admin API expects. Calling it with the DELETE method returns
+  // INVALID_REQUEST_METHOD. (Confirmed against the SDK's Bucket.deleteObjects.)
   await warmupOnce(req);
   const token = await getAccessToken(req);
   const env = catalystEnvironment();
@@ -308,14 +368,26 @@ export async function deleteObject(req: Request, key: string): Promise<void> {
 export async function getSignedDownloadUrl(
   req: Request,
   key: string,
-  _expirySeconds = 300
+  expirySeconds = 300
 ): Promise<string> {
-  // Use the bucket-level signature from POST /bucket/signature instead of
-  // the per-object /bucket/object/signed-url endpoint. The bucket-level
-  // policy authorises BOTH GetObject and PutObject within the bucket for
-  // ~1 hour, so the same query-string can sign downloads as well as
-  // uploads. This avoids /bucket/object/signed-url, which on the IN DC
-  // returns a Tomcat HTML 400 when called with full SDK admin headers.
+  // AppSail: SDK presigned GET URL.
+  if (isInsideCatalyst()) {
+    const res = await getCatalystApp(req)
+      .stratus()
+      .bucket(bucketName())
+      .generatePreSignedUrl(key, 'GET', { expiryIn: String(expirySeconds) });
+    const url = res?.signature;
+    if (typeof url !== 'string' || url.length === 0) {
+      throw new Error(`Stratus presigned URL came back empty for key "${key}"`);
+    }
+    return url;
+  }
+
+  // Local dev: reuse the bucket-level signature from POST /bucket/signature.
+  // The bucket-level policy authorises BOTH GetObject and PutObject within the
+  // bucket for ~1 hour, so the same query-string signs downloads as well as
+  // uploads — and it avoids /bucket/object/signed-url, which on the IN DC
+  // returns a Tomcat HTML 400 when called with full admin headers.
   const qs = await fetchBucketSignatureQs(req);
   return `${bucketBaseUrl()}/_signed/${encodeURI(key)}?${qs}`;
 }
