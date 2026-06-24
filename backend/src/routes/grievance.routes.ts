@@ -21,7 +21,7 @@ const createGrievanceValidation = [
   body('mobileNumber').matches(/^\d{10}$/).withMessage('Valid 10-digit mobile number is required'),
   body('constituency').trim().notEmpty().withMessage('Constituency is required'),
   body('grievanceType')
-    .isIn(['WATER', 'ROAD', 'POLICE', 'HEALTH', 'TRANSFER', 'FINANCIAL_AID', 'ELECTRICITY', 'EDUCATION', 'HOUSING', 'TEMPLE_VISIT', 'OTHER'])
+    .isIn(['WATER', 'ROAD', 'POLICE', 'HEALTH', 'TRANSFER', 'FINANCIAL_AID', 'ELECTRICITY', 'EDUCATION', 'HOUSING', 'Revenue', 'RDPR', 'Railway', 'Agriculture', 'Job', 'TEMPLE_VISIT', 'OTHER'])
     .withMessage('Valid grievance type is required'),
   body('description').trim().notEmpty().withMessage('Description is required'),
   body('monetaryValue')
