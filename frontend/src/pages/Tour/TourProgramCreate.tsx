@@ -5,10 +5,30 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Info, Upload, X } from "lucide-react";
-import { tourProgramApi, uploadsApi } from "@/lib/api";
+import { tourProgramApi, uploadsApi, type EventType } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import FloatingNotice from "@/components/common/FloatingNotice";
+
+// Event categories shown in the "Event Type" dropdown. Values are the
+// enum-style strings persisted to Catalyst (column: eventType); labels are
+// what staff see.
+const EVENT_TYPE_OPTIONS: { value: EventType; label: string }[] = [
+  { value: "WEDDING", label: "Wedding" },
+  { value: "HOUSE_WARMING", label: "House Warming" },
+  { value: "STATE_GOVT_EVENT", label: "State Govt Event" },
+  { value: "CENTRAL_GOVT_EVENT", label: "Central Govt Event" },
+  { value: "GOVT_MEETING", label: "Govt Meeting" },
+  { value: "PARTY_MEETING", label: "Party Meeting" },
+  { value: "FAMILY_EVENT", label: "Family Event" },
+];
 
 export default function TourProgramCreate() {
   const navigate = useNavigate();
@@ -19,6 +39,7 @@ export default function TourProgramCreate() {
 
   const [formData, setFormData] = useState({
     eventName: "",
+    eventType: "" as EventType | "",
     organizer: "",
     organizerPhone: "",
     organizerEmail: "",
@@ -75,6 +96,7 @@ export default function TourProgramCreate() {
       // Admin will later approve/reject
       const created = await tourProgramApi.create({
         eventName: formData.eventName,
+        eventType: formData.eventType || undefined,
         organizer: formData.organizer,
         organizerPhone: formData.organizerPhone.trim() || undefined,
         organizerEmail: formData.organizerEmail.trim() || undefined,
@@ -169,11 +191,30 @@ export default function TourProgramCreate() {
                         </div>
 
                         <div>
+                          <Label>Event Type</Label>
+                          <Select
+                            value={formData.eventType}
+                            onValueChange={(v) => handleChange("eventType", v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select event type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {EVENT_TYPE_OPTIONS.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
                           <Label>
                             Organizer <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            placeholder="Enter organizer name" 
+                          <Input
+                            placeholder="Enter organizer name"
                             value={formData.organizer}
                             onChange={(e) => handleChange("organizer", e.target.value)}
                           />

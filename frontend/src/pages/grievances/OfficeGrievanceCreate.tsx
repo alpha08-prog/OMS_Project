@@ -369,6 +369,7 @@ export default function OfficeGrievanceCreate() {
                               <SelectItem value="ELECTRICITY">Electricity</SelectItem>
                               <SelectItem value="EDUCATION">Education</SelectItem>
                               <SelectItem value="HOUSING">Housing</SelectItem>
+                              <SelectItem value="MP_LAD">MP LAD</SelectItem>
                               <SelectItem value="TEMPLE_VISIT">Temple Visit (Darshan Letter)</SelectItem>
                               <SelectItem value="OTHER">Other</SelectItem>
                             </SelectContent>

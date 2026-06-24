@@ -49,6 +49,17 @@ import type {
 
 const TOUR_TABLE = 'TourProgram';
 const VALID_DECISIONS = new Set(['PENDING', 'ACCEPTED', 'REGRET']);
+// Event categories stored in the `eventType` TEXT column. Optional — a tour can
+// be created without one. Invalid values are rejected at create/update time.
+const VALID_EVENT_TYPES = new Set([
+  'WEDDING',
+  'HOUSE_WARMING',
+  'STATE_GOVT_EVENT',
+  'CENTRAL_GOVT_EVENT',
+  'GOVT_MEETING',
+  'PARTY_MEETING',
+  'FAMILY_EVENT',
+]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -80,6 +91,7 @@ function shapeTour(
       ? String(row.tourNumber)
       : `TOUR-${String(row.ROWID)}`,
     eventName: row.eventName,
+    eventType: row.eventType ?? null,
     organizer: row.organizer,
     dateTime: row.dateTime,
     venue: row.venue,
@@ -202,6 +214,7 @@ export async function createTourProgram(
     }
     const {
       eventName,
+      eventType,
       organizer,
       organizerPhone,
       organizerEmail,
@@ -215,8 +228,15 @@ export async function createTourProgram(
       expectedFootfall,
     } = req.body;
 
+    // eventType is optional; reject only when a non-empty, unknown value is sent.
+    if (eventType && !VALID_EVENT_TYPES.has(eventType)) {
+      sendError(res, `Invalid event type: ${eventType}`);
+      return;
+    }
+
     const row = await insertRow(TOUR_TABLE, {
       eventName,
+      eventType: eventType || null,
       organizer,
       dateTime: toCatalystDate(dateTime) || nowCatalystIST(),
       venue,
@@ -467,6 +487,14 @@ export async function updateTourProgram(
         return;
       }
       updateData.decision = body.decision;
+    }
+    if (body.eventType !== undefined) {
+      // Allow clearing it; otherwise it must be a known category.
+      if (body.eventType && !VALID_EVENT_TYPES.has(body.eventType)) {
+        sendError(res, `Invalid event type: ${body.eventType}`);
+        return;
+      }
+      updateData.eventType = body.eventType || null;
     }
     if (body.attendeesCount !== undefined) {
       updateData.attendeesCount = parseInt0(body.attendeesCount);

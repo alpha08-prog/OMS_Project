@@ -15,6 +15,7 @@ import {
   Newspaper,
   ArrowRight,
   CalendarClock,
+  AlertTriangle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,11 +28,13 @@ import {
   tourProgramApi,
   statsApi,
   attendanceApi,
+  taskApi,
   type DashboardStats,
   type Grievance,
   type TourProgram,
   type AttendanceStats,
   type AttendanceRow,
+  type TaskAssignment,
 } from "@/lib/api";
 
 export default function AdminHome() {
@@ -54,6 +57,13 @@ export default function AdminHome() {
 
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Admin");
+
+  // Forwarded-tasks queue. The backend only returns rows to the configured
+  // recipient (Shri. Mallikarjungouda Patil in production; a test admin locally
+  // via OMS_FORWARD_TO_IDS), and [] for everyone else — so the card just renders
+  // whenever this list is non-empty. No client-side id check needed.
+  const [forwardedTasks, setForwardedTasks] = useState<TaskAssignment[]>([]);
+  const [completingId, setCompletingId] = useState<string | null>(null);
 
   const myPresent = myToday?.status === "PRESENT";
   const myCanCheckOut =
@@ -89,6 +99,20 @@ export default function AdminHome() {
     }
   };
 
+  // Mark a forwarded task complete. This sets COMPLETED everywhere (the task's
+  // status field), and the backend drops it from the forwarded queue.
+  const completeForwarded = async (id: string) => {
+    setCompletingId(id);
+    try {
+      await taskApi.editShared(id, { status: "COMPLETED" });
+      setForwardedTasks(await taskApi.getForwarded());
+    } catch (e) {
+      console.error("Failed to complete forwarded task", e);
+    } finally {
+      setCompletingId(null);
+    }
+  };
+
   useEffect(() => {
     const userStr = localStorage.getItem("user") || sessionStorage.getItem("user");
     if (userStr) {
@@ -118,6 +142,15 @@ export default function AdminHome() {
         setPendingTours(Array.isArray(tourRes?.data) ? tourRes.data : []);
         setAttendanceStats(attendance);
         setMyToday(mine);
+
+        // The forwarded queue is server-scoped to the recipient (returns [] for
+        // everyone else), so it's safe to always ask — the card only appears
+        // when something actually comes back.
+        try {
+          setForwardedTasks(await taskApi.getForwarded());
+        } catch {
+          /* non-fatal — leave the queue empty */
+        }
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
         setStats(null);
@@ -205,6 +238,90 @@ export default function AdminHome() {
                 ADMIN
               </span>
             </div>
+
+            {/* FORWARDED TO YOU — high-priority queue, shown only to the
+                configured recipient (the backend returns [] to everyone else).
+                Each task carries full details and a Complete button; completing
+                it sets COMPLETED everywhere. */}
+            {forwardedTasks.length > 0 && (
+              <Card className="rounded-2xl border-2 border-rose-300 bg-rose-50/60 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2 text-rose-800">
+                    <AlertTriangle className="h-5 w-5" />
+                    High Priority — Forwarded to You
+                    <Badge className="bg-rose-600 text-white hover:bg-rose-600">
+                      {forwardedTasks.length}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {forwardedTasks.map((t) => (
+                    <div key={t.id} className="rounded-xl border border-rose-200 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-slate-900 break-words">{t.title}</p>
+                            <Badge variant="outline">
+                              {(t.taskType ?? "GENERAL").replace("_", " ")}
+                            </Badge>
+                            {t.referenceNo && (
+                              <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
+                                {t.referenceNo}
+                              </span>
+                            )}
+                          </div>
+                          {t.description && (
+                            <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">
+                              {t.description}
+                            </p>
+                          )}
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                            <span>
+                              Assigned to:{" "}
+                              <span className="font-medium text-slate-700">
+                                {t.assignedTo?.name ?? "—"}
+                              </span>
+                            </span>
+                            <span>
+                              Forwarded by:{" "}
+                              <span className="font-medium text-slate-700">
+                                {t.forwardedBy?.name ?? "—"}
+                              </span>
+                            </span>
+                            {t.forwardedAt && (
+                              <span>On {new Date(t.forwardedAt).toLocaleString()}</span>
+                            )}
+                            <span>
+                              Status:{" "}
+                              <span className="font-medium text-slate-700">
+                                {(t.status ?? "").replace("_", " ")}
+                              </span>
+                            </span>
+                          </div>
+                          {t.progressNotes && (
+                            <p className="mt-1 text-xs text-slate-600">
+                              Latest remark: {t.progressNotes}
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          className="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white"
+                          disabled={completingId === t.id}
+                          onClick={() => completeForwarded(t.id)}
+                        >
+                          {completingId === t.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                          )}
+                          Complete
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             {/* KPI ROW */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

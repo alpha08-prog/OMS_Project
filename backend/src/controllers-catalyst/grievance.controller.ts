@@ -58,6 +58,7 @@ const VALID_TYPES = new Set([
   'Railway',
   'Agriculture',
   'Job',
+  'MP_LAD',
   'TEMPLE_VISIT',
   'OTHER',
 ]);

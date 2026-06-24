@@ -6,6 +6,8 @@ import {
   getTasks,
   getAllTasks,
   editTaskShared,
+  forwardTask,
+  getForwardedTasks,
   getTaskAudit,
   getTaskGroups,
   getMyTasks,
@@ -82,12 +84,17 @@ router.use(authenticate);
 // Shared "All Tasks" board — visible to and editable by ANY authenticated user.
 // Registered before the parametrised routes so '/all' isn't swallowed by '/:id'.
 router.get('/all', getAllTasks);
+// Forwarded-to-Patil queue — static path, must precede '/:id'. The controller
+// returns [] for anyone who isn't Shri. Mallikarjungouda Patil.
+router.get('/forwarded', getForwardedTasks);
 router.get('/:id/audit', validate(idParamValidation), getTaskAudit);
 router.patch(
   '/:id/edit',
   validate([...idParamValidation, ...updateProgressValidation]),
   editTaskShared
 );
+// Forward a task to Shri. Mallikarjungouda Patil — any authenticated user.
+router.patch('/:id/forward', validate(idParamValidation), forwardTask);
 
 // Staff routes
 router.get('/my-tasks', staffOnly, getMyTasks);

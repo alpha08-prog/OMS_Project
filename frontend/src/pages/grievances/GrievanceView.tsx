@@ -74,6 +74,7 @@ const GRIEVANCE_TYPE_OPTIONS: GrievanceType[] = [
   "ELECTRICITY",
   "EDUCATION",
   "HOUSING",
+  "MP_LAD",
   "TEMPLE_VISIT",
   "OTHER",
 ];

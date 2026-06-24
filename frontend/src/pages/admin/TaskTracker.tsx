@@ -18,6 +18,8 @@ import {
   ChevronDown,
   ChevronRight,
   Pencil,
+  Forward,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -63,6 +65,11 @@ export default function AdminTaskTracker() {
   const [editSaving, setEditSaving] = useState(false);
   const [auditEntries, setAuditEntries] = useState<TaskProgressHistory[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+
+  // Forward-to-Patil confirmation dialog.
+  const [forwardTask_, setForwardTask] = useState<TaskAssignment | null>(null);
+  const [forwarding, setForwarding] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
 
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -147,10 +154,10 @@ export default function AdminTaskTracker() {
     // refresh. Pause while the task-details or edit dialog is open -- a
     // background refetch during interaction is a known source of click-handler
     // perf violations (re-render right when the user clicks).
-    if (detailsOpen || editOpen) return;
+    if (detailsOpen || editOpen || forwardTask_) return;
     const id = setInterval(() => fetchData({ background: true }), 20_000);
     return () => clearInterval(id);
-  }, [detailsOpen, editOpen, startDate, endDate]);
+  }, [detailsOpen, editOpen, forwardTask_, startDate, endDate]);
 
   const searchTerm = searchQuery.trim().toLowerCase();
   const filteredTasks = tasks.filter(task => {
@@ -298,12 +305,29 @@ export default function AdminTaskTracker() {
 
   const handleMarkResolved = async (task: TaskAssignment) => {
     if (!confirm('Mark this task as completed/resolved?')) return;
-    
+
     try {
       await taskApi.updateStatus(task.id, 'COMPLETED');
       fetchData();
     } catch (error) {
       console.error('Failed to update status:', error);
+    }
+  };
+
+  // Forward the chosen task to Shri. Mallikarjungouda Patil after confirmation.
+  const handleForward = async () => {
+    if (!forwardTask_) return;
+    setForwarding(true);
+    setForwardError(null);
+    try {
+      await taskApi.forward(forwardTask_.id);
+      setForwardTask(null);
+      await fetchData();
+    } catch (error) {
+      console.error('Failed to forward task:', error);
+      setForwardError('Failed to forward task. Please try again.');
+    } finally {
+      setForwarding(false);
     }
   };
 
@@ -687,6 +711,23 @@ export default function AdminTaskTracker() {
                           <Button size="sm" variant="outline" onClick={() => handleViewDetails(task)}>
                             <Eye className="h-4 w-4" />
                           </Button>
+                          {task.status !== 'COMPLETED' &&
+                            (task.isForwarded ? (
+                              <Badge className="bg-violet-100 text-violet-800 self-center whitespace-nowrap">
+                                Forwarded
+                              </Badge>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-violet-700 border-violet-300 hover:bg-violet-50"
+                                onClick={() => { setForwardError(null); setForwardTask(task); }}
+                                title="Forward to Shri. Mallikarjungouda Patil"
+                              >
+                                <Forward className="h-4 w-4 mr-1" />
+                                Forward
+                              </Button>
+                            ))}
                           {task.status !== 'COMPLETED' && (
                             <Button
                               size="sm"
@@ -950,6 +991,49 @@ export default function AdminTaskTracker() {
                   </Button>
                   <Button onClick={handleSaveEdit} disabled={editSaving}>
                     {editSaving ? 'Saving…' : 'Save'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Forward-to-Patil confirmation */}
+        <Dialog open={!!forwardTask_} onOpenChange={(open) => { if (!forwarding && !open) setForwardTask(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Forward className="h-5 w-5 text-violet-700" />
+                Forward to Shri. Mallikarjungouda Patil?
+              </DialogTitle>
+            </DialogHeader>
+            {forwardTask_ && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-slate-800">{forwardTask_.title}</span> will be
+                  sent to <span className="font-medium">Shri. Mallikarjungouda Patil</span> and
+                  shown as a <span className="font-medium text-rose-700">high-priority</span> item
+                  on his dashboard for him to review and complete. He'll be notified, and the
+                  task's status stays visible to everyone until he marks it complete.
+                </p>
+                {forwardError && (
+                  <p className="text-sm text-red-600" role="alert">{forwardError}</p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setForwardTask(null)} disabled={forwarding}>
+                    Cancel
+                  </Button>
+                  <Button
+                    className="bg-violet-600 hover:bg-violet-700 text-white"
+                    onClick={handleForward}
+                    disabled={forwarding}
+                  >
+                    {forwarding ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    ) : (
+                      <Forward className="h-4 w-4 mr-1" />
+                    )}
+                    Confirm Forward
                   </Button>
                 </div>
               </div>

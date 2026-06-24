@@ -366,6 +366,7 @@ export default function GrievanceCreate() {
                         <SelectItem value="Railway">Railway</SelectItem>
                         <SelectItem value="Agriculture">Agriculture</SelectItem>
                         <SelectItem value="Job">Job</SelectItem>
+                        <SelectItem value="MP_LAD">MP LAD</SelectItem>
                         <SelectItem value="TEMPLE_VISIT">
                           Temple Visit (Darshan Letter)
                         </SelectItem>

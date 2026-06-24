@@ -31,7 +31,7 @@ export type LoginRequest = { identifier: string; password: string }
 export type LoginResponse = { user: User; token: string }
 
 // Grievance Types
-export type GrievanceType = 'WATER' | 'ROAD' | 'POLICE' | 'HEALTH' | 'TRANSFER' | 'FINANCIAL_AID' | 'ELECTRICITY' | 'EDUCATION' | 'HOUSING' | 'TEMPLE_VISIT' | 'OTHER'
+export type GrievanceType = 'WATER' | 'ROAD' | 'POLICE' | 'HEALTH' | 'TRANSFER' | 'FINANCIAL_AID' | 'ELECTRICITY' | 'EDUCATION' | 'HOUSING' | 'MP_LAD' | 'TEMPLE_VISIT' | 'OTHER'
 export type GrievanceStatus = 'OPEN' | 'IN_PROGRESS' | 'VERIFIED' | 'RESOLVED' | 'REJECTED'
 export type ActionRequired = 'GENERATE_LETTER' | 'CALL_OFFICIAL' | 'FORWARD_TO_DEPT' | 'SCHEDULE_MEETING' | 'NO_ACTION'
 export type GrievancePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
@@ -264,11 +264,22 @@ export type CreateTrainRequestRequest = {
 export type TourProgramDecision = 'ACCEPTED' | 'REGRET' | 'PENDING'
 export type TourDecision = TourProgramDecision // alias for backward compatibility
 
+/** Event categories for the Event/Tour register (Catalyst column: eventType). */
+export type EventType =
+  | 'WEDDING'
+  | 'HOUSE_WARMING'
+  | 'STATE_GOVT_EVENT'
+  | 'CENTRAL_GOVT_EVENT'
+  | 'GOVT_MEETING'
+  | 'PARTY_MEETING'
+  | 'FAMILY_EVENT'
+
 export type TourProgram = {
   id: string
   /** Human-friendly reference (TOUR-YYYY-NNNN, or TOUR-<rowid> fallback). */
   referenceNo?: string | null
   eventName: string
+  eventType?: EventType | null
   organizer: string
   organizerPhone?: string
   organizerEmail?: string
@@ -303,6 +314,7 @@ export type TourProgram = {
 
 export type CreateTourProgramRequest = {
   eventName: string
+  eventType?: EventType
   organizer: string
   organizerPhone?: string
   organizerEmail?: string
@@ -1165,6 +1177,13 @@ export type TaskAssignment = {
   progressHistory?: TaskProgressHistory[]
   groupId?: string | null
   coAssignees?: CoAssignee[]
+  // Forwarding (to Shri. Mallikarjungouda Patil). isForwarded flags whether the
+  // task is already in his queue; forwardedBy is resolved on the forwarded list.
+  forwardedToId?: string | null
+  forwardedById?: string | null
+  forwardedAt?: string | null
+  isForwarded?: boolean
+  forwardedBy?: { id: string; name: string; email: string } | null
 }
 
 // Admin-side consolidated card shape: one entry per (multi-assigned) task,
@@ -1283,6 +1302,20 @@ export const taskApi = {
   editShared: async (id: string, data: { status?: TaskStatus; progressNotes?: string }) => {
     const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/edit`, data)
     return res.data.data
+  },
+
+  // Forward a task to Shri. Mallikarjungouda Patil — any authenticated user.
+  // It then appears as a high-priority card on his dashboard.
+  forward: async (id: string) => {
+    const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/forward`, {})
+    return res.data.data
+  },
+
+  // Tasks forwarded to Patil that are not yet completed. Returns [] for anyone
+  // who isn't him (server-enforced).
+  getForwarded: async () => {
+    const res = await http.get<ApiResponse<TaskAssignment[]>>('/tasks/forwarded')
+    return res.data.data ?? []
   },
 
   // Full audit timeline for any task (read-only, visible to everyone).
