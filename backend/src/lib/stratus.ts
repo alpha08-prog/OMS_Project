@@ -48,6 +48,18 @@ function bucketName(): string {
   return (v && v.trim()) || DEFAULT_BUCKET;
 }
 
+/**
+ * Which Catalyst environment this process targets. Reads OMS_CATALYST_ENVIRONMENT
+ * first (what the prod AppSail config sets), then bare CATALYST_ENVIRONMENT,
+ * defaulting to Development. MUST match the rest of the app: a Production AppSail
+ * that only sets OMS_CATALYST_ENVIRONMENT would otherwise fall back to
+ * 'Development', wrongly target the -development Stratus bucket, and 502 on every
+ * upload (works in Dev only because 'Development' is coincidentally correct there).
+ */
+function catalystEnvironment(): string {
+  return readEnv('OMS_CATALYST_ENVIRONMENT', 'CATALYST_ENVIRONMENT') || 'Development';
+}
+
 const API_DOMAIN = ((): string => {
   const raw = (readEnv('CATALYST_API_DOMAIN', 'OMS_CATALYST_API_DOMAIN') || 'api.catalyst.zoho.in').replace(/\/$/, '');
   return /^https?:\/\//.test(raw) ? raw : `https://${raw}`;
@@ -60,31 +72,30 @@ const ACCOUNTS_DOMAIN = (readEnv('X_ZOHO_CATALYST_ACCOUNTS_URL') || 'https://acc
 const STRATUS_SUFFIX = readEnv('X_ZOHO_STRATUS_RESOURCE_SUFFIX') || '.zohostratus.in';
 
 function bucketBaseUrl(): string {
-  const env = process.env.CATALYST_ENVIRONMENT || 'Development';
+  const env = catalystEnvironment();
   const suffix = env === 'Development' ? '-development' : '';
   return `https://${bucketName()}${suffix}${STRATUS_SUFFIX}`;
 }
 
 // ─── access token ──────────────────────────────────────────────────────────
-// Two paths:
-//   1. Inside AppSail / Functions: Catalyst injects the admin access token
-//      on every incoming request as `x-zc-admin-cred-token`. We just read
-//      it off req.headers — no OAuth call, no env-var refresh token needed.
-//      (Production AppSail does NOT set CATALYST_REFRESH_TOKEN, so the
-//      env-var path would 500 with "OAuth token refresh failed" otherwise.)
-//   2. Local dev: refresh-token flow against accounts.zoho.in, cached in
-//      /tmp so repeated runs don't trip Zoho's continuous-refresh limit.
+// Stratus's POST /bucket/signature accepts a FULL-scope admin OAuth token (the
+// kind the refresh-token flow returns) directly. The narrower
+// `x-zc-admin-cred-token` that AppSail injects on each request does NOT satisfy
+// it on its own: with only that token the endpoint additionally demands an
+// `X-ZC-PROJECT-SECRET-KEY` header that application code cannot legally supply
+// — which is exactly the prod failure we hit (404 "X-ZC-PROJECT-SECRET-KEY not
+// found" with the header omitted, 400 "Invalid input value for
+// X-ZC-PROJECT-SECRET-KEY" with any value we can see). Dev never saw this only
+// because it authenticates with the refresh-token flow.
+//
+// So we PREFER the refresh-token flow whenever its credentials exist — both
+// local dev and prod AppSail set them (bare CATALYST_* or prefixed
+// OMS_CATALYST_*) — and fall back to the injected admin token only when no
+// refresh creds are present. Tokens are cached in-process and in /tmp so we
+// don't trip Zoho's continuous-refresh limit.
 
 const TOKEN_CACHE_FILE = path.join(os.tmpdir(), 'oms-zoho-access-token.json');
 let cachedAccessToken: { value: string; expiresAt: number } | null = null;
-
-function isInsideCatalyst(): boolean {
-  return Boolean(
-    process.env.X_ZOHO_CATALYST_LISTEN_PORT ||
-      process.env.CATALYST_PROJECT_KEY_NAME ||
-      process.env.X_ZC_PROJECT_KEY
-  );
-}
 
 function adminTokenFromReq(req: Request | undefined): string | null {
   if (!req || !req.headers) return null;
@@ -94,33 +105,24 @@ function adminTokenFromReq(req: Request | undefined): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
 }
 
-/**
- * Catalyst's /bucket/signature and /bucket/object endpoints require the
- * project SECRET KEY in an `X-ZC-PROJECT-SECRET-KEY` header. Inside AppSail
- * Catalyst injects it on every incoming request as `x-zc-project-secret-key`,
- * so we forward that; falls back to an env var for environments/paths where
- * the header isn't present. Without it the signature call 404s with
- * "X-ZC-PROJECT-SECRET-KEY not found" and uploads/downloads fail.
- */
-function projectSecretKey(req?: Request): string | undefined {
-  const h = (req?.headers ?? {}) as Record<string, unknown>;
-  const fromReq = h['x-zc-project-secret-key'] || h['X-ZC-PROJECT-SECRET-KEY'];
-  if (typeof fromReq === 'string' && fromReq.length > 0) return fromReq;
-  return readEnv(
-    'X_ZC_PROJECT_SECRET_KEY',
-    'CATALYST_PROJECT_SECRET_KEY',
-    'OMS_CATALYST_PROJECT_SECRET_KEY'
-  );
-}
-
 async function getAccessToken(req?: Request): Promise<string> {
-  // Inside AppSail — token comes in on the request itself.
-  if (isInsideCatalyst()) {
+  // Read both prefixes — local dev uses bare CATALYST_*, prod AppSail uses
+  // OMS_CATALYST_*. These are the PREFERRED credentials: the refresh-token
+  // flow returns a full-scope token that /bucket/signature accepts on its own.
+  const refreshToken = readEnv('CATALYST_REFRESH_TOKEN', 'OMS_CATALYST_REFRESH_TOKEN');
+  const clientId     = readEnv('CATALYST_CLIENT_ID', 'OMS_CATALYST_CLIENT_ID');
+  const clientSecret = readEnv('CATALYST_CLIENT_SECRET', 'OMS_CATALYST_CLIENT_SECRET');
+
+  // No refresh creds available — fall back to the AppSail-injected admin token.
+  if (!refreshToken || !clientId || !clientSecret) {
     const fromHeader = adminTokenFromReq(req);
     if (fromHeader) return fromHeader;
-    // Fall through if the request didn't carry the header (some AppSail
-    // routes only get user-cred headers); the env-var refresh below will
-    // try only if CATALYST_REFRESH_TOKEN is actually set.
+    throw new Error(
+      'No Catalyst access token available. ' +
+      'Need either x-zc-admin-cred-token on the incoming request, OR ' +
+      'CATALYST_REFRESH_TOKEN/CATALYST_CLIENT_ID/CATALYST_CLIENT_SECRET (or the OMS_CATALYST_* equivalents) in the env. ' +
+      `Found: refresh=${!!refreshToken} clientId=${!!clientId} clientSecret=${!!clientSecret}`
+    );
   }
 
   const now = Date.now();
@@ -135,21 +137,6 @@ async function getAccessToken(req?: Request): Promise<string> {
       return parsed.value;
     }
   } catch {}
-
-  // Read both prefixes — production AppSail uses OMS_CATALYST_*, local uses
-  // bare CATALYST_*. Either is acceptable as the fallback.
-  const refreshToken = readEnv('CATALYST_REFRESH_TOKEN', 'OMS_CATALYST_REFRESH_TOKEN');
-  const clientId     = readEnv('CATALYST_CLIENT_ID', 'OMS_CATALYST_CLIENT_ID');
-  const clientSecret = readEnv('CATALYST_CLIENT_SECRET', 'OMS_CATALYST_CLIENT_SECRET');
-
-  if (!refreshToken || !clientId || !clientSecret) {
-    throw new Error(
-      'No Catalyst access token available. ' +
-      'Need either x-zc-admin-cred-token on the incoming request, OR ' +
-      'CATALYST_REFRESH_TOKEN/CATALYST_CLIENT_ID/CATALYST_CLIENT_SECRET (or the OMS_CATALYST_* equivalents) in the env. ' +
-      `Found: refresh=${!!refreshToken} clientId=${!!clientId} clientSecret=${!!clientSecret}`
-    );
-  }
 
   const params = new URLSearchParams({
     refresh_token: refreshToken,
@@ -219,7 +206,7 @@ export async function warmupStratus(): Promise<void> {
 async function fetchBucketSignatureQs(req?: Request): Promise<string> {
   await warmupOnce(req);
   const token = await getAccessToken(req);
-  const env = process.env.CATALYST_ENVIRONMENT || 'Development';
+  const env = catalystEnvironment();
   const url = `${API_DOMAIN}/baas/v1/project/${projectId()}/bucket/signature?bucket_name=${bucketName()}`;
 
   // Without the X-Catalyst-Environment / Environment headers, Catalyst issues
@@ -235,10 +222,6 @@ async function fetchBucketSignatureQs(req?: Request): Promise<string> {
     Accept: 'application/vnd.catalyst.v2+json',
     'User-Agent': 'zcatalyst-node/3.4.0',
   };
-  // Required by /bucket/signature — forwarded from the AppSail-injected request
-  // header (or env). Without it Catalyst 404s with "X-ZC-PROJECT-SECRET-KEY not found".
-  const secretKey = projectSecretKey(req);
-  if (secretKey) headers['X-ZC-PROJECT-SECRET-KEY'] = secretKey;
 
   const res = await fetch(url, { method: 'POST', headers });
   const text = await res.text();
@@ -279,15 +262,21 @@ export async function uploadObject(
 }
 
 /**
- * Delete an object from Stratus. Idempotent — swallows 404.
+ * Delete an object from Stratus. Idempotent — swallows not-found.
+ *
+ * The admin object-delete is a PUT (not DELETE) to /bucket/object with a JSON
+ * body listing the keys — that's what Catalyst's admin API expects. Calling it
+ * with the DELETE method returns INVALID_REQUEST_METHOD ("The http request
+ * method type is not a valid one"). (Confirmed against the SDK's own
+ * Bucket.deleteObjects implementation.)
  */
 export async function deleteObject(req: Request, key: string): Promise<void> {
   await warmupOnce(req);
   const token = await getAccessToken(req);
-  const env = process.env.CATALYST_ENVIRONMENT || 'Development';
+  const env = catalystEnvironment();
   const url =
     `${API_DOMAIN}/baas/v1/project/${projectId()}` +
-    `/bucket/object?bucket_name=${bucketName()}&object_key=${encodeURIComponent(key)}`;
+    `/bucket/object?bucket_name=${bucketName()}`;
   const headers: Record<string, string> = {
     Authorization: `Zoho-oauthtoken ${token}`,
     PROJECT_ID: projectId() || '',
@@ -295,15 +284,18 @@ export async function deleteObject(req: Request, key: string): Promise<void> {
     Environment: env,
     'X-CATALYST-USER': 'admin',
     Accept: 'application/vnd.catalyst.v2+json',
+    'Content-Type': 'application/json',
   };
-  const secretKey = projectSecretKey(req);
-  if (secretKey) headers['X-ZC-PROJECT-SECRET-KEY'] = secretKey;
-  const res = await fetch(url, { method: 'DELETE', headers });
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ objects: [{ key }] }),
+  });
   if (res.status === 404) return;
   if (!res.ok) {
     const text = await res.text().catch(() => '<unreadable>');
     if (/not[\s_-]?found/i.test(text)) return;
-    throw new Error(`Stratus DELETE failed: ${res.status} ${res.statusText} — ${text.slice(0, 300)}`);
+    throw new Error(`Stratus delete failed: ${res.status} ${res.statusText} — ${text.slice(0, 300)}`);
   }
 }
 
