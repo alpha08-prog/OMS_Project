@@ -52,6 +52,12 @@ const VALID_TYPES = new Set([
   'ELECTRICITY',
   'EDUCATION',
   'HOUSING',
+  // Newer categories — must match the frontend dropdown values exactly.
+  'Revenue',
+  'RDPR',
+  'Railway',
+  'Agriculture',
+  'Job',
   'TEMPLE_VISIT',
   'OTHER',
 ]);
