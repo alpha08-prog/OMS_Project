@@ -447,6 +447,36 @@ export async function getAllUsers(
 }
 
 /**
+ * GET /api/auth/users/directory — any authenticated user.
+ *
+ * A lean, read-only directory of active accounts used by pickers (e.g. the
+ * forward-to dialog) where every user must be able to choose any colleague.
+ * Returns id/name/email/role only — never password or policy fields — and
+ * omits hidden test accounts and deactivated users. The admin-only
+ * `GET /users` management endpoint is left untouched.
+ */
+export async function getUserDirectory(
+  _req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const rows = await getCachedTableList(APPUSER_TABLE);
+    const users = rows
+      .filter((r) => !isHiddenTestUser(r) && parseBool(r.isActive, true))
+      .map((r) => ({
+        id: r.legacyId ? String(r.legacyId) : String(r.ROWID),
+        name: String(r.name),
+        email: String(r.email),
+        role: String(r.role),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    sendSuccess(res, users, 'User directory retrieved successfully');
+  } catch (error) {
+    sendServerError(res, 'Failed to get user directory', error);
+  }
+}
+
+/**
  * POST /api/auth/users — admin only
  * Create a real user account with a chosen role and an initial password.
  * The admin types the password directly so they can hand it to the new

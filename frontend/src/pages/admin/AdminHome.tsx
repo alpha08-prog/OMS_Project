@@ -34,7 +34,7 @@ import {
   type TourProgram,
   type AttendanceStats,
   type AttendanceRow,
-  type TaskAssignment,
+  type ForwardedItem,
 } from "@/lib/api";
 
 export default function AdminHome() {
@@ -58,11 +58,10 @@ export default function AdminHome() {
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Admin");
 
-  // Forwarded-tasks queue. The backend only returns rows to the configured
-  // recipient (Shri. Mallikarjungouda Patil in production; a test admin locally
-  // via OMS_FORWARD_TO_IDS), and [] for everyone else — so the card just renders
-  // whenever this list is non-empty. No client-side id check needed.
-  const [forwardedTasks, setForwardedTasks] = useState<TaskAssignment[]>([]);
+  // Items (tasks + grievances) forwarded TO the current admin. The backend
+  // scopes this per-user, so the card just renders whenever the list is
+  // non-empty. A fuller view lives on the /forwarded page.
+  const [forwardedTasks, setForwardedTasks] = useState<ForwardedItem[]>([]);
   const [completingId, setCompletingId] = useState<string | null>(null);
 
   const myPresent = myToday?.status === "PRESENT";
@@ -99,15 +98,20 @@ export default function AdminHome() {
     }
   };
 
-  // Mark a forwarded task complete. This sets COMPLETED everywhere (the task's
-  // status field), and the backend drops it from the forwarded queue.
-  const completeForwarded = async (id: string) => {
-    setCompletingId(id);
+  // Mark a forwarded item complete. Writes to the live source row (task status
+  // → COMPLETED, grievance status → RESOLVED), so it shows complete everywhere
+  // and the backend drops it from every recipient's forwarded queue.
+  const completeForwarded = async (item: ForwardedItem) => {
+    setCompletingId(item.id);
     try {
-      await taskApi.editShared(id, { status: "COMPLETED" });
+      if (item.entityType === "GRIEVANCE") {
+        await grievanceApi.update(item.id, { status: "RESOLVED" });
+      } else {
+        await taskApi.editShared(item.id, { status: "COMPLETED" });
+      }
       setForwardedTasks(await taskApi.getForwarded());
     } catch (e) {
-      console.error("Failed to complete forwarded task", e);
+      console.error("Failed to complete forwarded item", e);
     } finally {
       setCompletingId(null);
     }
@@ -143,8 +147,8 @@ export default function AdminHome() {
         setAttendanceStats(attendance);
         setMyToday(mine);
 
-        // The forwarded queue is server-scoped to the recipient (returns [] for
-        // everyone else), so it's safe to always ask — the card only appears
+        // The forwarded queue is server-scoped to the current user (their own
+        // received forwards), so it's safe to always ask — the card only appears
         // when something actually comes back.
         try {
           setForwardedTasks(await taskApi.getForwarded());
@@ -256,13 +260,13 @@ export default function AdminHome() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {forwardedTasks.map((t) => (
-                    <div key={t.id} className="rounded-xl border border-rose-200 bg-white p-4">
+                    <div key={`${t.entityType}-${t.id}`} className="rounded-xl border border-rose-200 bg-white p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-semibold text-slate-900 break-words">{t.title}</p>
                             <Badge variant="outline">
-                              {(t.taskType ?? "GENERAL").replace("_", " ")}
+                              {t.entityType === "GRIEVANCE" ? "Grievance" : "Task"}
                             </Badge>
                             {t.referenceNo && (
                               <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5">
@@ -298,16 +302,16 @@ export default function AdminHome() {
                               </span>
                             </span>
                           </div>
-                          {t.progressNotes && (
+                          {t.forwardRemark && (
                             <p className="mt-1 text-xs text-slate-600">
-                              Latest remark: {t.progressNotes}
+                              Note: {t.forwardRemark}
                             </p>
                           )}
                         </div>
                         <Button
                           className="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white"
                           disabled={completingId === t.id}
-                          onClick={() => completeForwarded(t.id)}
+                          onClick={() => completeForwarded(t)}
                         >
                           {completingId === t.id ? (
                             <Loader2 className="h-4 w-4 animate-spin mr-1" />

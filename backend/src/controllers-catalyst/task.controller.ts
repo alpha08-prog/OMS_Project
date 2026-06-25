@@ -27,6 +27,10 @@ import {
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
 import { getCachedTableList, isHiddenTestUser } from '../lib/catalyst-user-lookup';
+import {
+  syncGrievanceForTask,
+  reconcileGrievanceTaskStatuses,
+} from '../lib/grievance-task-sync';
 import { emitNotification, emitNotifications } from './notification.controller';
 import {
   sendSuccess,
@@ -42,39 +46,6 @@ const HISTORY_TABLE = 'TaskHistory';
 
 const VALID_TASK_TYPES = new Set(['GRIEVANCE', 'TRAIN_REQUEST', 'TOUR_PROGRAM', 'GENERAL']);
 const VALID_TASK_STATUS = new Set(['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD']);
-
-// Forwarding target: Shri. Mallikarjungouda Patil (an admin). Any user can
-// forward a task to him; it then surfaces as a high-priority card on his
-// dashboard.
-//
-// The recipient ids are configurable via the OMS_FORWARD_TO_IDS env var
-// (comma-separated AppUser ROWIDs) so a local/staging machine can point this at
-// a TEST admin without touching code. When the var is unset — i.e. production —
-// it falls back to Patil's real ids, so the deployed app keeps working with his
-// actual account. The first id is stamped on forwarded rows; the full set
-// decides who is allowed to see the forwarded queue.
-// All ids below belong to the SAME person (Shri. Mallikarjungouda Patil) across
-// different Catalyst environments — every one of them may view the forwarded
-// queue. The FIRST id is also the canonical recipient stamped on newly-forwarded
-// rows, so it must be his id in THIS project: 37719000000085050 (his row has no
-// legacyId, so his login resolves to that ROWID — it MUST be in the set or
-// getForwardedTasks() returns [] for him). The 37807* ids are his account in the
-// other environment; kept here so tasks forwarded under them still surface too.
-const DEFAULT_FORWARD_TO_IDS = [
-  '37719000000085050',
-  '37807000000030336',
-  '37807000000012006',
-];
-const CONFIGURED_FORWARD_TO_IDS = (process.env.OMS_FORWARD_TO_IDS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const FORWARD_TO_IDS =
-  CONFIGURED_FORWARD_TO_IDS.length > 0
-    ? CONFIGURED_FORWARD_TO_IDS
-    : DEFAULT_FORWARD_TO_IDS;
-const PATIL_FORWARD_TO_ID = FORWARD_TO_IDS[0];
-const PATIL_USER_IDS = new Set(FORWARD_TO_IDS);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -141,11 +112,14 @@ function shapeTask(
     // Other staff working on the same group (excludes self when called from
     // /my-tasks). Empty array for solo assignments.
     coAssignees: coAssignees ?? [],
-    // Forwarding (to Shri. Mallikarjungouda Patil). isForwarded is derived from
-    // forwardedToId so the UI can flag the task / hide the Forward action.
+    // Forwarding. A task can be forwarded by anyone to any one other user; the
+    // latest recipient "owns" the forward (re-forwarding is a hand-off). The
+    // full chain stays visible in the TaskHistory timeline. isForwarded is
+    // derived from forwardedToId so the UI can flag the task.
     forwardedToId: row.forwardedToId ?? null,
     forwardedById: row.forwardedById ?? null,
     forwardedAt: row.forwardedAt ?? null,
+    forwardRemark: row.forwardRemark ?? null,
     isForwarded: Boolean(row.forwardedToId),
   };
 }
@@ -192,6 +166,32 @@ async function lookupUsers(
     /* Catalyst unreachable — return empty map */
   }
   return map;
+}
+
+/**
+ * Build the set of id forms (ROWID + legacyId) that identify one user, so a
+ * `forwardedToId` stored under either form matches the logged-in viewer. A
+ * recipient picked from the directory is stored as legacyId-or-ROWID, and the
+ * JWT subject uses the same preference — but a legacy row could have been
+ * stamped under the other form, so we match both to be safe.
+ */
+async function userIdForms(userId: string): Promise<Set<string>> {
+  const forms = new Set<string>([String(userId)]);
+  try {
+    const users = await getCachedTableList('AppUser');
+    for (const u of users) {
+      const rowId = String(u.ROWID);
+      const legacyId = u.legacyId ? String(u.legacyId) : null;
+      if (rowId === String(userId) || (legacyId && legacyId === String(userId))) {
+        forms.add(rowId);
+        if (legacyId) forms.add(legacyId);
+        break;
+      }
+    }
+  } catch {
+    /* AppUser unreachable — fall back to the raw id */
+  }
+  return forms;
 }
 
 /** Attach assignedTo + assignedBy user info to a list of tasks. */
@@ -1100,11 +1100,13 @@ export async function getAllTasks(
 }
 
 /**
- * PATCH /api/tasks/:id/forward — ANY authenticated user forwards a task to
- * Shri. Mallikarjungouda Patil. The row is stamped forwarded + bumped to HIGH
- * priority so it surfaces as a high-priority card on his dashboard. Tolerant
- * of a Catalyst schema that's missing the forwarded* columns (the priority
- * bump still applies; add the columns to enable the dashboard card).
+ * PATCH /api/tasks/:id/forward — ANY authenticated user forwards a task to one
+ * other user (chosen from the directory), with an optional remark. The row is
+ * stamped with the recipient + bumped to HIGH priority so it surfaces on the
+ * recipient's "Forwarded to Me" page. The forward is recorded in TaskHistory
+ * (so it shows in the shared timeline visible to everyone) and the recipient is
+ * notified. Tolerant of a Catalyst schema missing the forwarded* columns (the
+ * priority bump still applies; add the columns to enable the forwarded views).
  */
 export async function forwardTask(
   req: AuthenticatedRequest,
@@ -1116,59 +1118,99 @@ export async function forwardTask(
       return;
     }
     const { id } = req.params;
+    const { recipientId, remark } = req.body as {
+      recipientId?: string;
+      remark?: string;
+    };
+    if (!recipientId) {
+      sendError(res, 'recipientId is required');
+      return;
+    }
+    if (String(recipientId) === String(req.user.id)) {
+      sendError(res, 'You cannot forward a task to yourself');
+      return;
+    }
+
     const existing = await getRow(TASK_TABLE, id);
     if (!existing) {
       sendNotFound(res, 'Task not found');
       return;
     }
 
+    const note = typeof remark === 'string' ? remark.trim() : '';
+    // Resolve recipient + forwarder names for the audit note.
+    const names = await lookupUsers([String(recipientId), String(req.user.id)]);
+    const recipientName = names.get(String(recipientId))?.name || 'a user';
+    const forwarderName =
+      names.get(String(req.user.id))?.name || req.user.name || 'a user';
+
+    // Forwarding moves the task into active work: bump it to IN_PROGRESS (unless
+    // already completed) and stamp startedAt, so the tracker and any linked
+    // grievance both reflect that someone is now on it.
+    const nowIst = nowCatalystIST();
+    const willProgress = String(existing.status) !== 'COMPLETED';
+    const forwardUpdate: { ROWID: string; [column: string]: any } = {
+      ROWID: id,
+      forwardedToId: String(recipientId),
+      forwardedById: req.user.id,
+      forwardedAt: nowIst,
+      forwardRemark: note || null,
+      priorities: 'HIGH',
+    };
+    if (willProgress) {
+      forwardUpdate.status = 'IN_PROGRESS';
+      if (!existing.startedAt) forwardUpdate.startedAt = nowIst;
+    }
     const updated = await updateRowTolerant(
       TASK_TABLE,
-      {
-        ROWID: id,
-        forwardedToId: PATIL_FORWARD_TO_ID,
-        forwardedById: req.user.id,
-        forwardedAt: nowCatalystIST(),
-        priorities: 'HIGH',
-      },
-      ['forwardedToId', 'forwardedById', 'forwardedAt']
+      forwardUpdate,
+      ['forwardedToId', 'forwardedById', 'forwardedAt', 'forwardRemark']
     );
 
-    // Audit entry — who forwarded it and when. Best-effort.
+    // Audit entry — surfaces in the shared timeline (getTaskAudit) for everyone
+    // and on the linked grievance timeline (which pulls TaskHistory). Stamped
+    // with the new status so the "Forwarded to …" line carries In Progress.
     try {
       await insertRow(HISTORY_TABLE, {
         taskId: id,
-        note: `Task forwarded to Shri. Mallikarjungouda Patil by ${req.user.name || 'a user'}`,
-        status: null,
+        note: `Forwarded to ${recipientName} by ${forwarderName}${note ? `: ${note}` : ''}`,
+        status: willProgress ? 'IN_PROGRESS' : null,
         createdById: req.user.id,
       });
     } catch {
       /* TaskHistory table optional — ignore */
     }
 
-    // Notify Patil so it shows in his notification bell too.
+    // Mirror the forward-driven status onto the linked grievance (grievance
+    // tasks only) so the grievance pages move to In Progress too.
+    if (willProgress) {
+      await syncGrievanceForTask(updated, 'IN_PROGRESS');
+    }
+
+    // Notify the recipient so it shows in their bell + Forwarded to Me page.
     await emitNotification({
-      recipientId: PATIL_FORWARD_TO_ID,
-      type: 'TASK_ASSIGNED',
+      recipientId: String(recipientId),
+      type: 'TASK_FORWARDED',
       title: `Task forwarded to you: ${existing.title ?? 'Task'}`,
-      body: `${req.user.name || 'A user'} forwarded this task for your action.`,
-      link: '/admin/home',
+      body: `${forwarderName} forwarded this task to you${note ? `: ${note}` : '.'}`,
+      link: '/forwarded',
       referenceId: String(id),
       referenceType: 'TASK',
     });
 
     const [shaped] = await attachUsers([updated]);
-    sendSuccess(res, shaped, 'Task forwarded to Shri. Mallikarjungouda Patil');
+    sendSuccess(res, shaped, `Task forwarded to ${recipientName}`);
   } catch (error) {
     sendServerError(res, 'Failed to forward task', error);
   }
 }
 
 /**
- * GET /api/tasks/forwarded — tasks forwarded to Shri. Mallikarjungouda Patil
- * that are not yet COMPLETED. Only HE gets data; every other caller gets an
- * empty list. Powers the high-priority "Forwarded to you" card on his
- * dashboard.
+ * GET /api/tasks/forwarded — items (tasks + grievances) forwarded TO the
+ * current user that aren't done yet. Each caller sees only their own queue.
+ * Powers the "Forwarded to Me" page and the dashboard card. Reads LIVE source
+ * status, so a completed task / resolved grievance drops off every surface at
+ * once. Returns a unified list discriminated by `entityType`.
  */
 export async function getForwardedTasks(
   req: AuthenticatedRequest,
@@ -1179,43 +1221,84 @@ export async function getForwardedTasks(
       sendError(res, 'Not authenticated', 401);
       return;
     }
-    // Scope strictly to Patil — others must never see the forwarded queue.
-    if (!PATIL_USER_IDS.has(String(req.user.id))) {
-      sendSuccess(res, [], 'No forwarded tasks');
-      return;
-    }
+    const me = await userIdForms(req.user.id);
 
-    let rows = await listAllRows(TASK_TABLE);
-    // Scope to rows forwarded to one of the CONFIGURED recipient ids (not just
-    // "any forwardedToId"), so a task forwarded under a local/test config never
-    // surfaces in the production recipient's queue on the shared Catalyst DB.
-    rows = rows.filter(
+    // ── Tasks forwarded to me (not completed) ──
+    let taskRows = await listAllRows(TASK_TABLE);
+    taskRows = taskRows.filter(
       (r) =>
-        PATIL_USER_IDS.has(String(r.forwardedToId)) &&
+        r.forwardedToId &&
+        me.has(String(r.forwardedToId)) &&
         String(r.status) !== 'COMPLETED'
     );
-    // Most-recently forwarded first.
-    rows.sort((a, b) => {
+    const tasks = await attachUsers(taskRows);
+    await attachReferenceNumbers(tasks);
+    const taskForwarders = await lookupUsers(
+      new Set(taskRows.map((r) => String(r.forwardedById)).filter(Boolean))
+    );
+    const taskItems = tasks.map((t) => ({
+      entityType: 'TASK' as const,
+      id: t.id,
+      title: t.title,
+      referenceNo: t.referenceNo,
+      status: t.status,
+      priority: t.priority,
+      description: t.description,
+      assignedTo: t.assignedTo,
+      forwardedById: t.forwardedById ?? null,
+      forwardedBy: t.forwardedById
+        ? taskForwarders.get(String(t.forwardedById)) ?? null
+        : null,
+      forwardedAt: t.forwardedAt ?? null,
+      forwardRemark: t.forwardRemark ?? null,
+    }));
+
+    // ── Grievances forwarded to me (not resolved/rejected) ──
+    // Read raw rows; the forwarded card only needs id/ref/status/petitioner +
+    // who forwarded it. Kept inline (no import from grievance.controller) to
+    // avoid a circular module dependency.
+    let grievanceRows: CatalystRow[] = [];
+    try {
+      grievanceRows = await listAllRows('Grievance');
+    } catch {
+      grievanceRows = [];
+    }
+    grievanceRows = grievanceRows.filter(
+      (r) =>
+        r.forwardedToId &&
+        me.has(String(r.forwardedToId)) &&
+        !['RESOLVED', 'REJECTED'].includes(String(r.status))
+    );
+    const grievanceForwarders = await lookupUsers(
+      new Set(grievanceRows.map((r) => String(r.forwardedById)).filter(Boolean))
+    );
+    const grievanceItems = grievanceRows.map((r) => ({
+      entityType: 'GRIEVANCE' as const,
+      id: String(r.ROWID),
+      title: `${r.grievanceType ?? 'Grievance'} — ${r.petitionerName ?? ''}`.trim(),
+      referenceNo: r.grievanceNumber
+        ? String(r.grievanceNumber)
+        : `GRV-${String(r.ROWID)}`,
+      status: (r.status as string) ?? null,
+      priority: (r.priorities as string) ?? 'MEDIUM',
+      description: (r.description as string) ?? null,
+      assignedTo: null,
+      forwardedById: r.forwardedById ?? null,
+      forwardedBy: r.forwardedById
+        ? grievanceForwarders.get(String(r.forwardedById)) ?? null
+        : null,
+      forwardedAt: r.forwardedAt ?? null,
+      forwardRemark: (r.forwardRemark as string) ?? null,
+    }));
+
+    // Most-recently forwarded first across both entity types.
+    const items = [...taskItems, ...grievanceItems].sort((a, b) => {
       const ta = a.forwardedAt ? new Date(String(a.forwardedAt)).getTime() : 0;
       const tb = b.forwardedAt ? new Date(String(b.forwardedAt)).getTime() : 0;
       return tb - ta;
     });
 
-    const tasks = await attachUsers(rows);
-    await attachReferenceNumbers(tasks);
-
-    // Resolve who forwarded each task so the card can show "forwarded by".
-    const forwarderIds = new Set(
-      rows.map((r) => String(r.forwardedById)).filter(Boolean)
-    );
-    const forwarders = await lookupUsers(forwarderIds);
-    for (const t of tasks) {
-      t.forwardedBy = t.forwardedById
-        ? forwarders.get(String(t.forwardedById)) ?? null
-        : null;
-    }
-
-    sendSuccess(res, tasks, 'Forwarded tasks retrieved successfully');
+    sendSuccess(res, items, 'Forwarded items retrieved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to get forwarded tasks', error);
   }
@@ -1289,6 +1372,11 @@ export async function editTaskShared(
     });
 
     const updated = await updateRow(TASK_TABLE, updateData as any);
+    // If this is a grievance task, mirror the new status onto its grievance so
+    // the grievance pages stay in lock-step with the Task Tracker.
+    if (status) {
+      await syncGrievanceForTask(existing, status);
+    }
     const [shaped] = await attachUsers([updated]);
     const historyMap = await recentHistoryByTaskId([id], 20);
     shaped.progressHistory = historyMap.get(id) ?? [];
@@ -1507,6 +1595,12 @@ export async function updateTaskProgress(
 
     const updated = await updateRow(TASK_TABLE, updateData as any);
 
+    // Mirror the new status onto the linked grievance (grievance tasks only) so
+    // the grievance pages reflect staff progress made on the board.
+    if (status) {
+      await syncGrievanceForTask(existing, status);
+    }
+
     // Staff just resolved the task -> notify the admin who assigned it so they
     // know it's done without having to poll the tracker. Best-effort, like the
     // assignment notification: emit helper swallows errors.
@@ -1602,6 +1696,9 @@ export async function updateTaskStatus(
       updateData.progressPercent = 100;
     }
     const updated = await updateRow(TASK_TABLE, updateData as any);
+    // Mirror onto the linked grievance (grievance tasks only). `updated` is the
+    // full row, so it carries referenceType / referenceId.
+    await syncGrievanceForTask(updated, status);
     const [shaped] = await attachUsers([updated]);
     sendSuccess(res, shaped, 'Task status updated successfully');
   } catch (error) {
@@ -1729,5 +1826,25 @@ export async function getStaffMembers(
     sendSuccess(res, staff, 'Staff members retrieved');
   } catch (error) {
     sendServerError(res, 'Failed to get staff members', error);
+  }
+}
+
+/**
+ * POST /api/tasks/reconcile-grievances — admin one-time backfill.
+ *
+ * Forward/reverse sync keeps NEW grievance/task status changes mirrored, but
+ * rows that drifted before the sync existed stay out of step until touched.
+ * This walks every grievance↔task pair and forces them into agreement (most-
+ * advanced status wins). Idempotent — safe to run more than once.
+ */
+export async function reconcileGrievanceTasks(
+  _req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const result = await reconcileGrievanceTaskStatuses();
+    sendSuccess(res, result, 'Grievance and task statuses reconciled');
+  } catch (error) {
+    sendServerError(res, 'Failed to reconcile grievance and task statuses', error);
   }
 }

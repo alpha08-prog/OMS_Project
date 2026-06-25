@@ -5,6 +5,7 @@ import {
   getGrievances,
   getGrievanceById,
   getGrievanceTimeline,
+  forwardGrievance,
   updateGrievance,
   verifyGrievance,
   updateGrievanceStatus,
@@ -53,6 +54,16 @@ router.get('/', getGrievances);
 router.get('/queue/verification', adminOnly, getVerificationQueue);
 router.get('/:id', validate(idParamValidation), getGrievanceById);
 router.get('/:id/timeline', validate(idParamValidation), getGrievanceTimeline);
+// Forward a grievance to one other user (with optional remark) — any authenticated user.
+router.patch(
+  '/:id/forward',
+  validate([
+    ...idParamValidation,
+    body('recipientId').notEmpty().withMessage('Valid recipient ID is required'),
+    body('remark').optional().trim(),
+  ]),
+  forwardGrievance
+);
 router.put('/:id', validate(idParamValidation), updateGrievance);
 router.patch('/:id/verify', adminOnly, validate(idParamValidation), verifyGrievance);
 router.patch('/:id/status', adminOnly, validate([...idParamValidation, ...updateStatusValidation]), updateGrievanceStatus);

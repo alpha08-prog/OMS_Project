@@ -551,6 +551,13 @@ export const authApi = {
     return res.data.data
   },
 
+  // Lean directory of active accounts for pickers (forward-to). Any
+  // authenticated user — unlike getUsers() which is admin-only.
+  getDirectory: async (): Promise<DirectoryUser[]> => {
+    const res = await http.get<ApiResponse<DirectoryUser[]>>('/auth/users/directory')
+    return res.data.data ?? []
+  },
+
   updateUserRole: async (userId: string, role: UserRole) => {
     const res = await http.patch<ApiResponse<User>>(`/auth/users/${userId}/role`, { role })
     return res.data.data
@@ -598,6 +605,17 @@ export const grievanceApi = {
   getTimeline: async (id: string): Promise<GrievanceTimeline> => {
     const res = await http.get<ApiResponse<GrievanceTimeline>>(`/grievances/${id}/timeline`)
     return res.data.data ?? { referenceNo: '', status: null, timeline: [] }
+  },
+
+  // Forward a grievance to one other user (with an optional remark) — any
+  // authenticated user. Appears on the recipient's "Forwarded to Me" page and
+  // is recorded in the grievance's progress timeline.
+  forward: async (id: string, recipientId: string, remark?: string) => {
+    const res = await http.patch<ApiResponse<Grievance>>(`/grievances/${id}/forward`, {
+      recipientId,
+      remark,
+    })
+    return res.data.data
   },
 
   verify: async (id: string) => {
@@ -1177,13 +1195,41 @@ export type TaskAssignment = {
   progressHistory?: TaskProgressHistory[]
   groupId?: string | null
   coAssignees?: CoAssignee[]
-  // Forwarding (to Shri. Mallikarjungouda Patil). isForwarded flags whether the
-  // task is already in his queue; forwardedBy is resolved on the forwarded list.
+  // Forwarding. A task can be forwarded by anyone to any one other user; the
+  // latest recipient owns the forward. isForwarded flags whether it's currently
+  // forwarded; forwardedBy is resolved on the forwarded list.
   forwardedToId?: string | null
   forwardedById?: string | null
   forwardedAt?: string | null
+  forwardRemark?: string | null
   isForwarded?: boolean
   forwardedBy?: { id: string; name: string; email: string } | null
+}
+
+// Lean user record for pickers (forward-to dialog). Returned by
+// GET /auth/users/directory — any authenticated user, active accounts only.
+export type DirectoryUser = {
+  id: string
+  name: string
+  email: string
+  role: UserRole
+}
+
+// A unified item returned by GET /tasks/forwarded — a task OR a grievance that
+// was forwarded TO the current user. Discriminated by entityType.
+export type ForwardedItem = {
+  entityType: 'TASK' | 'GRIEVANCE'
+  id: string
+  title: string
+  referenceNo?: string | null
+  status: string | null
+  priority?: string
+  description?: string | null
+  assignedTo?: { id: string; name: string; email: string } | null
+  forwardedById?: string | null
+  forwardedBy?: { id: string; name: string; email: string } | null
+  forwardedAt?: string | null
+  forwardRemark?: string | null
 }
 
 // Admin-side consolidated card shape: one entry per (multi-assigned) task,
@@ -1304,17 +1350,21 @@ export const taskApi = {
     return res.data.data
   },
 
-  // Forward a task to Shri. Mallikarjungouda Patil — any authenticated user.
-  // It then appears as a high-priority card on his dashboard.
-  forward: async (id: string) => {
-    const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/forward`, {})
+  // Forward a task to one other user (with an optional remark) — any
+  // authenticated user. It then appears on the recipient's "Forwarded to Me"
+  // page and the forward is recorded in the shared timeline.
+  forward: async (id: string, recipientId: string, remark?: string) => {
+    const res = await http.patch<ApiResponse<TaskAssignment>>(`/tasks/${id}/forward`, {
+      recipientId,
+      remark,
+    })
     return res.data.data
   },
 
-  // Tasks forwarded to Patil that are not yet completed. Returns [] for anyone
-  // who isn't him (server-enforced).
-  getForwarded: async () => {
-    const res = await http.get<ApiResponse<TaskAssignment[]>>('/tasks/forwarded')
+  // Items (tasks + grievances) forwarded TO the current user that aren't done
+  // yet. Scoped per-user server-side; discriminated by entityType.
+  getForwarded: async (): Promise<ForwardedItem[]> => {
+    const res = await http.get<ApiResponse<ForwardedItem[]>>('/tasks/forwarded')
     return res.data.data ?? []
   },
 
@@ -1351,6 +1401,13 @@ export const taskApi = {
 
   getTracking: async () => {
     const res = await http.get<ApiResponse<TaskTrackingData>>('/tasks/tracking')
+    return res.data.data
+  },
+
+  // Admin one-time backfill: re-aligns grievance ↔ task statuses that drifted
+  // before bidirectional sync existed. Idempotent.
+  reconcileGrievances: async () => {
+    const res = await http.post<ApiResponse<{ grievancesScanned: number; grievancesUpdated: number; tasksUpdated: number; tasksCreated: number }>>('/tasks/reconcile-grievances')
     return res.data.data
   },
 

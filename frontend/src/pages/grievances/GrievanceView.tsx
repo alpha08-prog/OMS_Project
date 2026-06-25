@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FileText, RefreshCw, Eye, Download, Clock, CheckCircle, XCircle, AlertCircle, Pencil } from "lucide-react";
+import { FileText, RefreshCw, Eye, Download, Clock, CheckCircle, XCircle, AlertCircle, Pencil, Forward } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { ForwardDialog } from "@/components/ForwardDialog";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
@@ -79,12 +80,13 @@ const GRIEVANCE_TYPE_OPTIONS: GrievanceType[] = [
   "OTHER",
 ];
 
-const STATUS_OPTIONS: GrievanceStatus[] = [
-  "OPEN",
-  "IN_PROGRESS",
-  "VERIFIED",
-  "RESOLVED",
-  "REJECTED",
+// 3-state grievance lifecycle, mirrored 1:1 with its linked task
+// (OPEN=Pending/Assigned, IN_PROGRESS, RESOLVED=Completed). Kept in sync so the
+// Task Tracker and this page always report the same counts.
+const STATUS_OPTIONS: { value: GrievanceStatus; label: string }[] = [
+  { value: "OPEN", label: "Pending" },
+  { value: "IN_PROGRESS", label: "In Progress" },
+  { value: "RESOLVED", label: "Completed" },
 ];
 
 const PRIORITY_OPTIONS: GrievancePriority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -124,6 +126,10 @@ export default function GrievanceView() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
+  // Forward-to-user dialog (grievances).
+  const [forwardGrievance_, setForwardGrievance] = useState<Grievance | null>(null);
+  const [forwarding, setForwarding] = useState(false);
+
   // Edit dialog state. `editGrievance` holds the row being edited (its id is
   // used for the update + to merge the returned record back into the list);
   // `editForm` is the in-progress, editable copy of the fields.
@@ -151,7 +157,10 @@ export default function GrievanceView() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = { limit: '200' };
+      // Fetch the full set (server caps at 1000) so client-side status filters
+      // and the headline counts cover every grievance — matching the Task
+      // Tracker, which now also fetches the full task set.
+      const params: Record<string, string> = { limit: '1000' };
       if (search.trim()) params.search = search.trim();
       const res = await grievanceApi.getAll(params);
       // Handle response structure
@@ -227,6 +236,34 @@ export default function GrievanceView() {
   const handleViewDetails = (grievance: Grievance) => {
     setSelectedGrievance(grievance);
     setDetailsOpen(true);
+  };
+
+  // Forward the selected grievance to one user (with optional remark). Refreshes
+  // the list and, when the details dialog is open, its progress timeline so the
+  // new "Forwarded to …" entry appears immediately.
+  const doForwardGrievance = async (recipientId: string, forwardRemark: string) => {
+    if (!forwardGrievance_) return;
+    const forwardedId = forwardGrievance_.id;
+    setForwarding(true);
+    try {
+      await grievanceApi.forward(forwardedId, recipientId, forwardRemark || undefined);
+      setForwardGrievance(null);
+      await fetchGrievances();
+      if (detailsOpen && selectedGrievance?.id === forwardedId) {
+        try {
+          setTimeline(await grievanceApi.getTimeline(forwardedId));
+        } catch {
+          /* ignore timeline refresh failure */
+        }
+      }
+    } catch (err: unknown) {
+      alert(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to forward grievance."
+      );
+    } finally {
+      setForwarding(false);
+    }
   };
 
   // Load the progress timeline whenever the details dialog is open for a
@@ -392,17 +429,16 @@ export default function GrievanceView() {
     });
   };
 
+  // 3-state badge that matches the Task Tracker wording. A verified-but-not-yet-
+  // resolved grievance counts as In Progress; REJECTED is kept for legacy rows.
   const getStatusBadge = (status: GrievanceStatus, isVerified: boolean) => {
+    if (status === 'RESOLVED') {
+      return <Badge className="bg-green-100 text-green-800">Completed</Badge>;
+    }
     if (status === 'REJECTED') {
       return <Badge variant="destructive">Rejected</Badge>;
     }
-    if (status === 'RESOLVED') {
-      return <Badge className="bg-green-100 text-green-800">Resolved</Badge>;
-    }
-    if (isVerified) {
-      return <Badge className="bg-blue-100 text-blue-800">Verified</Badge>;
-    }
-    if (status === 'IN_PROGRESS') {
+    if (status === 'IN_PROGRESS' || status === 'VERIFIED' || isVerified) {
       return <Badge className="bg-amber-100 text-amber-800">In Progress</Badge>;
     }
     return <Badge variant="outline">Pending</Badge>;
@@ -420,19 +456,22 @@ export default function GrievanceView() {
   };
 
   const getStatusIcon = (status: GrievanceStatus, isVerified: boolean) => {
-    if (status === 'REJECTED') return <XCircle className="h-4 w-4 text-red-600" />;
     if (status === 'RESOLVED') return <CheckCircle className="h-4 w-4 text-green-600" />;
-    if (isVerified) return <CheckCircle className="h-4 w-4 text-blue-600" />;
-    if (status === 'IN_PROGRESS') return <AlertCircle className="h-4 w-4 text-amber-600" />;
+    if (status === 'REJECTED') return <XCircle className="h-4 w-4 text-red-600" />;
+    if (status === 'IN_PROGRESS' || status === 'VERIFIED' || isVerified)
+      return <AlertCircle className="h-4 w-4 text-amber-600" />;
     return <Clock className="h-4 w-4 text-gray-600" />;
   };
 
   // Filter and search grievances
   const filteredGrievances = grievances.filter(g => {
+    // 3-state buckets that line up with the Task Tracker grievance filter:
+    //   Pending = OPEN, In Progress = IN_PROGRESS (or legacy VERIFIED),
+    //   Completed = RESOLVED.
     if (filterStatus !== "all") {
-      if (filterStatus === "verified" && !g.isVerified) return false;
-      if (filterStatus === "pending" && g.isVerified) return false;
-      if (filterStatus !== "verified" && filterStatus !== "pending" && g.status !== filterStatus) return false;
+      if (filterStatus === "PENDING" && g.status !== "OPEN") return false;
+      if (filterStatus === "IN_PROGRESS" && g.status !== "IN_PROGRESS" && g.status !== "VERIFIED") return false;
+      if (filterStatus === "COMPLETED" && g.status !== "RESOLVED") return false;
     }
     // Date range filter against created-at. End date is inclusive of the
     // whole day, so anything created before midnight UTC of (endDate + 1)
@@ -455,11 +494,11 @@ export default function GrievanceView() {
   // Client-side pagination — 10 rows per page.
   const pager = usePagination(filteredGrievances, 10);
 
-  // Stats
+  // Stats — same 3 buckets as the Task Tracker so the headline numbers match.
   const totalCount = grievances.length;
-  const verifiedCount = grievances.filter(g => g.isVerified).length;
-  const pendingCount = grievances.filter(g => !g.isVerified && g.status === 'OPEN').length;
-  const resolvedCount = grievances.filter(g => g.status === 'RESOLVED').length;
+  const pendingCount = grievances.filter(g => g.status === 'OPEN').length;
+  const inProgressCount = grievances.filter(g => g.status === 'IN_PROGRESS' || g.status === 'VERIFIED').length;
+  const completedCount = grievances.filter(g => g.status === 'RESOLVED').length;
 
   // CSV export — mirrors the currently filtered/visible rows.
   const csvColumns: CsvColumn<Grievance>[] = [
@@ -516,14 +555,14 @@ export default function GrievanceView() {
               </Card>
               <Card className="rounded-xl bg-blue-50 border-blue-200">
                 <CardContent className="p-4 text-center">
-                  <p className="text-3xl font-bold text-blue-900">{verifiedCount}</p>
-                  <p className="text-sm text-blue-700">Verified</p>
+                  <p className="text-3xl font-bold text-blue-900">{inProgressCount}</p>
+                  <p className="text-sm text-blue-700">In Progress</p>
                 </CardContent>
               </Card>
               <Card className="rounded-xl bg-green-50 border-green-200">
                 <CardContent className="p-4 text-center">
-                  <p className="text-3xl font-bold text-green-900">{resolvedCount}</p>
-                  <p className="text-sm text-green-700">Resolved</p>
+                  <p className="text-3xl font-bold text-green-900">{completedCount}</p>
+                  <p className="text-sm text-green-700">Completed</p>
                 </CardContent>
               </Card>
             </div>
@@ -549,11 +588,9 @@ export default function GrievanceView() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="verified">Verified</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
                     <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                    <SelectItem value="RESOLVED">Resolved</SelectItem>
-                    <SelectItem value="REJECTED">Rejected</SelectItem>
+                    <SelectItem value="COMPLETED">Completed</SelectItem>
                   </SelectContent>
                 </Select>
                 <DateRangeFilter
@@ -646,6 +683,16 @@ export default function GrievanceView() {
                         >
                           <Eye className="h-4 w-4 mr-1" />
                           View
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-violet-700 border-violet-300 hover:bg-violet-50"
+                          onClick={() => setForwardGrievance(g)}
+                          title="Forward to another user"
+                        >
+                          <Forward className="h-4 w-4 mr-1" />
+                          Forward
                         </Button>
                         {canEdit(g) && (
                           <Button
@@ -844,6 +891,14 @@ export default function GrievanceView() {
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Close
                   </Button>
+                  <Button
+                    variant="outline"
+                    className="text-violet-700 border-violet-300 hover:bg-violet-50"
+                    onClick={() => setForwardGrievance(selectedGrievance)}
+                  >
+                    <Forward className="h-4 w-4 mr-1" />
+                    Forward
+                  </Button>
                   {canEdit(selectedGrievance) && (
                     <Button variant="outline" onClick={() => handleEdit(selectedGrievance)}>
                       <Pencil className="h-4 w-4 mr-1" />
@@ -876,6 +931,20 @@ export default function GrievanceView() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Forward-to-user dialog */}
+        <ForwardDialog
+          open={!!forwardGrievance_}
+          onOpenChange={(open) => { if (!open) setForwardGrievance(null); }}
+          itemLabel="grievance"
+          subtitle={
+            forwardGrievance_
+              ? `Forward grievance ${forwardGrievance_.referenceNo ?? ""} to one person.`
+              : undefined
+          }
+          submitting={forwarding}
+          onSubmit={doForwardGrievance}
+        />
 
         {/* Edit Grievance Dialog */}
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -978,8 +1047,8 @@ export default function GrievanceView() {
                       </SelectTrigger>
                       <SelectContent>
                         {STATUS_OPTIONS.map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
+                          <SelectItem key={s.value} value={s.value}>
+                            {s.label}
                           </SelectItem>
                         ))}
                       </SelectContent>

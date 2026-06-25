@@ -38,6 +38,8 @@ const NOTIFICATION_TABLE = 'Notification';
 export type NotificationType =
   | 'TASK_ASSIGNED'
   | 'TASK_RESOLVED'
+  | 'TASK_FORWARDED'
+  | 'GRIEVANCE_FORWARDED'
   | 'TOUR_DECIDED'
   | 'NEWS_CRITICAL'
   | 'GRIEVANCE_REJECTED'

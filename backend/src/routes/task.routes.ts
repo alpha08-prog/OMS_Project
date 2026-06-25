@@ -18,6 +18,7 @@ import {
   getTaskHistory,
   getTaskTracking,
   getStaffMembers,
+  reconcileGrievanceTasks,
 } from '../controllers-catalyst/task.controller';
 import { authenticate, staffOnly, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -84,8 +85,8 @@ router.use(authenticate);
 // Shared "All Tasks" board — visible to and editable by ANY authenticated user.
 // Registered before the parametrised routes so '/all' isn't swallowed by '/:id'.
 router.get('/all', getAllTasks);
-// Forwarded-to-Patil queue — static path, must precede '/:id'. The controller
-// returns [] for anyone who isn't Shri. Mallikarjungouda Patil.
+// "Forwarded to Me" queue — static path, must precede '/:id'. The controller
+// scopes it to the caller (tasks + grievances forwarded to them).
 router.get('/forwarded', getForwardedTasks);
 router.get('/:id/audit', validate(idParamValidation), getTaskAudit);
 router.patch(
@@ -93,8 +94,16 @@ router.patch(
   validate([...idParamValidation, ...updateProgressValidation]),
   editTaskShared
 );
-// Forward a task to Shri. Mallikarjungouda Patil — any authenticated user.
-router.patch('/:id/forward', validate(idParamValidation), forwardTask);
+// Forward a task to one other user (with optional remark) — any authenticated user.
+router.patch(
+  '/:id/forward',
+  validate([
+    ...idParamValidation,
+    body('recipientId').matches(ID_PATTERN).withMessage('Valid recipient ID is required'),
+    body('remark').optional().trim(),
+  ]),
+  forwardTask
+);
 
 // Staff routes
 router.get('/my-tasks', staffOnly, getMyTasks);
@@ -111,6 +120,9 @@ router.post('/', adminOnly, validate(createTaskValidation), createTask);
 router.patch('/:id/assign', adminOnly, validate(idParamValidation), assignTask);
 router.get('/tracking', adminOnly, getTaskTracking);
 router.get('/staff', adminOnly, getStaffMembers);
+// One-time backfill that re-aligns grievance ↔ task statuses that drifted
+// before bidirectional sync existed. Idempotent; safe to re-run.
+router.post('/reconcile-grievances', adminOnly, reconcileGrievanceTasks);
 router.patch(
   '/:id/status',
   adminOnly,

@@ -17,6 +17,7 @@ import {
   listAllRows,
   getRow,
   updateRow,
+  updateRowTolerant,
   deleteRow,
   toCatalystDate,
   nowCatalystIST,
@@ -37,6 +38,7 @@ import { lookupUsers } from '../lib/catalyst-user-lookup';
 import { useZCQL } from '../config/feature-flags';
 import { emitNotification } from './notification.controller';
 import { autoCreateSelfTask } from './task.controller';
+import { syncTasksForGrievance } from '../lib/grievance-task-sync';
 import type { AuthenticatedRequest, GrievanceFilters } from '../types';
 
 const GRIEVANCE_TABLE = 'Grievance';
@@ -780,6 +782,12 @@ export async function updateGrievance(
     }
 
     const updated = await updateRow(GRIEVANCE_TABLE, { ROWID: id, ...body });
+    // Mirror an explicit status change onto the linked grievance task(s) so the
+    // Task Tracker and the grievance pages never disagree. (Other edits — name,
+    // priority, etc. — don't carry a status and leave the task untouched.)
+    if (body.status) {
+      await syncTasksForGrievance(id, String(body.status));
+    }
     invalidateStatCaches();
     const [shaped] = await attachUsers([updated]);
     sendSuccess(res, shaped, 'Grievance updated successfully');
@@ -811,6 +819,8 @@ export async function verifyGrievance(
       verifiedAt: now,
       resolvedAt: now,
     });
+    // Verifying resolves the grievance — close its linked task(s) to match.
+    await syncTasksForGrievance(id, 'RESOLVED');
     invalidateStatCaches();
     const [shaped] = await attachUsers([updated]);
     sendSuccess(res, shaped, 'Grievance verified and resolved successfully');
@@ -847,6 +857,8 @@ export async function updateGrievanceStatus(
       updateData.currentStage = 'RECEIVED';
     }
     const updated = await updateRow(GRIEVANCE_TABLE, updateData as any);
+    // Keep the linked grievance task(s) in lock-step with the new status.
+    await syncTasksForGrievance(id, status);
     invalidateStatCaches();
 
     // Notify the submitting staff member when their grievance is rejected.
@@ -874,6 +886,111 @@ export async function updateGrievanceStatus(
     sendSuccess(res, shaped, 'Grievance status updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update grievance status', error);
+  }
+}
+
+/**
+ * PATCH /api/grievances/:id/forward — ANY authenticated user forwards a
+ * grievance to one other user (chosen from the directory), with an optional
+ * remark. Stamps the grievance with the recipient, records the event on the
+ * grievance's linked task's TaskHistory (so it shows in the grievance timeline,
+ * which reads REMARKs from the linked task), and notifies the recipient.
+ * Tolerant of a Catalyst schema missing the forwarded* columns.
+ */
+export async function forwardGrievance(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      sendError(res, 'Not authenticated', 401);
+      return;
+    }
+    const { id } = req.params;
+    const { recipientId, remark } = req.body as {
+      recipientId?: string;
+      remark?: string;
+    };
+    if (!recipientId) {
+      sendError(res, 'recipientId is required');
+      return;
+    }
+    if (String(recipientId) === String(req.user.id)) {
+      sendError(res, 'You cannot forward a grievance to yourself');
+      return;
+    }
+
+    const existing = await getRow(GRIEVANCE_TABLE, id);
+    if (!existing) {
+      sendNotFound(res, 'Grievance not found');
+      return;
+    }
+
+    const note = typeof remark === 'string' ? remark.trim() : '';
+    const names = await lookupUsers([String(recipientId), String(req.user.id)]);
+    const recipientName = names.get(String(recipientId))?.name || 'a user';
+    const forwarderName =
+      names.get(String(req.user.id))?.name || req.user.name || 'a user';
+
+    // Forwarding moves the grievance into active work → In Progress (unless it's
+    // already completed/rejected, which we never reopen). The same status is
+    // mirrored onto the linked task below so the Task Tracker matches.
+    const willProgress = !['RESOLVED', 'REJECTED'].includes(String(existing.status));
+    const grievanceForwardUpdate: { ROWID: string; [column: string]: any } = {
+      ROWID: id,
+      forwardedToId: String(recipientId),
+      forwardedById: req.user.id,
+      forwardedAt: nowCatalystIST(),
+      forwardRemark: note || null,
+    };
+    if (willProgress) grievanceForwardUpdate.status = 'IN_PROGRESS';
+    const updated = await updateRowTolerant(
+      GRIEVANCE_TABLE,
+      grievanceForwardUpdate,
+      ['forwardedToId', 'forwardedById', 'forwardedAt', 'forwardRemark']
+    );
+    // Mirror the In-Progress move onto the linked task + refresh stat caches.
+    if (willProgress) {
+      await syncTasksForGrievance(id, 'IN_PROGRESS');
+      invalidateStatCaches();
+    }
+
+    // Record the forward on the grievance's linked task so it appears in the
+    // grievance timeline (getGrievanceTimeline pulls REMARKs from the linked
+    // task's TaskHistory). Best-effort — skip if there's no linked task yet.
+    try {
+      const taskRows = await executeZCQL<CatalystRow>(
+        `SELECT ROWID FROM Task WHERE referenceId = '${zcqlEscapeValue(id)}'`
+      );
+      const linkedTaskId = taskRows[0] ? String(taskRows[0].ROWID) : null;
+      if (linkedTaskId) {
+        await insertRow('TaskHistory', {
+          taskId: linkedTaskId,
+          note: `Forwarded to ${recipientName} by ${forwarderName}${note ? `: ${note}` : ''}`,
+          status: willProgress ? 'IN_PROGRESS' : null,
+          createdById: req.user.id,
+        });
+      }
+    } catch {
+      /* Linked task / TaskHistory missing — forward still succeeds */
+    }
+
+    await emitNotification({
+      recipientId: String(recipientId),
+      type: 'GRIEVANCE_FORWARDED',
+      title: `Grievance forwarded to you: ${
+        existing.grievanceNumber ? String(existing.grievanceNumber) : `GRV-${id}`
+      }`,
+      body: `${forwarderName} forwarded this grievance to you${note ? `: ${note}` : '.'}`,
+      link: '/forwarded',
+      referenceId: String(id),
+      referenceType: 'GRIEVANCE',
+    });
+
+    const [shaped] = await attachUsers([updated]);
+    sendSuccess(res, shaped, `Grievance forwarded to ${recipientName}`);
+  } catch (error) {
+    sendServerError(res, 'Failed to forward grievance', error);
   }
 }
 

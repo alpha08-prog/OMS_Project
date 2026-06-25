@@ -27,6 +27,7 @@ import {
 import { cacheClear } from '../lib/cache';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import { emitNotifications } from './notification.controller';
+import { syncTasksForGrievance, markLinkedTasksCompleted } from '../lib/grievance-task-sync';
 import type { AuthenticatedRequest } from '../types';
 
 const TRAIN_TABLE = 'TrainRequest';
@@ -182,6 +183,13 @@ export async function generateTrainEQPDF(
     // Pull structured passenger rows so the letter can fill Sex/Age + W/L
     // columns. Falls through to the comma-split passengerName when none exist.
     const passengerDetails = await loadTrainPassengers(id);
+
+    // Printing the EQ letter is the deliverable — mark the linked train task
+    // COMPLETED once the PDF has actually streamed to the client (fire-and-
+    // forget so a sync hiccup never corrupts the download).
+    res.once('finish', () => {
+      void markLinkedTasksCompleted('TRAIN_REQUEST', id);
+    });
 
     generateTrainEQLetter(
       {
@@ -1044,6 +1052,9 @@ export async function generateTempleVisitPDF(
         if (closeOut) {
           try {
             await updateRow(GRIEVANCE_TABLE, { ROWID: id, ...closeOut });
+            // Letter issue resolves the grievance — close its linked task(s)
+            // too so the Task Tracker matches the grievance pages.
+            await syncTasksForGrievance(id, 'RESOLVED');
             cacheClear('dashboard_stats');
             cacheClear('stats_by_type');
             cacheClear('stats_by_status');

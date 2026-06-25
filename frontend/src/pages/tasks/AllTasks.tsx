@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { ForwardDialog } from "@/components/ForwardDialog";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
@@ -90,10 +91,9 @@ export default function AllTasks() {
   // Inline quick-status update (no dialog). Records an audit entry via editShared.
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Forward-to-Patil confirmation dialog.
+  // Forward-to-user dialog.
   const [forwardTarget, setForwardTarget] = useState<TaskAssignment | null>(null);
   const [forwarding, setForwarding] = useState(false);
-  const [forwardError, setForwardError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -193,17 +193,16 @@ export default function AllTasks() {
     }
   };
 
-  // Forward the chosen task to Shri. Mallikarjungouda Patil after confirmation.
-  const doForward = async () => {
+  // Forward the chosen task to the selected user (with optional remark).
+  const doForward = async (recipientId: string, forwardRemark: string) => {
     if (!forwardTarget) return;
     setForwarding(true);
-    setForwardError(null);
     try {
-      await taskApi.forward(forwardTarget.id);
+      await taskApi.forward(forwardTarget.id, recipientId, forwardRemark || undefined);
       setForwardTarget(null);
       await load();
     } catch (err: unknown) {
-      setForwardError(
+      alert(
         (err as { response?: { data?: { message?: string } } })?.response?.data
           ?.message ?? "Failed to forward task."
       );
@@ -397,23 +396,18 @@ export default function AllTasks() {
                                     )}
                                   </Button>
                                 )}
-                                {t.status !== "COMPLETED" &&
-                                  (t.isForwarded ? (
-                                    <Badge className="bg-violet-100 text-violet-800 whitespace-nowrap">
-                                      Forwarded
-                                    </Badge>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => { setForwardError(null); setForwardTarget(t); }}
-                                      className="border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100 hover:text-violet-900"
-                                      title="Forward to Shri. Mallikarjungouda Patil"
-                                    >
-                                      <Forward className="h-3.5 w-3.5 mr-1" />
-                                      Forward
-                                    </Button>
-                                  ))}
+                                {t.status !== "COMPLETED" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setForwardTarget(t)}
+                                    className="border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100 hover:text-violet-900"
+                                    title="Forward to another user"
+                                  >
+                                    <Forward className="h-3.5 w-3.5 mr-1" />
+                                    {t.isForwarded ? "Re-forward" : "Forward"}
+                                  </Button>
+                                )}
                                 <Button size="sm" variant="outline" onClick={() => openView(t)}>
                                   <Eye className="h-3.5 w-3.5 mr-1" />
                                   View
@@ -648,54 +642,15 @@ export default function AllTasks() {
         </div>
       )}
 
-      {/* Forward-to-Patil confirmation */}
-      {forwardTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-violet-100 text-violet-700">
-                <Forward className="h-5 w-5" />
-              </div>
-              <h2 className="text-lg font-semibold text-indigo-900">
-                Forward to Shri. Mallikarjungouda Patil?
-              </h2>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-slate-800">{forwardTarget.title}</span> will be
-              sent to <span className="font-medium">Shri. Mallikarjungouda Patil</span> and shown
-              as a <span className="font-medium text-rose-700">high-priority</span> item on his
-              dashboard for him to review and complete. He'll be notified, and the task's status
-              stays visible to everyone until he marks it complete.
-            </p>
-            {forwardError && (
-              <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
-                {forwardError}
-              </p>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setForwardTarget(null)}
-                disabled={forwarding}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="bg-violet-600 hover:bg-violet-700 text-white"
-                onClick={doForward}
-                disabled={forwarding}
-              >
-                {forwarding ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                ) : (
-                  <Forward className="h-4 w-4 mr-1" />
-                )}
-                Confirm Forward
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Forward-to-user dialog */}
+      <ForwardDialog
+        open={!!forwardTarget}
+        onOpenChange={(open) => { if (!open) setForwardTarget(null); }}
+        itemLabel="task"
+        subtitle={forwardTarget ? `Forward "${forwardTarget.title}" to one person.` : undefined}
+        submitting={forwarding}
+        onSubmit={doForward}
+      />
     </div>
   );
 }

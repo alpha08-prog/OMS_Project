@@ -6,6 +6,7 @@ import {
   getMe,
   updatePassword,
   getAllUsers,
+  getUserDirectory,
   updateUserRole,
   deactivateUser,
   createUser,
@@ -43,6 +44,9 @@ router.post('/login', validate(loginValidation), login);
 // Protected routes
 router.get('/me', authenticate, getMe);
 router.put('/password', authenticate, validate(passwordValidation), updatePassword);
+// Lean user directory for pickers (forward-to). Any authenticated user; the
+// admin-only management list stays at GET /users below.
+router.get('/users/directory', authenticate, getUserDirectory);
 
 // Admin only routes
 const createUserValidation = [

@@ -50,6 +50,7 @@ const AdminAttendance = lazy(() => import("./pages/admin/AdminAttendance"));
 const AdminMeetings = lazy(() => import("./pages/admin/AdminMeetings"));
 // Shared task board (all roles) + merged Visitor/Birthday "Add Person" form.
 const AllTasks = lazy(() => import("./pages/tasks/AllTasks"));
+const ForwardedTasks = lazy(() => import("./pages/forwarded/ForwardedTasks"));
 const AddPerson = lazy(() => import("./pages/people/AddPerson"));
 
 function PageFallback() {
@@ -212,6 +213,16 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
               <AllTasks />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Per-user "Forwarded to Me" — tasks + grievances forwarded to you. */}
+        <Route
+          path="/forwarded"
+          element={
+            <ProtectedRoute allowedRoles={['STAFF', 'ADMIN', 'SUPER_ADMIN']}>
+              <ForwardedTasks />
             </ProtectedRoute>
           }
         />

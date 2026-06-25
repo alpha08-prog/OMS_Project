@@ -27,6 +27,7 @@ import {
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { autoCreateSelfTask } from './task.controller';
 import {
   sendSuccess,
   sendError,
@@ -505,6 +506,22 @@ export async function createTrainRequest(
     if (Array.isArray(passengers) && passengers.length > 0) {
       await writePassengers(String(row.ROWID), passengers);
     }
+
+    // Auto self-assign: the train EQ request becomes a task owned by its
+    // creator so it shows on the Tasks board / Task Tracker as PENDING
+    // (ASSIGNED). It moves to In Progress when forwarded, and to Completed when
+    // the EQ letter is printed (see generateTrainEQPDF). Best-effort.
+    const trainRefNo = row.trainRequestNumber
+      ? String(row.trainRequestNumber)
+      : `TREQ-${String(row.ROWID)}`;
+    await autoCreateSelfTask({
+      userId: req.user.id,
+      title: `Train EQ ${trainRefNo}: ${passengerName} (PNR ${pnrNumber})`,
+      taskType: 'TRAIN_REQUEST',
+      referenceId: String(row.ROWID),
+      referenceType: 'TRAIN_REQUEST',
+      description: remarks ? String(remarks).slice(0, 500) : null,
+    });
 
     const [shaped] = await hydrate([row]);
     sendSuccess(res, shaped, 'Train request created successfully', 201);

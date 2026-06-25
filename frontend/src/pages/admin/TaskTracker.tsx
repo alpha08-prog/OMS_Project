@@ -19,12 +19,12 @@ import {
   ChevronRight,
   Pencil,
   Forward,
-  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { ForwardDialog } from "@/components/ForwardDialog";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
@@ -66,10 +66,9 @@ export default function AdminTaskTracker() {
   const [auditEntries, setAuditEntries] = useState<TaskProgressHistory[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
 
-  // Forward-to-Patil confirmation dialog.
+  // Forward-to-user dialog.
   const [forwardTask_, setForwardTask] = useState<TaskAssignment | null>(null);
   const [forwarding, setForwarding] = useState(false);
-  const [forwardError, setForwardError] = useState<string | null>(null);
 
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -78,6 +77,12 @@ export default function AdminTaskTracker() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+
+  // One-time reconcile: re-aligns grievance ↔ task statuses that drifted before
+  // bidirectional sync existed. Idempotent, so leaving the button visible is
+  // harmless — re-running just reports 0 updates.
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileMsg, setReconcileMsg] = useState<string | null>(null);
 
   // Per-card collapse state for the task list, mirroring StaffTasks.tsx —
   // tasks default to collapsed (header + badges only) so the admin view
@@ -113,7 +118,11 @@ export default function AdminTaskTracker() {
   const fetchData = async ({ background = false }: { background?: boolean } = {}) => {
     if (!background) setLoading(true);
     try {
-      const params: Record<string, string> = { limit: '50', page: '1' };
+      // Fetch the full task set (server caps at 1000) and filter/paginate
+      // client-side. A small window (e.g. 50) under-counts: COMPLETED tasks
+      // sink to the bottom of the sort, so "Completed" filters were truncated
+      // and never matched the Grievance page's totals.
+      const params: Record<string, string> = { limit: '1000', page: '1' };
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
       const [tracking, tasksRes] = await Promise.all([
@@ -191,24 +200,31 @@ export default function AdminTaskTracker() {
   const getStatusOptions = (taskType: string) => {
     switch (taskType) {
       case 'GRIEVANCE':
+        // Grievance lifecycle == its linked task: Pending → In Progress →
+        // Completed. These mirror the Grievance pages 1:1 (OPEN/IN_PROGRESS/
+        // RESOLVED) so the same filter gives the same counts on both screens.
         return [
           { value: 'all', label: 'All Status' },
+          { value: 'ASSIGNED', label: 'Pending' },
           { value: 'IN_PROGRESS', label: 'In Progress' },
-          { value: 'COMPLETED', label: 'Resolved' },
-          { value: 'ON_HOLD', label: 'Rejected' },
+          { value: 'COMPLETED', label: 'Completed' },
         ];
       case 'TRAIN_REQUEST':
+        // Pending on register → In Progress (incl. when forwarded) → Completed
+        // when the EQ letter is printed/generated.
         return [
           { value: 'all', label: 'All Status' },
-          { value: 'IN_PROGRESS', label: 'Accepted' },
-          { value: 'ON_HOLD', label: 'Regret' },
-          { value: 'COMPLETED', label: 'Resolved' },
+          { value: 'ASSIGNED', label: 'Pending' },
+          { value: 'IN_PROGRESS', label: 'In Progress' },
+          { value: 'COMPLETED', label: 'Completed' },
         ];
       case 'TOUR_PROGRAM':
+        // Tours are Pending → Accepted / Rejected only (no "completed" step).
         return [
           { value: 'all', label: 'All Status' },
+          { value: 'ASSIGNED', label: 'Pending' },
           { value: 'IN_PROGRESS', label: 'Accepted' },
-          { value: 'ON_HOLD', label: 'Regret' },
+          { value: 'ON_HOLD', label: 'Rejected' },
         ];
       default:
         return [
@@ -237,6 +253,26 @@ export default function AdminTaskTracker() {
   const handleViewDetails = (task: TaskAssignment) => {
     setSelectedTask(task);
     setDetailsOpen(true);
+  };
+
+  // Run the one-time grievance↔task status reconcile, then refresh so the new
+  // counts show immediately.
+  const handleReconcile = async () => {
+    setReconciling(true);
+    setReconcileMsg(null);
+    try {
+      const result = await taskApi.reconcileGrievances();
+      await fetchData();
+      setReconcileMsg(
+        `Synced grievances — ${result?.tasksCreated ?? 0} missing task(s) created, ` +
+          `${result?.grievancesUpdated ?? 0} grievance and ${result?.tasksUpdated ?? 0} task status(es) updated.`
+      );
+    } catch (error) {
+      console.error("Failed to reconcile grievance/task statuses:", error);
+      setReconcileMsg("Failed to sync statuses. Please try again.");
+    } finally {
+      setReconciling(false);
+    }
   };
 
   // Open the Edit / Remark dialog for a task: seed the form with the task's
@@ -314,18 +350,19 @@ export default function AdminTaskTracker() {
     }
   };
 
-  // Forward the chosen task to Shri. Mallikarjungouda Patil after confirmation.
-  const handleForward = async () => {
+  // Forward the chosen task to the selected user (with optional remark).
+  const handleForward = async (recipientId: string, forwardRemark: string) => {
     if (!forwardTask_) return;
     setForwarding(true);
-    setForwardError(null);
     try {
-      await taskApi.forward(forwardTask_.id);
+      await taskApi.forward(forwardTask_.id, recipientId, forwardRemark || undefined);
       setForwardTask(null);
       await fetchData();
-    } catch (error) {
-      console.error('Failed to forward task:', error);
-      setForwardError('Failed to forward task. Please try again.');
+    } catch (error: unknown) {
+      alert(
+        (error as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? 'Failed to forward task. Please try again.'
+      );
     } finally {
       setForwarding(false);
     }
@@ -342,7 +379,34 @@ export default function AdminTaskTracker() {
     }
   };
 
-  const getStatusBadge = (status: TaskStatus) => {
+  // Card badge label/colour, contextual to the task type so it matches the
+  // filter wording (e.g. a tour IN_PROGRESS reads "Accepted", a grievance
+  // ASSIGNED reads "Pending").
+  const getStatusBadge = (status: TaskStatus, taskType: TaskType) => {
+    if (taskType === 'TOUR_PROGRAM') {
+      switch (status) {
+        case 'ASSIGNED':
+          return <Badge className="bg-blue-100 text-blue-800">Pending</Badge>;
+        case 'IN_PROGRESS':
+          return <Badge className="bg-green-100 text-green-800">Accepted</Badge>;
+        case 'ON_HOLD':
+          return <Badge className="bg-red-100 text-red-800">Rejected</Badge>;
+        case 'COMPLETED':
+          return <Badge className="bg-green-100 text-green-800">Completed</Badge>;
+      }
+    }
+    if (taskType === 'GRIEVANCE' || taskType === 'TRAIN_REQUEST') {
+      switch (status) {
+        case 'ASSIGNED':
+          return <Badge className="bg-blue-100 text-blue-800">Pending</Badge>;
+        case 'IN_PROGRESS':
+          return <Badge className="bg-amber-100 text-amber-800">In Progress</Badge>;
+        case 'COMPLETED':
+          return <Badge className="bg-green-100 text-green-800">Completed</Badge>;
+        case 'ON_HOLD':
+          return <Badge className="bg-gray-100 text-gray-800">On Hold</Badge>;
+      }
+    }
     switch (status) {
       case 'ASSIGNED':
         return <Badge className="bg-blue-100 text-blue-800">Assigned</Badge>;
@@ -429,12 +493,27 @@ export default function AdminTaskTracker() {
                   <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                   Refresh
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleReconcile}
+                  disabled={reconciling}
+                  title="Re-align grievance and task statuses so the Task Tracker and Grievance pages show the same counts. Safe to run more than once."
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${reconciling ? 'animate-spin' : ''}`} />
+                  {reconciling ? 'Syncing…' : 'Sync grievance statuses'}
+                </Button>
                 <Button variant="outline" onClick={() => navigate('/admin/history')}>
                   View Full History
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               </div>
             </div>
+
+            {reconcileMsg && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
+                {reconcileMsg}
+              </div>
+            )}
 
             {/* Summary Stats */}
             {trackingData?.summary && (() => {
@@ -687,7 +766,7 @@ export default function AdminTaskTracker() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap mb-1">
                               <p className="font-semibold text-indigo-900 break-words">{task.title}</p>
-                              {getStatusBadge(task.status)}
+                              {getStatusBadge(task.status, task.taskType)}
                               <Badge variant="outline">{taskTypeLabel(task.taskType)}</Badge>
                             </div>
                             <p className="text-sm text-muted-foreground">
@@ -711,23 +790,18 @@ export default function AdminTaskTracker() {
                           <Button size="sm" variant="outline" onClick={() => handleViewDetails(task)}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {task.status !== 'COMPLETED' &&
-                            (task.isForwarded ? (
-                              <Badge className="bg-violet-100 text-violet-800 self-center whitespace-nowrap">
-                                Forwarded
-                              </Badge>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-violet-700 border-violet-300 hover:bg-violet-50"
-                                onClick={() => { setForwardError(null); setForwardTask(task); }}
-                                title="Forward to Shri. Mallikarjungouda Patil"
-                              >
-                                <Forward className="h-4 w-4 mr-1" />
-                                Forward
-                              </Button>
-                            ))}
+                          {task.status !== 'COMPLETED' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-violet-700 border-violet-300 hover:bg-violet-50"
+                              onClick={() => setForwardTask(task)}
+                              title="Forward to another user"
+                            >
+                              <Forward className="h-4 w-4 mr-1" />
+                              {task.isForwarded ? 'Re-forward' : 'Forward'}
+                            </Button>
+                          )}
                           {task.status !== 'COMPLETED' && (
                             <Button
                               size="sm"
@@ -814,7 +888,7 @@ export default function AdminTaskTracker() {
             {selectedTask && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  {getStatusBadge(selectedTask.status)}
+                  {getStatusBadge(selectedTask.status, selectedTask.taskType)}
                   <Badge variant="outline">{taskTypeLabel(selectedTask.taskType)}</Badge>
                   <Badge variant={selectedTask.priority === 'URGENT' ? 'destructive' : 'secondary'}>
                     {selectedTask.priority}
@@ -919,10 +993,15 @@ export default function AdminTaskTracker() {
                     disabled={editSaving}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <option value="ASSIGNED">Assigned</option>
-                    <option value="IN_PROGRESS">In Progress</option>
-                    <option value="COMPLETED">Completed</option>
-                    <option value="ON_HOLD">On Hold</option>
+                    {/* Contextual to the task type (e.g. a tour offers
+                        Pending/Accepted/Rejected), reusing the filter labels. */}
+                    {getStatusOptions(editTask.taskType)
+                      .filter((opt) => opt.value !== "all")
+                      .map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -998,48 +1077,15 @@ export default function AdminTaskTracker() {
           </DialogContent>
         </Dialog>
 
-        {/* Forward-to-Patil confirmation */}
-        <Dialog open={!!forwardTask_} onOpenChange={(open) => { if (!forwarding && !open) setForwardTask(null); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Forward className="h-5 w-5 text-violet-700" />
-                Forward to Shri. Mallikarjungouda Patil?
-              </DialogTitle>
-            </DialogHeader>
-            {forwardTask_ && (
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-slate-800">{forwardTask_.title}</span> will be
-                  sent to <span className="font-medium">Shri. Mallikarjungouda Patil</span> and
-                  shown as a <span className="font-medium text-rose-700">high-priority</span> item
-                  on his dashboard for him to review and complete. He'll be notified, and the
-                  task's status stays visible to everyone until he marks it complete.
-                </p>
-                {forwardError && (
-                  <p className="text-sm text-red-600" role="alert">{forwardError}</p>
-                )}
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setForwardTask(null)} disabled={forwarding}>
-                    Cancel
-                  </Button>
-                  <Button
-                    className="bg-violet-600 hover:bg-violet-700 text-white"
-                    onClick={handleForward}
-                    disabled={forwarding}
-                  >
-                    {forwarding ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                    ) : (
-                      <Forward className="h-4 w-4 mr-1" />
-                    )}
-                    Confirm Forward
-                  </Button>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+        {/* Forward-to-user dialog */}
+        <ForwardDialog
+          open={!!forwardTask_}
+          onOpenChange={(open) => { if (!open) setForwardTask(null); }}
+          itemLabel="task"
+          subtitle={forwardTask_ ? `Forward "${forwardTask_.title}" to one person.` : undefined}
+          submitting={forwarding}
+          onSubmit={handleForward}
+        />
       </main>
     </div>
   );

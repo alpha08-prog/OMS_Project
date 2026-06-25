@@ -24,6 +24,7 @@ import {
   CalendarClock,
   Briefcase,
   Activity,
+  Forward,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -48,6 +49,9 @@ const allMenuItems: MenuItem[] = [
   // Shared task board — everyone sees ALL tasks (pending work) here, with
   // filters + inline edit. Replaces the verification/assignment workflow.
   { icon: ListChecks, label: "All Tasks", route: "/tasks/all", roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
+
+  // Per-user inbox of tasks + grievances forwarded TO the current user.
+  { icon: Forward, label: "Forwarded to Me", route: "/forwarded", roles: ['STAFF', 'ADMIN', 'SUPER_ADMIN'] },
 
   // Staff - Data Entry
   { icon: ClipboardList, label: "My Tasks", route: "/staff/tasks", roles: ['STAFF'] },
