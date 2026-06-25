@@ -246,7 +246,7 @@ export default function AdminTaskTracker() {
       case "TOUR_PROGRAM":
         return "Tour";
       default:
-        return "General";
+        return "Task";
     }
   };
 
@@ -653,7 +653,6 @@ export default function AdminTaskTracker() {
                         <SelectItem value="GRIEVANCE">Grievance</SelectItem>
                         <SelectItem value="TRAIN_REQUEST">Train</SelectItem>
                         <SelectItem value="TOUR_PROGRAM">Tour</SelectItem>
-                        <SelectItem value="GENERAL">General</SelectItem>
                       </SelectContent>
                     </Select>
 
