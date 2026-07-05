@@ -12,9 +12,11 @@ import {
   CalendarDays,
   Star,
   CalendarClock,
+  RefreshCw,
 } from "lucide-react";
 import { statsApi, meetingApi, type DashboardStats } from "../lib/api";
 import { Card, CardContent } from "../components/ui/card";
+import { Button } from "../components/ui/button";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import { SuperAdminGrievancesContent } from "./admin/SuperAdminGrievances";
 import { SuperAdminTourProgramsContent } from "./admin/SuperAdminTourPrograms";
@@ -51,25 +53,33 @@ const Home = () => {
   const [loading, setLoading] = useState(true);
   // Upcoming-meeting count for the Meetings stat tile (best-effort).
   const [upcomingMeetings, setUpcomingMeetings] = useState<number | null>(null);
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const data = await statsApi.getSummary();
-        setStats(data);
-      } catch (error) {
-        console.error("Failed to fetch stats:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-    fetchStats();
+  // Lifted out of the effect so the Refresh button can re-run it.
+  const loadAll = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await statsApi.getSummary();
+      setStats(data);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error("Failed to fetch stats:", err);
+      setError("Couldn't refresh dashboard data. Please try again.");
+    } finally {
+      setLoading(false);
+    }
 
     // Separate, non-blocking fetch for the upcoming-meeting count.
     meetingApi
       .getAll({ scope: "upcoming" })
       .then((rows) => setUpcomingMeetings(rows.length))
-      .catch((error) => console.error("Failed to fetch meetings:", error));
+      .catch((err) => console.error("Failed to fetch meetings:", err));
+  };
+
+  useEffect(() => {
+    loadAll();
   }, []);
 
   // Active grievances only (resolved hidden on the SUPER_ADMIN dashboard).
@@ -135,6 +145,12 @@ const Home = () => {
 
       <main className="px-6 py-6 space-y-8 max-w-7xl mx-auto w-full">
 
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
+
         {/* ── Hero Banner ─────────────────────────────────────────────────── */}
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-700 via-indigo-600 to-indigo-500 text-white shadow-xl">
           {/* decorative circles */}
@@ -146,6 +162,23 @@ const Home = () => {
               <p className="text-indigo-200 text-sm font-medium mb-1">Good {timeOfDay}</p>
               <h1 className="text-3xl font-bold tracking-tight">Shri Pralhad Joshi</h1>
               <p className="text-indigo-200 mt-1 text-sm">Super Administrator · Office Management System</p>
+              <div className="flex items-center gap-3 mt-3">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={loadAll}
+                  disabled={loading}
+                  className="bg-white/15 hover:bg-white/25 text-white border-0"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+                {lastUpdated && (
+                  <span className="text-xs text-indigo-200">
+                    Updated {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-8">

@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { grievanceApi, trainRequestApi, tourProgramApi, pdfApi, http, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
+import { useToast } from "@/components/AuthForm/Toast";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +35,7 @@ type PrintableItem = {
 };
 
 export default function PrintCenter() {
+  const { push } = useToast();
   const [printableItems, setPrintableItems] = useState<PrintableItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -192,7 +194,7 @@ export default function PrintCenter() {
       console.error('Failed to download PDF:', error);
       const e = error as Record<string, unknown> | null;
       const msg = (e && typeof e === 'object' && typeof e.message === 'string' && e.message) ? e.message : 'Unknown error';
-      alert(`Failed to download PDF: ${msg}`);
+      push({ type: "error", title: "Error", message: `Failed to download PDF: ${msg}` });
     }
   };
 
@@ -220,7 +222,7 @@ export default function PrintCenter() {
       console.error('Failed to load preview:', error);
       const e = error as Record<string, unknown> | null;
       const msg = (e && typeof e === 'object' && typeof e.message === 'string' && e.message) ? e.message : 'Unknown error';
-      alert(`Failed to load preview: ${msg}`);
+      push({ type: "error", title: "Error", message: `Failed to load preview: ${msg}` });
     } finally {
       setPreviewLoading(false);
     }
@@ -250,7 +252,7 @@ export default function PrintCenter() {
       console.error('Failed to print:', error);
       const e = error as Record<string, unknown> | null;
       const msg = (e && typeof e === 'object' && typeof e.message === 'string' && e.message) ? e.message : 'Unknown error';
-      alert(`Failed to open PDF for printing: ${msg}`);
+      push({ type: "error", title: "Error", message: `Failed to open PDF for printing: ${msg}` });
     }
   };
 

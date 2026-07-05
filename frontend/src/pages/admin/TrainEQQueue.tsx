@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { CardListSkeleton } from "@/components/common/Skeletons";
 import { trainRequestApi, type TrainRequest } from "@/lib/api";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
@@ -98,6 +100,9 @@ export default function TrainEQQueue() {
     { header: "Created", value: (r) => new Date(r.createdAt).toLocaleString() },
   ];
 
+  // Client-side pagination — 10 rows per page, over the searched/filtered rows.
+  const pager = usePagination(filteredRequests, 10);
+
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
@@ -167,13 +172,13 @@ export default function TrainEQQueue() {
 
             <CardContent className="space-y-4">
               {loading ? (
-                <p className="text-muted-foreground text-center py-8">Loading requests...</p>
+                <CardListSkeleton rows={5} />
               ) : filteredRequests.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No train EQ requests in this filter.</p>
                 </div>
               ) : (
-                filteredRequests.map((r) => (
+                pager.pageItems.map((r) => (
                   <div
                     key={r.id}
                     className="flex items-center gap-4 p-4 rounded-xl border bg-white"
@@ -210,6 +215,15 @@ export default function TrainEQQueue() {
                   </div>
                 ))
               )}
+
+              <Pagination
+                page={pager.page}
+                totalPages={pager.totalPages}
+                total={pager.total}
+                rangeStart={pager.rangeStart}
+                rangeEnd={pager.rangeEnd}
+                onChange={pager.setPage}
+              />
             </CardContent>
           </Card>
 

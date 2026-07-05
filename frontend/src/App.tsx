@@ -2,7 +2,8 @@ import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
-import { Spinner } from "./components/AuthForm/Spinner";
+import { Skeleton } from "./components/ui/skeleton";
+import { StatCardsSkeleton } from "./components/common/Skeletons";
 import "./index.css";
 
 const Login = lazy(() => import("./pages/Auth/Login"));
@@ -52,11 +53,18 @@ const AdminMeetings = lazy(() => import("./pages/admin/AdminMeetings"));
 const AllTasks = lazy(() => import("./pages/tasks/AllTasks"));
 const ForwardedTasks = lazy(() => import("./pages/forwarded/ForwardedTasks"));
 const AddPerson = lazy(() => import("./pages/people/AddPerson"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 function PageFallback() {
+  // App-shell skeleton so route transitions don't flash a bare spinner.
   return (
-    <div className="flex min-h-screen items-center justify-center text-gray-600">
-      <Spinner />
+    <div className="flex min-h-screen bg-background">
+      <div className="hidden md:block w-[260px] shrink-0 bg-indigo-900" />
+      <div className="flex-1 p-6 space-y-6">
+        <Skeleton className="h-8 w-1/3" />
+        <StatCardsSkeleton />
+        <Skeleton className="h-64 w-full rounded-2xl" />
+      </div>
     </div>
   );
 }
@@ -446,8 +454,9 @@ export default function App() {
           }
         />
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/auth/login" replace />} />
+        {/* Fallback — friendly 404 for authenticated users; NotFound itself
+            redirects logged-out visitors to the login page. */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>
     </ErrorBoundary>

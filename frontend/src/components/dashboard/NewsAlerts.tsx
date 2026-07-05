@@ -10,6 +10,10 @@ const styles: Record<string, string> = {
   NORMAL: "bg-white border",
 };
 
+// Surface the most urgent items first so a CRITICAL alert never hides below
+// the fold. Sort is stable, so recency order is preserved within a priority.
+const priorityRank: Record<string, number> = { CRITICAL: 0, HIGH: 1, NORMAL: 2 };
+
 export function NewsAlerts() {
   const [newsItems, setNewsItems] = useState<NewsIntelligence[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +24,10 @@ export function NewsAlerts() {
     const fetchNews = async () => {
       try {
         const res = await newsApi.getAll({ limit: '20' });
-        setNewsItems(res.data);
+        const sorted = [...res.data].sort(
+          (a, b) => (priorityRank[a.priority] ?? 3) - (priorityRank[b.priority] ?? 3)
+        );
+        setNewsItems(sorted);
       } catch (error) {
         console.error('Failed to fetch news:', error);
       } finally {

@@ -60,9 +60,10 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
   const isAuthenticated = hasAuth()
   const userRole = getUserRole()
   
-  // Check authentication first
+  // Check authentication first. Remember where the user was headed so Login
+  // can send them back there after authenticating (deep-link preservation).
   if (!isAuthenticated) {
-    return <Navigate to="/auth/login" replace />
+    return <Navigate to="/auth/login" replace state={{ from: location }} />
   }
   
   // If allowedRoles is specified, check if user has access

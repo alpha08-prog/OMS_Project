@@ -18,8 +18,11 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { CardListSkeleton } from "@/components/common/Skeletons";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 import type { CsvColumn } from "@/lib/exportCsv";
 import { newsApi, type NewsIntelligence, type NewsPriority } from "@/lib/api";
 import {
@@ -39,6 +42,7 @@ import {
 
 export default function NewsIntelligenceView() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const confirm = useConfirm();
   const [news, setNews] = useState<NewsIntelligence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +74,9 @@ export default function NewsIntelligenceView() {
     { header: "Created By", value: (r) => r.createdBy?.name },
     { header: "Created", value: (r) => new Date(r.createdAt).toLocaleString() },
   ];
+
+  // Client-side pagination — 10 rows per page, over the searched/filtered rows.
+  const pager = usePagination(filteredNews, 10);
 
   const fetchNews = useCallback(async () => {
     setLoading(true);
@@ -123,8 +130,13 @@ export default function NewsIntelligenceView() {
   }, [targetNewsId, news, searchParams, setSearchParams]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this news item?")) return;
-    
+    if (!(await confirm({
+      title: "Delete this news item?",
+      description: "This action cannot be undone.",
+      confirmText: "Delete",
+      destructive: true,
+    }))) return;
+
     try {
       await newsApi.delete(id);
       setNews(prev => prev.filter(n => n.id !== id));
@@ -302,14 +314,14 @@ export default function NewsIntelligenceView() {
 
             <CardContent className="space-y-4">
               {loading ? (
-                <p className="text-muted-foreground text-center py-8">Loading news...</p>
+                <CardListSkeleton rows={5} />
               ) : filteredNews.length === 0 ? (
                 <div className="text-center py-8">
                   <Newspaper className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-muted-foreground">No news entries found</p>
                 </div>
               ) : (
-                filteredNews.map((item) => (
+                pager.pageItems.map((item) => (
                   <div
                     key={item.id}
                     className={`p-4 rounded-xl border bg-white ${getCardStyle(item.priority)} hover:shadow-md transition`}
@@ -386,6 +398,15 @@ export default function NewsIntelligenceView() {
                   </div>
                 ))
               )}
+
+              <Pagination
+                page={pager.page}
+                totalPages={pager.totalPages}
+                total={pager.total}
+                rangeStart={pager.rangeStart}
+                rangeEnd={pager.rangeEnd}
+                onChange={pager.setPage}
+              />
             </CardContent>
           </Card>
 

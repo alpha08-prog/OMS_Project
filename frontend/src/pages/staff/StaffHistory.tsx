@@ -40,8 +40,10 @@ import {
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { Pagination, usePagination } from "@/components/common/Pagination";
 import { SearchBar } from "@/components/common/SearchBar";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import type { CsvColumn } from "@/lib/exportCsv";
+import { TableSkeleton } from "@/components/common/Skeletons";
 import {
   History,
   FileCheck,
@@ -100,6 +102,8 @@ export default function StaffHistory() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // Client-side text filter over reference no / title / description.
   const filteredSubmissions = useMemo(() => {
@@ -112,6 +116,29 @@ export default function StaffHistory() {
     );
   }, [submissions, search]);
 
+  const toggleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  // Sort the filtered rows before they're paginated (don't mutate the source).
+  const sortedSubmissions = sortKey
+    ? [...filteredSubmissions].sort((a, b) => {
+        let c: number;
+        if (sortKey === "createdAt") {
+          c = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        } else {
+          const av = sortKey === "type" ? a.type : a.status;
+          const bv = sortKey === "type" ? b.type : b.status;
+          c = av.toString().localeCompare(bv.toString(), undefined, { numeric: true });
+        }
+        return sortDir === "asc" ? c : -c;
+      })
+    : filteredSubmissions;
+
   const csvColumns: CsvColumn<SubmissionItem>[] = [
     { header: "Reference No", value: (r) => r.referenceNo ?? "" },
     { header: "Type", value: (r) => r.type },
@@ -122,7 +149,7 @@ export default function StaffHistory() {
   ];
 
   // Client-side pagination — 10 rows per page; pager.setPage on Prev/Next.
-  const pager = usePagination(filteredSubmissions, 10);
+  const pager = usePagination(sortedSubmissions, 10);
 
   // Status options keyed by type
   const STATUS_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -520,21 +547,13 @@ export default function StaffHistory() {
                   </Select>
                 </div>
 
-                <div>
-                  <label className="text-sm text-muted-foreground mb-1 block">From Date</label>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm text-muted-foreground mb-1 block">To Date</label>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                <div className="md:col-span-2">
+                  <label className="text-sm text-muted-foreground mb-1 block">Date Range</label>
+                  <DateRangeFilter
+                    startDate={startDate}
+                    endDate={endDate}
+                    onStartDateChange={setStartDate}
+                    onEndDateChange={setEndDate}
                   />
                 </div>
               </div>
@@ -563,9 +582,7 @@ export default function StaffHistory() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
-                </div>
+                <TableSkeleton rows={6} cols={6} />
               ) : filteredSubmissions.length === 0 ? (
                 <div className="text-center py-12">
                   <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -577,11 +594,26 @@ export default function StaffHistory() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Type</TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => toggleSort("type")}
+                          >
+                            Type{sortKey === "type" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                          </TableHead>
                           <TableHead>Title</TableHead>
                           <TableHead>Description</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Date/Time</TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => toggleSort("status")}
+                          >
+                            Status{sortKey === "status" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                          </TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => toggleSort("createdAt")}
+                          >
+                            Date/Time{sortKey === "createdAt" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                          </TableHead>
                           <TableHead className="text-right">Details</TableHead>
                         </TableRow>
                       </TableHeader>

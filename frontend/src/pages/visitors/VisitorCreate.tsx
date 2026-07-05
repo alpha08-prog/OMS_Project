@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,23 +16,29 @@ import { visitorApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import FloatingNotice from "@/components/common/FloatingNotice";
 import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
+import { useFormDraft } from "@/hooks/useFormDraft";
+
+const INITIAL_VISITOR = {
+  name: "",
+  designation: "",
+  phone: "",
+  dob: "",
+  purpose: "",
+  referencedBy: "",
+  constituency: "",
+  wardVillage: "",
+};
 
 export default function VisitorCreate() {
   const navigate = useNavigate();
+  const today = new Date().toISOString().slice(0, 10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Which submit button was pressed: true = "Save & add another" (reset + stay).
+  const addAnotherRef = useRef(false);
 
-  const [formData, setFormData] = useState({
-    name: "",
-    designation: "",
-    phone: "",
-    dob: "",
-    purpose: "",
-    referencedBy: "",
-    constituency: "",
-    wardVillage: "",
-  });
+  const [formData, setFormData, clearDraft] = useFormDraft("visitor:create", INITIAL_VISITOR);
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -79,9 +85,16 @@ export default function VisitorCreate() {
       });
 
       setSuccess(true);
-      setTimeout(() => {
-        navigate("/staff/home");
-      }, 2000);
+      if (addAnotherRef.current) {
+        // Reset the form and stay on the page for rapid repeat entry.
+        setFormData(INITIAL_VISITOR);
+        setTimeout(() => setSuccess(false), 1500);
+      } else {
+        clearDraft();
+        setTimeout(() => {
+          navigate("/staff/home");
+        }, 2000);
+      }
     } catch (err: unknown) {
       const error = err instanceof Error ? err.message : "Failed to log visitor";
       setError(error);
@@ -111,7 +124,7 @@ export default function VisitorCreate() {
             <FloatingNotice
               show={success}
               variant="success"
-              message="Visitor registered successfully! Redirecting..."
+              message="Visitor registered successfully!"
             />
 
             {/* Error Message */}
@@ -144,8 +157,9 @@ export default function VisitorCreate() {
                           <Label>
                             Visitor Name <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            placeholder="Enter visitor full name" 
+                          <Input
+                            autoFocus
+                            placeholder="Enter visitor full name"
                             value={formData.name}
                             onChange={(e) => handleChange("name", e.target.value)}
                           />
@@ -177,11 +191,20 @@ export default function VisitorCreate() {
                       <div>
                         <Label>Phone Number</Label>
                         <Input
+                          type="tel"
+                          inputMode="numeric"
                           placeholder="10-digit mobile number"
                           value={formData.phone}
-                          onChange={(e) => handleChange("phone", e.target.value)}
                           maxLength={10}
+                          onChange={(e) =>
+                            handleChange("phone", e.target.value.replace(/\D/g, "").slice(0, 10))
+                          }
                         />
+                        {formData.phone.length > 0 && formData.phone.length < 10 && (
+                          <p className="text-xs text-red-500 mt-1">
+                            {10 - formData.phone.length} more digit{10 - formData.phone.length !== 1 ? "s" : ""} required
+                          </p>
+                        )}
                       </div>
                     </section>
 
@@ -245,8 +268,9 @@ export default function VisitorCreate() {
 
                       <div className="max-w-xs">
                         <Label>Date of Birth</Label>
-                        <Input 
-                          type="date" 
+                        <Input
+                          type="date"
+                          max={today}
                           value={formData.dob}
                           onChange={(e) => handleChange("dob", e.target.value)}
                         />
@@ -272,6 +296,9 @@ export default function VisitorCreate() {
                           value={formData.purpose}
                           onChange={(e) => handleChange("purpose", e.target.value)}
                         />
+                        {formData.purpose.length > 0 && (
+                          <p className="mt-1 text-right text-xs text-muted-foreground">{formData.purpose.length} characters</p>
+                        )}
                       </div>
                     </section>
                   </div>
@@ -297,12 +324,22 @@ export default function VisitorCreate() {
                       >
                         Cancel
                       </Button>
-                      <Button 
+                      <Button
                         type="submit"
                         className="w-full bg-amber-500 text-black hover:bg-amber-600"
                         disabled={loading}
+                        onClick={() => { addAnotherRef.current = false; }}
                       >
                         {loading ? "Submitting..." : "Log Visitor"}
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        className="w-full"
+                        disabled={loading}
+                        onClick={() => { addAnotherRef.current = true; }}
+                      >
+                        Save &amp; add another
                       </Button>
                     </div>
                   </div>

@@ -15,6 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import type { CsvColumn } from "@/lib/exportCsv";
 import { newsApi, type NewsIntelligence, type NewsPriority } from "@/lib/api";
 import {
   Dialog,
@@ -45,6 +48,7 @@ export function SuperAdminNewsContent() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selected, setSelected] = useState<NewsIntelligence | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [query, setQuery] = useState("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
@@ -120,7 +124,25 @@ export function SuperAdminNewsContent() {
     }
   };
 
-  const pager = usePagination(news, 10);
+  // Priority/date filters happen server-side in fetchNews; the free-text
+  // search runs client-side over the already-fetched window (headline, source).
+  const q = query.trim().toLowerCase();
+  const filteredNews = q
+    ? news.filter((n) =>
+        `${n.headline ?? ""} ${n.mediaSource ?? ""}`.toLowerCase().includes(q)
+      )
+    : news;
+
+  const CSV_COLUMNS: CsvColumn<NewsIntelligence>[] = [
+    { header: "Headline", value: (n) => n.headline },
+    { header: "Category", value: (n) => n.category },
+    { header: "Priority", value: (n) => n.priority },
+    { header: "Region", value: (n) => n.region },
+    { header: "Media Source", value: (n) => n.mediaSource },
+    { header: "Created", value: (n) => new Date(n.createdAt).toLocaleString() },
+  ];
+
+  const pager = usePagination(filteredNews, 10);
 
   return (
     <div className="space-y-6">
@@ -144,6 +166,12 @@ export function SuperAdminNewsContent() {
 
             <Card className="rounded-2xl border border-indigo-100">
               <CardContent className="flex flex-wrap items-center gap-4 py-4">
+                <SearchBar
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Search headline or media source…"
+                  className="w-64"
+                />
                 <div className="flex items-center gap-2">
                   <Filter className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">Priority:</span>
@@ -165,17 +193,22 @@ export function SuperAdminNewsContent() {
                   onStartDateChange={setStartDate}
                   onEndDateChange={setEndDate}
                 />
+                <ExportCsvButton
+                  rows={filteredNews}
+                  columns={CSV_COLUMNS}
+                  filename="news"
+                />
               </CardContent>
             </Card>
 
             <Card className="rounded-2xl shadow-sm">
               <CardHeader>
-                <CardTitle>News ({news.length})</CardTitle>
+                <CardTitle>News ({filteredNews.length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading…</p>
-                ) : news.length === 0 ? (
+                ) : filteredNews.length === 0 ? (
                   <div className="text-center py-8">
                     <Newspaper className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-muted-foreground">No news entries</p>

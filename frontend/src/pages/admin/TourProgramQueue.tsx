@@ -7,9 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { CardListSkeleton } from "@/components/common/Skeletons";
 import { tourProgramApi, taskApi, type TourProgram } from "@/lib/api";
+import { useToast } from "@/components/AuthForm/Toast";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
   Dialog,
@@ -37,6 +40,7 @@ interface StaffMember {
 
 export default function TourProgramQueue() {
   const navigate = useNavigate();
+  const { push } = useToast();
   const [programs, setPrograms] = useState<TourProgram[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -234,20 +238,20 @@ export default function TourProgramQueue() {
 
   const handleAssignTask = async () => {
     if (!selectedProgram || !assignToId || !taskTitle) {
-      alert("Please select a staff member and enter task title");
+      push({ type: "error", title: "Error", message: "Please select a staff member and enter task title" });
       return;
     }
     if (!priority) {
-      alert("Please select a priority");
+      push({ type: "error", title: "Error", message: "Please select a priority" });
       return;
     }
     if (!dueDate?.trim()) {
-      alert("Please select a due date");
+      push({ type: "error", title: "Error", message: "Please select a due date" });
       return;
     }
     const dateObj = new Date(dueDate + "T00:00:00");
     if (isNaN(dateObj.getTime())) {
-      alert("Please select a valid due date");
+      push({ type: "error", title: "Error", message: "Please select a valid due date" });
       return;
     }
     setAssigning(true);
@@ -268,12 +272,12 @@ export default function TourProgramQueue() {
       resetAssignForm();
       setDetailsOpen(false);
       await fetchPrograms();
-      alert("Verified and assigned to staff. Tour invitation accepted.");
+      push({ type: "success", title: "Assigned", message: "Verified and assigned to staff. Tour invitation accepted." });
       navigate("/admin/events");
     } catch (err: unknown) {
       const e = err as Record<string, unknown> | null;
       const msg = e && typeof e === 'object' && typeof e.message === 'string' ? e.message : undefined;
-      alert(msg || "Failed to assign task");
+      push({ type: "error", title: "Error", message: msg || "Failed to assign task" });
     } finally {
       setAssigning(false);
     }
@@ -320,6 +324,9 @@ export default function TourProgramQueue() {
     { header: "Created By", value: (p) => p.createdBy?.name },
     { header: "Created", value: (p) => new Date(p.createdAt).toLocaleString() },
   ];
+
+  // Client-side pagination — 10 rows per page, over the searched/filtered rows.
+  const pager = usePagination(filteredPrograms, 10);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -389,7 +396,7 @@ export default function TourProgramQueue() {
 
             <CardContent className="space-y-4">
               {loading ? (
-                <p className="text-muted-foreground text-center py-8">Loading invitations...</p>
+                <CardListSkeleton rows={5} />
               ) : filteredPrograms.length === 0 ? (
                 <div className="text-center py-8">
                   <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
@@ -399,7 +406,7 @@ export default function TourProgramQueue() {
                   </p>
                 </div>
               ) : (
-                filteredPrograms.map((p) => {
+                pager.pageItems.map((p) => {
                   const { date, time } = formatDateTime(p.eventDate || p.dateTime);
                   return (
                     <div
@@ -499,6 +506,15 @@ export default function TourProgramQueue() {
                   );
                 })
               )}
+
+              <Pagination
+                page={pager.page}
+                totalPages={pager.totalPages}
+                total={pager.total}
+                rangeStart={pager.rangeStart}
+                rangeEnd={pager.rangeEnd}
+                onChange={pager.setPage}
+              />
             </CardContent>
           </Card>
 

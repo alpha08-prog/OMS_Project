@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,36 +27,43 @@ import { useFormDraft } from "@/hooks/useFormDraft";
 import FloatingNotice from "@/components/common/FloatingNotice";
 import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 
+const INITIAL_OFFICE_GRIEVANCE = {
+  petitionerName: "",
+  mobileNumber: "",
+  constituency: "",
+  wardVillage: "",
+  grievanceType: "" as GrievanceType | "",
+  description: "",
+  monetaryValue: "",
+  actionRequired: "" as ActionRequired | "",
+  letterTemplate: "",
+  referencedBy: "",
+  priority: "MEDIUM" as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+  // Temple-visit specific — ignored at submit time when grievanceType
+  // isn't TEMPLE_VISIT.
+  templeKey: "",
+  memberCount: "",
+  originDistrict: "",
+  originState: "",
+  visitDateFrom: "",
+  visitDateTo: "",
+  showMobileOnLetter: false,
+};
+
 export default function OfficeGrievanceCreate() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  // Which submit button was pressed: true = "Save & add another" (reset + stay).
+  const addAnotherRef = useRef(false);
 
   // Form state
-  const [formData, setFormData, clearFormDraft] = useFormDraft("office-grievance:create", {
-    petitionerName: "",
-    mobileNumber: "",
-    constituency: "",
-    wardVillage: "",
-    grievanceType: "" as GrievanceType | "",
-    description: "",
-    monetaryValue: "",
-    actionRequired: "" as ActionRequired | "",
-    letterTemplate: "",
-    referencedBy: "",
-    priority: "MEDIUM" as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-    // Temple-visit specific — ignored at submit time when grievanceType
-    // isn't TEMPLE_VISIT.
-    templeKey: "",
-    memberCount: "",
-    originDistrict: "",
-    originState: "",
-    visitDateFrom: "",
-    visitDateTo: "",
-    showMobileOnLetter: false,
-  });
+  const [formData, setFormData, clearFormDraft] = useFormDraft(
+    "office-grievance:create",
+    INITIAL_OFFICE_GRIEVANCE
+  );
 
   // Selected service codes for the temple letter — kept outside useFormDraft
   // because that hook serialises a key→string map. Defaults seed from the
@@ -226,12 +233,19 @@ export default function OfficeGrievanceCreate() {
         }
       }
 
-      // Drop the draft from sessionStorage so the next visit starts fresh.
-      clearFormDraft();
       setSuccess(true);
-      setTimeout(() => {
-        navigate("/staff/home");
-      }, 2000);
+      if (addAnotherRef.current) {
+        // Reset the form and stay on the page for rapid repeat entry.
+        setFormData(INITIAL_OFFICE_GRIEVANCE);
+        setFile(null);
+        setTimeout(() => setSuccess(false), 1500);
+      } else {
+        // Drop the draft from sessionStorage so the next visit starts fresh.
+        clearFormDraft();
+        setTimeout(() => {
+          navigate("/staff/home");
+        }, 2000);
+      }
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error("Failed to create grievance");
       setError(error.message || "Failed to create grievance");
@@ -262,7 +276,7 @@ export default function OfficeGrievanceCreate() {
             <FloatingNotice
               show={success}
               variant="success"
-              message="Office Grievance registered successfully! Redirecting..."
+              message="Office Grievance registered successfully!"
             />
 
             {/* Error Message */}
@@ -295,8 +309,9 @@ export default function OfficeGrievanceCreate() {
                           <Label>
                             Petitioner Name <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            placeholder="Enter full name" 
+                          <Input
+                            autoFocus
+                            placeholder="Enter full name"
                             value={formData.petitionerName}
                             onChange={(e) => handleChange("petitionerName", e.target.value)}
                           />
@@ -419,14 +434,18 @@ export default function OfficeGrievanceCreate() {
                             value={formData.description}
                             onChange={(e) => handleChange("description", e.target.value)}
                           />
+                          {formData.description.length > 0 && (
+                            <p className="mt-1 text-right text-xs text-muted-foreground">{formData.description.length} characters</p>
+                          )}
                         </div>
                       )}
 
                       <div>
                         <Label>Monetary Value (₹)</Label>
-                        <Input 
-                          placeholder="Estimated cost / aid amount" 
+                        <Input
+                          placeholder="Estimated cost / aid amount"
                           type="number"
+                          min="0"
                           value={formData.monetaryValue}
                           onChange={(e) => handleChange("monetaryValue", e.target.value)}
                         />
@@ -716,12 +735,22 @@ export default function OfficeGrievanceCreate() {
                         >
                           Cancel
                         </Button>
-                        <Button 
+                        <Button
                           type="submit"
                           className="w-full bg-amber-500 text-black hover:bg-amber-600"
                           disabled={loading}
+                          onClick={() => { addAnotherRef.current = false; }}
                         >
                           {loading ? "Submitting..." : "Register Office Grievance"}
+                        </Button>
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          className="w-full"
+                          disabled={loading}
+                          onClick={() => { addAnotherRef.current = true; }}
+                        >
+                          Save &amp; add another
                         </Button>
                       </div>
 

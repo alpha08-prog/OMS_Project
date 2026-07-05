@@ -3,11 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { birthdayApi, type Birthday } from "@/lib/api";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { SearchBar } from "@/components/common/SearchBar";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { CardListSkeleton } from "@/components/common/Skeletons";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 import type { CsvColumn } from "@/lib/exportCsv";
 import { RefreshCw, Cake, Gift, Calendar, Phone, User, Trash2 } from "lucide-react";
 import {
@@ -28,6 +31,8 @@ export default function Birthdays() {
   // Filters
   const [filterMonth, setFilterMonth] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  // Client-side constituency filter over the main birthday list.
+  const [constituency, setConstituency] = useState("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   
@@ -132,6 +137,16 @@ export default function Birthdays() {
     { header: "Notes", value: (b) => b.notes },
     { header: "Added By", value: (b) => b.createdBy?.name },
   ];
+
+  // Constituency filter is client-side (search/month/date go to the server);
+  // narrows the main list before it is paginated.
+  const filteredBirthdays = constituency
+    ? birthdays.filter((b) => b.constituency === constituency)
+    : birthdays;
+
+  // Client-side pagination — 10 rows per page over the main birthday list
+  // (the Today banner and Upcoming section are not paginated).
+  const pager = usePagination(filteredBirthdays, 10);
 
   const getRelationBadgeColor = (relation: string) => {
     switch (relation) {
@@ -253,12 +268,12 @@ export default function Birthdays() {
               <CardContent className="px-5 py-5">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                   <div className="flex gap-2 flex-1 min-w-0">
-                    <Input
-                      placeholder="Search by name or phone..."
+                    <SearchBar
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                      className="h-10 flex-1"
+                      onChange={setSearchQuery}
+                      onSubmit={handleSearch}
+                      placeholder="Search by name or phone..."
+                      className="flex-1"
                     />
                     <Button variant="outline" onClick={handleSearch} className="h-10 flex-shrink-0">
                       Search
@@ -288,11 +303,28 @@ export default function Birthdays() {
                     </Select>
                   </div>
 
-                  {(filterMonth !== "all" || searchQuery) && (
+                  <div className="w-full sm:w-[220px] flex-shrink-0">
+                    <Select
+                      value={constituency || "all"}
+                      onValueChange={(v) => setConstituency(v === "all" ? "" : v)}
+                    >
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Constituency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All constituencies</SelectItem>
+                        {CONSTITUENCY_OPTIONS.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(filterMonth !== "all" || searchQuery || constituency) && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => { setFilterMonth("all"); setSearchQuery(""); }}
+                      onClick={() => { setFilterMonth("all"); setSearchQuery(""); setConstituency(""); }}
                       className="h-10 flex-shrink-0"
                     >
                       Clear Filters
@@ -301,7 +333,7 @@ export default function Birthdays() {
 
                   <div className="flex-shrink-0 sm:ml-auto">
                     <ExportCsvButton
-                      rows={birthdays}
+                      rows={filteredBirthdays}
                       columns={csvColumns}
                       filename="birthdays"
                     />
@@ -365,14 +397,14 @@ export default function Birthdays() {
             <Card className="rounded-2xl shadow-sm border border-pink-100">
               <CardHeader>
                 <CardTitle className="text-lg">
-                  All Birthdays ({birthdays.length})
+                  All Birthdays ({filteredBirthdays.length})
                 </CardTitle>
               </CardHeader>
 
               <CardContent className="space-y-4">
                 {loading ? (
-                  <p className="text-muted-foreground text-center py-8">Loading birthdays...</p>
-                ) : birthdays.length === 0 ? (
+                  <CardListSkeleton rows={5} />
+                ) : filteredBirthdays.length === 0 ? (
                   <div className="text-center py-8">
                     <Cake className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-muted-foreground">No birthdays found</p>
@@ -381,7 +413,7 @@ export default function Birthdays() {
                     </p>
                   </div>
                 ) : (
-                  birthdays.map((b) => (
+                  pager.pageItems.map((b) => (
                     <div
                       key={b.id}
                       className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border bg-white hover:bg-pink-50/40 transition ${
@@ -466,6 +498,15 @@ export default function Birthdays() {
                     </div>
                   ))
                 )}
+
+                <Pagination
+                  page={pager.page}
+                  totalPages={pager.totalPages}
+                  total={pager.total}
+                  rangeStart={pager.rangeStart}
+                  rangeEnd={pager.rangeEnd}
+                  onChange={pager.setPage}
+                />
               </CardContent>
             </Card>
 

@@ -9,8 +9,7 @@ import {
   Phone,
   Calendar,
   Briefcase,
-  Clock,
-  Search
+  Clock
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +18,11 @@ import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { visitorApi, type Visitor } from "@/lib/api";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import { CardListSkeleton } from "@/components/common/Skeletons";
+import { Pagination, usePagination } from "@/components/common/Pagination";
+import { useConfirm } from "@/components/common/ConfirmDialog";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
   Dialog,
@@ -37,12 +41,14 @@ import {
 
 export default function VisitorView() {
   const [searchParams] = useSearchParams();
+  const confirm = useConfirm();
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
   const [filterDesignation, setFilterDesignation] = useState<string>("all");
+  const [constituency, setConstituency] = useState("");
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") ?? "");
   const [dateFilter, setDateFilter] = useState<string>("");
 
@@ -89,8 +95,14 @@ export default function VisitorView() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this visitor entry?")) return;
-    
+    if (!(await confirm({
+      title: "Delete this visitor entry?",
+      description: "This action cannot be undone.",
+      confirmText: "Delete",
+      destructive: true,
+    }))) return;
+
+
     try {
       await visitorApi.delete(id);
       setVisitors(prev => prev.filter(v => v.id !== id));
@@ -145,6 +157,15 @@ export default function VisitorView() {
     { header: "Visit Date", value: (v) => v.visitDate },
     { header: "Logged By", value: (v) => v.createdBy?.name },
   ];
+
+  // Client-side constituency filter over the fetched visitor list (the
+  // designation filter is applied inside fetchVisitors; this narrows further).
+  const filteredVisitors = constituency
+    ? visitors.filter((v) => v.constituency === constituency)
+    : visitors;
+
+  // Client-side pagination — 10 rows per page over the filtered visitor records.
+  const pager = usePagination(filteredVisitors, 10);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -219,12 +240,11 @@ export default function VisitorView() {
           <Card className="rounded-2xl border border-indigo-100">
             <CardContent className="flex flex-wrap items-center gap-4 py-4">
               <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name or purpose..."
+                <SearchBar
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  onChange={setSearchQuery}
+                  onSubmit={handleSearch}
+                  placeholder="Search by name or purpose..."
                   className="flex-1"
                 />
                 <Button size="sm" onClick={handleSearch}>Search</Button>
@@ -248,8 +268,24 @@ export default function VisitorView() {
                   </SelectContent>
                 </Select>
                 </div>
+                <div className="w-48">
+                <Select
+                  value={constituency || "all"}
+                  onValueChange={(v) => setConstituency(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Constituency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All constituencies</SelectItem>
+                    {CONSTITUENCY_OPTIONS.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                </div>
               </div>
-              
+
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <Input
@@ -267,7 +303,7 @@ export default function VisitorView() {
 
               <div className="ml-auto">
                 <ExportCsvButton
-                  rows={visitors}
+                  rows={filteredVisitors}
                   columns={csvColumns}
                   filename="visitors"
                 />
@@ -278,19 +314,19 @@ export default function VisitorView() {
           {/* Visitor List */}
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
-              <CardTitle>Visitor Records ({visitors.length})</CardTitle>
+              <CardTitle>Visitor Records ({filteredVisitors.length})</CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-4">
               {loading ? (
-                <p className="text-muted-foreground text-center py-8">Loading visitors...</p>
-              ) : visitors.length === 0 ? (
+                <CardListSkeleton rows={5} />
+              ) : filteredVisitors.length === 0 ? (
                 <div className="text-center py-8">
                   <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-muted-foreground">No visitor records found</p>
                 </div>
               ) : (
-                visitors.map((visitor) => (
+                pager.pageItems.map((visitor) => (
                   <div
                     key={visitor.id}
                     className="p-4 rounded-xl border bg-white hover:shadow-md transition"
@@ -351,8 +387,8 @@ export default function VisitorView() {
                           <Eye className="h-4 w-4 mr-1" />
                           View
                         </Button>
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="destructive"
                           onClick={() => handleDelete(visitor.id)}
                         >
@@ -363,6 +399,15 @@ export default function VisitorView() {
                   </div>
                 ))
               )}
+
+              <Pagination
+                page={pager.page}
+                totalPages={pager.totalPages}
+                total={pager.total}
+                rangeStart={pager.rangeStart}
+                rangeEnd={pager.rangeEnd}
+                onChange={pager.setPage}
+              />
             </CardContent>
           </Card>
 

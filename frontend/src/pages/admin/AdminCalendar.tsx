@@ -27,6 +27,8 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { CalendarCheck, CalendarX, Loader2, MapPin, User, Plus, RefreshCw, Clock, Download, FileText, CalendarClock, CheckCircle2, Trash2 } from "lucide-react";
+import { useConfirm } from "@/components/common/ConfirmDialog";
+import { useToast } from "@/components/AuthForm/Toast";
 
 // ─── date-fns localizer ───────────────────────────────────────────────────────
 const locales = { "en-US": enUS };
@@ -226,6 +228,8 @@ function EventDetailDialog({ event, onClose }: { event: CalendarEvent | null; on
 // ─── main page ────────────────────────────────────────────────────────────────
 export default function AdminCalendar() {
   const [searchParams] = useSearchParams();
+  const confirm = useConfirm();
+  const { push } = useToast();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -315,7 +319,12 @@ export default function AdminCalendar() {
   };
 
   const handleDisconnect = async () => {
-    if (!confirm("Disconnect Google Calendar? Future tour acceptances won't be synced.")) return;
+    if (!(await confirm({
+      title: "Disconnect Google Calendar?",
+      description: "Future tour acceptances won't be synced.",
+      confirmText: "Disconnect",
+      destructive: true,
+    }))) return;
     await googleCalendarApi.disconnect();
     setConnected(false);
   };
@@ -325,10 +334,10 @@ export default function AdminCalendar() {
     setSyncing(true);
     try {
       const result = await googleCalendarApi.syncAll();
-      alert(`Synced ${result.synced} of ${result.total} events to Google Calendar.`);
+      push({ type: "success", title: "Synced", message: `Synced ${result.synced} of ${result.total} events to Google Calendar.` });
       loadEvents();
     } catch {
-      alert("Failed to sync events.");
+      push({ type: "error", title: "Error", message: "Failed to sync events." });
     } finally {
       setSyncing(false);
     }
@@ -337,7 +346,7 @@ export default function AdminCalendar() {
   // Add custom event
   const handleAddEvent = async () => {
     if (!newTitle.trim() || !newDate) {
-      alert("Please enter a title and date.");
+      push({ type: "error", title: "Error", message: "Please enter a title and date." });
       return;
     }
 
@@ -350,7 +359,11 @@ export default function AdminCalendar() {
     });
     if (conflicts.length > 0) {
       const names = conflicts.map((e) => e.title).join(", ");
-      const proceed = window.confirm(`⚠️ Schedule conflict with: "${names}". Add this event anyway?`);
+      const proceed = await confirm({
+        title: "Schedule conflict",
+        description: `This overlaps with: "${names}". Add this event anyway?`,
+        confirmText: "Add anyway",
+      });
       if (!proceed) return;
     }
 
@@ -368,7 +381,7 @@ export default function AdminCalendar() {
       setNewDescription("");
       loadEvents();
     } catch {
-      alert("Failed to add event.");
+      push({ type: "error", title: "Error", message: "Failed to add event." });
     } finally {
       setAdding(false);
     }
@@ -398,7 +411,7 @@ export default function AdminCalendar() {
 
   const handleScheduleMeeting = async () => {
     if (!sched.title.trim() || !sched.date) {
-      alert("Please enter a title and date.");
+      push({ type: "error", title: "Error", message: "Please enter a title and date." });
       return;
     }
     setScheduling(true);
@@ -413,7 +426,7 @@ export default function AdminCalendar() {
       setScheduleOpen(false);
       loadEvents();
     } catch {
-      alert("Failed to schedule meeting.");
+      push({ type: "error", title: "Error", message: "Failed to schedule meeting." });
     } finally {
       setScheduling(false);
     }
@@ -447,7 +460,7 @@ export default function AdminCalendar() {
         summary: m.summary ?? "",
       });
     } catch {
-      alert("Failed to load meeting.");
+      push({ type: "error", title: "Error", message: "Failed to load meeting." });
       setMeetingSheetOpen(false);
     } finally {
       setMeetingLoading(false);
@@ -457,7 +470,7 @@ export default function AdminCalendar() {
   const handleSaveMeeting = async () => {
     if (!meetingId) return;
     if (!mForm.title.trim() || !mForm.date) {
-      alert("Title and date are required.");
+      push({ type: "error", title: "Error", message: "Title and date are required." });
       return;
     }
     setMeetingSaving(true);
@@ -474,7 +487,7 @@ export default function AdminCalendar() {
       setMeetingSheetOpen(false);
       loadEvents();
     } catch {
-      alert("Failed to save meeting.");
+      push({ type: "error", title: "Error", message: "Failed to save meeting." });
     } finally {
       setMeetingSaving(false);
     }
@@ -488,7 +501,7 @@ export default function AdminCalendar() {
       setMForm((f) => ({ ...f, status: "COMPLETED" }));
       loadEvents();
     } catch {
-      alert("Failed to update meeting.");
+      push({ type: "error", title: "Error", message: "Failed to update meeting." });
     } finally {
       setMeetingSaving(false);
     }
@@ -496,14 +509,19 @@ export default function AdminCalendar() {
 
   const handleDeleteMeeting = async () => {
     if (!meetingId) return;
-    if (!window.confirm("Delete this meeting? This cannot be undone.")) return;
+    if (!(await confirm({
+      title: "Delete this meeting?",
+      description: "This cannot be undone.",
+      confirmText: "Delete",
+      destructive: true,
+    }))) return;
     setMeetingSaving(true);
     try {
       await meetingApi.remove(meetingId);
       setMeetingSheetOpen(false);
       loadEvents();
     } catch {
-      alert("Failed to delete meeting.");
+      push({ type: "error", title: "Error", message: "Failed to delete meeting." });
     } finally {
       setMeetingSaving(false);
     }

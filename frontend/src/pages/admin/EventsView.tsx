@@ -9,6 +9,9 @@ import { Label } from "@/components/ui/label";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { tourProgramApi, type TourProgram } from "@/lib/api";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import { CardListSkeleton } from "@/components/common/Skeletons";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
   Dialog,
@@ -222,26 +225,22 @@ export default function EventsView() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="space-y-1.5">
                   <p className="text-xs text-muted-foreground">Search</p>
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      className="h-10 pl-8"
-                      placeholder="Event name, organizer, venue..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                    />
-                  </div>
+                  <SearchBar
+                    value={search}
+                    onChange={setSearch}
+                    onSubmit={handleSearch}
+                    placeholder="Event name, organizer, venue..."
+                  />
                 </div>
 
-                <div className="space-y-1.5">
-                  <p className="text-xs text-muted-foreground">From Date</p>
-                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-10 w-full" />
-                </div>
-
-                <div className="space-y-1.5">
-                  <p className="text-xs text-muted-foreground">To Date</p>
-                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-10 w-full" />
+                <div className="space-y-1.5 sm:col-span-2">
+                  <p className="text-xs text-muted-foreground">Date Range</p>
+                  <DateRangeFilter
+                    startDate={startDate}
+                    endDate={endDate}
+                    onStartDateChange={setStartDate}
+                    onEndDateChange={setEndDate}
+                  />
                 </div>
 
                 <div className="space-y-1.5">
@@ -290,7 +289,7 @@ export default function EventsView() {
             </CardHeader>
             <CardContent className="space-y-4">
               {loading ? (
-                <p className="text-center text-muted-foreground py-8">Loading events...</p>
+                <CardListSkeleton rows={5} />
               ) : events.length === 0 ? (
                 <div className="text-center py-8">
                   <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />

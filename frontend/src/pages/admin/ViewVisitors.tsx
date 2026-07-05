@@ -14,11 +14,16 @@ import {
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { visitorApi, type Visitor } from "@/lib/api";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import { CardListSkeleton } from "@/components/common/Skeletons";
+import { Pagination, usePagination } from "@/components/common/Pagination";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 import type { CsvColumn } from "@/lib/exportCsv";
 
 export default function ViewVisitors() {
   const [dateFilter, setDateFilter] = useState("");
   const [designationFilter, setDesignationFilter] = useState("all");
+  const [constituency, setConstituency] = useState("");
   const [search, setSearch] = useState("");
 
   // Debounce the search input so we don't fire one request per keystroke.
@@ -59,8 +64,12 @@ export default function ViewVisitors() {
   // so we apply it to whatever the query returned.
   const filteredVisitors = visitors.filter((v) => {
     if (designationFilter !== "all" && v.designation !== designationFilter) return false;
+    if (constituency && v.constituency !== constituency) return false;
     return true;
   });
+
+  // Client-side pagination — 10 rows per page over the filtered visitors.
+  const pager = usePagination(filteredVisitors, 10);
 
   const formatDate = (iso?: string | null) => {
     if (!iso) return "";
@@ -144,11 +153,29 @@ export default function ViewVisitors() {
 
                 <div className="md:col-span-2">
                   <Label>Search (Name / Phone)</Label>
-                  <Input
-                    placeholder="Enter name or phone number"
+                  <SearchBar
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={setSearch}
+                    placeholder="Enter name or phone number"
                   />
+                </div>
+
+                <div>
+                  <Label>Constituency</Label>
+                  <Select
+                    value={constituency || "all"}
+                    onValueChange={(v) => setConstituency(v === "all" ? "" : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All constituencies</SelectItem>
+                      {CONSTITUENCY_OPTIONS.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>
@@ -165,7 +192,7 @@ export default function ViewVisitors() {
                   <p className="text-sm text-red-600">{errorMessage}</p>
                 )}
                 {isLoading && (
-                  <p className="text-sm text-muted-foreground">Loading visitors...</p>
+                  <CardListSkeleton rows={5} />
                 )}
                 {!isLoading && !errorMessage && filteredVisitors.length === 0 && (
                   <p className="text-sm text-muted-foreground">
@@ -173,7 +200,7 @@ export default function ViewVisitors() {
                   </p>
                 )}
 
-                {filteredVisitors.map((v) => (
+                {pager.pageItems.map((v) => (
                   <div
                     key={v.id}
                     className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 rounded-xl border bg-white"
@@ -198,6 +225,15 @@ export default function ViewVisitors() {
                     </div>
                   </div>
                 ))}
+
+                <Pagination
+                  page={pager.page}
+                  totalPages={pager.totalPages}
+                  total={pager.total}
+                  rangeStart={pager.rangeStart}
+                  rangeEnd={pager.rangeEnd}
+                  onChange={pager.setPage}
+                />
               </CardContent>
             </Card>
 

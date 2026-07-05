@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { TextInput } from '../../components/AuthForm/Input'
 import { PasswordInput } from '../../components/AuthForm/PasswordInput'
 import { Checkbox } from '../../components/AuthForm/Checkbox'
@@ -30,6 +30,9 @@ function clearAuthData() {
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
+  // Where to return after login: the page the user was bounced from, else role home.
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname
   const { push } = useToast()
 
   const [identifier, setIdentifier] = useState('')
@@ -107,15 +110,15 @@ export default function Login() {
       sessionStorage.setItem('user_id', res.user.id)
       push({ type: 'success', title: 'Welcome back!', message: `Hello ${res.user?.name ?? ''}` })
       
-      // Navigate based on role with replace to clear history
-      // This prevents back button from going to previous user's pages
-      if (res.user.role === 'STAFF') {
-        navigate('/staff/home', { replace: true })
-      } else if (res.user.role === 'ADMIN') {
-        navigate('/admin/home', { replace: true })
-      } else {
-        navigate('/home', { replace: true })
-      }
+      // Navigate to the page the user was bounced from (deep link), else their
+      // role dashboard. replace: true clears history so back doesn't return to a
+      // previous user's pages. ProtectedRoute still enforces per-role access.
+      const roleHome =
+        res.user.role === 'STAFF' ? '/staff/home'
+        : res.user.role === 'ADMIN' ? '/admin/home'
+        : '/home'
+      const dest = from && !from.startsWith('/auth') ? from : roleHome
+      navigate(dest, { replace: true })
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string; code?: string }
       const status = error?.status

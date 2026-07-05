@@ -26,6 +26,12 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { Pagination, usePagination } from "@/components/common/Pagination";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import { useConfirm } from "@/components/common/ConfirmDialog";
+import type { CsvColumn } from "@/lib/exportCsv";
+import { CardListSkeleton } from "@/components/common/Skeletons";
 import { meetingApi, type Meeting, type MeetingStatus } from "@/lib/api";
 
 // "YYYY-MM-DD HH:mm:ss" (Catalyst IST) -> "YYYY-MM-DDTHH:mm" (datetime-local).
@@ -80,9 +86,11 @@ const STATUS_STYLES: Record<MeetingStatus, string> = {
 };
 
 export default function AdminMeetings() {
+  const confirm = useConfirm();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"upcoming" | "past" | "all">("upcoming");
+  const [query, setQuery] = useState("");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null); // null = create
@@ -177,7 +185,12 @@ export default function AdminMeetings() {
   };
 
   const handleDelete = async (m: Meeting) => {
-    if (!window.confirm(`Delete meeting "${m.title}"? This cannot be undone.`)) return;
+    if (!(await confirm({
+      title: "Delete this meeting?",
+      description: `"${m.title}" will be permanently deleted. This cannot be undone.`,
+      confirmText: "Delete",
+      destructive: true,
+    }))) return;
     try {
       await meetingApi.remove(m.id);
       await load();
@@ -186,11 +199,37 @@ export default function AdminMeetings() {
     }
   };
 
-  const filtered = meetings.filter((m) => {
-    if (tab === "all") return true;
-    const past = isPast(m.dateTime) || m.status === "COMPLETED";
-    return tab === "past" ? past : !past;
-  });
+  // Split by time bucket so each tab can show a live count.
+  const upcomingMeetings = meetings.filter(
+    (m) => !(isPast(m.dateTime) || m.status === "COMPLETED")
+  );
+  const pastMeetings = meetings.filter(
+    (m) => isPast(m.dateTime) || m.status === "COMPLETED"
+  );
+  const tabMeetings =
+    tab === "past" ? pastMeetings : tab === "upcoming" ? upcomingMeetings : meetings;
+
+  // Free-text search runs client-side over the active tab's list.
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? tabMeetings.filter((m) =>
+        `${m.title ?? ""} ${m.agenda ?? ""} ${m.summary ?? ""}`
+          .toLowerCase()
+          .includes(q)
+      )
+    : tabMeetings;
+
+  const CSV_COLUMNS: CsvColumn<Meeting>[] = [
+    { header: "Title", value: (m) => m.title },
+    { header: "Date & Time", value: (m) => formatDateTime(m.dateTime) },
+    { header: "Status", value: (m) => m.status },
+    { header: "Location", value: (m) => m.location ?? "" },
+    { header: "Attendees", value: (m) => m.attendees ?? "" },
+    { header: "Agenda", value: (m) => m.agenda ?? "" },
+    { header: "Scheduled By", value: (m) => m.createdBy?.name ?? "" },
+  ];
+
+  const pager = usePagination(filtered, 10);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -217,18 +256,30 @@ export default function AdminMeetings() {
               </Button>
             </div>
 
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <SearchBar
+                value={query}
+                onChange={setQuery}
+                placeholder="Search title, agenda, or summary…"
+                className="w-64"
+              />
+              <ExportCsvButton
+                rows={filtered}
+                columns={CSV_COLUMNS}
+                filename="meetings"
+              />
+            </div>
+
             <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
               <TabsList>
-                <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
-                <TabsTrigger value="past">Past</TabsTrigger>
-                <TabsTrigger value="all">All</TabsTrigger>
+                <TabsTrigger value="upcoming">Upcoming ({upcomingMeetings.length})</TabsTrigger>
+                <TabsTrigger value="past">Past ({pastMeetings.length})</TabsTrigger>
+                <TabsTrigger value="all">All ({meetings.length})</TabsTrigger>
               </TabsList>
 
               <TabsContent value={tab} className="mt-4 space-y-4">
                 {loading ? (
-                  <div className="flex items-center gap-2 text-muted-foreground py-12 justify-center">
-                    <Loader2 className="h-5 w-5 animate-spin" /> Loading meetings…
-                  </div>
+                  <CardListSkeleton rows={5} />
                 ) : filtered.length === 0 ? (
                   <Card className="rounded-2xl border-dashed">
                     <CardContent className="py-12 text-center text-muted-foreground">
@@ -236,7 +287,8 @@ export default function AdminMeetings() {
                     </CardContent>
                   </Card>
                 ) : (
-                  filtered.map((m) => (
+                  <>
+                  {pager.pageItems.map((m) => (
                     <Card
                       key={m.id}
                       className="rounded-2xl shadow-sm border border-indigo-100"
@@ -329,7 +381,16 @@ export default function AdminMeetings() {
                         </p>
                       </CardContent>
                     </Card>
-                  ))
+                  ))}
+                  <Pagination
+                    page={pager.page}
+                    totalPages={pager.totalPages}
+                    total={pager.total}
+                    rangeStart={pager.rangeStart}
+                    rangeEnd={pager.rangeEnd}
+                    onChange={pager.setPage}
+                  />
+                  </>
                 )}
               </TabsContent>
             </Tabs>

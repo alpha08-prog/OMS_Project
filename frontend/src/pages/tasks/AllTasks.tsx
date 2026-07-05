@@ -25,6 +25,7 @@ import {
   type TaskStatus,
   type TaskProgressHistory,
 } from "@/lib/api";
+import { useToast } from "@/components/AuthForm/Toast";
 
 const STATUS_TONE: Record<string, string> = {
   ASSIGNED: "bg-slate-100 text-slate-800",
@@ -62,6 +63,7 @@ const RECORD_LABEL: Record<string, string> = {
 
 export default function AllTasks() {
   const navigate = useNavigate();
+  const { push } = useToast();
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -184,10 +186,13 @@ export default function AllTasks() {
       await taskApi.editShared(task.id, { status });
       await load();
     } catch (err: unknown) {
-      alert(
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Failed to update status."
-      );
+      push({
+        type: "error",
+        title: "Update Failed",
+        message:
+          (err as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message ?? "Failed to update status.",
+      });
     } finally {
       setBusyId(null);
     }
@@ -202,10 +207,13 @@ export default function AllTasks() {
       setForwardTarget(null);
       await load();
     } catch (err: unknown) {
-      alert(
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Failed to forward task."
-      );
+      push({
+        type: "error",
+        title: "Forward Failed",
+        message:
+          (err as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message ?? "Failed to forward task.",
+      });
     } finally {
       setForwarding(false);
     }

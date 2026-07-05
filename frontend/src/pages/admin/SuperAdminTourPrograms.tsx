@@ -16,6 +16,9 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import type { CsvColumn } from "@/lib/exportCsv";
 import { tourProgramApi, type TourProgram } from "@/lib/api";
 import {
   Dialog,
@@ -39,6 +42,7 @@ export function SuperAdminTourProgramsContent() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<TourProgram | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
@@ -90,8 +94,27 @@ export function SuperAdminTourProgramsContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate]);
 
-  // Date range is applied server-side now; no client filter needed.
-  const pager = usePagination(programs, 10);
+  // Date range is applied server-side; the free-text search runs client-side
+  // over the already-fetched window (event name, organizer, venue).
+  const q = query.trim().toLowerCase();
+  const filteredPrograms = q
+    ? programs.filter((p) =>
+        `${p.eventName ?? ""} ${p.organizer ?? ""} ${p.venue ?? ""}`
+          .toLowerCase()
+          .includes(q)
+      )
+    : programs;
+
+  const CSV_COLUMNS: CsvColumn<TourProgram>[] = [
+    { header: "Event", value: (p) => p.eventName },
+    { header: "Organizer", value: (p) => p.organizer },
+    { header: "Date & Time", value: (p) => p.dateTime },
+    { header: "Venue", value: (p) => p.venue },
+    { header: "Decision", value: (p) => p.decision },
+    { header: "Referenced By", value: (p) => p.referencedBy ?? "" },
+  ];
+
+  const pager = usePagination(filteredPrograms, 10);
 
   const formatDateTime = (s?: string | null) => {
     if (!s) return '—';
@@ -130,6 +153,12 @@ export function SuperAdminTourProgramsContent() {
 
             <Card className="rounded-2xl border border-indigo-100">
               <CardContent className="flex flex-wrap items-center gap-4 py-4">
+                <SearchBar
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Search event, organizer, or venue…"
+                  className="w-64"
+                />
                 <DateRangeFilter
                   startDate={startDate}
                   endDate={endDate}
@@ -138,17 +167,22 @@ export function SuperAdminTourProgramsContent() {
                   fromLabel="Event from"
                   toLabel="Event to"
                 />
+                <ExportCsvButton
+                  rows={filteredPrograms}
+                  columns={CSV_COLUMNS}
+                  filename="tour-programs"
+                />
               </CardContent>
             </Card>
 
             <Card className="rounded-2xl shadow-sm">
               <CardHeader>
-                <CardTitle>Tour Programs ({programs.length})</CardTitle>
+                <CardTitle>Tour Programs ({filteredPrograms.length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading…</p>
-                ) : programs.length === 0 ? (
+                ) : filteredPrograms.length === 0 ? (
                   <div className="text-center py-8">
                     <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-muted-foreground">No decided tour programs yet</p>
@@ -246,7 +280,11 @@ export function SuperAdminTourProgramsContent() {
             {selected && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <Badge className="bg-emerald-100 text-emerald-800">Accepted</Badge>
+                  {String(selected.decision) === 'ACCEPTED' ? (
+                    <Badge className="bg-emerald-100 text-emerald-800">Accepted</Badge>
+                  ) : (
+                    <Badge className="bg-red-100 text-red-800">Regret</Badge>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Event Name" value={selected.eventName} />
@@ -266,7 +304,7 @@ export function SuperAdminTourProgramsContent() {
                 {selected.decisionNote && (
                   <div>
                     <p className="text-xs text-muted-foreground">Decision note</p>
-                    <p className="mt-1 p-3 rounded bg-emerald-50 text-sm whitespace-pre-wrap">{selected.decisionNote}</p>
+                    <p className={`mt-1 p-3 rounded text-sm whitespace-pre-wrap ${String(selected.decision) === 'ACCEPTED' ? 'bg-emerald-50' : 'bg-red-50'}`}>{selected.decisionNote}</p>
                   </div>
                 )}
               </div>

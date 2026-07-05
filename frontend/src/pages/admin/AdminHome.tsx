@@ -15,6 +15,7 @@ import {
   Newspaper,
   ArrowRight,
   CalendarClock,
+  RefreshCw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,8 @@ export default function AdminHome() {
 
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("Admin");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const myPresent = myToday?.status === "PRESENT";
   const myCanCheckOut =
@@ -89,6 +92,38 @@ export default function AdminHome() {
     }
   };
 
+  // Lifted out of the effect so the Refresh button can re-run it.
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [summary, grievancesRes, tourRes, attendance, mine] = await Promise.all([
+        statsApi.getSummary(),
+        // Active grievances that still need handling + tour decisions awaiting
+        // a call — small DB-filtered previews, just enough for names.
+        grievanceApi.getAll({ status: "OPEN", limit: "5" }),
+        tourProgramApi.getAll({ decision: "PENDING", limit: "5" }),
+        attendanceApi.getTodayStats().catch(() => null),
+        attendanceApi.getMyToday().catch(() => null),
+      ]);
+
+      setStats(summary ?? null);
+      setOpenGrievances(Array.isArray(grievancesRes?.data) ? grievancesRes.data : []);
+      setPendingTours(Array.isArray(tourRes?.data) ? tourRes.data : []);
+      setAttendanceStats(attendance);
+      setMyToday(mine);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error("Failed to fetch dashboard data:", err);
+      setStats(null);
+      setOpenGrievances([]);
+      setPendingTours([]);
+      setError("Couldn't refresh dashboard data. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const userStr = localStorage.getItem("user") || sessionStorage.getItem("user");
     if (userStr) {
@@ -99,35 +134,6 @@ export default function AdminHome() {
         /* ignore */
       }
     }
-
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [summary, grievancesRes, tourRes, attendance, mine] = await Promise.all([
-          statsApi.getSummary(),
-          // Active grievances that still need handling + tour decisions awaiting
-          // a call — small DB-filtered previews, just enough for names.
-          grievanceApi.getAll({ status: "OPEN", limit: "5" }),
-          tourProgramApi.getAll({ decision: "PENDING", limit: "5" }),
-          attendanceApi.getTodayStats().catch(() => null),
-          attendanceApi.getMyToday().catch(() => null),
-        ]);
-
-        setStats(summary ?? null);
-        setOpenGrievances(Array.isArray(grievancesRes?.data) ? grievancesRes.data : []);
-        setPendingTours(Array.isArray(tourRes?.data) ? tourRes.data : []);
-        setAttendanceStats(attendance);
-        setMyToday(mine);
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
-        setStats(null);
-        setOpenGrievances([]);
-        setPendingTours([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchData();
   }, []);
 
@@ -201,10 +207,27 @@ export default function AdminHome() {
                 </h1>
                 <p className="text-sm text-muted-foreground">{today}</p>
               </div>
-              <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
-                ADMIN
-              </span>
+              <div className="flex items-center gap-3">
+                {lastUpdated && (
+                  <span className="text-xs text-muted-foreground">
+                    Updated {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+                <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
+                  <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+                <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
+                  ADMIN
+                </span>
+              </div>
             </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
 
             {/* KPI ROW */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

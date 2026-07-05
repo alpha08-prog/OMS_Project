@@ -22,7 +22,9 @@ import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 import type { CsvColumn } from "@/lib/exportCsv";
+import { CardListSkeleton } from "@/components/common/Skeletons";
 import { taskApi, type TaskAssignment, type TaskStatus, type TaskProgressHistory } from "@/lib/api";
 import {
   Dialog,
@@ -39,10 +41,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// A task is overdue when it has a due date in the past and isn't done yet.
+const isOverdue = (t: TaskAssignment): boolean => {
+  if (!t.dueDate) return false;
+  const done = ["RESOLVED", "COMPLETED", "DONE", "CLOSED"].includes(
+    String(t.status).toUpperCase()
+  );
+  return !done && new Date(t.dueDate).getTime() < Date.now();
+};
+
 export default function StaffTasks() {
   const _navigate = useNavigate();
   void _navigate; // Available for future navigation needs
   const [searchParams, setSearchParams] = useSearchParams();
+  const confirm = useConfirm();
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -194,9 +206,11 @@ export default function StaffTasks() {
   // click doesn't accidentally close out a task. Backend stamps completedAt
   // and notifies the admin who assigned the task.
   const handleResolveTask = async (task: TaskAssignment) => {
-    const ok = window.confirm(
-      `Mark "${task.title}" as resolved? The admin will be notified.`
-    );
+    const ok = await confirm({
+      title: "Mark this task as resolved?",
+      description: `"${task.title}" will be marked resolved and the admin will be notified.`,
+      confirmText: "Resolve",
+    });
     if (!ok) return;
     setUpdating(true);
     try {
@@ -422,7 +436,7 @@ export default function StaffTasks() {
 
               <CardContent className="space-y-4">
                 {loading ? (
-                  <p className="text-muted-foreground text-center py-8">Loading tasks...</p>
+                  <CardListSkeleton rows={5} />
                 ) : tasks.length === 0 ? (
                   <div className="text-center py-8">
                     <ClipboardList className="h-12 w-12 text-gray-300 mx-auto mb-3" />
@@ -435,6 +449,7 @@ export default function StaffTasks() {
                     <div
                       key={task.id}
                       className={`p-4 rounded-xl border bg-white hover:shadow-md transition ${
+                        isOverdue(task) ? 'border-l-4 border-l-red-500' :
                         task.priority === 'URGENT' ? 'border-l-4 border-l-red-500' :
                         task.priority === 'HIGH' ? 'border-l-4 border-l-orange-500' : ''
                       }`}

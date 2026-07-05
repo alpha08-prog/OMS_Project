@@ -10,6 +10,7 @@ import {
   UserPlus,
   RefreshCw,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/AuthForm/Toast";
+import { usePrompt } from "@/components/common/PromptDialog";
 
 type ActionType = 'grievance' | 'train' | 'tour';
 type SelectedActionItem = Grievance | TrainRequest | TourProgram;
@@ -91,6 +94,8 @@ interface StaffMember {
 
 export default function AdminActionCenter() {
   const navigate = useNavigate();
+  const { push } = useToast();
+  const prompt = usePrompt();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingGrievances, setPendingGrievances] = useState<Grievance[]>([]);
@@ -238,7 +243,7 @@ export default function AdminActionCenter() {
   };
 
   const handleRejectTrainRequest = async (id: string) => {
-    const reason = prompt('Enter rejection reason:');
+    const reason = await prompt({ title: "Rejection reason", placeholder: "Enter the reason…", confirmText: "Reject" });
     if (reason !== null) {
       try {
         await trainRequestApi.reject(id, reason);
@@ -250,19 +255,19 @@ export default function AdminActionCenter() {
   };
 
   const handleRejectGrievance = async (id: string) => {
-    const reason = prompt('Reason for rejection (optional — staff will see this in their notification):');
+    const reason = await prompt({ title: "Rejection reason", description: "Optional — staff will see this in their notification.", placeholder: "Enter a reason…", confirmText: "Reject" });
     if (reason === null) return; // user cancelled
     try {
       await grievanceApi.updateStatus(id, 'REJECTED', reason.trim() || undefined);
       fetchData();
     } catch (error) {
       console.error('Failed to reject grievance:', error);
-      alert('Failed to reject grievance. Please try again.');
+      push({ type: "error", title: "Reject failed", message: "Failed to reject grievance. Please try again." });
     }
   };
 
   const handleTourDecision = async (id: string, decision: 'ACCEPTED' | 'REGRET') => {
-    const note = decision === 'REGRET' ? prompt('Enter regret note:') : undefined;
+    const note = decision === 'REGRET' ? await prompt({ title: "Regret note", placeholder: "Enter a note…", confirmText: "Send regret" }) ?? undefined : undefined;
     try {
       await tourProgramApi.updateDecision(id, decision, note || undefined);
       fetchData();
@@ -273,15 +278,15 @@ export default function AdminActionCenter() {
 
   const handleAssignTask = async () => {
     if (assignToIds.length === 0 || !taskTitle) {
-      alert('Please select at least one staff member and enter task title');
+      push({ type: "info", title: "Missing details", message: "Please select at least one staff member and enter task title" });
       return;
     }
     if (!priority) {
-      alert('Please select a priority');
+      push({ type: "info", title: "Missing priority", message: "Please select a priority" });
       return;
     }
     if (!dueDate?.trim()) {
-      alert('Please select a due date');
+      push({ type: "info", title: "Missing due date", message: "Please select a due date" });
       return;
     }
 
@@ -315,13 +320,13 @@ export default function AdminActionCenter() {
       const idRegex = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9]+)$/i;
       const invalid = assignToIds.find((id) => !idRegex.test(id));
       if (invalid) {
-        alert(`Invalid staff member id: ${invalid}`);
+        push({ type: "error", title: "Invalid staff member", message: `Invalid staff member id: ${invalid}` });
         setAssigning(false);
         return;
       }
 
       if (!selectedItem || !selectedItem.id) {
-        alert('No item selected for task assignment. Please try again.');
+        push({ type: "error", title: "No item selected", message: "No item selected for task assignment. Please try again." });
         setAssigning(false);
         return;
       }
@@ -357,7 +362,7 @@ export default function AdminActionCenter() {
         .filter(Boolean)
         .join(', ') || 'Staff';
       const verb = createdTasks.length === 1 ? 'Assigned to' : `Assigned to ${createdTasks.length} staff:`;
-      alert(`✅ Verified and assigned!\n\n${verb} ${staffNames}\nTask: ${taskTitle.trim()}`);
+      push({ type: "success", title: "Verified and assigned", message: `✅ Verified and assigned!\n\n${verb} ${staffNames}\nTask: ${taskTitle.trim()}` });
       
       // Close dialogs and reset form
       setDetailsOpen(false);
@@ -406,7 +411,7 @@ export default function AdminActionCenter() {
         }
       }
       
-      alert(`Task Assignment Failed:\n\n${errorMessage}\n\nPlease check the console for more details.`);
+      push({ type: "error", title: "Task assignment failed", message: `Task Assignment Failed:\n\n${errorMessage}\n\nPlease check the console for more details.` });
     } finally {
       setAssigning(false);
     }
@@ -536,7 +541,11 @@ export default function AdminActionCenter() {
                   </Badge>
                 </CardHeader>
                 <CardContent className="space-y-3 max-h-[400px] overflow-y-auto">
-                  {pendingGrievances.length === 0 ? (
+                  {loading ? (
+                    <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                    </p>
+                  ) : pendingGrievances.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">No pending grievances</p>
                   ) : (
                     pendingGrievances.slice(0, 5).map((g) => (
@@ -613,7 +622,11 @@ export default function AdminActionCenter() {
                   </Badge>
                 </CardHeader>
                 <CardContent className="space-y-3 max-h-[400px] overflow-y-auto">
-                  {pendingTrainRequests.length === 0 ? (
+                  {loading ? (
+                    <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                    </p>
+                  ) : pendingTrainRequests.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">No pending requests</p>
                   ) : (
                     pendingTrainRequests.slice(0, 5).map((t) => (
@@ -665,7 +678,11 @@ export default function AdminActionCenter() {
                   </Badge>
                 </CardHeader>
                 <CardContent className="space-y-3 max-h-[400px] overflow-y-auto">
-                  {pendingTourPrograms.length === 0 ? (
+                  {loading ? (
+                    <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                    </p>
+                  ) : pendingTourPrograms.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">No pending invitations</p>
                   ) : (
                     pendingTourPrograms.slice(0, 5).map((tour) => (

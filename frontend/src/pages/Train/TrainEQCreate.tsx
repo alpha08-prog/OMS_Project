@@ -15,6 +15,8 @@ import { trainRequestApi, pdfApi } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { AlertTriangle, Users, Download, Eye } from "lucide-react";
 import FloatingNotice from "@/components/common/FloatingNotice";
+import { useFormDraft } from "@/hooks/useFormDraft";
+import { useToast } from "@/components/AuthForm/Toast";
 
 // Max additional travellers beyond the primary. Together with the primary
 // passenger that's MAX_PASSENGERS_GENERAL total per General booking PNR.
@@ -23,6 +25,7 @@ const MAX_ADDITIONAL = MAX_PASSENGERS_GENERAL - 1;
 
 export default function TrainEQCreate() {
   const navigate = useNavigate();
+  const { push } = useToast();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -31,9 +34,28 @@ export default function TrainEQCreate() {
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pnrLoading, setPnrLoading] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
 
   type Gender = '' | 'MALE' | 'FEMALE' | 'OTHER';
-  const [formData, setFormData] = useState<{
+  const INITIAL_TRAIN = {
+    primaryPassengerName: "",
+    primaryGender: "" as Gender,
+    primaryAge: "",
+    primaryDob: "",
+    primaryWaitlist: "",
+    additionalTravellers: "0",
+    pnrNumber: "",
+    ContactNumber: "",
+    trainName: "",
+    trainNumber: "",
+    journeyClass: "",
+    dateOfJourney: "",
+    fromStation: "",
+    toStation: "",
+    route: "",
+    referencedBy: "",
+  };
+  const [formData, setFormData, clearDraft] = useFormDraft<{
     primaryPassengerName: string;
     primaryGender: Gender;
     primaryAge: string;
@@ -50,26 +72,7 @@ export default function TrainEQCreate() {
     toStation: string;
     route: string;
     referencedBy: string;
-    attachSignature: boolean;
-  }>({
-    primaryPassengerName: "",
-    primaryGender: "",
-    primaryAge: "",
-    primaryDob: "",
-    primaryWaitlist: "",
-    additionalTravellers: "0",
-    pnrNumber: "",
-    ContactNumber: "",
-    trainName: "",
-    trainNumber: "",
-    journeyClass: "",
-    dateOfJourney: "",
-    fromStation: "",
-    toStation: "",
-    route: "",
-    referencedBy: "",
-    attachSignature: false,
-  });
+  }>("train-eq:create", INITIAL_TRAIN);
 
   const handleChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -305,6 +308,7 @@ export default function TrainEQCreate() {
 
       setCreatedId(created?.id ?? null);
       setSuccess(true);
+      clearDraft();
       // No auto-redirect — the staff member needs to print the letter from
       // this same screen now that admin no longer mediates the flow.
     } catch (err: unknown) {
@@ -405,16 +409,27 @@ export default function TrainEQCreate() {
                           setTimeout(() => URL.revokeObjectURL(url), 60_000);
                         } else {
                           URL.revokeObjectURL(url);
-                          alert("Pop-up blocked — allow pop-ups for this site to preview.");
+                          push({ type: "error", title: "Pop-up blocked", message: "Pop-up blocked — allow pop-ups for this site to preview." });
                         }
                       } catch (err) {
                         console.error("Train EQ preview failed:", err);
-                        alert(err instanceof Error ? err.message : "Failed to load preview");
+                        push({ type: "error", title: "Error", message: err instanceof Error ? err.message : "Failed to load preview" });
                       }
                     }}
                   >
                     <Eye className="h-4 w-4 mr-1" />
                     Preview
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setFormData(INITIAL_TRAIN);
+                      setSuccess(false);
+                      setCreatedId(null);
+                    }}
+                  >
+                    Create another EQ
                   </Button>
                   <Button
                     type="button"
@@ -427,12 +442,8 @@ export default function TrainEQCreate() {
               </div>
             )}
 
-            {/* Error Message */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
-                ❌ {error}
-              </div>
-            )}
+            {/* Errors surface via the FloatingNotice toast at the top of the
+                page (covers both validation and PDF-download failures). */}
 
             {/* Main Card */}
             <form onSubmit={handleSubmit}>
@@ -472,6 +483,7 @@ export default function TrainEQCreate() {
                               Primary Passenger Name <span className="text-red-500">*</span>
                             </Label>
                             <Input
+                              autoFocus
                               placeholder="Full name of the primary passenger"
                               value={formData.primaryPassengerName}
                               onChange={(e) =>
@@ -529,6 +541,7 @@ export default function TrainEQCreate() {
                             <Label>Date of Birth</Label>
                             <Input
                               type="date"
+                              max={today}
                               value={formData.primaryDob}
                               onChange={(e) =>
                                 handleChange("primaryDob", e.target.value)
@@ -592,10 +605,11 @@ export default function TrainEQCreate() {
                           PNR Number <span className="text-red-500">*</span>
                         </Label>
                         <div className="flex gap-2">
-                          <Input 
-                            placeholder="10-digit PNR" 
+                          <Input
+                            placeholder="10-digit PNR"
+                            inputMode="numeric"
                             value={formData.pnrNumber}
-                            onChange={(e) => handleChange("pnrNumber", e.target.value)}
+                            onChange={(e) => handleChange("pnrNumber", e.target.value.replace(/\D/g, "").slice(0, 10))}
                             maxLength={10}
                           />
                           <Button 
@@ -714,14 +728,6 @@ export default function TrainEQCreate() {
 
                   {/* RIGHT COLUMN — ACTIONS */}
                   <div className="space-y-6 bg-indigo-50/60 rounded-xl p-5 border border-indigo-100">
-
-                    <section className="space-y-4">
-                      <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide">
-                        Letter Options
-                      </h3>
-
-                      
-                    </section>
 
                     <section className="text-xs text-muted-foreground">
                       Fields marked with <span className="text-red-500">*</span> are mandatory.
