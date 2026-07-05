@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, LogOut, FileText, Users, KeyRound } from "lucide-react";
+import { clearAuthStorage } from "@/lib/auth-storage";
 import { Input } from "../../components/ui/input";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import {
@@ -142,22 +143,7 @@ export function DashboardHeader() {
   };
 
   const handleLogout = () => {
-    // Clear sessionStorage (tab-specific)
-    sessionStorage.removeItem('auth_token');
-    sessionStorage.removeItem('auth_session');
-    sessionStorage.removeItem('user');
-    sessionStorage.removeItem('user_role');
-    sessionStorage.removeItem('user_name');
-    sessionStorage.removeItem('user_id');
-    
-    // Clear localStorage
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('remember_token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('user_role');
-    localStorage.removeItem('user_name');
-    localStorage.removeItem('user_id');
-    
+    clearAuthStorage();
     navigate('/auth/login');
   };
 

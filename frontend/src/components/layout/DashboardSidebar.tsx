@@ -29,7 +29,9 @@ import {
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "../../lib/utils";
+import { clearAuthStorage } from "../../lib/auth-storage";
 import { NotificationBell } from "../common/NotificationBell";
+import { GlobalSearch } from "../common/GlobalSearch";
 
 
 type MenuItem = {
@@ -188,23 +190,7 @@ export function DashboardSidebar() {
   };
 
   const handleLogout = () => {
-    // Clear sessionStorage (tab-specific)
-    sessionStorage.removeItem('auth_token');
-    sessionStorage.removeItem('auth_session');
-    sessionStorage.removeItem('user');
-    sessionStorage.removeItem('user_role');
-    sessionStorage.removeItem('user_name');
-    sessionStorage.removeItem('user_id');
-    
-    // Clear localStorage
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('remember_token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('user_role');
-    localStorage.removeItem('user_name');
-    localStorage.removeItem('user_id');
-    
-    // Navigate to login
+    clearAuthStorage();
     navigate('/auth/login', { replace: true });
   };
 
@@ -232,14 +218,24 @@ export function DashboardSidebar() {
                   Office Management
                 </p>
               </div>
-              <div className="bg-white rounded-full">
-                <NotificationBell />
+              <div className="flex items-center gap-1">
+                <div className="bg-white rounded-full">
+                  <GlobalSearch />
+                </div>
+                <div className="bg-white rounded-full">
+                  <NotificationBell />
+                </div>
               </div>
             </div>
           )}
           {collapsed && (
-            <div className="bg-white rounded-full">
-              <NotificationBell />
+            <div className="flex flex-col items-center gap-2">
+              <div className="bg-white rounded-full">
+                <GlobalSearch />
+              </div>
+              <div className="bg-white rounded-full">
+                <NotificationBell />
+              </div>
             </div>
           )}
         </div>

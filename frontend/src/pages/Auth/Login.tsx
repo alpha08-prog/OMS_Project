@@ -6,27 +6,9 @@ import { Checkbox } from '../../components/AuthForm/Checkbox'
 import { Spinner } from '../../components/AuthForm/Spinner'
 import { useToast } from '../../components/AuthForm/Toast'
 import { authApi } from '../../lib/api'
+import { clearAuthStorage } from '../../lib/auth-storage'
 import GovernmentHeroSection from '../../components/GovernmentHeroSection'
 import portrait from '../../assets/prahlad_joshi1.jpg'
-
-// Clear all auth data on logout/session clear
-function clearAuthData() {
-  // Clear sessionStorage (tab-specific)
-  sessionStorage.removeItem('auth_token')
-  sessionStorage.removeItem('auth_session')
-  sessionStorage.removeItem('user')
-  sessionStorage.removeItem('user_role')
-  sessionStorage.removeItem('user_name')
-  sessionStorage.removeItem('user_id')
-  
-  // Clear localStorage
-  localStorage.removeItem('auth_token')
-  localStorage.removeItem('remember_token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('user_role')
-  localStorage.removeItem('user_name')
-  localStorage.removeItem('user_id')
-}
 
 export default function Login() {
   const navigate = useNavigate()
@@ -89,7 +71,7 @@ export default function Login() {
 
     try {
       // Clear any old auth data before new login
-      clearAuthData()
+      clearAuthStorage()
       
       const res = await authApi.login({ identifier, password })
       // Store token in sessionStorage (tab-specific) - this allows different users in different tabs

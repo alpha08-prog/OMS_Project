@@ -32,7 +32,6 @@ const AdminOfficeTasks = lazy(() => import("./pages/admin/AdminOfficeTasks"));
 const AdminActivityLog = lazy(() => import("./pages/admin/AdminActivityLog"));
 const GrievanceVerification = lazy(() => import("./pages/admin/GrievienceVerification"));
 const TrainEQQueue = lazy(() => import("./pages/admin/TrainEQQueue"));
-const ViewVisitors = lazy(() => import("./pages/admin/ViewVisitors"));
 const AdminHome = lazy(() => import("./pages/admin/AdminHome"));
 const PhotoBooth = lazy(() => import("./pages/PhotoBooth/PhotoBooth.tsx"));
 const AboutUs = lazy(() => import("./pages/AboutUs"));
@@ -210,7 +209,7 @@ export default function App() {
           path="/admin/visitors"
           element={
             <ProtectedRoute allowedRoles={["ADMIN"]}>
-              <ViewVisitors />
+              <VisitorView />
             </ProtectedRoute>
           }
         />
