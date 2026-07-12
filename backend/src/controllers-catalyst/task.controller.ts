@@ -22,11 +22,16 @@ import {
   nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
+  zcqlAnyOf,
   zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
-import { getCachedTableList, isHiddenTestUser } from '../lib/catalyst-user-lookup';
+import {
+  getCachedTableList,
+  getUserIdAliases,
+  isHiddenTestUser,
+} from '../lib/catalyst-user-lookup';
 import {
   syncGrievanceForTask,
   reconcileGrievanceTaskStatuses,
@@ -169,29 +174,13 @@ async function lookupUsers(
 }
 
 /**
- * Build the set of id forms (ROWID + legacyId) that identify one user, so a
- * `forwardedToId` stored under either form matches the logged-in viewer. A
- * recipient picked from the directory is stored as legacyId-or-ROWID, and the
- * JWT subject uses the same preference — but a legacy row could have been
- * stamped under the other form, so we match both to be safe.
+ * Set of id forms (ROWID + legacyId) that identify one user, so an
+ * `assignedToId` / `forwardedToId` stored under either form matches the
+ * logged-in viewer. Delegates to the shared alias resolver so every
+ * controller applies the same matching rule.
  */
 async function userIdForms(userId: string): Promise<Set<string>> {
-  const forms = new Set<string>([String(userId)]);
-  try {
-    const users = await getCachedTableList('AppUser');
-    for (const u of users) {
-      const rowId = String(u.ROWID);
-      const legacyId = u.legacyId ? String(u.legacyId) : null;
-      if (rowId === String(userId) || (legacyId && legacyId === String(userId))) {
-        forms.add(rowId);
-        if (legacyId) forms.add(legacyId);
-        break;
-      }
-    }
-  } catch {
-    /* AppUser unreachable — fall back to the raw id */
-  }
-  return forms;
+  return new Set(await getUserIdAliases(userId));
 }
 
 /** Attach assignedTo + assignedBy user info to a list of tasks. */
@@ -731,6 +720,8 @@ function buildTaskZCQL(params: {
   status?: string;
   taskType?: string;
   assignedToId?: string;
+  /** Match assignedToId against ANY of these (identity aliases: ROWID + legacy UUID). */
+  assignedToIds?: string[];
   priority?: string;
   startDate?: string;
   endDate?: string;
@@ -739,7 +730,9 @@ function buildTaskZCQL(params: {
   const conditions: string[] = [];
   if (params.status) conditions.push(`status = '${zcqlEscapeValue(params.status)}'`);
   if (params.taskType) conditions.push(`taskType = '${zcqlEscapeValue(params.taskType)}'`);
-  if (params.assignedToId)
+  if (params.assignedToIds && params.assignedToIds.length > 0)
+    conditions.push(zcqlAnyOf('assignedToId', params.assignedToIds));
+  else if (params.assignedToId)
     conditions.push(`assignedToId = '${zcqlEscapeValue(params.assignedToId)}'`);
   if (params.priority) conditions.push(`priorities = '${zcqlEscapeValue(params.priority)}'`);
   if (params.startDate) {
@@ -1443,10 +1436,14 @@ export async function getMyTasks(
     let pageRows: CatalystRow[];
     let total: number;
 
+    // Match against all identity aliases (ROWID + legacy UUID) — tasks
+    // assigned before/after a migration may carry either form.
+    const me = await userIdForms(req.user.id);
+
     if (useZCQL()) {
       const baseQuery = buildTaskZCQL({
         status,
-        assignedToId: req.user.id,
+        assignedToIds: [...me],
         startDate,
         endDate,
         orderBy: 'due',
@@ -1460,7 +1457,7 @@ export async function getMyTasks(
       total = skip + pageRows.length + (hasMore ? 1 : 0);
     } else {
       let rows = await listAllRows(TASK_TABLE);
-      rows = rows.filter((r) => r.assignedToId === req.user!.id);
+      rows = rows.filter((r) => me.has(String(r.assignedToId)));
       if (status) rows = rows.filter((r) => r.status === status);
       if (startDate) {
         const start = new Date(startDate).getTime();
@@ -1521,9 +1518,12 @@ export async function getTaskById(
       sendNotFound(res, 'Task not found');
       return;
     }
-    if (req.user?.role === 'STAFF' && row.assignedToId !== req.user.id) {
-      sendError(res, 'Forbidden', 403);
-      return;
+    if (req.user?.role === 'STAFF') {
+      const me = await userIdForms(req.user.id);
+      if (!me.has(String(row.assignedToId))) {
+        sendError(res, 'Forbidden', 403);
+        return;
+      }
     }
     const [shaped] = await attachUsers([row]);
     sendSuccess(res, shaped, 'Task retrieved successfully');
@@ -1560,9 +1560,12 @@ export async function updateTaskProgress(
       sendError(res, 'Office tasks can only be edited by an admin', 403);
       return;
     }
-    if (existing.assignedToId !== req.user.id && req.user.role === 'STAFF') {
-      sendError(res, 'Not authorized to update this task', 403);
-      return;
+    if (req.user.role === 'STAFF') {
+      const me = await userIdForms(req.user.id);
+      if (!me.has(String(existing.assignedToId))) {
+        sendError(res, 'Not authorized to update this task', 403);
+        return;
+      }
     }
     if (status && !VALID_TASK_STATUS.has(status)) {
       sendError(res, `Invalid status: ${status}`);
@@ -1651,9 +1654,12 @@ export async function getTaskHistory(
       sendNotFound(res, 'Task not found');
       return;
     }
-    if (req.user.role === 'STAFF' && task.assignedToId !== req.user.id) {
-      sendError(res, 'Not authorized to view this task history', 403);
-      return;
+    if (req.user.role === 'STAFF') {
+      const me = await userIdForms(req.user.id);
+      if (!me.has(String(task.assignedToId))) {
+        sendError(res, 'Not authorized to view this task history', 403);
+        return;
+      }
     }
 
     const allHistory = await listAllRows(HISTORY_TABLE);

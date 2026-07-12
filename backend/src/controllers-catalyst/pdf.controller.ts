@@ -25,7 +25,7 @@ import {
   type TrainEQPassenger,
 } from '../utils/pdfGenerator';
 import { cacheClear } from '../lib/cache';
-import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { getCachedTableList, getUserIdAliases } from '../lib/catalyst-user-lookup';
 import { emitNotifications } from './notification.controller';
 import { syncTasksForGrievance, markLinkedTasksCompleted } from '../lib/grievance-task-sync';
 import type { AuthenticatedRequest } from '../types';
@@ -64,6 +64,20 @@ async function loadTrainPassengers(trainRequestId: string): Promise<TrainEQPasse
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * STAFF may only touch rows they created. Ownership is matched against ALL
+ * identity aliases (Catalyst ROWID + legacy UUID) — a row written before the
+ * migration carries the other id form than the current JWT. Admins pass.
+ */
+async function staffOwnsRow(
+  req: AuthenticatedRequest,
+  row: CatalystRow
+): Promise<boolean> {
+  if (req.user?.role !== 'STAFF') return true;
+  const aliases = await getUserIdAliases(req.user.id);
+  return aliases.includes(String(row.createdById));
+}
 
 /** Format a Catalyst datetime string ("YYYY-MM-DD HH:mm:ss") as IN locale date. */
 function formatDateIN(value: string | Date | null | undefined): string {
@@ -166,10 +180,7 @@ export async function generateTrainEQPDF(
       return;
     }
 
-    if (
-      req.user?.role === 'STAFF' &&
-      String(row.createdById) !== req.user.id
-    ) {
+    if (!(await staffOwnsRow(req, row))) {
       sendForbidden(res, 'You can only download your own train EQ letters');
       return;
     }
@@ -235,10 +246,7 @@ export async function previewTrainEQ(
       return;
     }
 
-    if (
-      req.user?.role === 'STAFF' &&
-      String(row.createdById) !== req.user.id
-    ) {
+    if (!(await staffOwnsRow(req, row))) {
       sendForbidden(res, 'You can only preview your own train EQ letters');
       return;
     }
@@ -447,10 +455,7 @@ export async function generateGrievancePDF(
       return;
     }
 
-    if (
-      req.user?.role === 'STAFF' &&
-      String(row.createdById) !== req.user.id
-    ) {
+    if (!(await staffOwnsRow(req, row))) {
       sendForbidden(res, 'You can only download your own grievance letters');
       return;
     }
@@ -502,10 +507,7 @@ export async function previewGrievance(
       return;
     }
 
-    if (
-      req.user?.role === 'STAFF' &&
-      String(row.createdById) !== req.user.id
-    ) {
+    if (!(await staffOwnsRow(req, row))) {
       sendForbidden(res, 'You can only preview your own grievance letters');
       return;
     }
@@ -1020,7 +1022,7 @@ export async function generateTempleVisitPDF(
       return;
     }
 
-    if (req.user?.role === 'STAFF' && String(row.createdById) !== req.user.id) {
+    if (!(await staffOwnsRow(req, row))) {
       sendForbidden(res, 'You can only download your own grievance letters');
       return;
     }
@@ -1098,7 +1100,7 @@ export async function previewTempleVisit(
       sendNotFound(res, 'Grievance not found');
       return;
     }
-    if (req.user?.role === 'STAFF' && String(row.createdById) !== req.user.id) {
+    if (!(await staffOwnsRow(req, row))) {
       sendForbidden(res, 'You can only preview your own grievance letters');
       return;
     }

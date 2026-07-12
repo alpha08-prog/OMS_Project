@@ -22,6 +22,7 @@ import {
   updateRow,
   executeZCQL,
   zcqlEscapeValue,
+  zcqlAnyOf,
   zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
@@ -31,6 +32,7 @@ import {
   sendNotFound,
   sendServerError,
 } from '../utils/response';
+import { getUserIdAliases } from '../lib/catalyst-user-lookup';
 import type { AuthenticatedRequest } from '../types';
 
 const NOTIFICATION_TABLE = 'Notification';
@@ -131,7 +133,10 @@ export async function listMyNotifications(
       return;
     }
     const unreadOnly = String(req.query?.unread ?? '').toLowerCase() === 'true';
-    const conditions: string[] = [`recipientId = '${zcqlEscapeValue(req.user.id)}'`];
+    // Match all identity aliases (ROWID + legacy UUID) — notifications may
+    // have been addressed to either form of the same user.
+    const me = await getUserIdAliases(req.user.id);
+    const conditions: string[] = [zcqlAnyOf('recipientId', me)];
     if (unreadOnly) conditions.push(`isRead = 'false'`);
     const where = ` WHERE ${conditions.join(' AND ')}`;
     const safeLimit = zcqlSafeLimit(50);
@@ -158,9 +163,10 @@ export async function getUnreadCount(
       sendError(res, 'Not authenticated', 401);
       return;
     }
+    const me = await getUserIdAliases(req.user.id);
     const query =
       `SELECT * FROM ${NOTIFICATION_TABLE} ` +
-      `WHERE recipientId = '${zcqlEscapeValue(req.user.id)}' AND isRead = 'false'`;
+      `WHERE ${zcqlAnyOf('recipientId', me)} AND isRead = 'false'`;
     const rows = await executeZCQL<CatalystRow>(query);
     sendSuccess(res, { count: rows.length }, 'Unread count retrieved');
   } catch (error) {
@@ -186,7 +192,8 @@ export async function markRead(
       sendNotFound(res, 'Notification not found');
       return;
     }
-    if (String(row.recipientId) !== req.user.id) {
+    const me = await getUserIdAliases(req.user.id);
+    if (!me.includes(String(row.recipientId))) {
       sendError(res, 'Forbidden', 403);
       return;
     }
@@ -210,9 +217,10 @@ export async function markAllRead(
       sendError(res, 'Not authenticated', 401);
       return;
     }
+    const me = await getUserIdAliases(req.user.id);
     const query =
       `SELECT * FROM ${NOTIFICATION_TABLE} ` +
-      `WHERE recipientId = '${zcqlEscapeValue(req.user.id)}' AND isRead = 'false'`;
+      `WHERE ${zcqlAnyOf('recipientId', me)} AND isRead = 'false'`;
     const rows = await executeZCQL<CatalystRow>(query);
     await Promise.all(
       rows.map((r) =>
