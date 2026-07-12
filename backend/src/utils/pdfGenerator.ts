@@ -449,19 +449,19 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     //   Left officer block : 220pt   (50  → 270)
     //   Emblem column      :  65pt   (275 → 340)
     //   Right contact block: 200pt   (345 → 545)
-    // The right block needs ~140pt of value width so "CHITAGUPPI HOSPITAL
+    // The right block needs ~160pt of value width so "CHITAGUPPI HOSPITAL
     // COMPOUND," fits on one line — keeping it wider than that prevents
     // PDFKit from line-wrapping which previously caused the rows to overlap.
-    const officerW = 220;
+    const officerW = 236;
 
     // Left: officer name + designation block.
-    // Description uses fontSize 7.5 so the longest designation line
-    // ("FOOD & PUBLIC DISTRIBUTION AND CONSUMER AFFAIRS", ~230pt at fontSize
-    // 8) fits inside the 220pt officer column without wrapping into the
+    // Description uses fontSize 8.25 so the longest designation line
+    // ("FOOD & PUBLIC DISTRIBUTION AND CONSUMER AFFAIRS", ~231pt at fontSize
+    // 8.25) fits inside the 236pt officer column without wrapping into the
     // next row. lineBreak:false alone isn't reliable with `&`-containing
     // strings in older PDFKit versions.
     doc.font('Helvetica-Bold')
-      .fontSize(14)
+      .fontSize(16)
       .fillColor(COLORS.navy)
       .text('MALLIKARJUNGOUDA PATIL', margin, headerTop, { width: officerW, lineBreak: false });
     const descLines = [
@@ -471,7 +471,7 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
       'GOVERNMENT OF INDIA, NEW DELHI',
     ];
     const descLineGap = 11;
-    doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.black);
+    doc.font('Helvetica').fontSize(8.25).fillColor(COLORS.black);
     descLines.forEach((line, i) => {
       doc.text(line, margin, headerTop + 22 + i * descLineGap, {
         width: officerW,
@@ -480,9 +480,10 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     });
 
     // Center: national emblem (Ashoka pillar). Falls back to text label if
-    // the asset can't be located on disk for any reason.
-    const centerX = margin + officerW + 5;     // 275
-    const centerW = 65;
+    // the asset can't be located on disk for any reason. Trimmed from 65pt
+    // to make room for the larger officer/contact-block text on either side.
+    const centerX = margin + officerW + 5;     // 291
+    const centerW = 40;
     const emblem = getEmblemBuffer();
     if (emblem) {
       try {
@@ -496,22 +497,22 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
         .text('GOVT. OF INDIA', centerX, headerTop + 30, { width: centerW, align: 'center', lineBreak: false });
     }
 
-    // Right: contact info block. rightValueW = 545 - 405 = 140pt at A4.
-    const rightX = margin + officerW + 5 + centerW + 5;   // 345
-    const rightLabelW = 55;
-    const rightValueX = rightX + rightLabelW;             // 400
-    const rightValueW = pageWidth - margin - rightValueX; // 145
+    // Right: contact info block. rightValueW = 545 - 386 = 159pt at A4.
+    const rightX = margin + officerW + 5 + centerW + 5;   // 336
+    const rightLabelW = 50;
+    const rightValueX = rightX + rightLabelW;             // 386
+    const rightValueW = pageWidth - margin - rightValueX; // 159
     let rightY = headerTop;
-    const rowGap = 12; // a touch over fontSize 8's natural line height
+    const rowGap = 12; // a touch over fontSize 8.75's natural line height
 
     const writeRow = (label: string, value: string) => {
-      doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+      doc.font('Helvetica').fontSize(8.75).fillColor(COLORS.black)
         .text(label, rightX, rightY, { width: rightLabelW, lineBreak: false });
       doc.text(': ' + value, rightValueX, rightY, { width: rightValueW, lineBreak: false });
       rightY += rowGap;
     };
     const writeContinuation = (value: string) => {
-      doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+      doc.font('Helvetica').fontSize(8.75).fillColor(COLORS.black)
         .text('  ' + value, rightValueX, rightY, { width: rightValueW, lineBreak: false });
       rightY += rowGap;
     };
@@ -628,13 +629,13 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
         }
         // Primary passenger's mobile number, printed just under his name.
         if (i === 0 && data.contactNumber && data.contactNumber.trim()) {
-          doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.gray)
+          doc.font('Helvetica').fontSize(13).fillColor(COLORS.gray)
             .text(`Mob: ${data.contactNumber.trim()}`, colX[1] + 4, y + 13, {
               width: colW[1] - 8,
               lineBreak: false,
             });
           doc.fontSize(12).fillColor(COLORS.black);
-          y += 13; // extra room so the mobile line doesn't collide with the next row
+          y += 16; // extra room so the larger mobile line doesn't collide with the next row
         }
         y += 16;
       });
