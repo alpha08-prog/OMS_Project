@@ -10,8 +10,14 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { SearchBar } from "@/components/common/SearchBar";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { CardListSkeleton } from "@/components/common/Skeletons";
 import { StaffMultiSelect } from "@/components/StaffMultiSelect";
 import { grievanceApi, pdfApi, taskApi, type Grievance, type TaskAssignment } from "@/lib/api";
+import type { CsvColumn } from "@/lib/exportCsv";
+import { usePrompt } from "@/components/common/PromptDialog";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +49,12 @@ export default function GrievanceVerification() {
   // Date range filter
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  // Client-side search box (narrows the already-fetched/server-filtered rows).
+  const [query, setQuery] = useState<string>("");
+  // Client-side constituency filter (narrows already-fetched rows).
+  const [constituency, setConstituency] = useState("");
+
+  const prompt = usePrompt();
 
   // Task assignment state
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -56,8 +68,32 @@ export default function GrievanceVerification() {
   const [assigning, setAssigning] = useState(false);
   const [_actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Client-side search across petitioner, mobile and grievance type — narrows
+  // the already server-filtered (status/source/priority/date) rows before paging.
+  const filteredGrievances = grievances.filter((g) => {
+    if (constituency && g.constituency !== constituency) return false;
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return (
+      g.petitionerName.toLowerCase().includes(q) ||
+      g.mobileNumber.toLowerCase().includes(q) ||
+      g.grievanceType.toLowerCase().includes(q)
+    );
+  });
+
+  // CSV export — mirrors the currently filtered/visible rows.
+  const csvColumns: CsvColumn<Grievance>[] = [
+    { header: "Petitioner", value: (g) => g.petitionerName },
+    { header: "Mobile", value: (g) => g.mobileNumber },
+    { header: "Type", value: (g) => g.grievanceType },
+    { header: "Constituency", value: (g) => g.constituency },
+    { header: "Status", value: (g) => g.status },
+    { header: "Priority", value: (g) => g.priority ?? "" },
+    { header: "Created", value: (g) => new Date(g.createdAt).toLocaleString() },
+  ];
+
   // Client-side pagination — 10 rows per page, matching the admin task tracker.
-  const pager = usePagination(grievances, 10);
+  const pager = usePagination(filteredGrievances, 10);
 
   const fetchGrievances = async () => {
     setLoading(true);
@@ -204,7 +240,12 @@ export default function GrievanceVerification() {
   };
 
   const handleReject = async (id: string) => {
-    const reason = prompt('Reason for rejection (optional — staff will see this in their notification):');
+    const reason = await prompt({
+      title: "Rejection reason",
+      description: "Optional — staff will see this in their notification.",
+      placeholder: "Enter a reason…",
+      confirmText: "Reject",
+    });
     if (reason === null) return; // user cancelled
     setActionLoading(id);
     try {
@@ -259,12 +300,34 @@ export default function GrievanceVerification() {
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-2 shrink-0">
+              <SearchBar
+                value={query}
+                onChange={setQuery}
+                placeholder="Search petitioner, mobile, type…"
+                className="w-[240px]"
+              />
               <DateRangeFilter
                 startDate={startDate}
                 endDate={endDate}
                 onStartDateChange={setStartDate}
                 onEndDateChange={setEndDate}
               />
+              <div className="w-[190px]">
+                <Select
+                  value={constituency || "all"}
+                  onValueChange={(v) => setConstituency(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Constituency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All constituencies</SelectItem>
+                    {CONSTITUENCY_OPTIONS.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="w-[140px]">
                 <Select value={sourceFilter} onValueChange={setSourceFilter}>
                   <SelectTrigger>
@@ -304,6 +367,11 @@ export default function GrievanceVerification() {
                 </SelectContent>
               </Select>
               </div>
+              <ExportCsvButton
+                rows={filteredGrievances}
+                columns={csvColumns}
+                filename="grievance-verification"
+              />
               <Button variant="outline" onClick={fetchGrievances} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
@@ -320,13 +388,13 @@ export default function GrievanceVerification() {
           {/* Pending Verification Queue */}
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
-              <CardTitle>Pending Verification Queue ({grievances.length})</CardTitle>
+              <CardTitle>Pending Verification Queue ({filteredGrievances.length})</CardTitle>
             </CardHeader>
 
             <CardContent className="space-y-4">
               {loading ? (
-                <p className="text-muted-foreground text-center py-8">Loading grievances...</p>
-              ) : grievances.length === 0 ? (
+                <CardListSkeleton rows={5} />
+              ) : filteredGrievances.length === 0 ? (
                 <div className="text-center py-8">
                   <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
                   <p className="text-muted-foreground">All grievances have been verified!</p>

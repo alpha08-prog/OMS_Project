@@ -47,8 +47,11 @@ import {
 } from "../../components/ui/dialog";
 import { DashboardSidebar } from "../../components/layout/DashboardSidebar";
 import { SearchBar } from "../../components/common/SearchBar";
+import { useConfirm } from "../../components/common/ConfirmDialog";
+import { DateRangeFilter } from "../../components/common/DateRangeFilter";
 import { ExportCsvButton } from "../../components/common/ExportCsvButton";
 import type { CsvColumn } from "../../lib/exportCsv";
+import { TableSkeleton } from "../../components/common/Skeletons";
 import {
   History,
   FileCheck,
@@ -84,6 +87,7 @@ function toLocalInput(iso?: string | null): string {
 }
 
 export default function AdminHistory() {
+  const confirm = useConfirm();
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [stats, setStats] = useState<HistoryStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -165,6 +169,7 @@ export default function AdminHistory() {
   // Pagination
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const limit = 15;
 
   const fetchHistory = useCallback(async () => {
@@ -193,6 +198,7 @@ export default function AdminHistory() {
       setHistory(historyArray);
       if (res?.meta) {
         setTotalPages(res.meta.totalPages);
+        setTotal(res.meta.total);
       }
     } catch (error: unknown) {
       console.error("Error fetching history:", error);
@@ -283,9 +289,11 @@ export default function AdminHistory() {
 
   const handleReopen = async () => {
     if (!selectedItem || !isGrievanceReopenable(selectedItem)) return;
-    const confirmed = window.confirm(
-      `Reopen this grievance? It will move back to OPEN and reappear in the active queue.`
-    );
+    const confirmed = await confirm({
+      title: "Reopen this grievance?",
+      description: "It will move back to OPEN and reappear in the active queue.",
+      confirmText: "Reopen",
+    });
     if (!confirmed) return;
     setReopenLoading(true);
     setReopenError(null);
@@ -594,23 +602,13 @@ export default function AdminHistory() {
                   </Select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground block">From Date</label>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="h-10 w-full"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground block">To Date</label>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="h-10 w-full"
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs text-muted-foreground block">Date Range</label>
+                  <DateRangeFilter
+                    startDate={startDate}
+                    endDate={endDate}
+                    onStartDateChange={setStartDate}
+                    onEndDateChange={setEndDate}
                   />
                 </div>
               </div>
@@ -646,9 +644,7 @@ export default function AdminHistory() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
-                </div>
+                <TableSkeleton rows={6} cols={7} />
               ) : history.length === 0 ? (
                 <div className="text-center py-12">
                   <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -717,6 +713,12 @@ export default function AdminHistory() {
                     </TableBody>
                   </Table>
                 </div>
+              )}
+
+              {!loading && total > 0 && (
+                <p className="text-sm text-muted-foreground mt-4">
+                  Showing {history.length} of {total} results
+                </p>
               )}
 
               {/* Pagination */}

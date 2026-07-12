@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Sun, Cloud, LogOut, FileText, Users, KeyRound } from "lucide-react";
+import { Search, LogOut, FileText, Users, KeyRound } from "lucide-react";
+import { clearAuthStorage } from "@/lib/auth-storage";
 import { Input } from "../../components/ui/input";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import {
@@ -142,22 +143,7 @@ export function DashboardHeader() {
   };
 
   const handleLogout = () => {
-    // Clear sessionStorage (tab-specific)
-    sessionStorage.removeItem('auth_token');
-    sessionStorage.removeItem('auth_session');
-    sessionStorage.removeItem('user');
-    sessionStorage.removeItem('user_role');
-    sessionStorage.removeItem('user_name');
-    sessionStorage.removeItem('user_id');
-    
-    // Clear localStorage
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('remember_token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('user_role');
-    localStorage.removeItem('user_name');
-    localStorage.removeItem('user_id');
-    
+    clearAuthStorage();
     navigate('/auth/login');
   };
 
@@ -178,11 +164,6 @@ export function DashboardHeader() {
           </h1>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <span>{currentDate}</span>
-            <span className="flex items-center gap-1">
-              <Sun className="h-4 w-4 text-warning" />
-              <span className="font-medium text-foreground">28°C</span>
-              <Cloud className="h-4 w-4 text-muted-foreground" />
-            </span>
           </div>
         </div>
 
@@ -267,14 +248,18 @@ export function DashboardHeader() {
           {/* User Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <div className="flex items-center gap-3 pl-4 border-l border-border cursor-pointer hover:opacity-80">
+              <button
+                type="button"
+                aria-label="Open account menu"
+                className="flex items-center gap-3 pl-4 border-l border-border cursor-pointer hover:opacity-80"
+              >
                 <Avatar className="h-9 w-9 bg-gradient-to-br from-indigo-600 to-indigo-500">
                   <AvatarFallback className="text-white font-semibold text-sm">
                     {user ? getInitials(user.name) : 'U'}
                   </AvatarFallback>
                 </Avatar>
 
-                <div className="hidden lg:block leading-tight">
+                <div className="hidden lg:block leading-tight text-left">
                   <p className="text-sm font-medium text-indigo-900">
                     {user?.name || 'User'}
                   </p>
@@ -282,7 +267,7 @@ export function DashboardHeader() {
                     {user ? getRoleLabel(user.role) : ''}
                   </p>
                 </div>
-              </div>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>

@@ -12,6 +12,14 @@ const statusStyles: Record<string, string> = {
   REJECTED: "bg-gray-100 text-gray-700",
 };
 
+// Colored left border for high-urgency grievances so they stand out at a glance.
+const priorityBorder = (p?: string) =>
+  p === "CRITICAL"
+    ? "border-l-4 border-l-red-500"
+    : p === "HIGH"
+      ? "border-l-4 border-l-amber-500"
+      : "";
+
 export function RecentGrievances() {
   const [grievances, setGrievances] = useState<Grievance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +78,7 @@ export function RecentGrievances() {
           grievances.map((g) => (
             <div
               key={g.id}
-              className="flex gap-4 p-4 bg-white border rounded-2xl hover:shadow-md transition"
+              className={`flex gap-4 p-4 bg-white border rounded-2xl hover:shadow-md transition ${priorityBorder(g.priority)}`}
             >
               <div className="p-3 bg-indigo-100 rounded-xl">
                 <FileText className="h-5 w-5 text-indigo-600" />

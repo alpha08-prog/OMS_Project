@@ -29,7 +29,10 @@ import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
+import { useConfirm } from "@/components/common/ConfirmDialog";
+import { useToast } from "@/components/AuthForm/Toast";
 import type { CsvColumn } from "@/lib/exportCsv";
+import { CardListSkeleton } from "@/components/common/Skeletons";
 import { taskApi, type TaskAssignment, type TaskProgressHistory, type TaskStatus, type TaskTrackingData, type TaskType } from "@/lib/api";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -46,9 +49,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// A task is overdue when it has a due date in the past and isn't done yet.
+const isOverdue = (t: TaskAssignment): boolean => {
+  if (!t.dueDate) return false;
+  const done = ["RESOLVED", "COMPLETED", "DONE", "CLOSED"].includes(
+    String(t.status).toUpperCase()
+  );
+  return !done && new Date(t.dueDate).getTime() < Date.now();
+};
+
 export default function AdminTaskTracker() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const confirm = useConfirm();
+  const { push } = useToast();
   const [loading, setLoading] = useState(true);
   const [trackingData, setTrackingData] = useState<TaskTrackingData | null>(null);
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
@@ -340,7 +354,10 @@ export default function AdminTaskTracker() {
   }, [targetTaskId, tasks, searchParams, setSearchParams]);
 
   const handleMarkResolved = async (task: TaskAssignment) => {
-    if (!confirm('Mark this task as completed/resolved?')) return;
+    if (!(await confirm({
+      title: "Mark this task as resolved?",
+      confirmText: "Mark complete",
+    }))) return;
 
     try {
       await taskApi.updateStatus(task.id, 'COMPLETED');
@@ -359,18 +376,26 @@ export default function AdminTaskTracker() {
       setForwardTask(null);
       await fetchData();
     } catch (error: unknown) {
-      alert(
-        (error as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? 'Failed to forward task. Please try again.'
-      );
+      push({
+        type: "error",
+        title: "Forward failed",
+        message:
+          (error as { response?: { data?: { message?: string } } })?.response
+            ?.data?.message ?? 'Failed to forward task. Please try again.',
+      });
     } finally {
       setForwarding(false);
     }
   };
 
   const handleDeleteTask = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-    
+    if (!(await confirm({
+      title: "Delete this task?",
+      description: "This action cannot be undone.",
+      confirmText: "Delete",
+      destructive: true,
+    }))) return;
+
     try {
       await taskApi.delete(id);
       fetchData();
@@ -733,7 +758,7 @@ export default function AdminTaskTracker() {
 
               <CardContent className="space-y-4">
                 {loading ? (
-                  <p className="text-muted-foreground text-center py-8">Loading tasks...</p>
+                  <CardListSkeleton rows={5} />
                 ) : filteredTasks.length === 0 ? (
                   <div className="text-center py-8">
                     <ClipboardList className="h-12 w-12 text-gray-300 mx-auto mb-3" />
@@ -745,7 +770,7 @@ export default function AdminTaskTracker() {
                     return (
                     <div
                       key={task.id}
-                      className="p-4 rounded-xl border bg-white hover:shadow-md transition"
+                      className={`p-4 rounded-xl border bg-white hover:shadow-md transition ${isOverdue(task) ? "border-l-4 border-l-red-500" : ""}`}
                     >
                       {/* Task Header */}
                       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">

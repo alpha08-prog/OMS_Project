@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,22 +17,28 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { Cake, ArrowLeft } from "lucide-react";
 import FloatingNotice from "@/components/common/FloatingNotice";
 import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
+import { useFormDraft } from "@/hooks/useFormDraft";
+
+const INITIAL_BIRTHDAY = {
+  name: "",
+  phone: "",
+  dob: "",
+  relation: "",
+  notes: "",
+  constituency: "",
+  wardVillage: "",
+};
 
 export default function BirthdayCreate() {
   const navigate = useNavigate();
+  const today = new Date().toISOString().slice(0, 10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Which submit button was pressed: true = "Save & add another" (reset + stay).
+  const addAnotherRef = useRef(false);
 
-  const [formData, setFormData] = useState({
-    name: "",
-    phone: "",
-    dob: "",
-    relation: "",
-    notes: "",
-    constituency: "",
-    wardVillage: "",
-  });
+  const [formData, setFormData, clearDraft] = useFormDraft("birthday:create", INITIAL_BIRTHDAY);
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -73,9 +79,16 @@ export default function BirthdayCreate() {
       });
 
       setSuccess(true);
-      setTimeout(() => {
-        navigate("/staff/home");
-      }, 2000);
+      if (addAnotherRef.current) {
+        // Reset the form and stay on the page for rapid repeat entry.
+        setFormData(INITIAL_BIRTHDAY);
+        setTimeout(() => setSuccess(false), 1500);
+      } else {
+        clearDraft();
+        setTimeout(() => {
+          navigate("/staff/home");
+        }, 2000);
+      }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to save birthday entry";
       setError(errorMessage);
@@ -115,7 +128,7 @@ export default function BirthdayCreate() {
             <FloatingNotice
               show={success}
               variant="success"
-              message="Birthday registered successfully! Redirecting..."
+              message="Birthday registered successfully!"
             />
 
             {/* Error Message */}
@@ -139,8 +152,9 @@ export default function BirthdayCreate() {
                     <Label>
                       Name <span className="text-red-500">*</span>
                     </Label>
-                    <Input 
-                      placeholder="Enter person's full name" 
+                    <Input
+                      autoFocus
+                      placeholder="Enter person's full name"
                       value={formData.name}
                       onChange={(e) => handleChange("name", e.target.value)}
                       className="border-pink-200 focus:border-pink-400"
@@ -152,11 +166,18 @@ export default function BirthdayCreate() {
                     <Label>Phone Number</Label>
                     <Input 
                       placeholder="10-digit mobile number (for SMS wishes)" 
+                      type="tel"
+                      inputMode="numeric"
                       value={formData.phone}
-                      onChange={(e) => handleChange("phone", e.target.value)}
+                      onChange={(e) => handleChange("phone", e.target.value.replace(/\D/g, "").slice(0, 10))}
                       maxLength={10}
                       className="border-pink-200 focus:border-pink-400"
                     />
+                    {formData.phone.length > 0 && formData.phone.length < 10 && (
+                      <p className="text-xs text-red-500 mt-1">
+                        {10 - formData.phone.length} more digit{10 - formData.phone.length !== 1 ? "s" : ""} required
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       Used for sending birthday wishes via SMS
                     </p>
@@ -167,8 +188,9 @@ export default function BirthdayCreate() {
                     <Label>
                       Date of Birth <span className="text-red-500">*</span>
                     </Label>
-                    <Input 
-                      type="date" 
+                    <Input
+                      type="date"
+                      max={today}
                       value={formData.dob}
                       onChange={(e) => handleChange("dob", e.target.value)}
                       className="border-pink-200 focus:border-pink-400"
@@ -241,6 +263,9 @@ export default function BirthdayCreate() {
                       value={formData.notes}
                       onChange={(e) => handleChange("notes", e.target.value)}
                     />
+                    {formData.notes.length > 0 && (
+                      <p className="mt-1 text-right text-xs text-muted-foreground">{formData.notes.length} characters</p>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -257,8 +282,18 @@ export default function BirthdayCreate() {
                       type="submit"
                       className="flex-1 bg-pink-500 text-white hover:bg-pink-600"
                       disabled={loading}
+                      onClick={() => { addAnotherRef.current = false; }}
                     >
                       {loading ? "Saving..." : "Save Birthday"}
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      className="flex-1"
+                      disabled={loading}
+                      onClick={() => { addAnotherRef.current = true; }}
+                    >
+                      Save &amp; add another
                     </Button>
                   </div>
 

@@ -541,7 +541,7 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     y += 24;
 
     // ── Addressee ─────────────────────────────────────────────────────────
-    doc.font('Helvetica').fontSize(12).text('To,', margin, y, { lineBreak: false });
+    doc.font('Helvetica').fontSize(13).text('To,', margin, y, { lineBreak: false });
     y += 14;
     doc.text('Chief Commercial Manager,', margin, y, { lineBreak: false });
     y += 14;
@@ -556,33 +556,33 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     // booking details stand out. Each line is given the full inner width so a
     // bigger bold value can't wrap onto the next line (the usable default here
     // is only ~320pt on A5 — that's what pushed the train number down before).
-    doc.font('Helvetica').fontSize(12);
+    doc.font('Helvetica').fontSize(13);
 
     // "Please arrange to release <berths> Berths from Emergency Quota"
-    doc.fontSize(12).text('Please arrange to release ', margin, y, { continued: true, width: innerWidth })
-      .font('Helvetica-Bold').fontSize(14).text(String(berthCount), { continued: true })
-      .font('Helvetica').fontSize(12).text(' Berths from Emergency Quota');
+    doc.fontSize(13).text('Please arrange to release ', margin, y, { continued: true, width: innerWidth })
+      .font('Helvetica-Bold').fontSize(15).text(String(berthCount), { continued: true })
+      .font('Helvetica').fontSize(13).text(' Berths from Emergency Quota');
     y = doc.y + 2;
 
     // "for the following persons who are Travelling by Train No. <num>"
-    doc.fontSize(12).text('for the following persons who are Travelling by Train No. ', margin, y, { continued: true, width: innerWidth })
-      .font('Helvetica-Bold').fontSize(14).text(data.trainNumber || '_____');
+    doc.fontSize(13).text('for the following persons who are Travelling by Train No. ', margin, y, { continued: true, width: innerWidth })
+      .font('Helvetica-Bold').fontSize(15).text(data.trainNumber || '_____');
     y = doc.y + 4;
 
     // "Train Name <name>"
-    doc.font('Helvetica').fontSize(12).text('Train Name ', margin, y, { continued: true, width: innerWidth })
-      .font('Helvetica-Bold').fontSize(14).text(data.trainName || '_____');
+    doc.font('Helvetica').fontSize(13).text('Train Name ', margin, y, { continued: true, width: innerWidth })
+      .font('Helvetica-Bold').fontSize(15).text(data.trainName || '_____');
     y = doc.y + 4;
 
     // "From <from> To <to> in <class> on <date>"
-    doc.font('Helvetica').fontSize(12).text('From ', margin, y, { continued: true, width: innerWidth })
-      .font('Helvetica-Bold').fontSize(14).text(data.fromStation || '_____', { continued: true })
-      .font('Helvetica').fontSize(12).text(' To ', { continued: true })
-      .font('Helvetica-Bold').fontSize(14).text(data.toStation || '_____', { continued: true })
-      .font('Helvetica').fontSize(12).text(' in ', { continued: true })
-      .font('Helvetica-Bold').fontSize(14).text(data.journeyClass || '_____', { continued: true })
-      .font('Helvetica').fontSize(12).text(' class on ', { continued: true })
-      .font('Helvetica-Bold').fontSize(14).text(data.journeyDate || '_____');
+    doc.font('Helvetica').fontSize(13).text('From ', margin, y, { continued: true, width: innerWidth })
+      .font('Helvetica-Bold').fontSize(15).text(data.fromStation || '_____', { continued: true })
+      .font('Helvetica').fontSize(13).text(' To ', { continued: true })
+      .font('Helvetica-Bold').fontSize(15).text(data.toStation || '_____', { continued: true })
+      .font('Helvetica').fontSize(13).text(' in ', { continued: true })
+      .font('Helvetica-Bold').fontSize(15).text(data.journeyClass || '_____', { continued: true })
+      .font('Helvetica').fontSize(13).text(' class on ', { continued: true })
+      .font('Helvetica-Bold').fontSize(15).text(data.journeyDate || '_____');
     y = doc.y + 14;
 
     // ── Passenger Table ───────────────────────────────────────────────────
@@ -595,46 +595,46 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
     const tableEndX = colX[colW.length - 1] + colW[colW.length - 1];
 
     const headers = ['Sl No.', 'Name', 'Sex/Age', 'PNR No.', 'W/L'];
-    doc.font('Helvetica-Bold').fontSize(13);
+    doc.font('Helvetica-Bold').fontSize(14);
     headers.forEach((h, i) => doc.text(h, colX[i] + 4, y, { width: colW[i] - 8, lineBreak: false }));
     y += 14;
     doc.moveTo(margin, y).lineTo(tableEndX, y).strokeColor(COLORS.gray).stroke();
     y += 5;
 
-    doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
+    doc.font('Helvetica').fontSize(12).fillColor(COLORS.black);
     if (rows.length === 0) {
       // No names at all — render at least one blank row so the grid isn't empty.
       doc.font('Helvetica').text('1', colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
       // PNR in bold (per the EQ letter format) — larger than the regular cells.
-      doc.font('Helvetica-Bold').fontSize(13).text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(14).text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
       y += 16;
     } else {
       rows.forEach((p, i) => {
-        doc.font('Helvetica').fontSize(11).fillColor(COLORS.black)
+        doc.font('Helvetica').fontSize(12).fillColor(COLORS.black)
           .text(String(i + 1), colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
         // Passenger name in bold — larger than the regular cells.
-        doc.font('Helvetica-Bold').fontSize(13).text(p.name, colX[1] + 4, y, { width: colW[1] - 8, lineBreak: false });
+        doc.font('Helvetica-Bold').fontSize(14).text(p.name, colX[1] + 4, y, { width: colW[1] - 8, lineBreak: false });
         const sa = sexAgeCell(p);
         if (sa) {
-          doc.font('Helvetica').fontSize(11).text(sa, colX[2] + 4, y, { width: colW[2] - 8, lineBreak: false });
+          doc.font('Helvetica').fontSize(12).text(sa, colX[2] + 4, y, { width: colW[2] - 8, lineBreak: false });
         }
         // PNR (and the primary's mobile) show only on the first row — one PNR
         // covers all passengers. PNR is printed in bold (larger).
         if (i === 0) {
-          doc.font('Helvetica-Bold').fontSize(13).text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
+          doc.font('Helvetica-Bold').fontSize(14).text(data.pnrNumber, colX[3] + 4, y, { width: colW[3] - 8, lineBreak: false });
         }
         if (p.waitlist && String(p.waitlist).trim()) {
-          doc.font('Helvetica').fontSize(11).text(String(p.waitlist).trim(), colX[4] + 4, y, { width: colW[4] - 8, lineBreak: false });
+          doc.font('Helvetica').fontSize(12).text(String(p.waitlist).trim(), colX[4] + 4, y, { width: colW[4] - 8, lineBreak: false });
         }
         // Primary passenger's mobile number, printed just under his name.
         if (i === 0 && data.contactNumber && data.contactNumber.trim()) {
-          doc.font('Helvetica').fontSize(8.5).fillColor(COLORS.gray)
-            .text(`Mob: ${data.contactNumber.trim()}`, colX[1] + 4, y + 12, {
+          doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.gray)
+            .text(`Mob: ${data.contactNumber.trim()}`, colX[1] + 4, y + 13, {
               width: colW[1] - 8,
               lineBreak: false,
             });
-          doc.fontSize(11).fillColor(COLORS.black);
-          y += 12; // extra room so the mobile line doesn't collide with the next row
+          doc.fontSize(12).fillColor(COLORS.black);
+          y += 13; // extra room so the mobile line doesn't collide with the next row
         }
         y += 16;
       });
@@ -645,9 +645,9 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
 
     // ── Signature block (anchored above the bottom footer) ────────────────
     const signatureY = VIRTUAL_H - 150;
-    doc.font('Helvetica').fontSize(12).fillColor(COLORS.black)
+    doc.font('Helvetica').fontSize(13).fillColor(COLORS.black)
       .text("Your's Faithfully,", pageWidth - margin - 220, signatureY, { width: 220, lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(14)
+    doc.font('Helvetica-Bold').fontSize(15)
       .text('MALLIKARJUNGOUDA PATIL', pageWidth - margin - 260, signatureY + 45, { width: 260, lineBreak: false });
 
     // ── Bottom footer ─────────────────────────────────────────────────────

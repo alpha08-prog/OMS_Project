@@ -23,6 +23,7 @@ import {
   type CreateGrievanceRequest,
   type GrievanceTimeline,
 } from "@/lib/api";
+import { useToast } from "@/components/AuthForm/Toast";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
   Dialog,
@@ -113,6 +114,7 @@ export default function GrievanceView() {
     userRole !== "STAFF" || (g.source ?? "PUBLIC") !== "OFFICE";
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const { push } = useToast();
   const [grievances, setGrievances] = useState<Grievance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -257,10 +259,13 @@ export default function GrievanceView() {
         }
       }
     } catch (err: unknown) {
-      alert(
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Failed to forward grievance."
-      );
+      push({
+        type: "error",
+        title: "Forward Failed",
+        message:
+          (err as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message ?? "Failed to forward grievance.",
+      });
     } finally {
       setForwarding(false);
     }

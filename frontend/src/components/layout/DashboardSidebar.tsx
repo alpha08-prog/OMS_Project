@@ -29,7 +29,9 @@ import {
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { cn } from "../../lib/utils";
+import { clearAuthStorage } from "../../lib/auth-storage";
 import { NotificationBell } from "../common/NotificationBell";
+import { GlobalSearch } from "../common/GlobalSearch";
 
 
 type MenuItem = {
@@ -125,8 +127,11 @@ const allMenuItems: MenuItem[] = [
 
 export function DashboardSidebar() {
   const [collapsed, setCollapsed] = useState(() => {
-    // Auto-collapse on mobile screens
-    return typeof window !== 'undefined' && window.innerWidth < 768;
+    if (typeof window === 'undefined') return false;
+    // Honor the user's last explicit choice; default to auto-collapse on mobile.
+    const stored = localStorage.getItem('sidebar_collapsed');
+    if (stored !== null) return stored === 'true';
+    return window.innerWidth < 768;
   });
   const [userRole] = useState<string | null>(() => {
     // Get user role from sessionStorage first (tab-specific), then localStorage
@@ -171,24 +176,21 @@ export function DashboardSidebar() {
     return item.roles.includes(userRole);
   });
 
+  // Toggle + persist the user's explicit collapse choice across reloads.
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('sidebar_collapsed', String(next));
+      } catch {
+        // localStorage can throw in private mode — ignore.
+      }
+      return next;
+    });
+  };
+
   const handleLogout = () => {
-    // Clear sessionStorage (tab-specific)
-    sessionStorage.removeItem('auth_token');
-    sessionStorage.removeItem('auth_session');
-    sessionStorage.removeItem('user');
-    sessionStorage.removeItem('user_role');
-    sessionStorage.removeItem('user_name');
-    sessionStorage.removeItem('user_id');
-    
-    // Clear localStorage
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('remember_token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('user_role');
-    localStorage.removeItem('user_name');
-    localStorage.removeItem('user_id');
-    
-    // Navigate to login
+    clearAuthStorage();
     navigate('/auth/login', { replace: true });
   };
 
@@ -216,14 +218,24 @@ export function DashboardSidebar() {
                   Office Management
                 </p>
               </div>
-              <div className="bg-white rounded-full">
-                <NotificationBell />
+              <div className="flex items-center gap-1">
+                <div className="bg-white rounded-full">
+                  <GlobalSearch />
+                </div>
+                <div className="bg-white rounded-full">
+                  <NotificationBell />
+                </div>
               </div>
             </div>
           )}
           {collapsed && (
-            <div className="bg-white rounded-full">
-              <NotificationBell />
+            <div className="flex flex-col items-center gap-2">
+              <div className="bg-white rounded-full">
+                <GlobalSearch />
+              </div>
+              <div className="bg-white rounded-full">
+                <NotificationBell />
+              </div>
             </div>
           )}
         </div>
@@ -335,6 +347,7 @@ export function DashboardSidebar() {
       <div className="p-3 border-t border-indigo-800">
         <button
           onClick={handleLogout}
+          aria-label="Logout"
           className={cn(
             "w-full h-11 flex items-center gap-3 rounded-xl px-3",
             "text-indigo-300 hover:text-red-400",
@@ -349,7 +362,8 @@ export function DashboardSidebar() {
 
       {/* Collapse Toggle */}
       <button
-        onClick={() => setCollapsed(!collapsed)}
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         className="
           absolute -right-3 top-20
           h-7 w-7 rounded-full

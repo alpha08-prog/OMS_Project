@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { Info, Upload, X } from "lucide-react";
 import { tourProgramApi, uploadsApi, type EventType } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import FloatingNotice from "@/components/common/FloatingNotice";
+import { useFormDraft } from "@/hooks/useFormDraft";
 
 // Event categories shown in the "Event Type" dropdown. Values are the
 // enum-style strings persisted to Catalyst (column: eventType); labels are
@@ -30,24 +31,32 @@ const EVENT_TYPE_OPTIONS: { value: EventType; label: string }[] = [
   { value: "FAMILY_EVENT", label: "Family Event" },
 ];
 
+const INITIAL_TOUR = {
+  eventName: "",
+  eventType: "" as EventType | "",
+  organizer: "",
+  organizerPhone: "",
+  organizerEmail: "",
+  dateTime: "",  // Changed from eventDate to match backend
+  venue: "",
+  description: "",
+  referencedBy: "",
+};
+
 export default function TourProgramCreate() {
   const navigate = useNavigate();
+  // Local-time "now" for the datetime-local `min` attribute (YYYY-MM-DDTHH:mm).
+  const nowLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Which submit button was pressed: true = "Save & add another" (reset + stay).
+  const addAnotherRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
 
-  const [formData, setFormData] = useState({
-    eventName: "",
-    eventType: "" as EventType | "",
-    organizer: "",
-    organizerPhone: "",
-    organizerEmail: "",
-    dateTime: "",  // Changed from eventDate to match backend
-    venue: "",
-    description: "",
-    referencedBy: "",
-  });
+  const [formData, setFormData, clearDraft] = useFormDraft("tour-program:create", INITIAL_TOUR);
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -119,9 +128,17 @@ export default function TourProgramCreate() {
       }
 
       setSuccess(true);
-      setTimeout(() => {
-        navigate("/staff/home");
-      }, 2000);
+      if (addAnotherRef.current) {
+        // Reset the form and stay on the page for rapid repeat entry.
+        setFormData(INITIAL_TOUR);
+        setFile(null);
+        setTimeout(() => setSuccess(false), 1500);
+      } else {
+        clearDraft();
+        setTimeout(() => {
+          navigate("/staff/home");
+        }, 2000);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create tour program");
     } finally {
@@ -150,7 +167,7 @@ export default function TourProgramCreate() {
             <FloatingNotice
               show={success}
               variant="success"
-              message="Tour program registered successfully! Redirecting..."
+              message="Tour program registered successfully!"
             />
 
             {/* Error Message */}
@@ -183,8 +200,9 @@ export default function TourProgramCreate() {
                           <Label>
                             Event Name <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            placeholder="Enter event name" 
+                          <Input
+                            autoFocus
+                            placeholder="Enter event name"
                             value={formData.eventName}
                             onChange={(e) => handleChange("eventName", e.target.value)}
                           />
@@ -274,8 +292,9 @@ export default function TourProgramCreate() {
                           <Label>
                             Date & Time <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            type="datetime-local" 
+                          <Input
+                            type="datetime-local"
+                            min={nowLocal}
                             value={formData.dateTime}
                             onChange={(e) => handleChange("dateTime", e.target.value)}
                           />
@@ -301,6 +320,9 @@ export default function TourProgramCreate() {
                           value={formData.description}
                           onChange={(e) => handleChange("description", e.target.value)}
                         />
+                        {formData.description.length > 0 && (
+                          <p className="mt-1 text-right text-xs text-muted-foreground">{formData.description.length} characters</p>
+                        )}
                       </div>
                     </section>
 
@@ -398,8 +420,18 @@ export default function TourProgramCreate() {
                         type="submit"
                         className="w-full bg-amber-500 text-black hover:bg-amber-600"
                         disabled={loading}
+                        onClick={() => { addAnotherRef.current = false; }}
                       >
                         {loading ? "Saving..." : "Save Tour Program"}
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        className="w-full"
+                        disabled={loading}
+                        onClick={() => { addAnotherRef.current = true; }}
+                      >
+                        Save &amp; add another
                       </Button>
                     </div>
                   </div>

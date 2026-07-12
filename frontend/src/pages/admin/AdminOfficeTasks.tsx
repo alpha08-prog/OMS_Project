@@ -44,6 +44,8 @@ import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { Pagination, usePagination } from "@/components/common/Pagination";
 import type { CsvColumn } from "@/lib/exportCsv";
+import { CardListSkeleton } from "@/components/common/Skeletons";
+import { useToast } from "@/components/AuthForm/Toast";
 import {
   taskApi,
   grievanceApi,
@@ -89,6 +91,15 @@ function formatDateTime(dt?: string | null): string {
   });
 }
 
+// A task is overdue when it has a due date in the past and isn't done yet.
+const isOverdue = (t: TaskAssignment): boolean => {
+  if (!t.dueDate) return false;
+  const done = ["RESOLVED", "COMPLETED", "DONE", "CLOSED"].includes(
+    String(t.status).toUpperCase()
+  );
+  return !done && new Date(t.dueDate).getTime() < Date.now();
+};
+
 /**
  * Office Tasks — a Task-Tracker-style board scoped to OFFICE grievances only
  * (no public tasks, tours, train requests or general tasks). Mirrors the admin
@@ -98,6 +109,7 @@ function formatDateTime(dt?: string | null): string {
  */
 export default function AdminOfficeTasks() {
   const navigate = useNavigate();
+  const { push } = useToast();
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -177,7 +189,11 @@ export default function AdminOfficeTasks() {
       await taskApi.editShared(t.id, { status });
       await load();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to update status");
+      push({
+        type: "error",
+        title: "Update failed",
+        message: e instanceof Error ? e.message : "Failed to update status",
+      });
     } finally {
       setBusyId(null);
     }
@@ -450,7 +466,7 @@ export default function AdminOfficeTasks() {
 
               <CardContent className="space-y-4">
                 {loading ? (
-                  <p className="text-muted-foreground text-center py-8">Loading tasks...</p>
+                  <CardListSkeleton rows={5} />
                 ) : visible.length === 0 ? (
                   <div className="text-center py-8">
                     <ClipboardList className="h-12 w-12 text-gray-300 mx-auto mb-3" />
@@ -462,7 +478,7 @@ export default function AdminOfficeTasks() {
                     return (
                       <div
                         key={t.id}
-                        className="p-4 rounded-xl border bg-white hover:shadow-md transition"
+                        className={`p-4 rounded-xl border bg-white hover:shadow-md transition ${isOverdue(t) ? "border-l-4 border-l-red-500" : ""}`}
                       >
                         {/* Header */}
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

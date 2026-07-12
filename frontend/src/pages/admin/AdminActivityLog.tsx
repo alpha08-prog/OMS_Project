@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, Download, Loader2, Search } from "lucide-react";
+import { Activity } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { SearchBar } from "@/components/common/SearchBar";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import type { CsvColumn } from "@/lib/exportCsv";
 import { activityApi, type ActivityEvent, type ActivityAction } from "@/lib/api";
+import { TableSkeleton } from "@/components/common/Skeletons";
 
 const ENTITIES = [
   "Grievance",
@@ -32,21 +35,13 @@ function fmt(at: string | null): string {
   });
 }
 
-function exportCsv(rows: ActivityEvent[]) {
-  const header = ["When", "Module", "Action", "Record", "By"];
-  const esc = (c: unknown) => `"${String(c ?? "").replace(/"/g, '""')}"`;
-  const body = rows.map((r) =>
-    [fmt(r.at), r.entity, r.action, r.label, r.by ?? ""].map(esc).join(",")
-  );
-  const csv = [header.join(","), ...body].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "activity-log.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
+const CSV_COLUMNS: CsvColumn<ActivityEvent>[] = [
+  { header: "When", value: (r) => fmt(r.at) },
+  { header: "Module", value: (r) => r.entity },
+  { header: "Action", value: (r) => (r.action === "CREATED" ? "Created" : "Edited") },
+  { header: "Record", value: (r) => r.label },
+  { header: "By", value: (r) => r.by ?? "" },
+];
 
 export default function AdminActivityLog() {
   const [rows, setRows] = useState<ActivityEvent[]>([]);
@@ -56,6 +51,15 @@ export default function AdminActivityLog() {
   const [entity, setEntity] = useState("");
   const [action, setAction] = useState<"" | ActivityAction>("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Debounce the search box so we don't refetch on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const load = useCallback(
     async (opts: { page: number; append: boolean }) => {
@@ -64,7 +68,7 @@ export default function AdminActivityLog() {
         const { rows: r, total: t } = await activityApi.getAll({
           entity: entity || undefined,
           action: action || undefined,
-          search: search.trim() || undefined,
+          search: debouncedSearch.trim() || undefined,
           page: String(opts.page),
           limit: String(PAGE_SIZE),
         });
@@ -76,7 +80,7 @@ export default function AdminActivityLog() {
         setLoading(false);
       }
     },
-    [entity, action, search]
+    [entity, action, debouncedSearch]
   );
 
   useEffect(() => {
@@ -89,6 +93,31 @@ export default function AdminActivityLog() {
     setPage(next);
     load({ page: next, append: true });
   };
+
+  const toggleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  // Sort a copy of the currently-loaded rows for display (never mutate `rows`).
+  const sortedRows = sortKey
+    ? [...rows].sort((a, b) => {
+        let c: number;
+        if (sortKey === "at") {
+          c =
+            new Date(String(a.at ?? "").replace(" ", "T")).getTime() -
+            new Date(String(b.at ?? "").replace(" ", "T")).getTime();
+        } else {
+          const av = sortKey === "entity" ? a.entity : a.action;
+          const bv = sortKey === "entity" ? b.entity : b.action;
+          c = (av ?? "").toString().localeCompare((bv ?? "").toString(), undefined, { numeric: true });
+        }
+        return sortDir === "asc" ? c : -c;
+      })
+    : rows;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -106,13 +135,11 @@ export default function AdminActivityLog() {
                   modules.
                 </p>
               </div>
-              <Button
-                variant="outline"
-                onClick={() => exportCsv(rows)}
-                disabled={rows.length === 0}
-              >
-                <Download className="h-4 w-4 mr-1.5" /> Export CSV
-              </Button>
+              <ExportCsvButton
+                rows={rows}
+                columns={CSV_COLUMNS}
+                filename="activity-log"
+              />
             </div>
 
             {/* Filters */}
@@ -138,16 +165,19 @@ export default function AdminActivityLog() {
                 <option value="CREATED">Created</option>
                 <option value="EDITED">Edited</option>
               </select>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  className="pl-8 h-9 w-64"
-                  placeholder="Search record…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
+              <SearchBar
+                value={search}
+                onChange={setSearch}
+                placeholder="Search record…"
+                className="w-64"
+              />
             </div>
+
+            {total > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Showing {rows.length} of {total} results
+              </p>
+            )}
 
             <Card className="rounded-2xl border border-indigo-100 overflow-hidden">
               <CardContent className="p-0">
@@ -155,15 +185,30 @@ export default function AdminActivityLog() {
                   <table className="w-full text-sm">
                     <thead className="bg-indigo-50/60 text-indigo-900">
                       <tr>
-                        <th className="text-left px-4 py-2.5 font-medium">When</th>
-                        <th className="text-left px-4 py-2.5 font-medium">Module</th>
-                        <th className="text-left px-4 py-2.5 font-medium">Action</th>
+                        <th
+                          className="text-left px-4 py-2.5 font-medium cursor-pointer select-none"
+                          onClick={() => toggleSort("at")}
+                        >
+                          When{sortKey === "at" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                        </th>
+                        <th
+                          className="text-left px-4 py-2.5 font-medium cursor-pointer select-none"
+                          onClick={() => toggleSort("entity")}
+                        >
+                          Module{sortKey === "entity" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                        </th>
+                        <th
+                          className="text-left px-4 py-2.5 font-medium cursor-pointer select-none"
+                          onClick={() => toggleSort("action")}
+                        >
+                          Action{sortKey === "action" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                        </th>
                         <th className="text-left px-4 py-2.5 font-medium">Record</th>
                         <th className="text-left px-4 py-2.5 font-medium">By</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((r, i) => (
+                      {sortedRows.map((r, i) => (
                         <tr
                           key={`${r.entity}-${r.entityId}-${r.action}-${i}`}
                           className="border-t border-gray-100 hover:bg-indigo-50/30"
@@ -207,8 +252,8 @@ export default function AdminActivityLog() {
                   </table>
                 </div>
                 {loading && (
-                  <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin" /> Loading…
+                  <div className="p-4">
+                    <TableSkeleton rows={6} cols={5} />
                   </div>
                 )}
               </CardContent>

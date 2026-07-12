@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { taskApi, grievanceApi, type ForwardedItem } from "@/lib/api";
+import { useToast } from "@/components/AuthForm/Toast";
 
 const STATUS_TONE: Record<string, string> = {
   ASSIGNED: "bg-slate-100 text-slate-800",
@@ -39,6 +40,7 @@ const keyFor = (item: ForwardedItem) => `${item.entityType}-${item.id}`;
 
 export default function ForwardedTasks() {
   const navigate = useNavigate();
+  const { push } = useToast();
   const [items, setItems] = useState<ForwardedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -76,10 +78,13 @@ export default function ForwardedTasks() {
       }
       await load();
     } catch (e: unknown) {
-      alert(
-        (e as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Failed to mark complete."
-      );
+      push({
+        type: "error",
+        title: "Complete Failed",
+        message:
+          (e as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message ?? "Failed to mark complete.",
+      });
     } finally {
       setCompletingId(null);
     }

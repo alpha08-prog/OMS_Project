@@ -13,11 +13,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
-import { grievanceApi, type Grievance, type GrievanceStatus } from "@/lib/api";
+import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
+import type { CsvColumn } from "@/lib/exportCsv";
+import { grievanceApi, type Grievance, type GrievanceStatus, type GrievancePriority } from "@/lib/api";
+import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +58,8 @@ export function SuperAdminGrievancesContent() {
 
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  // Client-side constituency filter over the already-fetched window.
+  const [constituency, setConstituency] = useState("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
@@ -141,9 +146,17 @@ export function SuperAdminGrievancesContent() {
     return <Clock className="h-4 w-4 text-gray-600" />;
   };
 
+  // Colored left border cues priority at a glance on each card.
+  const priorityBorder = (priority?: GrievancePriority) => {
+    if (priority === 'CRITICAL') return 'border-l-4 border-l-red-500';
+    if (priority === 'HIGH') return 'border-l-4 border-l-amber-500';
+    return '';
+  };
+
   // Status / date filters happen server-side in fetchGrievances; only the
   // free-text search box runs locally on the already-filtered window.
   const filtered = grievances.filter((g) => {
+    if (constituency && g.constituency !== constituency) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
@@ -155,6 +168,18 @@ export function SuperAdminGrievancesContent() {
     }
     return true;
   });
+
+  // CSV export of the currently filtered/searched grievances (all rows, not
+  // just the visible page).
+  const CSV_COLUMNS: CsvColumn<Grievance>[] = [
+    { header: "Petitioner", value: (g) => g.petitionerName },
+    { header: "Mobile", value: (g) => g.mobileNumber },
+    { header: "Type", value: (g) => g.grievanceType },
+    { header: "Constituency", value: (g) => g.constituency },
+    { header: "Status", value: (g) => g.status },
+    { header: "Priority", value: (g) => g.priority ?? "" },
+    { header: "Created", value: (g) => new Date(g.createdAt).toLocaleString() },
+  ];
 
   const pager = usePagination(filtered, 10);
 
@@ -180,11 +205,11 @@ export function SuperAdminGrievancesContent() {
 
             <Card className="rounded-2xl border border-indigo-100">
               <CardContent className="flex flex-wrap items-center gap-4 py-4">
-                <Input
-                  placeholder="Search by name, phone, constituency..."
+                <SearchBar
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="max-w-sm"
+                  onChange={setSearchQuery}
+                  placeholder="Search by name, phone, constituency…"
+                  className="w-64"
                 />
                 <Select value={filterStatus} onValueChange={setFilterStatus}>
                   <SelectTrigger className="w-40">
@@ -198,13 +223,32 @@ export function SuperAdminGrievancesContent() {
                     <SelectItem value="REJECTED">Rejected</SelectItem>
                   </SelectContent>
                 </Select>
+                <Select
+                  value={constituency || "all"}
+                  onValueChange={(v) => setConstituency(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Constituency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All constituencies</SelectItem>
+                    {CONSTITUENCY_OPTIONS.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <DateRangeFilter
                   startDate={startDate}
                   endDate={endDate}
                   onStartDateChange={setStartDate}
                   onEndDateChange={setEndDate}
                 />
-                {(filterStatus !== 'all' || searchQuery || startDate || endDate) && (
+                <ExportCsvButton
+                  rows={filtered}
+                  columns={CSV_COLUMNS}
+                  filename="grievances"
+                />
+                {(filterStatus !== 'all' || searchQuery || startDate || endDate || constituency) && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -213,6 +257,7 @@ export function SuperAdminGrievancesContent() {
                       setSearchQuery('');
                       setStartDate('');
                       setEndDate('');
+                      setConstituency('');
                     }}
                   >
                     Clear Filters
@@ -239,7 +284,7 @@ export function SuperAdminGrievancesContent() {
                     return (
                     <div
                       key={g.id}
-                      className="p-4 rounded-xl border bg-white hover:shadow-md transition"
+                      className={`p-4 rounded-xl border bg-white hover:shadow-md transition ${priorityBorder(g.priority)}`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-start gap-3 min-w-0 flex-1">

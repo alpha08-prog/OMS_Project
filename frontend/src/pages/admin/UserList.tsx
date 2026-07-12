@@ -6,7 +6,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,11 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Users, UserPlus, Search, RefreshCw, ShieldCheck, ShieldAlert, Mail, Phone } from "lucide-react";
+import { Users, UserPlus, RefreshCw, ShieldCheck, ShieldAlert, Mail, Phone } from "lucide-react";
 import { authApi, type User } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
+import { SearchBar } from "@/components/common/SearchBar";
 import type { CsvColumn } from "@/lib/exportCsv";
+import { TableSkeleton } from "@/components/common/Skeletons";
 
 function roleBadgeClass(role: string): string {
   switch (role) {
@@ -58,6 +59,8 @@ export default function UserList() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -85,6 +88,29 @@ export default function UserList() {
       return haystack.includes(s);
     });
   }, [users, search, roleFilter]);
+
+  const toggleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  // Sort the already-filtered rows without mutating the source array.
+  const sortedUsers = sortKey
+    ? [...filtered].sort((a, b) => {
+        let c: number;
+        if (sortKey === "createdAt") {
+          c = new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+        } else {
+          const av = sortKey === "role" ? a.role : a.name;
+          const bv = sortKey === "role" ? b.role : b.name;
+          c = av.toString().localeCompare(bv.toString(), undefined, { numeric: true });
+        }
+        return sortDir === "asc" ? c : -c;
+      })
+    : filtered;
 
   const csvColumns: CsvColumn<ExtendedUser>[] = [
     { header: "Name", value: (u) => u.name },
@@ -169,15 +195,12 @@ export default function UserList() {
             {/* Filter bar */}
             <Card className="rounded-2xl border border-indigo-100">
               <CardContent className="flex items-center flex-wrap gap-3 py-4">
-                <div className="relative flex-1 min-w-[200px]">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by name, email, or phone"
-                    className="pl-9"
-                  />
-                </div>
+                <SearchBar
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search by name, email, or phone"
+                  className="flex-1 min-w-[200px]"
+                />
                 <Select value={roleFilter} onValueChange={setRoleFilter}>
                   <SelectTrigger className="w-44">
                     <SelectValue placeholder="Filter by role" />
@@ -214,7 +237,7 @@ export default function UserList() {
               </CardHeader>
               <CardContent>
                 {loading ? (
-                  <p className="text-muted-foreground text-center py-8">Loading…</p>
+                  <TableSkeleton rows={6} cols={6} />
                 ) : filtered.length === 0 ? (
                   <div className="text-center py-12">
                     <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
@@ -229,16 +252,31 @@ export default function UserList() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-muted-foreground border-b">
-                          <th className="py-3 px-3 font-medium">Name</th>
+                          <th
+                            className="py-3 px-3 font-medium cursor-pointer select-none"
+                            onClick={() => toggleSort("name")}
+                          >
+                            Name{sortKey === "name" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                          </th>
                           <th className="py-3 px-3 font-medium">Email</th>
                           <th className="py-3 px-3 font-medium">Phone</th>
-                          <th className="py-3 px-3 font-medium">Role</th>
+                          <th
+                            className="py-3 px-3 font-medium cursor-pointer select-none"
+                            onClick={() => toggleSort("role")}
+                          >
+                            Role{sortKey === "role" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                          </th>
                           <th className="py-3 px-3 font-medium">Status</th>
-                          <th className="py-3 px-3 font-medium">Created</th>
+                          <th
+                            className="py-3 px-3 font-medium cursor-pointer select-none"
+                            onClick={() => toggleSort("createdAt")}
+                          >
+                            Created{sortKey === "createdAt" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filtered.map((u) => {
+                        {sortedUsers.map((u) => {
                           const active = u.isActive !== false;
                           return (
                             <tr key={u.id} className="border-b last:border-b-0 hover:bg-indigo-50/30">

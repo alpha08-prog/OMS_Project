@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,24 +16,30 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Upload, X } from "lucide-react";
 import { newsApi, uploadsApi, type NewsPriority } from "@/lib/api";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import FloatingNotice from "@/components/common/FloatingNotice";
+import { useFormDraft } from "@/hooks/useFormDraft";
+
+const INITIAL_NEWS = {
+  headline: "",
+  category: "",
+  region: "",
+  priority: "NORMAL" as NewsPriority,
+  mediaSource: "",
+  description: "",
+  referencedBy: "",
+  imageUrl: "",
+};
 
 export default function NewsIntelligenceCreate() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Which submit button was pressed: true = "Save & add another" (reset + stay).
+  const addAnotherRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
 
-  const [formData, setFormData] = useState({
-    headline: "",
-    category: "",
-    region: "",
-    priority: "NORMAL" as NewsPriority,
-    mediaSource: "",
-    description: "",
-    referencedBy: "",
-    imageUrl: "",
-  });
+  const [formData, setFormData, clearDraft] = useFormDraft("news:create", INITIAL_NEWS);
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -94,9 +100,17 @@ export default function NewsIntelligenceCreate() {
       }
 
       setSuccess(true);
-      setTimeout(() => {
-        navigate("/staff/home");
-      }, 2000);
+      if (addAnotherRef.current) {
+        // Reset the form and stay on the page for rapid repeat entry.
+        setFormData(INITIAL_NEWS);
+        setFile(null);
+        setTimeout(() => setSuccess(false), 1500);
+      } else {
+        clearDraft();
+        setTimeout(() => {
+          navigate("/staff/home");
+        }, 2000);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to save intelligence";
       setError(errorMessage);
@@ -123,12 +137,11 @@ export default function NewsIntelligenceCreate() {
               </p>
             </div>
 
-            {/* Success Message */}
-            {success && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-                ✅ Intelligence saved successfully! Redirecting...
-              </div>
-            )}
+            <FloatingNotice
+              show={success}
+              variant="success"
+              message="Intelligence saved successfully!"
+            />
 
             {/* Error Message */}
             {error && (
@@ -159,8 +172,9 @@ export default function NewsIntelligenceCreate() {
                         <Label>
                           Headline <span className="text-red-500">*</span>
                         </Label>
-                        <Input 
-                          placeholder="Short summary of the news or intelligence" 
+                        <Input
+                          autoFocus
+                          placeholder="Short summary of the news or intelligence"
                           value={formData.headline}
                           onChange={(e) => handleChange("headline", e.target.value)}
                         />
@@ -232,6 +246,9 @@ export default function NewsIntelligenceCreate() {
                           value={formData.description}
                           onChange={(e) => handleChange("description", e.target.value)}
                         />
+                        {formData.description.length > 0 && (
+                          <p className="mt-1 text-right text-xs text-muted-foreground">{formData.description.length} characters</p>
+                        )}
                       </div>
                     </section>
 
@@ -387,8 +404,18 @@ export default function NewsIntelligenceCreate() {
                         type="submit"
                         className="w-full bg-amber-500 text-black hover:bg-amber-600"
                         disabled={loading}
+                        onClick={() => { addAnotherRef.current = false; }}
                       >
                         {loading ? "Saving..." : "Save Intelligence"}
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        className="w-full"
+                        disabled={loading}
+                        onClick={() => { addAnotherRef.current = true; }}
+                      >
+                        Save &amp; add another
                       </Button>
                     </div>
                   </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,30 @@ const OTHER_TEMPLE_KEY = "OTHER";
 
 type Step = "type" | "form";
 
+const INITIAL_GRIEVANCE = {
+  petitionerName: "",
+  mobileNumber: "",
+  constituency: "",
+  wardVillage: "",
+  grievanceType: "" as GrievanceType | "",
+  description: "",
+  monetaryValue: "",
+  referencedBy: "",
+  // Temple-visit specific. Persisted alongside the rest so a refresh doesn't
+  // wipe what the staff typed. Ignored at submit time when grievanceType is
+  // anything other than TEMPLE_VISIT.
+  templeKey: "",
+  customTempleName: "",
+  customTempleRecipient: "",
+  memberCount: "",
+  originDistrict: "",
+  originState: "",
+  visitDateFrom: "",
+  visitDateTo: "",
+  showMobileOnLetter: false,
+  customService: "",
+};
+
 export default function GrievanceCreate() {
   const navigate = useNavigate();
   // Two-step flow: pick the grievance type first, then show the right form.
@@ -47,30 +71,13 @@ export default function GrievanceCreate() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  // Which submit button was pressed: true = "Save & add another" (reset + stay).
+  const addAnotherRef = useRef(false);
 
-  const [formData, setFormData, clearFormDraft] = useFormDraft("grievance:create", {
-    petitionerName: "",
-    mobileNumber: "",
-    constituency: "",
-    wardVillage: "",
-    grievanceType: "" as GrievanceType | "",
-    description: "",
-    monetaryValue: "",
-    referencedBy: "",
-    // Temple-visit specific. Persisted alongside the rest so a refresh doesn't
-    // wipe what the staff typed. Ignored at submit time when grievanceType is
-    // anything other than TEMPLE_VISIT.
-    templeKey: "",
-    customTempleName: "",
-    customTempleRecipient: "",
-    memberCount: "",
-    originDistrict: "",
-    originState: "",
-    visitDateFrom: "",
-    visitDateTo: "",
-    showMobileOnLetter: false,
-    customService: "",
-  });
+  const [formData, setFormData, clearFormDraft] = useFormDraft(
+    "grievance:create",
+    INITIAL_GRIEVANCE
+  );
 
   // Selected registry service codes. Kept outside useFormDraft (which serialises
   // a key→string map) and re-seeded from the temple registry when a temple is
@@ -283,11 +290,19 @@ export default function GrievanceCreate() {
         }
       }
 
-      clearFormDraft();
       setSuccess(true);
-      setTimeout(() => {
-        navigate("/staff/home");
-      }, 2000);
+      if (addAnotherRef.current) {
+        // Reset the form and return to the type picker for a fresh entry.
+        setFormData(INITIAL_GRIEVANCE);
+        setStep("type");
+        setFile(null);
+        setTimeout(() => setSuccess(false), 1500);
+      } else {
+        clearFormDraft();
+        setTimeout(() => {
+          navigate("/staff/home");
+        }, 2000);
+      }
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error("Failed to create grievance");
       setError(error.message || "Failed to create grievance");
@@ -317,7 +332,7 @@ export default function GrievanceCreate() {
     <FloatingNotice
       show={success}
       variant="success"
-      message="Grievance registered successfully! Redirecting..."
+      message="Grievance registered successfully!"
     />
   );
 
@@ -348,7 +363,7 @@ export default function GrievanceCreate() {
                       value={formData.grievanceType}
                       onValueChange={(v) => handleChange("grievanceType", v)}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger autoFocus>
                         <SelectValue placeholder="Select grievance type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -582,6 +597,9 @@ export default function GrievanceCreate() {
                                     )
                                   }
                                 />
+                                {formData.customTempleRecipient.length > 0 && (
+                                  <p className="mt-1 text-right text-xs text-muted-foreground">{formData.customTempleRecipient.length} characters</p>
+                                )}
                                 <p className="text-xs text-muted-foreground mt-1">
                                   One line per row, exactly as it should appear on the letter.
                                   This block prints verbatim at the bottom (e.g. designation, city, state).
@@ -755,6 +773,9 @@ export default function GrievanceCreate() {
                             value={formData.description}
                             onChange={(e) => handleChange("description", e.target.value)}
                           />
+                          {formData.description.length > 0 && (
+                            <p className="mt-1 text-right text-xs text-muted-foreground">{formData.description.length} characters</p>
+                          )}
                         </div>
 
                         <div>
@@ -762,6 +783,7 @@ export default function GrievanceCreate() {
                           <Input
                             placeholder="Estimated cost / aid amount"
                             type="number"
+                            min="0"
                             value={formData.monetaryValue}
                             onChange={(e) => handleChange("monetaryValue", e.target.value)}
                           />
@@ -866,8 +888,18 @@ export default function GrievanceCreate() {
                           type="submit"
                           className="w-full bg-amber-500 text-black hover:bg-amber-600"
                           disabled={loading}
+                          onClick={() => { addAnotherRef.current = false; }}
                         >
                           {loading ? "Submitting..." : "Register Grievance"}
+                        </Button>
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          className="w-full"
+                          disabled={loading}
+                          onClick={() => { addAnotherRef.current = true; }}
+                        >
+                          Save &amp; add another
                         </Button>
                       </div>
                     </div>

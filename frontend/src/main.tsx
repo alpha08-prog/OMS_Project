@@ -5,6 +5,8 @@ import './index.css'
 import App from './App.tsx'
 import { BrowserRouter } from 'react-router-dom'
 import { ToastProvider } from './components/AuthForm/Toast'
+import { ConfirmProvider } from './components/common/ConfirmDialog'
+import { PromptProvider } from './components/common/PromptDialog'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // staleTime: how long data is considered fresh — within this window, navigating
@@ -32,7 +34,11 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
-          <App />
+          <ConfirmProvider>
+            <PromptProvider>
+              <App />
+            </PromptProvider>
+          </ConfirmProvider>
         </ToastProvider>
       </QueryClientProvider>
     </BrowserRouter>
