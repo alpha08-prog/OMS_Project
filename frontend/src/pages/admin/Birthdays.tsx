@@ -48,6 +48,9 @@ export default function Birthdays() {
   const [searchQuery, setSearchQuery] = useState("");
   // Client-side constituency filter over the main birthday list.
   const [constituency, setConstituency] = useState("");
+  // Client-side source filter — birthdays are aggregated from direct entries,
+  // visitor logs, and train passengers; this narrows to one origin.
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   
@@ -66,7 +69,9 @@ export default function Birthdays() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = { limit: '50' };
+      // limit=200 (was 50) — the list was silently clipping at 50 entries,
+      // which also made the "Total Birthdays" stat wrong once real data grew.
+      const params: Record<string, string> = { limit: '200' };
       if (filterMonth && filterMonth !== "all") {
         params.month = filterMonth;
       }
@@ -213,9 +218,13 @@ export default function Birthdays() {
 
   // Constituency filter is client-side (search/month/date go to the server);
   // narrows the main list before it is paginated.
-  const filteredBirthdays = constituency
-    ? birthdays.filter((b) => b.constituency === constituency)
-    : birthdays;
+  const filteredBirthdays = birthdays.filter((b) => {
+    if (constituency && b.constituency !== constituency) return false;
+    // Rows without a source predate the source column — they are direct
+    // birthday entries, so group them under BIRTHDAY.
+    if (sourceFilter !== "all" && (b.source ?? "BIRTHDAY") !== sourceFilter) return false;
+    return true;
+  });
 
   // Client-side pagination — 10 rows per page over the main birthday list
   // (the Today banner and Upcoming section are not paginated).
@@ -393,11 +402,25 @@ export default function Birthdays() {
                     </Select>
                   </div>
 
-                  {(filterMonth !== "all" || searchQuery || constituency) && (
+                  <div className="w-full sm:w-[190px] flex-shrink-0">
+                    <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Source" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sources</SelectItem>
+                        <SelectItem value="BIRTHDAY">Birthday Entries</SelectItem>
+                        <SelectItem value="VISITOR">From Visitors</SelectItem>
+                        <SelectItem value="TRAIN">From Train Passengers</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(filterMonth !== "all" || searchQuery || constituency || sourceFilter !== "all") && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => { setFilterMonth("all"); setSearchQuery(""); setConstituency(""); }}
+                      onClick={() => { setFilterMonth("all"); setSearchQuery(""); setConstituency(""); setSourceFilter("all"); }}
                       className="h-10 flex-shrink-0"
                     >
                       Clear Filters
