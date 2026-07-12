@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { Train, RefreshCw } from "lucide-react";
+import { Train, RefreshCw, Pencil } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
@@ -12,6 +15,13 @@ import { CardListSkeleton } from "@/components/common/Skeletons";
 import { trainRequestApi, type TrainRequest } from "@/lib/api";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -19,12 +29,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// Same class codes as the Train EQ create form / My History edit.
+const JOURNEY_CLASSES = [
+  { value: "1A", label: "1A - First AC" },
+  { value: "2A", label: "2A - Second AC" },
+  { value: "3A", label: "3A - Third AC" },
+  { value: "SL", label: "SL - Sleeper" },
+  { value: "CC", label: "CC - Chair Car" },
+  { value: "EC", label: "EC - Executive Chair" },
+];
+
 /**
- * Read-only admin view of Train EQ entries.
+ * Admin view of Train EQ entries.
  *
- * Train EQ is now self-service for staff: they create the entry and print
- * the letter on their own. Admin observes here but no longer approves /
- * assigns / generates the PDF themselves.
+ * Train EQ is self-service for staff: they create the entry and print the
+ * letter on their own. Admin observes here (no approve/assign flow) but CAN
+ * correct any entry via the edit dialog — reprints pick up the corrections.
  */
 export default function TrainEQQueue() {
   const [requests, setRequests] = useState<TrainRequest[]>([]);
@@ -39,7 +59,9 @@ export default function TrainEQQueue() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = { limit: "50" };
+      // limit=200 (was 50) so the log doesn't silently clip older entries;
+      // stays under the ZCQL 299-row cap.
+      const params: Record<string, string> = { limit: "200" };
       if (statusFilter !== "ALL") params.status = statusFilter;
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
@@ -56,6 +78,78 @@ export default function TrainEQQueue() {
   useEffect(() => {
     fetchRequests();
   }, [statusFilter, startDate, endDate]);
+
+  // Edit dialog — admin corrections to any Train EQ entry. Same fields as the
+  // staff My History edit; the reprint picks the corrections up automatically.
+  const [editReq, setEditReq] = useState<TrainRequest | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const openEdit = (r: TrainRequest) => {
+    setEditError(null);
+    setEditForm({
+      passengerName: r.passengerName ?? "",
+      pnrNumber: r.pnrNumber ?? "",
+      trainName: r.trainName ?? "",
+      trainNumber: r.trainNumber ?? "",
+      journeyClass: r.journeyClass ?? "",
+      dateOfJourney: r.dateOfJourney ? String(r.dateOfJourney).slice(0, 10) : "",
+      fromStation: r.fromStation ?? "",
+      toStation: r.toStation ?? "",
+      boardingPoint: r.boardingPoint ?? "",
+      contactNumber: r.contactNumber ?? "",
+      numberOfPassengers: r.numberOfPassengers != null ? String(r.numberOfPassengers) : "",
+      remarks: r.remarks ?? "",
+    });
+    setEditReq(r);
+  };
+
+  const editChange = (field: string, value: string) =>
+    setEditForm((p) => ({ ...p, [field]: value }));
+
+  const saveEdit = async () => {
+    if (!editReq) return;
+    if (!editForm.passengerName.trim() || !editForm.pnrNumber.trim()) {
+      setEditError("Passenger name and PNR number are required.");
+      return;
+    }
+    const passengerCount = editForm.numberOfPassengers.trim();
+    const parsedCount = passengerCount === "" ? undefined : Number(passengerCount);
+    if (parsedCount !== undefined && (!Number.isFinite(parsedCount) || parsedCount < 1)) {
+      setEditError("Number of passengers must be a positive number.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await trainRequestApi.update(editReq.id, {
+        passengerName: editForm.passengerName,
+        pnrNumber: editForm.pnrNumber,
+        trainName: editForm.trainName || undefined,
+        trainNumber: editForm.trainNumber || undefined,
+        journeyClass: editForm.journeyClass || undefined,
+        dateOfJourney: editForm.dateOfJourney
+          ? new Date(editForm.dateOfJourney).toISOString()
+          : undefined,
+        fromStation: editForm.fromStation,
+        toStation: editForm.toStation,
+        boardingPoint: editForm.boardingPoint || undefined,
+        contactNumber: editForm.contactNumber || undefined,
+        numberOfPassengers: parsedCount,
+        remarks: editForm.remarks || undefined,
+      });
+      setEditReq(null);
+      fetchRequests();
+    } catch (err: unknown) {
+      setEditError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to save changes."
+      );
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const formatDate = (dateStr: string | undefined) => {
     if (!dateStr) return 'N/A';
@@ -116,7 +210,7 @@ export default function TrainEQQueue() {
                 Train EQ Requests
               </h1>
               <p className="text-sm text-muted-foreground">
-                Read-only log of staff-generated emergency quota letters
+                Log of staff-generated emergency quota letters — click the pencil to correct an entry
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-2 shrink-0">
@@ -212,6 +306,16 @@ export default function TrainEQQueue() {
                         Created by: {r.createdBy?.name || 'Unknown'} • {formatDate(r.createdAt)}
                       </p>
                     </div>
+
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Edit"
+                      className="shrink-0"
+                      onClick={() => openEdit(r)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                   </div>
                 ))
               )}
@@ -228,6 +332,88 @@ export default function TrainEQQueue() {
           </Card>
 
         </div>
+
+        {/* Edit Dialog */}
+        <Dialog open={!!editReq} onOpenChange={(open) => { if (!open) setEditReq(null); }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Train EQ — {editReq?.referenceNo ?? editReq?.passengerName}</DialogTitle>
+              <DialogDescription>
+                Correct the details below; a reprint of the letter uses the corrected values.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Passenger Name</Label>
+                <Input value={editForm.passengerName ?? ""} onChange={(e) => editChange("passengerName", e.target.value)} />
+              </div>
+              <div>
+                <Label>PNR Number</Label>
+                <Input value={editForm.pnrNumber ?? ""} onChange={(e) => editChange("pnrNumber", e.target.value)} />
+              </div>
+              <div>
+                <Label>Train Name</Label>
+                <Input value={editForm.trainName ?? ""} onChange={(e) => editChange("trainName", e.target.value)} />
+              </div>
+              <div>
+                <Label>Train Number</Label>
+                <Input value={editForm.trainNumber ?? ""} onChange={(e) => editChange("trainNumber", e.target.value)} />
+              </div>
+              <div>
+                <Label>Class</Label>
+                <Select value={editForm.journeyClass ?? ""} onValueChange={(v) => editChange("journeyClass", v)}>
+                  <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                  <SelectContent>
+                    {JOURNEY_CLASSES.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Date of Journey</Label>
+                <Input type="date" value={editForm.dateOfJourney ?? ""} onChange={(e) => editChange("dateOfJourney", e.target.value)} />
+              </div>
+              <div>
+                <Label>From Station</Label>
+                <Input value={editForm.fromStation ?? ""} onChange={(e) => editChange("fromStation", e.target.value)} />
+              </div>
+              <div>
+                <Label>To Station</Label>
+                <Input value={editForm.toStation ?? ""} onChange={(e) => editChange("toStation", e.target.value)} />
+              </div>
+              <div>
+                <Label>Boarding Point</Label>
+                <Input value={editForm.boardingPoint ?? ""} onChange={(e) => editChange("boardingPoint", e.target.value)} />
+              </div>
+              <div>
+                <Label>Contact Number</Label>
+                <Input value={editForm.contactNumber ?? ""} onChange={(e) => editChange("contactNumber", e.target.value)} maxLength={10} />
+              </div>
+              <div>
+                <Label>Number of Passengers</Label>
+                <Input type="number" min={1} value={editForm.numberOfPassengers ?? ""} onChange={(e) => editChange("numberOfPassengers", e.target.value)} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Remarks</Label>
+                <Textarea value={editForm.remarks ?? ""} onChange={(e) => editChange("remarks", e.target.value)} className="min-h-[70px]" />
+              </div>
+            </div>
+            {editError && (
+              <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+                {editError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setEditReq(null)} disabled={editSaving}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit} disabled={editSaving} className="bg-indigo-600 hover:bg-indigo-700">
+                {editSaving ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

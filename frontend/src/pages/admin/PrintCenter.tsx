@@ -54,9 +54,10 @@ export default function PrintCenter() {
     try {
       const items: PrintableItem[] = [];
 
-      // Fetch verified/resolved grievances (ready for printing)
-      // Get all grievances and filter for verified ones - increase limit to get all
-      const grievanceParams: Record<string, string> = { limit: '50' };
+      // Fetch verified/resolved grievances (ready for printing).
+      // limit=200 (not the backend default of 10) so older letters stay
+      // reachable — stays under the ZCQL 299-row cap.
+      const grievanceParams: Record<string, string> = { limit: '200' };
       if (startDate) grievanceParams.startDate = startDate;
       if (endDate) grievanceParams.endDate = endDate;
       const grievanceRes = await grievanceApi.getAll(grievanceParams);
@@ -92,8 +93,10 @@ export default function PrintCenter() {
         }
       });
 
-      // Fetch approved train requests
-      const trainParams: Record<string, string> = { status: 'APPROVED' };
+      // Fetch approved train requests. The missing limit here previously fell
+      // back to the backend default page size of 10 — capping the Train EQ
+      // tab at 10 letters no matter how many existed.
+      const trainParams: Record<string, string> = { status: 'APPROVED', limit: '200' };
       if (startDate) trainParams.startDate = startDate;
       if (endDate) trainParams.endDate = endDate;
       const trainRes = await trainRequestApi.getAll(trainParams);
@@ -113,7 +116,7 @@ export default function PrintCenter() {
 
       // Fetch accepted tour programs (tour invitations) — available to
       // staff and admins, matching the staffOnly /pdf/tour-program/:id route.
-      const tourParams: Record<string, string> = { decision: 'ACCEPTED', limit: '50' };
+      const tourParams: Record<string, string> = { decision: 'ACCEPTED', limit: '200' };
       if (startDate) tourParams.startDate = startDate;
       if (endDate) tourParams.endDate = endDate;
       const tourRes = await tourProgramApi.getAll(tourParams);
