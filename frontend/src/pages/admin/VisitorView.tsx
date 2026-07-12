@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { 
-  Users, 
-  RefreshCw, 
+import {
+  Users,
+  RefreshCw,
   Filter,
   Eye,
   Trash2,
+  Pencil,
   Phone,
   Calendar,
   Briefcase,
   Clock
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +41,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+// Same designation options as the visitor log form / filter.
+const DESIGNATIONS = ["Party Worker", "Official", "Public", "Business", "Media", "Other"];
 
 export default function VisitorView() {
   const [searchParams] = useSearchParams();
@@ -92,6 +98,62 @@ export default function VisitorView() {
   const handleViewDetails = (visitor: Visitor) => {
     setSelectedVisitor(visitor);
     setDetailsOpen(true);
+  };
+
+  // Edit dialog — corrections to a logged visitor entry.
+  const [editVisitor, setEditVisitor] = useState<Visitor | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const openEdit = (v: Visitor) => {
+    setEditError(null);
+    setEditForm({
+      name: v.name ?? "",
+      designation: v.designation ?? "",
+      phone: v.phone ?? "",
+      // Catalyst "YYYY-MM-DD ..." or ISO → the date part for <input type="date">
+      dob: v.dob ? String(v.dob).slice(0, 10) : "",
+      purpose: v.purpose ?? "",
+      referencedBy: v.referencedBy ?? "",
+      constituency: v.constituency ?? "",
+      wardVillage: v.wardVillage ?? "",
+    });
+    setEditVisitor(v);
+  };
+
+  const editChange = (field: string, value: string) =>
+    setEditForm((p) => ({ ...p, [field]: value }));
+
+  const saveEdit = async () => {
+    if (!editVisitor) return;
+    if (!editForm.name.trim() || !editForm.purpose.trim()) {
+      setEditError("Name and purpose are required.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await visitorApi.update(editVisitor.id, {
+        name: editForm.name,
+        designation: editForm.designation,
+        phone: editForm.phone || undefined,
+        dob: editForm.dob || undefined,
+        purpose: editForm.purpose,
+        referencedBy: editForm.referencedBy || undefined,
+        constituency: editForm.constituency || undefined,
+        wardVillage: editForm.wardVillage || undefined,
+      });
+      setEditVisitor(null);
+      fetchVisitors();
+    } catch (err: unknown) {
+      setEditError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to save changes."
+      );
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -379,13 +441,21 @@ export default function VisitorView() {
                       </div>
 
                       <div className="flex gap-2 flex-shrink-0">
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => handleViewDetails(visitor)}
                         >
                           <Eye className="h-4 w-4 mr-1" />
                           View
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          title="Edit"
+                          onClick={() => openEdit(visitor)}
+                        >
+                          <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
                           size="sm"
@@ -412,6 +482,83 @@ export default function VisitorView() {
           </Card>
 
         </div>
+
+        {/* Edit Dialog */}
+        <Dialog open={!!editVisitor} onOpenChange={(open) => { if (!open) setEditVisitor(null); }}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Visitor — {editVisitor?.name}</DialogTitle>
+              <DialogDescription>
+                Correct the details of this visitor entry.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Name</Label>
+                <Input value={editForm.name ?? ""} onChange={(e) => editChange("name", e.target.value)} />
+              </div>
+              <div>
+                <Label>Designation</Label>
+                <Select value={editForm.designation ?? ""} onValueChange={(v) => editChange("designation", v)}>
+                  <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
+                  <SelectContent>
+                    {DESIGNATIONS.map((d) => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Phone</Label>
+                <Input value={editForm.phone ?? ""} onChange={(e) => editChange("phone", e.target.value)} maxLength={10} />
+              </div>
+              <div>
+                <Label>Date of Birth</Label>
+                <Input type="date" value={editForm.dob ?? ""} onChange={(e) => editChange("dob", e.target.value)} />
+              </div>
+              <div>
+                <Label>Referenced By</Label>
+                <Input value={editForm.referencedBy ?? ""} onChange={(e) => editChange("referencedBy", e.target.value)} />
+              </div>
+              <div>
+                <Label>Constituency</Label>
+                <Select
+                  value={editForm.constituency || "none"}
+                  onValueChange={(v) => editChange("constituency", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select constituency" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not specified</SelectItem>
+                    {CONSTITUENCY_OPTIONS.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Ward / Village</Label>
+                <Input value={editForm.wardVillage ?? ""} onChange={(e) => editChange("wardVillage", e.target.value)} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Purpose</Label>
+                <Textarea value={editForm.purpose ?? ""} onChange={(e) => editChange("purpose", e.target.value)} className="min-h-[70px]" />
+              </div>
+            </div>
+            {editError && (
+              <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+                {editError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setEditVisitor(null)} disabled={editSaving}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit} disabled={editSaving} className="bg-indigo-600 hover:bg-indigo-700">
+                {editSaving ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Details Dialog */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>

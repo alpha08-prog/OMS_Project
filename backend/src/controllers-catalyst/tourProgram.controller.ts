@@ -26,6 +26,7 @@ import {
   nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
+  zcqlAnyOf,
   zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
@@ -38,7 +39,7 @@ import {
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import { cacheClear } from '../lib/cache';
-import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { getCachedTableList, getUserIdAliases } from '../lib/catalyst-user-lookup';
 import { emitNotification } from './notification.controller';
 import { autoCreateSelfTask } from './task.controller';
 import type {
@@ -296,13 +297,13 @@ export async function createTourProgram(
   }
 }
 
-function buildTourZCQL(filters: TourProgramFilters, staffId?: string): string {
+function buildTourZCQL(filters: TourProgramFilters, staffIds?: string[]): string {
   const conditions: string[] = [];
   // Staff can only see their own tour programs. Admins/super-admins see all.
-  // Aligns with the data-isolation already enforced for grievances, visitors,
-  // and train requests.
-  if (staffId) {
-    conditions.push(`createdById = '${zcqlEscapeValue(staffId)}'`);
+  // Matched against ALL identity aliases (ROWID + legacy UUID), since rows
+  // written in different eras carry different forms of the same user.
+  if (staffIds && staffIds.length > 0) {
+    conditions.push(zcqlAnyOf('createdById', staffIds));
   }
   if (filters.decision) {
     conditions.push(`decision = '${zcqlEscapeValue(String(filters.decision))}'`);
@@ -347,15 +348,17 @@ export async function getTourPrograms(
     let pageRows: CatalystRow[];
     let total: number;
 
-    // Scope to creator for STAFF role; admins see everything.
-    const staffId = req.user?.role === 'STAFF' ? req.user.id : undefined;
+    // Scope to creator for STAFF role; admins see everything. Resolved to the
+    // full identity-alias set (ROWID + legacy UUID) so pre-migration rows match.
+    const staffIds =
+      req.user?.role === 'STAFF' ? await getUserIdAliases(req.user.id) : undefined;
 
     // Free-text search (incl. reference number / TOUR-<rowid>) always runs
     // through the JS path: it reliably matches tourNumber + ROWID and scans the
     // whole table, sidestepping ZCQL quirks and a possibly-missing tourNumber
     // column. ZCQL still handles the common filtered/sorted list with no search.
     if (useZCQL() && !filters.search) {
-      const baseQuery = buildTourZCQL(filters, staffId);
+      const baseQuery = buildTourZCQL(filters, staffIds);
       const safeLimit = zcqlSafeLimit(limit);
       const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
       const hasMore = fetched.length > safeLimit;
@@ -363,8 +366,9 @@ export async function getTourPrograms(
       total = skip + pageRows.length + (hasMore ? 1 : 0);
     } else {
       let rows = await listAllRows(TOUR_TABLE);
-      if (staffId) {
-        rows = rows.filter((r) => String(r.createdById) === staffId);
+      if (staffIds) {
+        const idSet = new Set(staffIds);
+        rows = rows.filter((r) => idSet.has(String(r.createdById)));
       }
       if (filters.decision) {
         rows = rows.filter((r) => r.decision === filters.decision);

@@ -22,11 +22,12 @@ import {
   updateRowTolerant,
   executeZCQL,
   zcqlEscapeValue,
+  zcqlAnyOf,
   zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
 import { useZCQL } from '../config/feature-flags';
-import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { getCachedTableList, getUserIdAliases } from '../lib/catalyst-user-lookup';
 import { autoCreateSelfTask } from './task.controller';
 import {
   sendSuccess,
@@ -531,12 +532,14 @@ export async function createTrainRequest(
 }
 
 function buildTrainZCQL(
-  user: { id: string; role: string } | undefined,
+  staffIds: string[] | null,
   filters: TrainRequestFilters
 ): string {
   const conditions: string[] = [];
-  if (user?.role === 'STAFF') {
-    conditions.push(`createdById = '${zcqlEscapeValue(user.id)}'`);
+  // STAFF scoping — match ALL identity aliases (ROWID + legacy UUID), since
+  // rows written in different eras carry different forms of the same user.
+  if (staffIds && staffIds.length > 0) {
+    conditions.push(zcqlAnyOf('createdById', staffIds));
   }
   if (filters.status) {
     conditions.push(`status = '${zcqlEscapeValue(String(filters.status))}'`);
@@ -583,12 +586,17 @@ export async function getTrainRequests(
     let pageRows: CatalystRow[];
     let total: number;
 
+    // STAFF see only their own rows — resolved to the full identity-alias set
+    // (Catalyst ROWID + legacy UUID) so pre-migration rows still match.
+    const staffIds =
+      req.user?.role === 'STAFF' ? await getUserIdAliases(req.user.id) : null;
+
     // Free-text search (incl. reference number / TREQ-<rowid>) always runs
     // through the JS path: it reliably matches trainRequestNumber + ROWID and
     // scans the whole table, sidestepping ZCQL quirks and a possibly-missing
     // trainRequestNumber column. ZCQL still handles the common list with no search.
     if (useZCQL() && !filters.search) {
-      const baseQuery = buildTrainZCQL(req.user, filters);
+      const baseQuery = buildTrainZCQL(staffIds, filters);
       const safeLimit = zcqlSafeLimit(limit);
       const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
       const hasMore = fetched.length > safeLimit;
@@ -597,8 +605,9 @@ export async function getTrainRequests(
     } else {
       let rows = await listAllRows(TRAIN_TABLE);
 
-      if (req.user?.role === 'STAFF') {
-        rows = rows.filter((r) => r.createdById === req.user!.id);
+      if (staffIds) {
+        const idSet = new Set(staffIds);
+        rows = rows.filter((r) => idSet.has(String(r.createdById)));
       }
       if (filters.status) rows = rows.filter((r) => r.status === filters.status);
       if (filters.search) {
@@ -668,9 +677,12 @@ export async function getTrainRequestById(
       sendNotFound(res, 'Train request not found');
       return;
     }
-    if (req.user?.role === 'STAFF' && row.createdById !== req.user.id) {
-      sendError(res, 'Forbidden', 403);
-      return;
+    if (req.user?.role === 'STAFF') {
+      const aliases = await getUserIdAliases(req.user.id);
+      if (!aliases.includes(String(row.createdById))) {
+        sendError(res, 'Forbidden', 403);
+        return;
+      }
     }
     const [shaped] = await hydrate([row]);
     sendSuccess(res, shaped, 'Train request retrieved successfully');
@@ -688,6 +700,22 @@ export async function updateTrainRequest(
 ): Promise<void> {
   try {
     const { id } = req.params;
+
+    // Corrections: staff may only edit their OWN train EQ requests (matched
+    // against all identity aliases). Admins can edit any.
+    const existing = await getRow(TRAIN_TABLE, id);
+    if (!existing) {
+      sendNotFound(res, 'Train request not found');
+      return;
+    }
+    if (req.user?.role === 'STAFF') {
+      const aliases = await getUserIdAliases(req.user.id);
+      if (!aliases.includes(String(existing.createdById))) {
+        sendError(res, 'You can only edit your own train EQ requests', 403);
+        return;
+      }
+    }
+
     const body = { ...req.body };
     delete body.id;
     delete body.createdById;
@@ -723,6 +751,10 @@ export async function updateTrainRequest(
     if (body.referencedBy !== undefined) updateData.referencedBy = body.referencedBy;
     if (body.contactNumber !== undefined) updateData.contactNumber = body.contactNumber;
     if (body.remarks !== undefined) updateData.remarks = body.remarks;
+    if (body.numberOfPassengers !== undefined) {
+      const n = Number(body.numberOfPassengers);
+      updateData.numberOfPassengers = Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+    }
     if (body.status !== undefined) {
       if (!VALID_STATUSES.has(body.status)) {
         sendError(res, `Invalid status: ${body.status}`);

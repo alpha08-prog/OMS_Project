@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { SearchBar } from "@/components/common/SearchBar";
 import { grievanceApi, trainRequestApi, tourProgramApi, pdfApi, http, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
 import { useToast } from "@/components/AuthForm/Toast";
 import {
@@ -40,6 +41,7 @@ export default function PrintCenter() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -150,8 +152,15 @@ export default function PrintCenter() {
   }, [startDate, endDate]);
 
   const filteredItems = printableItems.filter(item => {
-    if (filter === "all") return true;
-    return item.type === filter;
+    if (filter !== "all" && item.type !== filter) return false;
+    // Free-text search across title, subtitle (name / PNR / venue), reference
+    // number, and status — client-side, same pattern as My History.
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const ref = (item.data as { referenceNo?: string | null }).referenceNo ?? "";
+    return [item.title, item.subtitle, ref, item.status].some((f) =>
+      String(f ?? "").toLowerCase().includes(q)
+    );
   });
 
   const formatDate = (dateStr: string) => {
@@ -314,6 +323,11 @@ export default function PrintCenter() {
                   endDate={endDate}
                   onStartDateChange={setStartDate}
                   onEndDateChange={setEndDate}
+                />
+                <SearchBar
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search by name, PNR, reference no, or event…"
                 />
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   <Button

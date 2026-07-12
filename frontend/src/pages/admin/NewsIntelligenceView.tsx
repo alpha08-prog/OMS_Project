@@ -2,16 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Newspaper,
-  AlertTriangle, 
-  RefreshCw, 
+  AlertTriangle,
+  RefreshCw,
   Filter,
   Eye,
   Trash2,
+  Pencil,
   ExternalLink,
   MapPin,
   User,
   Clock
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -143,6 +147,57 @@ export default function NewsIntelligenceView() {
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error.message || "Failed to delete news");
+    }
+  };
+
+  // Edit dialog — corrections to headline / source / region / priority etc.
+  const [editNews, setEditNews] = useState<NewsIntelligence | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const openEdit = (item: NewsIntelligence) => {
+    setEditError(null);
+    setEditForm({
+      headline: item.headline ?? "",
+      category: item.category ?? "",
+      priority: item.priority ?? "NORMAL",
+      mediaSource: item.mediaSource ?? "",
+      region: item.region ?? "",
+      description: item.description ?? "",
+    });
+    setEditNews(item);
+  };
+
+  const editChange = (field: string, value: string) =>
+    setEditForm((p) => ({ ...p, [field]: value }));
+
+  const saveEdit = async () => {
+    if (!editNews) return;
+    if (!editForm.headline.trim()) {
+      setEditError("Headline is required.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await newsApi.update(editNews.id, {
+        headline: editForm.headline,
+        category: editForm.category,
+        priority: editForm.priority as NewsPriority,
+        mediaSource: editForm.mediaSource,
+        region: editForm.region,
+        description: editForm.description || undefined,
+      });
+      setEditNews(null);
+      fetchNews();
+    } catch (err: unknown) {
+      setEditError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to save changes."
+      );
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -378,13 +433,21 @@ export default function NewsIntelligenceView() {
                       </div>
 
                       <div className="flex gap-2 flex-shrink-0">
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => handleViewDetails(item)}
                         >
                           <Eye className="h-4 w-4 mr-1" />
                           View
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          title="Edit"
+                          onClick={() => openEdit(item)}
+                        >
+                          <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
                           size="sm"
@@ -411,6 +474,64 @@ export default function NewsIntelligenceView() {
           </Card>
 
         </div>
+
+        {/* Edit Dialog */}
+        <Dialog open={!!editNews} onOpenChange={(open) => { if (!open) setEditNews(null); }}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit News Entry</DialogTitle>
+              <DialogDescription>
+                Correct the details of this news / intelligence entry.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <Label>Headline</Label>
+                <Input value={editForm.headline ?? ""} onChange={(e) => editChange("headline", e.target.value)} />
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Input value={editForm.category ?? ""} onChange={(e) => editChange("category", e.target.value)} />
+              </div>
+              <div>
+                <Label>Priority</Label>
+                <Select value={editForm.priority ?? "NORMAL"} onValueChange={(v) => editChange("priority", v)}>
+                  <SelectTrigger><SelectValue placeholder="Select priority" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NORMAL">Normal</SelectItem>
+                    <SelectItem value="HIGH">High</SelectItem>
+                    <SelectItem value="CRITICAL">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Media Source</Label>
+                <Input value={editForm.mediaSource ?? ""} onChange={(e) => editChange("mediaSource", e.target.value)} />
+              </div>
+              <div>
+                <Label>Region</Label>
+                <Input value={editForm.region ?? ""} onChange={(e) => editChange("region", e.target.value)} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Description</Label>
+                <Textarea value={editForm.description ?? ""} onChange={(e) => editChange("description", e.target.value)} className="min-h-[90px]" />
+              </div>
+            </div>
+            {editError && (
+              <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+                {editError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setEditNews(null)} disabled={editSaving}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit} disabled={editSaving} className="bg-indigo-600 hover:bg-indigo-700">
+                {editSaving ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Details Dialog */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>

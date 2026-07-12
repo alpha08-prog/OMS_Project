@@ -23,6 +23,7 @@ import {
   nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
+  zcqlAnyOf,
   zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
@@ -34,7 +35,7 @@ import {
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
 import { cacheClear } from '../lib/cache';
-import { lookupUsers } from '../lib/catalyst-user-lookup';
+import { lookupUsers, getUserIdAliases } from '../lib/catalyst-user-lookup';
 import { useZCQL } from '../config/feature-flags';
 import { emitNotification } from './notification.controller';
 import { autoCreateSelfTask } from './task.controller';
@@ -474,13 +475,15 @@ export async function createGrievance(
 
 /** Build a ZCQL WHERE clause + ORDER BY for the grievance list. */
 function buildGrievanceZCQL(
-  user: { id: string; role: string } | undefined,
+  staffIds: string[] | null,
   filters: GrievanceFilters
 ): string {
   const conditions: string[] = [];
 
-  if (user?.role === 'STAFF') {
-    conditions.push(`createdById = '${zcqlEscapeValue(user.id)}'`);
+  // STAFF scoping — match ALL identity aliases (ROWID + legacy UUID), since
+  // rows written in different eras carry different forms of the same user.
+  if (staffIds && staffIds.length > 0) {
+    conditions.push(zcqlAnyOf('createdById', staffIds));
   }
 
   if (filters.status) {
@@ -553,12 +556,16 @@ export async function getGrievances(
       req.query as { page?: string; limit?: string }
     );
     const filters = req.query as GrievanceFilters;
+    // STAFF see only their own rows — resolved to the full identity-alias set
+    // (Catalyst ROWID + legacy UUID) so pre-migration rows still match.
+    const staffIds =
+      req.user?.role === 'STAFF' ? await getUserIdAliases(req.user.id) : null;
     // Free-text search (incl. reference number / GRV-<rowid>) always runs through
     // the JS path: it reliably matches grievanceNumber + ROWID and scans the
     // whole table, sidestepping ZCQL LIKE/ROWID quirks. ZCQL still handles the
     // common filtered/sorted list when there's no search term.
     if (useZCQL() && !filters.search) {
-      const baseQuery = buildGrievanceZCQL(req.user, filters);
+      const baseQuery = buildGrievanceZCQL(staffIds, filters);
       // Catalyst ZCQL caps LIMIT at 300; +1 for hasMore probe → user limit ≤ 299.
       const safeLimit = zcqlSafeLimit(limit);
       const pagedQuery = `${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`;
@@ -576,8 +583,9 @@ export async function getGrievances(
     let rows = await listAllRows(GRIEVANCE_TABLE);
 
     // STAFF data isolation
-    if (req.user?.role === 'STAFF') {
-      rows = rows.filter((r) => r.createdById === req.user!.id);
+    if (staffIds) {
+      const idSet = new Set(staffIds);
+      rows = rows.filter((r) => idSet.has(String(r.createdById)));
     }
 
     if (filters.status) {
@@ -674,9 +682,12 @@ export async function getGrievanceById(
       return;
     }
 
-    if (req.user?.role === 'STAFF' && row.createdById !== req.user.id) {
-      sendError(res, 'Forbidden', 403);
-      return;
+    if (req.user?.role === 'STAFF') {
+      const aliases = await getUserIdAliases(req.user.id);
+      if (!aliases.includes(String(row.createdById))) {
+        sendError(res, 'Forbidden', 403);
+        return;
+      }
     }
 
     const [shaped] = await attachUsers([row]);

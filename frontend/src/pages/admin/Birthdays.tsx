@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { birthdayApi, type Birthday } from "@/lib/api";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
@@ -12,7 +13,9 @@ import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { CardListSkeleton } from "@/components/common/Skeletons";
 import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 import type { CsvColumn } from "@/lib/exportCsv";
-import { RefreshCw, Cake, Gift, Calendar, Phone, User, Trash2 } from "lucide-react";
+import { RefreshCw, Cake, Gift, Calendar, Phone, User, Trash2, Pencil } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +23,18 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+
+// Same categories as the Add Birthday form.
+const RELATION_OPTIONS = [
+  { value: "Party Worker", label: "Party Worker" },
+  { value: "VIP", label: "VIP" },
+  { value: "Official", label: "Government Official" },
+  { value: "Family", label: "Family Member" },
+  { value: "Supporter", label: "Supporter" },
+  { value: "Business", label: "Business Contact" },
+  { value: "Media", label: "Media Person" },
+  { value: "Other", label: "Other" },
+];
 
 export default function Birthdays() {
   const [birthdays, setBirthdays] = useState<Birthday[]>([]);
@@ -40,6 +55,12 @@ export default function Birthdays() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedBirthday, setSelectedBirthday] = useState<Birthday | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Edit dialog — corrections for name / DOB / phone / category etc.
+  const [editBirthday, setEditBirthday] = useState<Birthday | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const fetchBirthdays = useCallback(async () => {
     setLoading(true);
@@ -87,6 +108,58 @@ export default function Birthdays() {
 
   const handleSearch = () => {
     fetchBirthdays();
+  };
+
+  const openEdit = (b: Birthday) => {
+    setEditError(null);
+    setEditForm({
+      name: b.name ?? "",
+      phone: b.phone ?? "",
+      // Catalyst "YYYY-MM-DD ..." or ISO → the date part for <input type="date">
+      dob: b.dob ? String(b.dob).slice(0, 10) : "",
+      relation: b.relation ?? "",
+      constituency: b.constituency ?? "",
+      wardVillage: b.wardVillage ?? "",
+      notes: b.notes ?? "",
+    });
+    setEditBirthday(b);
+  };
+
+  const editChange = (field: string, value: string) =>
+    setEditForm((p) => ({ ...p, [field]: value }));
+
+  const saveEdit = async () => {
+    if (!editBirthday) return;
+    if (!editForm.name.trim()) {
+      setEditError("Name is required.");
+      return;
+    }
+    if (!editForm.dob) {
+      setEditError("Date of birth is required.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await birthdayApi.update(editBirthday.id, {
+        name: editForm.name,
+        phone: editForm.phone || undefined,
+        dob: editForm.dob,
+        relation: editForm.relation,
+        constituency: editForm.constituency || undefined,
+        wardVillage: editForm.wardVillage || undefined,
+        notes: editForm.notes || undefined,
+      });
+      setEditBirthday(null);
+      fetchBirthdays();
+    } catch (err: unknown) {
+      setEditError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to save changes."
+      );
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -472,17 +545,27 @@ export default function Birthdays() {
                           </Badge>
                         )}
                         {b.canDelete ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => {
-                              setSelectedBirthday(b);
-                              setDeleteDialogOpen(true);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Edit"
+                              onClick={() => openEdit(b)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => {
+                                setSelectedBirthday(b);
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
                         ) : (
                           <Button
                             size="sm"
@@ -512,6 +595,68 @@ export default function Birthdays() {
 
           </div>
         </div>
+
+        {/* Edit Dialog */}
+        <Dialog open={!!editBirthday} onOpenChange={(open) => { if (!open) setEditBirthday(null); }}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Birthday — {editBirthday?.name}</DialogTitle>
+              <DialogDescription>
+                Correct the details below; changes apply everywhere this birthday appears.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Name</Label>
+                <Input value={editForm.name ?? ""} onChange={(e) => editChange("name", e.target.value)} />
+              </div>
+              <div>
+                <Label>Phone</Label>
+                <Input value={editForm.phone ?? ""} onChange={(e) => editChange("phone", e.target.value)} maxLength={10} />
+              </div>
+              <div>
+                <Label>Date of Birth</Label>
+                <Input type="date" value={editForm.dob ?? ""} onChange={(e) => editChange("dob", e.target.value)} />
+              </div>
+              <div>
+                <Label>Category/Relation</Label>
+                <Select value={editForm.relation ?? ""} onValueChange={(v) => editChange("relation", v)}>
+                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                  <SelectContent>
+                    {RELATION_OPTIONS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Constituency</Label>
+                <Input value={editForm.constituency ?? ""} onChange={(e) => editChange("constituency", e.target.value)} />
+              </div>
+              <div>
+                <Label>Ward / Village</Label>
+                <Input value={editForm.wardVillage ?? ""} onChange={(e) => editChange("wardVillage", e.target.value)} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Notes</Label>
+                <Textarea value={editForm.notes ?? ""} onChange={(e) => editChange("notes", e.target.value)} className="min-h-[70px]" />
+              </div>
+            </div>
+            {editError && (
+              <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+                {editError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setEditBirthday(null)} disabled={editSaving}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit} disabled={editSaving} className="bg-pink-600 hover:bg-pink-700">
+                {editSaving ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

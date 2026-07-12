@@ -105,6 +105,42 @@ export function invalidateTableList(tableName: string): void {
   cacheDelete(tableListCacheKey(tableName));
 }
 
+/**
+ * All identifier forms a user may appear as in `*ById` columns
+ * (createdById / assignedToId / recipientId): the Catalyst AppUser ROWID
+ * and — for accounts that predate the Prisma→Catalyst migration — the
+ * preserved legacy UUID.
+ *
+ * Which form a row carries depends on WHEN it was written: pre-migration
+ * rows reference the UUID, rows written after an account lost (or gained)
+ * its legacyId reference the other form. Ownership filters must therefore
+ * match the FULL alias set — matching only `req.user.id` makes a staff
+ * member's older submissions invisible (the "My History / Print Center /
+ * Train EQ list shows 0" bug).
+ *
+ * Best-effort: if Catalyst is unreachable, falls back to just the id passed
+ * in. Reads the 60s-cached AppUser list, so no extra round-trip on hot paths.
+ */
+export async function getUserIdAliases(id: string): Promise<string[]> {
+  const wanted = String(id);
+  const aliases = new Set<string>([wanted]);
+  try {
+    const users = await getCachedTableList(APPUSER_TABLE);
+    for (const row of users) {
+      const rowId = row.ROWID ? String(row.ROWID) : null;
+      const legacyId = row.legacyId ? String(row.legacyId) : null;
+      if (rowId === wanted || legacyId === wanted) {
+        if (rowId) aliases.add(rowId);
+        if (legacyId) aliases.add(legacyId);
+        break;
+      }
+    }
+  } catch {
+    /* Catalyst unreachable — fall back to the raw id */
+  }
+  return [...aliases];
+}
+
 export interface ResolvedUser {
   id: string;
   name: string;
