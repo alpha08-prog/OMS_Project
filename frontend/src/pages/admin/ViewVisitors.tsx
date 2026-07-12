@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Pencil } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -11,10 +14,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { visitorApi, type Visitor } from "@/lib/api";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import type { CsvColumn } from "@/lib/exportCsv";
+
+// Same designation options as the visitor log form / filter.
+const DESIGNATIONS = ["Party Worker", "Official", "Public", "Business", "Media", "Other"];
 
 export default function ViewVisitors() {
   const [dateFilter, setDateFilter] = useState("");
@@ -38,6 +51,8 @@ export default function ViewVisitors() {
     queryParams.endDate = dateFilter;
   }
 
+  const queryClient = useQueryClient();
+
   const {
     data: visitors = [],
     isLoading,
@@ -51,6 +66,61 @@ export default function ViewVisitors() {
     // keepPreviousData behavior in v5: previous data stays while new data loads
     placeholderData: (prev) => prev,
   });
+
+  // Edit dialog — corrections to a logged visitor entry.
+  const [editVisitor, setEditVisitor] = useState<Visitor | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const openEdit = (v: Visitor) => {
+    setEditError(null);
+    setEditForm({
+      name: v.name ?? "",
+      designation: v.designation ?? "",
+      phone: v.phone ?? "",
+      dob: v.dob ? String(v.dob).slice(0, 10) : "",
+      purpose: v.purpose ?? "",
+      referencedBy: v.referencedBy ?? "",
+      constituency: v.constituency ?? "",
+      wardVillage: v.wardVillage ?? "",
+    });
+    setEditVisitor(v);
+  };
+
+  const editChange = (field: string, value: string) =>
+    setEditForm((p) => ({ ...p, [field]: value }));
+
+  const saveEdit = async () => {
+    if (!editVisitor) return;
+    if (!editForm.name.trim() || !editForm.purpose.trim()) {
+      setEditError("Name and purpose are required.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await visitorApi.update(editVisitor.id, {
+        name: editForm.name,
+        designation: editForm.designation,
+        phone: editForm.phone || undefined,
+        dob: editForm.dob || undefined,
+        purpose: editForm.purpose,
+        referencedBy: editForm.referencedBy || undefined,
+        constituency: editForm.constituency || undefined,
+        wardVillage: editForm.wardVillage || undefined,
+      });
+      setEditVisitor(null);
+      queryClient.invalidateQueries({ queryKey: ["visitors"] });
+    } catch (err: unknown) {
+      setEditError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Failed to save changes."
+      );
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const errorMessage =
     error instanceof Error ? error.message : error ? String(error) : null;
@@ -195,6 +265,9 @@ export default function ViewVisitors() {
                         <Badge variant="outline">🎂 {formatDate(v.dob)}</Badge>
                       )}
                       <Badge variant="secondary">{formatDate(v.visitDate)}</Badge>
+                      <Button size="sm" variant="ghost" title="Edit" onClick={() => openEdit(v)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -203,6 +276,72 @@ export default function ViewVisitors() {
 
           </div>
         </div>
+
+        {/* Edit Dialog */}
+        <Dialog open={!!editVisitor} onOpenChange={(open) => { if (!open) setEditVisitor(null); }}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Visitor — {editVisitor?.name}</DialogTitle>
+              <DialogDescription>
+                Correct the details of this visitor entry.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Name</Label>
+                <Input value={editForm.name ?? ""} onChange={(e) => editChange("name", e.target.value)} />
+              </div>
+              <div>
+                <Label>Designation</Label>
+                <Select value={editForm.designation ?? ""} onValueChange={(v) => editChange("designation", v)}>
+                  <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
+                  <SelectContent>
+                    {DESIGNATIONS.map((d) => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Phone</Label>
+                <Input value={editForm.phone ?? ""} onChange={(e) => editChange("phone", e.target.value)} maxLength={10} />
+              </div>
+              <div>
+                <Label>Date of Birth</Label>
+                <Input type="date" value={editForm.dob ?? ""} onChange={(e) => editChange("dob", e.target.value)} />
+              </div>
+              <div>
+                <Label>Referenced By</Label>
+                <Input value={editForm.referencedBy ?? ""} onChange={(e) => editChange("referencedBy", e.target.value)} />
+              </div>
+              <div>
+                <Label>Constituency</Label>
+                <Input value={editForm.constituency ?? ""} onChange={(e) => editChange("constituency", e.target.value)} />
+              </div>
+              <div>
+                <Label>Ward / Village</Label>
+                <Input value={editForm.wardVillage ?? ""} onChange={(e) => editChange("wardVillage", e.target.value)} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Purpose</Label>
+                <Textarea value={editForm.purpose ?? ""} onChange={(e) => editChange("purpose", e.target.value)} className="min-h-[70px]" />
+              </div>
+            </div>
+            {editError && (
+              <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+                {editError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setEditVisitor(null)} disabled={editSaving}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit} disabled={editSaving} className="bg-indigo-600 hover:bg-indigo-700">
+                {editSaving ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

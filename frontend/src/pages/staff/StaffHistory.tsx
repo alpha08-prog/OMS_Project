@@ -63,6 +63,16 @@ const GRIEVANCE_STATUSES: GrievanceStatus[] = [
 ];
 const GRIEVANCE_PRIORITIES: GrievancePriority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
+// Same class codes as the Train EQ create form.
+const JOURNEY_CLASSES = [
+  { value: "1A", label: "1A - First AC" },
+  { value: "2A", label: "2A - Second AC" },
+  { value: "3A", label: "3A - Third AC" },
+  { value: "SL", label: "SL - Sleeper" },
+  { value: "CC", label: "CC - Chair Car" },
+  { value: "EC", label: "EC - Executive Chair" },
+];
+
 /** ISO string → value a datetime-local input expects (local time, no seconds). */
 function toLocalInput(iso?: string | null): string {
   if (!iso) return "";
@@ -314,10 +324,13 @@ export default function StaffHistory() {
     fetchSubmissions();
   }, [fetchSubmissions]);
 
-  // Tours are editable; grievances are editable only when PUBLIC. Office
-  // grievances are admin-managed (Office Tasks page) — staff cannot edit them.
+  // Tours and Train EQ requests are editable (corrections for typos in PNR /
+  // name / date before reprinting the letter); grievances are editable only
+  // when PUBLIC. Office grievances are admin-managed (Office Tasks page) —
+  // staff cannot edit them.
   const isEditable = (item: SubmissionItem) => {
     if (item.type === "TOUR_PROGRAM") return true;
+    if (item.type === "TRAIN_REQUEST") return true;
     if (item.type === "GRIEVANCE") {
       return (item.details as Grievance).source !== "OFFICE";
     }
@@ -338,6 +351,23 @@ export default function StaffHistory() {
         monetaryValue: g.monetaryValue != null ? String(g.monetaryValue) : "",
         status: g.status ?? "",
         priority: g.priority ?? "MEDIUM",
+      });
+    } else if (item.type === "TRAIN_REQUEST") {
+      const t = item.details as TrainRequest;
+      setEditForm({
+        passengerName: t.passengerName ?? "",
+        pnrNumber: t.pnrNumber ?? "",
+        trainName: t.trainName ?? "",
+        trainNumber: t.trainNumber ?? "",
+        journeyClass: t.journeyClass ?? "",
+        // Catalyst "YYYY-MM-DD HH:mm:ss" or ISO → the date part for <input type="date">
+        dateOfJourney: t.dateOfJourney ? String(t.dateOfJourney).slice(0, 10) : "",
+        fromStation: t.fromStation ?? "",
+        toStation: t.toStation ?? "",
+        boardingPoint: t.boardingPoint ?? "",
+        contactNumber: t.contactNumber ?? "",
+        numberOfPassengers: t.numberOfPassengers != null ? String(t.numberOfPassengers) : "",
+        remarks: t.remarks ?? "",
       });
     } else if (item.type === "TOUR_PROGRAM") {
       const tp = item.details as TourProgram;
@@ -384,6 +414,35 @@ export default function StaffHistory() {
           monetaryValue: parsed,
         };
         await grievanceApi.update(editItem.id, payload);
+      } else if (editItem.type === "TRAIN_REQUEST") {
+        if (!editForm.passengerName.trim() || !editForm.pnrNumber.trim()) {
+          setEditError("Passenger name and PNR number are required.");
+          setEditSaving(false);
+          return;
+        }
+        const passengerCount = editForm.numberOfPassengers.trim();
+        const parsedCount = passengerCount === "" ? undefined : Number(passengerCount);
+        if (parsedCount !== undefined && (!Number.isFinite(parsedCount) || parsedCount < 1)) {
+          setEditError("Number of passengers must be a positive number.");
+          setEditSaving(false);
+          return;
+        }
+        await trainRequestApi.update(editItem.id, {
+          passengerName: editForm.passengerName,
+          pnrNumber: editForm.pnrNumber,
+          trainName: editForm.trainName || undefined,
+          trainNumber: editForm.trainNumber || undefined,
+          journeyClass: editForm.journeyClass || undefined,
+          dateOfJourney: editForm.dateOfJourney
+            ? new Date(editForm.dateOfJourney).toISOString()
+            : undefined,
+          fromStation: editForm.fromStation,
+          toStation: editForm.toStation,
+          boardingPoint: editForm.boardingPoint || undefined,
+          contactNumber: editForm.contactNumber || undefined,
+          numberOfPassengers: parsedCount,
+          remarks: editForm.remarks || undefined,
+        });
       } else if (editItem.type === "TOUR_PROGRAM") {
         await tourProgramApi.update(editItem.id, {
           eventName: editForm.eventName,
@@ -725,7 +784,7 @@ export default function StaffHistory() {
           );
         })()}
 
-        {/* Edit Dialog (grievance / tour) */}
+        {/* Edit Dialog (grievance / train EQ / tour) */}
         {editItem && (
           <div
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
@@ -798,6 +857,64 @@ export default function StaffHistory() {
                   <div className="sm:col-span-2">
                     <Label>Description</Label>
                     <Textarea value={editForm.description} onChange={(e) => editChange("description", e.target.value)} className="min-h-[90px]" />
+                  </div>
+                </div>
+              ) : editItem.type === "TRAIN_REQUEST" ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Passenger Name</Label>
+                    <Input value={editForm.passengerName} onChange={(e) => editChange("passengerName", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>PNR Number</Label>
+                    <Input value={editForm.pnrNumber} onChange={(e) => editChange("pnrNumber", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Train Name</Label>
+                    <Input value={editForm.trainName} onChange={(e) => editChange("trainName", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Train Number</Label>
+                    <Input value={editForm.trainNumber} onChange={(e) => editChange("trainNumber", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Class</Label>
+                    <Select value={editForm.journeyClass} onValueChange={(v) => editChange("journeyClass", v)}>
+                      <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                      <SelectContent>
+                        {JOURNEY_CLASSES.map((c) => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Date of Journey</Label>
+                    <Input type="date" value={editForm.dateOfJourney} onChange={(e) => editChange("dateOfJourney", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>From Station</Label>
+                    <Input value={editForm.fromStation} onChange={(e) => editChange("fromStation", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>To Station</Label>
+                    <Input value={editForm.toStation} onChange={(e) => editChange("toStation", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Boarding Point</Label>
+                    <Input value={editForm.boardingPoint} onChange={(e) => editChange("boardingPoint", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Contact Number</Label>
+                    <Input value={editForm.contactNumber} onChange={(e) => editChange("contactNumber", e.target.value)} maxLength={10} />
+                  </div>
+                  <div>
+                    <Label>Number of Passengers</Label>
+                    <Input type="number" min={1} value={editForm.numberOfPassengers} onChange={(e) => editChange("numberOfPassengers", e.target.value)} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label>Remarks</Label>
+                    <Textarea value={editForm.remarks} onChange={(e) => editChange("remarks", e.target.value)} className="min-h-[90px]" />
                   </div>
                 </div>
               ) : (

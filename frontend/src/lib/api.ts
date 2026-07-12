@@ -215,6 +215,7 @@ export type TrainRequest = {
   fromStation: string
   toStation: string
   route?: string
+  boardingPoint?: string
   quota?: string
   numberOfPassengers?: number
   remarks?: string
@@ -252,6 +253,8 @@ export type CreateTrainRequestRequest = {
   fromStation: string
   toStation: string
   route?: string
+  boardingPoint?: string
+  remarks?: string
   referencedBy?: string
   /** Structured passenger rows. Backend writes these to TrainPassenger. */
   passengers?: TrainPassengerInput[]

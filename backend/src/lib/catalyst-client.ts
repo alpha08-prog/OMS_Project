@@ -427,6 +427,16 @@ export function zcqlEscapeValue(value: string): string {
 }
 
 /**
+ * ZCQL condition matching `column` against ANY of `values` (OR-chained
+ * equality; Catalyst ZCQL has no reliable IN operator). Values are escaped.
+ * Used for identity-alias matching (a user's ROWID + legacy UUID).
+ */
+export function zcqlAnyOf(column: string, values: string[]): string {
+  const clauses = values.map((v) => `${column} = '${zcqlEscapeValue(v)}'`);
+  return clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`;
+}
+
+/**
  * Catalyst ZCQL rejects LIMIT > 300. Controllers that fetch one extra row
  * to detect a "has more" page can request at most 299 user rows + 1 probe.
  * Use this to clamp any user-supplied limit before building a ZCQL query.

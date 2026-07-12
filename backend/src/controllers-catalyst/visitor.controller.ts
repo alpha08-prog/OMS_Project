@@ -20,6 +20,7 @@ import {
   nowCatalystIST,
   executeZCQL,
   zcqlEscapeValue,
+  zcqlAnyOf,
   zcqlSafeLimit,
   CatalystRow,
 } from '../lib/catalyst-client';
@@ -30,7 +31,7 @@ import {
   sendServerError,
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
-import { lookupUsers } from '../lib/catalyst-user-lookup';
+import { lookupUsers, getUserIdAliases } from '../lib/catalyst-user-lookup';
 import { useZCQL } from '../config/feature-flags';
 import type { AuthenticatedRequest, VisitorFilters } from '../types';
 
@@ -168,13 +169,15 @@ export async function createVisitor(
  * full query so the caller can also append LIMIT/OFFSET.
  */
 function buildVisitorZCQL(
-  user: { id: string; role: string } | undefined,
+  staffIds: string[] | null,
   filters: VisitorFilters
 ): string {
   const conditions: string[] = [];
 
-  if (user?.role === 'STAFF') {
-    conditions.push(`createdById = '${zcqlEscapeValue(user.id)}'`);
+  // STAFF scoping — match ALL identity aliases (ROWID + legacy UUID), since
+  // rows written in different eras carry different forms of the same user.
+  if (staffIds && staffIds.length > 0) {
+    conditions.push(zcqlAnyOf('createdById', staffIds));
   }
 
   if (filters.search) {
@@ -214,8 +217,12 @@ export async function getVisitors(
       req.query as { page?: string; limit?: string }
     );
     const filters = req.query as VisitorFilters;
+    // STAFF see only their own rows — resolved to the full identity-alias set
+    // (Catalyst ROWID + legacy UUID) so pre-migration rows still match.
+    const staffIds =
+      req.user?.role === 'STAFF' ? await getUserIdAliases(req.user.id) : null;
     if (useZCQL()) {
-      const baseQuery = buildVisitorZCQL(req.user, filters);
+      const baseQuery = buildVisitorZCQL(staffIds, filters);
       // Catalyst ZCQL caps LIMIT at 300. zcqlSafeLimit clamps user-requested
       // limit to 299 so we have room for the +1 hasMore probe.
       const safeLimit = zcqlSafeLimit(limit);
@@ -234,8 +241,9 @@ export async function getVisitors(
     let rows = await listAllRows(VISITOR_TABLE, 1000);
 
     // STAFF data isolation
-    if (req.user?.role === 'STAFF') {
-      rows = rows.filter((r) => r.createdById === req.user!.id);
+    if (staffIds) {
+      const idSet = new Set(staffIds);
+      rows = rows.filter((r) => idSet.has(String(r.createdById)));
     }
 
     // Search filter (name | designation | purpose)
@@ -295,9 +303,12 @@ export async function getVisitorById(
       return;
     }
 
-    if (req.user?.role === 'STAFF' && row.createdById !== req.user.id) {
-      sendError(res, 'Forbidden', 403);
-      return;
+    if (req.user?.role === 'STAFF') {
+      const aliases = await getUserIdAliases(req.user.id);
+      if (!aliases.includes(String(row.createdById))) {
+        sendError(res, 'Forbidden', 403);
+        return;
+      }
     }
 
     const [shaped] = await attachCreators([row]);
@@ -317,6 +328,21 @@ export async function updateVisitor(
   try {
     const { id } = req.params;
     const { name, designation, phone, dob, purpose, referencedBy, visitDate, constituency, wardVillage, isOfficial } = req.body;
+
+    // Corrections: staff may only edit visitors they logged (matched against
+    // all identity aliases). Admins can edit any.
+    if (req.user?.role === 'STAFF') {
+      const existing = await getRow(VISITOR_TABLE, id);
+      if (!existing) {
+        sendNotFound(res, 'Visitor not found');
+        return;
+      }
+      const aliases = await getUserIdAliases(req.user.id);
+      if (!aliases.includes(String(existing.createdById))) {
+        sendError(res, 'You can only edit visitors you logged', 403);
+        return;
+      }
+    }
 
     const updateData: Record<string, unknown> = { ROWID: id };
     if (name !== undefined) updateData.name = name;
