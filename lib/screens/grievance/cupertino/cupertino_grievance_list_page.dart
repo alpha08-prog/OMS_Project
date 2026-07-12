@@ -8,8 +8,11 @@ import 'package:open_filex/open_filex.dart';
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
+import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
@@ -32,6 +35,9 @@ class _CupertinoGrievanceListPageState
   String _constituencyQuery = "";
   DateTime? _startDate;
   DateTime? _endDate;
+  // Client-side From/To range applied to createdAt for CSV + list display.
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   bool _loading = true;
   String? _error;
@@ -294,6 +300,45 @@ class _CupertinoGrievanceListPageState
     if (result == true) _fetchGrievances();
   }
 
+  /// Grievances after applying the client-side From/To (createdAt) range.
+  List<Map<String, dynamic>> get _visibleGrievances {
+    if (_dateFrom == null && _dateTo == null) return _allGrievances;
+    return _allGrievances.where((g) {
+      final dt = DateTime.tryParse(g['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'grievances',
+      headers: const [
+        'Petitioner',
+        'Type',
+        'Constituency',
+        'Status',
+        'Stage',
+        'Created'
+      ],
+      rows: _visibleGrievances.map((g) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(g['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          g['petitionerName'] ?? '',
+          (g['grievanceType'] ?? '').toString().replaceAll('_', ' '),
+          g['constituency'] ?? '',
+          g['uiStatus'] ?? '',
+          _formatStage((g['currentStage'] ?? 'RECEIVED').toString()),
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canCreate = AccessControl.can(widget.role, ActionPermission.create) &&
@@ -347,6 +392,16 @@ class _CupertinoGrievanceListPageState
                       ),
                     ),
                 ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _visibleGrievances.isEmpty ? null : _exportCsv,
+              child: const Icon(
+                CupertinoIcons.arrow_down_doc,
+                color: CupertinoColors.white,
+                size: 22,
               ),
             ),
             const SizedBox(width: 12),
@@ -597,6 +652,37 @@ class _CupertinoGrievanceListPageState
 
             const SizedBox(height: 12),
 
+            // ================= DATE RANGE FILTER =================
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: CupertinoColors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: CupertinoColors.black.withOpacity(0.05),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: CupertinoDateRangeFilter(
+                  from: _dateFrom,
+                  to: _dateTo,
+                  tint: AppTheme.primaryIndigo,
+                  onFromChanged: (d) => setState(() => _dateFrom = d),
+                  onToChanged: (d) => setState(() => _dateTo = d),
+                  onClear: () => setState(() {
+                    _dateFrom = null;
+                    _dateTo = null;
+                  }),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
             // Active filters indicator
             if (hasFilters)
               Padding(
@@ -657,7 +743,7 @@ class _CupertinoGrievanceListPageState
                             ],
                           ),
                         )
-                      : _allGrievances.isEmpty
+                      : _visibleGrievances.isEmpty
                           ? Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -696,10 +782,10 @@ class _CupertinoGrievanceListPageState
                                     delegate: SliverChildBuilderDelegate(
                                       (context, index) {
                                         final grievance =
-                                            _allGrievances[index];
+                                            _visibleGrievances[index];
                                         return _buildGrievanceCard(grievance);
                                       },
-                                      childCount: _allGrievances.length,
+                                      childCount: _visibleGrievances.length,
                                     ),
                                   ),
                                 ),

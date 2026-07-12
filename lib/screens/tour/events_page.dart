@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 
 /// Admin Events page — list of all ACCEPTED tour programs with filters
 /// (search, date range, report status). Tap a card to view full event +
@@ -169,6 +170,41 @@ class _EventsPageState extends State<EventsPage> {
     );
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'events',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date',
+        'Report',
+        'Created'
+      ],
+      rows: _filtered.map((e) {
+        String eventDate = '';
+        try {
+          eventDate = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(e['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(e['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          e['eventName'] ?? '',
+          e['organizer'] ?? '',
+          e['venue'] ?? '',
+          eventDate,
+          (e['isCompleted'] == true) ? 'Reported' : 'Pending',
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAllMode = _viewMode == "All";
@@ -223,6 +259,11 @@ class _EventsPageState extends State<EventsPage> {
                   ),
               ],
             ),
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _filtered.isEmpty ? null : _exportCsv,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _fetch,

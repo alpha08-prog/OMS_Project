@@ -118,7 +118,8 @@ class CupertinoNavMenu extends StatelessWidget {
     );
   }
 
-  // SUPER_ADMIN: dashboard-only — drawer reduced to Dashboard + Logout.
+  // SUPER_ADMIN: dashboard-only — drawer reduced to Dashboard + My Profile
+  // (which hosts the Change Password card) + Logout.
   // (Logout button is rendered separately below the menu sections.)
   List<Widget> _buildSuperAdminMenu(BuildContext context) {
     return [
@@ -126,6 +127,11 @@ class CupertinoNavMenu extends StatelessWidget {
         children: [
           _menuTile(context, CupertinoIcons.square_grid_2x2_fill, 'Dashboard',
               () => Navigator.pop(context)),
+          _menuTile(context, CupertinoIcons.person_crop_circle, 'My Profile',
+              () {
+            Navigator.pop(context);
+            AppNavigator.toMyProfile(context);
+          }),
         ],
       ),
     ];
@@ -143,6 +149,15 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toStaffTasks(context);
           }),
+          _menuTile(context, CupertinoIcons.list_bullet, 'All Tasks', () {
+            Navigator.pop(context);
+            AppNavigator.toAllTasks(context, role: role);
+          }),
+          _menuTile(context, CupertinoIcons.tray_arrow_down, 'Forwarded to Me',
+              () {
+            Navigator.pop(context);
+            AppNavigator.toForwardedTasks(context);
+          }),
           _menuTile(context, CupertinoIcons.calendar, 'My Attendance', () {
             Navigator.pop(context);
             AppNavigator.toMyAttendance(context);
@@ -155,13 +170,14 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toGrievanceEntry(context, role: role);
           }),
-          _menuTile(context, CupertinoIcons.person_2, 'Log Visitor', () {
+          _menuTile(context, CupertinoIcons.person_add, 'Add Visitor/Birthday',
+              () {
             Navigator.pop(context);
-            AppNavigator.toVisitorLog(context);
+            AppNavigator.toAddPerson(context);
           }),
-          _menuTile(context, CupertinoIcons.gift, 'Add Birthday', () {
+          _menuTile(context, CupertinoIcons.gift_fill, 'View Birthdays', () {
             Navigator.pop(context);
-            AppNavigator.toBirthday(context, role: role);
+            AppNavigator.toBirthdayView(context);
           }),
           _menuTile(
               context, CupertinoIcons.train_style_one, 'Train EQ Request',
@@ -187,6 +203,11 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toPrintCenter(context);
           }),
+          _menuTile(context, CupertinoIcons.person_crop_circle, 'My Profile',
+              () {
+            Navigator.pop(context);
+            AppNavigator.toMyProfile(context);
+          }),
           _menuTile(context, CupertinoIcons.group, 'About Team', () {
             Navigator.pop(context);
             AppNavigator.toAbout(context);
@@ -203,19 +224,45 @@ class CupertinoNavMenu extends StatelessWidget {
         children: [
           _menuTile(context, CupertinoIcons.square_grid_2x2_fill, 'Dashboard',
               () => Navigator.pop(context)),
-          _menuTile(context, CupertinoIcons.bolt_fill, 'Action Center', () {
-            Navigator.pop(context);
-            AppNavigator.toActionCenter(context, role: role);
-          }),
           _menuTile(
               context, CupertinoIcons.chart_bar_alt_fill, 'Task Tracker', () {
             Navigator.pop(context);
             AppNavigator.toTaskList(context, role: role);
           }),
-          _menuTile(
-              context, CupertinoIcons.checkmark_seal, 'Verify Grievances', () {
+          _menuTile(context, CupertinoIcons.list_bullet, 'All Tasks', () {
             Navigator.pop(context);
-            AppNavigator.toVerificationQueue(context);
+            AppNavigator.toAllTasks(context, role: role);
+          }),
+          _menuTile(context, CupertinoIcons.briefcase, 'Office Tasks', () {
+            Navigator.pop(context);
+            AppNavigator.toOfficeTasks(context, role: role);
+          }),
+          _menuTile(context, CupertinoIcons.tray_arrow_down, 'Forwarded to Me',
+              () {
+            Navigator.pop(context);
+            AppNavigator.toForwardedTasks(context);
+          }),
+          _menuTile(context, CupertinoIcons.doc_text_search, 'New Grievance',
+              () {
+            Navigator.pop(context);
+            AppNavigator.toOfficeGrievanceCreate(context);
+          }),
+          _menuTile(context, CupertinoIcons.person_add, 'Add Visitor/Birthday',
+              () {
+            Navigator.pop(context);
+            AppNavigator.toAddPerson(context);
+          }),
+          _menuTile(context, CupertinoIcons.tram_fill, 'Train EQ Request', () {
+            Navigator.pop(context);
+            AppNavigator.toTrainRequestAdd(context, role: role);
+          }),
+          _menuTile(context, CupertinoIcons.map, 'Tour Program', () {
+            Navigator.pop(context);
+            AppNavigator.toTourProgramCreate(context, role: role);
+          }),
+          _menuTile(context, CupertinoIcons.news, 'News Entry', () {
+            Navigator.pop(context);
+            AppNavigator.toNewsAdd(context);
           }),
           _menuTile(
               context, CupertinoIcons.train_style_one, 'Train EQ Queue', () {
@@ -235,6 +282,10 @@ class CupertinoNavMenu extends StatelessWidget {
           _menuTile(context, CupertinoIcons.calendar, 'Calendar', () {
             Navigator.pop(context);
             AppNavigator.toCalendar(context, role: role);
+          }),
+          _menuTile(context, CupertinoIcons.group_solid, 'Meetings', () {
+            Navigator.pop(context);
+            AppNavigator.toMeetings(context);
           }),
           _menuTile(context, CupertinoIcons.person_2, 'View Visitors', () {
             Navigator.pop(context);
@@ -256,9 +307,23 @@ class CupertinoNavMenu extends StatelessWidget {
             Navigator.pop(context);
             AppNavigator.toActionHistory(context);
           }),
+          _menuTile(context, CupertinoIcons.chart_bar_square, 'Activity Log',
+              () {
+            Navigator.pop(context);
+            AppNavigator.toActivityLog(context);
+          }),
+          _menuTile(context, CupertinoIcons.gift, 'View Birthdays', () {
+            Navigator.pop(context);
+            AppNavigator.toBirthdayView(context);
+          }),
           _menuTile(context, CupertinoIcons.person_2, 'User Management', () {
             Navigator.pop(context);
             AppNavigator.toUserManagement(context);
+          }),
+          _menuTile(context, CupertinoIcons.person_crop_circle, 'My Profile',
+              () {
+            Navigator.pop(context);
+            AppNavigator.toMyProfile(context);
           }),
           _menuTile(context, CupertinoIcons.group, 'About Team', () {
             Navigator.pop(context);
@@ -309,20 +374,10 @@ class CupertinoNavMenu extends StatelessWidget {
         CupertinoListSection.insetGrouped(
           header: const Text('ADMIN'),
           children: [
-            _menuTile(
-                context, CupertinoIcons.square_grid_2x2, 'Action Center', () {
-              Navigator.pop(context);
-              AppNavigator.toActionCenter(context, role: role);
-            }),
             _menuTile(context, CupertinoIcons.building_2_fill,
                 'Office Grievance', () {
               Navigator.pop(context);
               AppNavigator.toOfficeGrievanceCreate(context);
-            }),
-            _menuTile(context, CupertinoIcons.checkmark_seal,
-                'Verification Queue', () {
-              Navigator.pop(context);
-              AppNavigator.toVerificationQueue(context);
             }),
             _menuTile(
                 context, CupertinoIcons.train_style_one, 'Train EQ Queue', () {

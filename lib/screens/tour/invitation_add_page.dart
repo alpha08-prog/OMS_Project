@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/attachment_picker.dart';
 
 /// Staff-only "Add Invitation" form. Creates a TourProgram on the backend.
 ///
@@ -34,7 +34,7 @@ class _InvitationAddPageState extends State<InvitationAddPage> {
   final referencedByController = TextEditingController();
 
   DateTime? _eventDateTime;
-  PlatformFile? _pickedFile;
+  PickedAttachment? _pickedFile;
   bool _submitting = false;
 
   static const int _maxFileBytes = 10 * 1024 * 1024; // 10 MB
@@ -91,16 +91,14 @@ class _InvitationAddPageState extends State<InvitationAddPage> {
 
   Future<void> _pickFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
+      final picked = await AttachmentPicker.pick(
+        context,
         allowedExtensions: _allowedExtensions,
       );
 
-      if (result == null || result.files.isEmpty) return;
+      if (picked == null) return;
 
-      final file = result.files.single;
-
-      if (file.size > _maxFileBytes) {
+      if (picked.size > _maxFileBytes) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -110,7 +108,7 @@ class _InvitationAddPageState extends State<InvitationAddPage> {
         return;
       }
 
-      setState(() => _pickedFile = file);
+      setState(() => _pickedFile = picked);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -479,7 +477,8 @@ class _InvitationAddPageState extends State<InvitationAddPage> {
 
   Widget _buildPickedFilePreview() {
     final file = _pickedFile!;
-    final ext = (file.extension ?? '').toLowerCase();
+    final ext =
+        file.name.contains('.') ? file.name.split('.').last.toLowerCase() : '';
     final isPdf = ext == 'pdf';
 
     return Container(

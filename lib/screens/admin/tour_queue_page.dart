@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
+import '../../widgets/date_range_filter.dart';
 
 /// Admin-only "Tour Invitations" page — list of pending tour programs with
 /// View / Verify-and-Assign / Regret actions per card. Verify+Assign creates
@@ -22,6 +24,10 @@ class _TourQueuePageState extends State<TourQueuePage> {
   List<Map<String, dynamic>> _pending = [];
   List<Map<String, dynamic>> _staffList = [];
   final Set<String> _busyIds = {};
+
+  // Date-range filter (applied client-side on the event date).
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   @override
   void initState() {
@@ -166,6 +172,50 @@ class _TourQueuePageState extends State<TourQueuePage> {
     }
   }
 
+  // The card's primary date is the event `dateTime`, so filter on that.
+  List<Map<String, dynamic>> get _visiblePending {
+    if (_dateFrom == null && _dateTo == null) return _pending;
+    return _pending.where((p) {
+      final dt = DateTime.tryParse(p['dateTime']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'tour_queue',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date',
+        'Status',
+        'Created'
+      ],
+      rows: _visiblePending.map((p) {
+        String eventDate = '';
+        try {
+          eventDate = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(p['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(p['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          p['eventName'] ?? '',
+          p['organizer'] ?? '',
+          p['venue'] ?? '',
+          eventDate,
+          'PENDING',
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -185,6 +235,11 @@ class _TourQueuePageState extends State<TourQueuePage> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _visiblePending.isEmpty ? null : _exportCsv,
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadAll,
           ),
@@ -201,7 +256,7 @@ class _TourQueuePageState extends State<TourQueuePage> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   Text(
-                    "Pending Invitations (${_pending.length})",
+                    "Pending Invitations (${_visiblePending.length})",
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -209,12 +264,31 @@ class _TourQueuePageState extends State<TourQueuePage> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: AppTheme.shadowSm,
+                    ),
+                    child: DateRangeFilter(
+                      from: _dateFrom,
+                      to: _dateTo,
+                      tint: AppTheme.primaryIndigo,
+                      onFromChanged: (d) => setState(() => _dateFrom = d),
+                      onToChanged: (d) => setState(() => _dateTo = d),
+                      onClear: () => setState(() {
+                        _dateFrom = null;
+                        _dateTo = null;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   if (_error != null)
                     _buildError()
-                  else if (_pending.isEmpty)
+                  else if (_visiblePending.isEmpty)
                     _buildEmpty()
                   else
-                    ..._pending.map(_buildCard),
+                    ..._visiblePending.map(_buildCard),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -302,7 +376,7 @@ class _TourQueuePageState extends State<TourQueuePage> {
                 onPressed: () => _viewDetails(p),
               ),
               _actionBtn(
-                label: "Verify and Assign to Staff",
+                label: "Accept and Assign to Staff",
                 icon: Icons.check_circle_outline,
                 bg: AppTheme.saffron,
                 fg: Colors.white,
@@ -633,7 +707,7 @@ class _VerifyAssignTourSheetState extends State<_VerifyAssignTourSheet> {
                         const SizedBox(width: 8),
                         const Expanded(
                           child: Text(
-                            "Verify & Assign Tour",
+                            "Accept & Assign Tour",
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,

@@ -4,7 +4,10 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoUserListPage extends StatefulWidget {
   const CupertinoUserListPage({super.key});
@@ -23,6 +26,8 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _roleFilter = 'ALL';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   static const List<String> _roles = ['ALL', 'STAFF', 'ADMIN', 'SUPER_ADMIN'];
 
@@ -78,6 +83,39 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
     }
 
     setState(() => _filteredUsers = result);
+  }
+
+  /// Users narrowed by the client-side date range (on `createdAt`), layered
+  /// on top of the role + search filtered list.
+  List<Map<String, dynamic>> get _visibleUsers {
+    if (_dateFrom == null && _dateTo == null) return _filteredUsers;
+    return _filteredUsers.where((u) {
+      final dt = DateTime.tryParse(u['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'users',
+      headers: ['Name', 'Email', 'Phone', 'Role', 'Status', 'Created'],
+      rows: _visibleUsers.map((u) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(u['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          u['name'] ?? '',
+          u['email'] ?? '',
+          u['phone'] ?? '',
+          (u['role'] ?? '').toString().replaceAll('_', ' '),
+          (u['isActive'] != false) ? 'Active' : 'Inactive',
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   int get _totalCount => _users.length;
@@ -275,11 +313,22 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
         backgroundColor: AppTheme.primaryIndigo,
         brightness: Brightness.dark,
         previousPageTitle: "Users",
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _fetchUsers,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _visibleUsers.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  color: CupertinoColors.white, size: 22),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _fetchUsers,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white),
+            ),
+          ],
         ),
       ),
       child: SafeArea(
@@ -301,13 +350,26 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
                             _buildSearchBar(),
                             const SizedBox(height: 12),
                             _buildRoleFilterChips(),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 12),
+                            CupertinoDateRangeFilter(
+                              from: _dateFrom,
+                              to: _dateTo,
+                              tint: AppTheme.primaryIndigo,
+                              onFromChanged: (d) =>
+                                  setState(() => _dateFrom = d),
+                              onToChanged: (d) => setState(() => _dateTo = d),
+                              onClear: () => setState(() {
+                                _dateFrom = null;
+                                _dateTo = null;
+                              }),
+                            ),
+                            const SizedBox(height: 8),
                             _buildResultCount(),
                             const SizedBox(height: 8),
-                            if (_filteredUsers.isEmpty)
+                            if (_visibleUsers.isEmpty)
                               _buildEmptyState()
                             else
-                              ..._filteredUsers.map(_buildUserCard),
+                              ..._visibleUsers.map(_buildUserCard),
                           ]),
                         ),
                       ),
@@ -511,7 +573,7 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Text(
-        "Showing ${_filteredUsers.length} of $_totalCount users",
+        "Showing ${_visibleUsers.length} of $_totalCount users",
         style: AppTheme.bodySm,
       ),
     );

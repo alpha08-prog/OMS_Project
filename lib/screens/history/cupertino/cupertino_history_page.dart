@@ -4,8 +4,11 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoHistoryPage extends StatefulWidget {
   final String role;
@@ -28,6 +31,10 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
   String? selectedAction;
   DateTime? startDate;
   DateTime? endDate;
+
+  // Client-side visible date range for the export / filter row.
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   final List<String> entityTypes = [
     'All',
@@ -103,6 +110,38 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
         loading = false;
       });
     }
+  }
+
+  List<Map<String, dynamic>> get _visibleHistory {
+    if (_dateFrom == null && _dateTo == null) return historyList;
+    return historyList.where((h) {
+      final dt = DateTime.tryParse(h['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'activity_history',
+      headers: const ['Action', 'Module', 'User', 'Role', 'Date'],
+      rows: _visibleHistory.map((item) {
+        final user = item['user'];
+        String date = '';
+        try {
+          date = DateFormat('dd MMM yyyy, hh:mm a')
+              .format(DateTime.parse(item['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          _formatAction((item['action'] ?? '').toString()),
+          _formatEntityType(
+              (item['type'] ?? item['entityType'] ?? '').toString()),
+          user?['name'] ?? '',
+          user?['role'] ?? '',
+          date,
+        ];
+      }).toList(),
+    );
   }
 
   void _showFilterSheet() {
@@ -469,6 +508,12 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
             ),
             CupertinoButton(
               padding: EdgeInsets.zero,
+              onPressed: _visibleHistory.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
               onPressed: _fetchHistory,
               child: const Icon(CupertinoIcons.refresh,
                   color: CupertinoColors.white),
@@ -477,37 +522,57 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
         ),
       ),
       child: SafeArea(
-        child: loading
-            ? const Center(child: CupertinoActivityIndicator())
-            : error != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(error!,
-                            style: const TextStyle(
-                                color:
-                                    CupertinoColors.destructiveRed)),
-                        const SizedBox(height: 16),
-                        CupertinoButton.filled(
-                          onPressed: _fetchHistory,
-                          child: const Text("Retry"),
-                        ),
-                      ],
-                    ),
-                  )
-                : historyList.isEmpty
-                    ? const Center(
-                        child: Text("No activity found"),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: historyList.length,
-                        itemBuilder: (context, index) {
-                          final item = historyList[index];
-                          return _buildHistoryCard(item);
-                        },
-                      ),
+        child: Column(
+          children: [
+            Container(
+              color: CupertinoColors.white,
+              child: CupertinoDateRangeFilter(
+                from: _dateFrom,
+                to: _dateTo,
+                tint: primaryBlue,
+                onFromChanged: (d) => setState(() => _dateFrom = d),
+                onToChanged: (d) => setState(() => _dateTo = d),
+                onClear: () => setState(() {
+                  _dateFrom = null;
+                  _dateTo = null;
+                }),
+              ),
+            ),
+            Expanded(
+              child: loading
+                  ? const Center(child: CupertinoActivityIndicator())
+                  : error != null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(error!,
+                                  style: const TextStyle(
+                                      color:
+                                          CupertinoColors.destructiveRed)),
+                              const SizedBox(height: 16),
+                              CupertinoButton.filled(
+                                onPressed: _fetchHistory,
+                                child: const Text("Retry"),
+                              ),
+                            ],
+                          ),
+                        )
+                      : _visibleHistory.isEmpty
+                          ? const Center(
+                              child: Text("No activity found"),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _visibleHistory.length,
+                              itemBuilder: (context, index) {
+                                final item = _visibleHistory[index];
+                                return _buildHistoryCard(item);
+                              },
+                            ),
+            ),
+          ],
+        ),
       ),
     );
   }

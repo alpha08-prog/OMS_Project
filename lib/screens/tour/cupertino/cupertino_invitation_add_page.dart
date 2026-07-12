@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/attachment_picker.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
@@ -33,7 +33,7 @@ class _CupertinoInvitationAddPageState
   final referencedByController = TextEditingController();
 
   DateTime? _eventDateTime;
-  PlatformFile? _pickedFile;
+  PickedAttachment? _pickedFile;
   bool _submitting = false;
 
   String? _eventNameError;
@@ -96,22 +96,21 @@ class _CupertinoInvitationAddPageState
 
   Future<void> _pickFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
+      final picked = await AttachmentPicker.pick(
+        context,
         allowedExtensions: _allowedExtensions,
       );
 
-      if (result == null || result.files.isEmpty) return;
+      if (picked == null) return;
 
-      final file = result.files.single;
-      if (file.size > _maxFileBytes) {
+      if (picked.size > _maxFileBytes) {
         if (!mounted) return;
         CupertinoToast.show(context, "File too large. Max 10 MB.",
             isError: true);
         return;
       }
 
-      setState(() => _pickedFile = file);
+      setState(() => _pickedFile = picked);
     } catch (_) {
       if (!mounted) return;
       CupertinoToast.show(context, "Could not pick file", isError: true);
@@ -509,7 +508,8 @@ class _CupertinoInvitationAddPageState
 
   Widget _buildPickedFilePreview() {
     final file = _pickedFile!;
-    final ext = (file.extension ?? '').toLowerCase();
+    final ext =
+        file.name.contains('.') ? file.name.split('.').last.toLowerCase() : '';
     final isPdf = ext == 'pdf';
 
     return Container(

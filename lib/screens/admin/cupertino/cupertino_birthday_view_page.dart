@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 
 class CupertinoBirthdayViewPage extends StatefulWidget {
   const CupertinoBirthdayViewPage({super.key});
@@ -105,6 +106,31 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
         });
       }
     }
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'birthdays',
+      headers: ['Name', 'Phone', 'DOB', 'Constituency', 'Ward', 'Source', 'Added By'],
+      rows: _items.map((b) {
+        String dob = '';
+        final raw = (b['dob'] ?? b['date'] ?? b['dateOfBirth'])?.toString();
+        if (raw != null && raw.isNotEmpty) {
+          final d = DateTime.tryParse(raw);
+          if (d != null) dob = DateFormat('dd MMM yyyy').format(d);
+        }
+        return [
+          b['name'] ?? '',
+          b['phone'] ?? b['mobile'] ?? '',
+          dob,
+          b['constituency'] ?? '',
+          b['wardVillage'] ?? b['ward'] ?? '',
+          b['source'] ?? b['type'] ?? 'Birthday',
+          b['addedBy'] is Map ? (b['addedBy']['name'] ?? '') : (b['addedBy'] ?? ''),
+        ];
+      }).toList(),
+    );
   }
 
   void _onSearchChanged(String v) {
@@ -292,12 +318,23 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
           color: CupertinoColors.white,
           onPressed: () => Navigator.pop(context),
         ),
-        trailing: GestureDetector(
-          onTap: _fetch,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
-          ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _items.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
+            GestureDetector(
+              onTap: _fetch,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
+              ),
+            ),
+          ],
         ),
       ),
       child: SafeArea(

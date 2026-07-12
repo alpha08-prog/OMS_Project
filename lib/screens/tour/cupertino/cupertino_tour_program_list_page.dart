@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
@@ -49,6 +50,57 @@ class _CupertinoTourProgramListPageState
       final dt = DateTime.tryParse(raw ?? '');
       return dateInRange(dt, from: _dateFrom, to: _dateTo);
     }).toList();
+  }
+
+  /// Rows for CSV export = the date-filtered list for the segment currently
+  /// on screen (Today + Upcoming combined for the Super Admin view).
+  List<Map<String, dynamic>> _exportList() {
+    if (widget.role == Roles.superAdmin) {
+      return [..._applyDate(todayList), ..._applyDate(upcomingList)];
+    }
+    switch (_selectedTab) {
+      case "Today":
+        return _applyDate(todayList);
+      case "Upcoming":
+        return _applyDate(upcomingList);
+      default:
+        return _applyDate(allList);
+    }
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'tour_programs',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date & Time',
+        'Status',
+        'Created'
+      ],
+      rows: _exportList().map((r) {
+        String dateTime = '';
+        try {
+          dateTime = DateFormat('dd MMM yyyy, h:mm a')
+              .format(DateTime.parse(r['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          r['eventName'] ?? '',
+          r['organizer'] ?? '',
+          r['venue'] ?? '',
+          dateTime,
+          (r['decision'] ?? 'PENDING').toString(),
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   // Stats
@@ -618,6 +670,12 @@ class _CupertinoTourProgramListPageState
                 child: const Icon(CupertinoIcons.add,
                     color: CupertinoColors.white),
               ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _exportList().isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
             CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: _loadAll,

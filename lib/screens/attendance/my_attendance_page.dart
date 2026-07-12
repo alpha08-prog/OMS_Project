@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/attendance_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 
 /// Staff "My Attendance": today's status card + Half Day / Leave apply form +
 /// paginated history table. Mirrors the deployed web UX (screenshots from
@@ -20,6 +21,7 @@ class _MyAttendancePageState extends State<MyAttendancePage> {
   AttendanceRecord? _today;
   bool _loadingToday = true;
   bool _markingPresent = false;
+  bool _checkingOut = false;
 
   // Apply form
   _ApplyTab _applyTab = _ApplyTab.leave;
@@ -121,6 +123,24 @@ class _MyAttendancePageState extends State<MyAttendancePage> {
     }
   }
 
+  Future<void> _checkOut() async {
+    setState(() => _checkingOut = true);
+    try {
+      final rec = await AttendanceService.checkOut();
+      if (!mounted) return;
+      setState(() {
+        _today = rec;
+        _checkingOut = false;
+      });
+      _snack('Checked out for the day');
+      await _fetchHistory(reset: true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _checkingOut = false);
+      _snack('$e');
+    }
+  }
+
   Future<void> _applyHalfDayOrLeave() async {
     if (_fromDate == null) {
       _snack('Please pick a From date');
@@ -175,6 +195,22 @@ class _MyAttendancePageState extends State<MyAttendancePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'my_attendance',
+      headers: const ['Date', 'Status', 'Reason', 'Marked At'],
+      rows: _history
+          .map((r) => [
+                r.date,
+                r.status.label,
+                r.reason ?? '',
+                r.markedAt == null ? '' : _formatMarkedAt(r.markedAt!),
+              ])
+          .toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -183,6 +219,13 @@ class _MyAttendancePageState extends State<MyAttendancePage> {
         title: const Text('My Attendance'),
         backgroundColor: AppTheme.primaryIndigo,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Export CSV',
+            icon: const Icon(Icons.download),
+            onPressed: _history.isEmpty ? null : _exportCsv,
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _refreshAll,
@@ -219,6 +262,13 @@ class _MyAttendancePageState extends State<MyAttendancePage> {
     final todayIso = _isoFmt.format(DateTime.now());
     final alreadyPresent = today?.status == AttendanceStatus.present;
     final alreadyMarked = today != null;
+    // Check-out is only valid once you're present/half-day for the day and
+    // haven't already stamped a departure. Leave days can't be checked out of.
+    final workedToday = today?.status == AttendanceStatus.present ||
+        today?.status == AttendanceStatus.halfDay;
+    final alreadyCheckedOut =
+        (today?.checkOutAt != null && today!.checkOutAt!.isNotEmpty);
+    final canCheckOut = workedToday && !alreadyCheckedOut;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -262,42 +312,93 @@ class _MyAttendancePageState extends State<MyAttendancePage> {
                   ),
               ],
             ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed:
-                  (_markingPresent || alreadyMarked) ? null : _markPresent,
-              icon: _markingPresent
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white),
-                      ),
-                    )
-                  : const Icon(Icons.check_circle_outline),
-              label: Text(
-                alreadyPresent
-                    ? 'Already marked present today'
-                    : alreadyMarked
-                        ? 'Already marked ${today.status.label.toLowerCase()} today'
-                        : 'Mark Present',
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: alreadyMarked
-                    ? AppTheme.successGreenLight
-                    : AppTheme.successGreen,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                disabledBackgroundColor: AppTheme.successGreenLight,
-                disabledForegroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                elevation: 0,
+          if (alreadyCheckedOut) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Checked out at ${_formatMarkedAt(today.checkOutAt!)}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.destructiveRed,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed:
+                      (_markingPresent || alreadyMarked) ? null : _markPresent,
+                  icon: _markingPresent
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.check_circle_outline),
+                  label: Text(
+                    alreadyPresent
+                        ? 'Marked present'
+                        : alreadyMarked
+                            ? 'Marked ${today.status.label.toLowerCase()}'
+                            : 'Mark me present (today)',
+                    textAlign: TextAlign.center,
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: alreadyMarked
+                        ? AppTheme.successGreenLight
+                        : AppTheme.successGreen,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    disabledBackgroundColor: AppTheme.successGreenLight,
+                    disabledForegroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed:
+                      (_checkingOut || !canCheckOut) ? null : _checkOut,
+                  icon: _checkingOut
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation(AppTheme.destructiveRed),
+                          ),
+                        )
+                      : const Icon(Icons.logout, size: 18),
+                  label: Text(
+                    alreadyCheckedOut ? 'Checked out' : 'Check out (leaving)',
+                    textAlign: TextAlign.center,
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.destructiveRed,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: BorderSide(
+                      color: canCheckOut
+                          ? AppTheme.destructiveRed
+                          : AppTheme.border,
+                    ),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

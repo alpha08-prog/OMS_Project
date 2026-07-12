@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
 import 'tour_program_create_page.dart';
 
@@ -51,6 +52,57 @@ class _TourProgramListPageState extends State<TourProgramListPage>
       final dt = DateTime.tryParse(raw ?? '');
       return dateInRange(dt, from: _dateFrom, to: _dateTo);
     }).toList();
+  }
+
+  /// Rows for CSV export = the date-filtered list for the tab currently
+  /// on screen (Today + Upcoming combined for the Super Admin view).
+  List<Map<String, dynamic>> _exportList() {
+    if (widget.role == Roles.superAdmin) {
+      return [..._applyDate(todayList), ..._applyDate(upcomingList)];
+    }
+    switch (_tabController.index) {
+      case 1:
+        return _applyDate(todayList);
+      case 2:
+        return _applyDate(upcomingList);
+      default:
+        return _applyDate(allList);
+    }
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'tour_programs',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date & Time',
+        'Status',
+        'Created'
+      ],
+      rows: _exportList().map((r) {
+        String dateTime = '';
+        try {
+          dateTime = DateFormat('dd MMM yyyy, h:mm a')
+              .format(DateTime.parse(r['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          r['eventName'] ?? '',
+          r['organizer'] ?? '',
+          r['venue'] ?? '',
+          dateTime,
+          (r['decision'] ?? 'PENDING').toString(),
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   @override
@@ -324,6 +376,11 @@ class _TourProgramListPageState extends State<TourProgramListPage>
         backgroundColor: primaryBlue,
         elevation: 0,
         actions: [
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download),
+            onPressed: _exportList().isEmpty ? null : _exportCsv,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadAll,

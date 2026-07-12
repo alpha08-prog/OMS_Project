@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
+import '../../utils/csv_export.dart';
+import '../../widgets/date_range_filter.dart';
 import 'grievance_view_page.dart';
 
 class RejectedGrievancesPage extends StatefulWidget {
@@ -24,6 +26,8 @@ class _RejectedGrievancesPageState extends State<RejectedGrievancesPage> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _items = [];
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   @override
   void initState() {
@@ -63,6 +67,37 @@ class _RejectedGrievancesPageState extends State<RejectedGrievancesPage> {
     }
   }
 
+  /// Rejected grievances after applying the client-side From/To (createdAt)
+  /// range.
+  List<Map<String, dynamic>> get _visibleItems {
+    if (_dateFrom == null && _dateTo == null) return _items;
+    return _items.where((g) {
+      final dt = DateTime.tryParse(g['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'rejected_grievances',
+      headers: const ['Petitioner', 'Type', 'Status', 'Created'],
+      rows: _visibleItems.map((g) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(g['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          g['petitionerName'] ?? '',
+          (g['grievanceType'] ?? '').toString().replaceAll('_', ' '),
+          'REJECTED',
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -93,7 +128,7 @@ class _RejectedGrievancesPageState extends State<RejectedGrievancesPage> {
             if (!_loading) ...[
               const SizedBox(width: 8),
               Text(
-                "(${_items.length})",
+                "(${_visibleItems.length})",
                 style: const TextStyle(
                   color: Color(0xFF94A3B8),
                   fontWeight: FontWeight.w500,
@@ -103,16 +138,49 @@ class _RejectedGrievancesPageState extends State<RejectedGrievancesPage> {
             ],
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: _accent),
+            onPressed: _visibleItems.isEmpty ? null : _exportCsv,
+          ),
+        ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _fetch,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? _buildError()
-                : _items.isEmpty
-                    ? _buildEmpty()
-                    : _buildList(),
+      body: Column(
+        children: [
+          if (!_loading && _error == null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: DateRangeFilter(
+                from: _dateFrom,
+                to: _dateTo,
+                tint: _accent,
+                onFromChanged: (d) => setState(() => _dateFrom = d),
+                onToChanged: (d) => setState(() => _dateTo = d),
+                onClear: () => setState(() {
+                  _dateFrom = null;
+                  _dateTo = null;
+                }),
+              ),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _fetch,
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? _buildError()
+                      : _visibleItems.isEmpty
+                          ? _buildEmpty()
+                          : _buildList(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -175,7 +243,7 @@ class _RejectedGrievancesPageState extends State<RejectedGrievancesPage> {
           ),
           child: Column(
             children: [
-              ..._items.map((g) => Padding(
+              ..._visibleItems.map((g) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: _itemCard(g),
                   )),

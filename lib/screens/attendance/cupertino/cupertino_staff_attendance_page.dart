@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/attendance_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 
 class CupertinoStaffAttendancePage extends StatefulWidget {
@@ -168,12 +169,78 @@ class _CupertinoStaffAttendancePageState
     );
   }
 
+  bool get _hasExportRows => _mode == _RangeMode.day
+      ? _dayRows.isNotEmpty
+      : (_aggregate?.staff.isNotEmpty ?? false);
+
+  void _exportCsv() {
+    if (_mode == _RangeMode.day) {
+      final filtered = _filter == _StatusFilter.all
+          ? _dayRows
+          : _dayRows
+              .where((r) => r.status == _filterToStatus(_filter))
+              .toList();
+      final dateLabel = _isoFmt.format(_selectedDate);
+      CsvExport.export(
+        context,
+        fileName: 'staff_attendance_$dateLabel',
+        headers: const [
+          'Name',
+          'Role',
+          'Status',
+          'Date',
+          'Reason',
+          'Marked At'
+        ],
+        rows: filtered
+            .map((r) => [
+                  r.userName,
+                  r.userRole,
+                  r.status.label,
+                  r.date.isEmpty ? dateLabel : r.date,
+                  r.reason ?? '',
+                  r.markedAt == null ? '' : _formatMarkedAt(r.markedAt!),
+                ])
+            .toList(),
+      );
+    } else {
+      final agg = _aggregate;
+      final rows = agg?.staff ?? const <AttendanceAggregateRow>[];
+      CsvExport.export(
+        context,
+        fileName:
+            'staff_attendance_${agg?.startDate ?? ''}_${agg?.endDate ?? ''}',
+        headers: const [
+          'Name',
+          'Present',
+          'Half Day',
+          'Leave',
+          'Total Marked'
+        ],
+        rows: rows
+            .map((s) => [
+                  s.userName,
+                  s.present,
+                  s.halfDay,
+                  s.leave,
+                  s.totalMarked,
+                ])
+            .toList(),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('Staff Attendance'),
+      navigationBar: CupertinoNavigationBar(
+        middle: const Text('Staff Attendance'),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: (_loading || !_hasExportRows) ? null : _exportCsv,
+          child: const Icon(CupertinoIcons.arrow_down_doc, size: 22),
+        ),
       ),
       child: SafeArea(
         child: CustomScrollView(

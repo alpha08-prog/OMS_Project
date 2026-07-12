@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
@@ -58,6 +59,29 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'my_tasks',
+      headers: ['Title', 'Type', 'Status', 'Assigned To', 'Reference No', 'Created'],
+      rows: _visibleTasks.map((t) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(t['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          t['title'] ?? '',
+          (t['taskType'] ?? '').toString().replaceAll('_', ' '),
+          (t['status'] ?? '').toString().replaceAll('_', ' '),
+          (t['assignedTo'] is Map ? t['assignedTo']['name'] : '') ?? '',
+          t['referenceNo'] ?? '',
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   Future<void> _showUpdateProgressDialog(Map<String, dynamic> task) async {
@@ -307,11 +331,22 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
         middle: const Text("My Tasks"),
         backgroundColor: AppTheme.primaryIndigo,
         brightness: Brightness.dark,
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _fetchTasks,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _visibleTasks.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  color: CupertinoColors.white, size: 22),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _fetchTasks,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white),
+            ),
+          ],
         ),
       ),
       child: SafeArea(
@@ -420,7 +455,6 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
 
   Widget _buildTaskCard(Map<String, dynamic> task) {
     final status = task["status"] ?? "ASSIGNED";
-    final progress = task["progressPercent"] ?? 0;
     final dueDate = task["dueDate"];
     String dueDateStr = "";
     if (dueDate != null) {
@@ -473,27 +507,10 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
                     fontSize: 13,
                     color: CupertinoColors.systemGrey)),
           ],
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: SizedBox(
-              height: 6,
-              child: _ProgressBar(
-                value: (progress as num).toDouble() / 100,
-                color: _statusColor(status),
-              ),
-            ),
-          ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Text("$progress%",
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: CupertinoColors.systemGrey,
-                      fontWeight: FontWeight.w600)),
               if (dueDateStr.isNotEmpty) ...[
-                const SizedBox(width: 16),
                 Icon(CupertinoIcons.calendar,
                     size: 12, color: CupertinoColors.systemGrey),
                 const SizedBox(width: 4),
@@ -538,40 +555,6 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ProgressBar extends StatelessWidget {
-  final double value;
-  final Color color;
-
-  const _ProgressBar({required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          children: [
-            Container(
-              height: 6,
-              decoration: BoxDecoration(
-                color: CupertinoColors.systemGrey5,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-            Container(
-              height: 6,
-              width: constraints.maxWidth * value.clamp(0.0, 1.0),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }

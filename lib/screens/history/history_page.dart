@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
+import '../../utils/csv_export.dart';
+import '../../widgets/date_range_filter.dart';
 
 class HistoryPage extends StatefulWidget {
   final String role;
@@ -25,6 +27,10 @@ class _HistoryPageState extends State<HistoryPage> {
   String? selectedAction;
   DateTime? startDate;
   DateTime? endDate;
+
+  // Client-side visible date range for the export / filter row.
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   final List<String> entityTypes = [
     'All',
@@ -98,6 +104,38 @@ class _HistoryPageState extends State<HistoryPage> {
         loading = false;
       });
     }
+  }
+
+  List<Map<String, dynamic>> get _visibleHistory {
+    if (_dateFrom == null && _dateTo == null) return historyList;
+    return historyList.where((h) {
+      final dt = DateTime.tryParse(h['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'activity_history',
+      headers: const ['Action', 'Module', 'User', 'Role', 'Date'],
+      rows: _visibleHistory.map((item) {
+        final user = item['user'];
+        String date = '';
+        try {
+          date = DateFormat('dd MMM yyyy, hh:mm a')
+              .format(DateTime.parse(item['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          _formatAction((item['action'] ?? '').toString()),
+          _formatEntityType(
+              (item['type'] ?? item['entityType'] ?? '').toString()),
+          user?['name'] ?? '',
+          user?['role'] ?? '',
+          date,
+        ];
+      }).toList(),
+    );
   }
 
   void _showFilterSheet() {
@@ -365,39 +403,65 @@ class _HistoryPageState extends State<HistoryPage> {
             onPressed: _showFilterSheet,
           ),
           IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download),
+            onPressed: _visibleHistory.isEmpty ? null : _exportCsv,
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _fetchHistory,
           ),
         ],
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(error!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _fetchHistory,
-                        child: const Text("Retry"),
-                      ),
-                    ],
-                  ),
-                )
-              : historyList.isEmpty
-                  ? const Center(
-                      child: Text("No activity found"),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: historyList.length,
-                      itemBuilder: (context, index) {
-                        final item = historyList[index];
-                        return _buildHistoryCard(item);
-                      },
-                    ),
+      body: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            child: DateRangeFilter(
+              from: _dateFrom,
+              to: _dateTo,
+              tint: primaryBlue,
+              onFromChanged: (d) => setState(() => _dateFrom = d),
+              onToChanged: (d) => setState(() => _dateTo = d),
+              onClear: () => setState(() {
+                _dateFrom = null;
+                _dateTo = null;
+              }),
+            ),
+          ),
+          Expanded(
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(error!,
+                                style: const TextStyle(color: Colors.red)),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _fetchHistory,
+                              child: const Text("Retry"),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _visibleHistory.isEmpty
+                        ? const Center(
+                            child: Text("No activity found"),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _visibleHistory.length,
+                            itemBuilder: (context, index) {
+                              final item = _visibleHistory[index];
+                              return _buildHistoryCard(item);
+                            },
+                          ),
+          ),
+        ],
+      ),
     );
   }
 

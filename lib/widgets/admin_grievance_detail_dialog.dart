@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'attachments_section.dart';
 
 class AdminGrievanceDetailDialog extends StatelessWidget {
   final Map<String, dynamic> grievance;
-  final VoidCallback? onVerifyAssign;
   final VoidCallback? onDownloadPdf;
   final bool downloading;
 
   const AdminGrievanceDetailDialog({
     super.key,
     required this.grievance,
-    this.onVerifyAssign,
     this.onDownloadPdf,
     this.downloading = false,
   });
@@ -19,7 +18,6 @@ class AdminGrievanceDetailDialog extends StatelessWidget {
   static Future<void> show({
     required BuildContext context,
     required Map<String, dynamic> grievance,
-    VoidCallback? onVerifyAssign,
     VoidCallback? onDownloadPdf,
     bool downloading = false,
   }) {
@@ -28,7 +26,6 @@ class AdminGrievanceDetailDialog extends StatelessWidget {
       barrierDismissible: true,
       builder: (_) => AdminGrievanceDetailDialog(
         grievance: grievance,
-        onVerifyAssign: onVerifyAssign,
         onDownloadPdf: onDownloadPdf,
         downloading: downloading,
       ),
@@ -37,13 +34,6 @@ class AdminGrievanceDetailDialog extends StatelessWidget {
 
   String _statusOf(Map<String, dynamic> g) =>
       (g["status"] ?? "OPEN").toString().toUpperCase();
-
-  bool get _canVerify {
-    final s = _statusOf(grievance);
-    return grievance["isVerified"] != true &&
-        s != "REJECTED" &&
-        s != "VERIFIED";
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +54,7 @@ class AdminGrievanceDetailDialog extends StatelessWidget {
     final description = (grievance["description"] ?? "-").toString();
     final action = (grievance["actionRequired"] ?? "-").toString();
     final referencedBy = (grievance["referencedBy"] ?? "-").toString();
+    final grievanceId = (grievance["id"] ?? "").toString();
 
     final media = MediaQuery.of(context);
     final maxW = media.size.width > 700 ? 640.0 : media.size.width - 32.0;
@@ -223,11 +214,14 @@ class AdminGrievanceDetailDialog extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      "No supporting files were uploaded with this grievance.",
-                      style: TextStyle(
-                          fontSize: 12, color: Color(0xFF6B7280)),
-                    ),
+                    if (grievanceId.isEmpty)
+                      const Text(
+                        "No supporting files were uploaded with this grievance.",
+                        style: TextStyle(
+                            fontSize: 12, color: Color(0xFF6B7280)),
+                      )
+                    else
+                      AttachmentsSection(contextId: grievanceId),
                   ],
                 ),
               ),
@@ -258,29 +252,6 @@ class AdminGrievanceDetailDialog extends StatelessWidget {
                     ),
                     child: const Text("Close"),
                   ),
-                  if (onVerifyAssign != null && _canVerify) ...[
-                    const SizedBox(width: 10),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.check_circle, size: 16),
-                      label: const Text("Verify & Assign"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10B981),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 0,
-                        textStyle:
-                            const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        onVerifyAssign!();
-                      },
-                    ),
-                  ],
                   if (onDownloadPdf != null) ...[
                     const SizedBox(width: 10),
                     ElevatedButton.icon(

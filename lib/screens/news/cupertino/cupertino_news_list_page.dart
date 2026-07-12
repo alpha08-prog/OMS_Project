@@ -5,9 +5,12 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 const Color _kNewsPrimaryBlue = Color(0xFF0A2E5C);
 const Color _kNewsBgLight = Color(0xFFF4F6FB);
@@ -44,6 +47,11 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
   DateTime? _startDate;
   DateTime? _endDate;
   bool _showFilters = false;
+
+  // Client-side From/To range filter on createdAt. Feeds the visible list
+  // and the CSV export (matches the app pattern in task_list_page.dart).
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   List<Map<String, dynamic>> newsList = [];
 
@@ -247,6 +255,12 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
           children: [
             CupertinoButton(
               padding: EdgeInsets.zero,
+              onPressed: _visibleNews.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
               onPressed: _loadAll,
               child: const Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
             ),
@@ -281,13 +295,56 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
                         ],
                         const SizedBox(height: 12),
                       ],
-                      if (newsList.isEmpty)
+                      CupertinoDateRangeFilter(
+                        from: _dateFrom,
+                        to: _dateTo,
+                        tint: _kNewsPrimaryBlue,
+                        padding: EdgeInsets.zero,
+                        onFromChanged: (d) => setState(() => _dateFrom = d),
+                        onToChanged: (d) => setState(() => _dateTo = d),
+                        onClear: () => setState(() {
+                          _dateFrom = null;
+                          _dateTo = null;
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_visibleNews.isEmpty)
                         const Center(child: Text("No news available"))
                       else
-                        ...newsList.map((n) => _newsCard(n)),
+                        ..._visibleNews.map((n) => _newsCard(n)),
                     ],
                   ),
       ),
+    );
+  }
+
+  List<Map<String, dynamic>> get _visibleNews {
+    if (_dateFrom == null && _dateTo == null) return newsList;
+    return newsList.where((n) {
+      final dt = DateTime.tryParse(n['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'news',
+      headers: const ['Headline', 'Priority', 'Category', 'Source', 'Created'],
+      rows: _visibleNews.map((n) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(n['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          n['headline'] ?? n['title'] ?? '',
+          n['priority'] ?? n['severity'] ?? '',
+          n['category'] ?? '',
+          n['source'] ?? '',
+          created,
+        ];
+      }).toList(),
     );
   }
 
@@ -634,9 +691,12 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             Container(
               width: 44,
               height: 44,
@@ -699,13 +759,20 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
                 ],
               ),
             ),
-            if (isAdmin && id != null)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () => _deleteNews(id),
-                child: const Icon(CupertinoIcons.delete,
-                    color: CupertinoColors.destructiveRed),
+              ],
+            ),
+            if (isAdmin && id != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () => _deleteNews(id),
+                  child: const Icon(CupertinoIcons.delete,
+                      color: CupertinoColors.destructiveRed),
+                ),
               ),
+            ],
           ],
         ),
       ),

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 
 class BirthdayViewPage extends StatefulWidget {
   const BirthdayViewPage({super.key});
@@ -104,6 +105,55 @@ class _BirthdayViewPageState extends State<BirthdayViewPage> {
         });
       }
     }
+  }
+
+  DateTime? _dobOf(Map<String, dynamic> b) {
+    final raw = (b['dob'] ?? b['date'] ?? b['dateOfBirth'])?.toString();
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  int get _todayCount {
+    final now = DateTime.now();
+    return _items.where((b) {
+      final d = _dobOf(b);
+      return d != null && d.month == now.month && d.day == now.day;
+    }).length;
+  }
+
+  int get _upcomingCount {
+    final now = DateTime.now();
+    return _items.where((b) {
+      final d = _dobOf(b);
+      if (d == null) return false;
+      for (var i = 0; i <= 7; i++) {
+        final day = now.add(Duration(days: i));
+        if (d.month == day.month && d.day == day.day) return true;
+      }
+      return false;
+    }).length;
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'birthdays',
+      headers: ['Name', 'Phone', 'DOB', 'Constituency', 'Ward', 'Source', 'Added By'],
+      rows: _items.map((b) {
+        String dob = '';
+        final d = _dobOf(b);
+        if (d != null) dob = DateFormat('dd MMM yyyy').format(d);
+        return [
+          b['name'] ?? '',
+          b['phone'] ?? b['mobile'] ?? '',
+          dob,
+          b['constituency'] ?? '',
+          b['wardVillage'] ?? b['ward'] ?? '',
+          b['source'] ?? b['type'] ?? 'Birthday',
+          b['addedBy'] is Map ? (b['addedBy']['name'] ?? '') : (b['addedBy'] ?? ''),
+        ];
+      }).toList(),
+    );
   }
 
   void _onSearchChanged(String v) {
@@ -269,6 +319,8 @@ class _BirthdayViewPageState extends State<BirthdayViewPage> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
+                  _buildStatsRow(),
+                  const SizedBox(height: 12),
                   _buildFilterPanel(),
                   if (_hasFilters) ...[
                     const SizedBox(height: 10),
@@ -308,6 +360,11 @@ class _BirthdayViewPageState extends State<BirthdayViewPage> {
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.download, color: Colors.white),
+          tooltip: 'Export CSV',
+          onPressed: _items.isEmpty ? null : _exportCsv,
+        ),
         IconButton(
           icon: const Icon(Icons.refresh, color: Colors.white),
           tooltip: 'Refresh',
@@ -375,6 +432,53 @@ class _BirthdayViewPageState extends State<BirthdayViewPage> {
           ),
         ),
       ),
+    );
+  }
+
+  // ============ STATS ============
+
+  Widget _buildStatsRow() {
+    Widget tile(String label, int value, Color bg, Color fg, IconData icon) {
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('$value',
+                      style: TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.bold, color: fg)),
+                  Icon(icon, size: 18, color: fg),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(label,
+                  style: TextStyle(fontSize: 11, color: fg),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        tile('Total Birthdays', _items.length, _pinkBg, _pinkDark, Icons.cake),
+        const SizedBox(width: 10),
+        tile('Today', _todayCount, const Color(0xFFFEF2F2),
+            const Color(0xFFBE123C), Icons.card_giftcard),
+        const SizedBox(width: 10),
+        tile('Upcoming (7d)', _upcomingCount, const Color(0xFFFFFBEB),
+            const Color(0xFFB45309), Icons.event),
+      ],
     );
   }
 

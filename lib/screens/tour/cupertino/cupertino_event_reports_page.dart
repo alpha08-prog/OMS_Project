@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
@@ -83,6 +84,23 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
     }
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'event_reports',
+      headers: const ['Event', 'Organizer', 'Venue', 'Date', 'Report Status'],
+      rows: _visiblePending.map((r) {
+        return [
+          r['eventName'] ?? '',
+          r['organizer'] ?? '',
+          r['venue'] ?? '',
+          _formatEventDateTime(r['dateTime']?.toString()),
+          'Pending',
+        ];
+      }).toList(),
+    );
+  }
+
   Future<void> _openReportSheet(Map<String, dynamic> event) async {
     final submitted = await showCupertinoModalPopup<bool>(
       context: context,
@@ -109,10 +127,21 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
           onPressed: () => Navigator.pop(context),
           child: const Icon(CupertinoIcons.back, color: CupertinoColors.white),
         ),
-        trailing: GestureDetector(
-          onTap: _fetch,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white, size: 22),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _visiblePending.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
+            GestureDetector(
+              onTap: _fetch,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white, size: 22),
+            ),
+          ],
         ),
       ),
       child: SafeArea(

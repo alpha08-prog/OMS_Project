@@ -925,9 +925,12 @@ class _CupertinoCalendarPageState extends State<CupertinoCalendarPage> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppTheme.spacingMd),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -986,17 +989,24 @@ class _CupertinoCalendarPageState extends State<CupertinoCalendarPage> {
                 ],
               ),
             ),
-            if (_isAdmin && isCustom && eventId != null)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                minSize: 36,
-                onPressed: () => _deleteEvent(eventId),
-                child: const Icon(
-                  CupertinoIcons.trash,
-                  color: AppTheme.destructiveRed,
-                  size: 20,
+              ],
+            ),
+            if (_isAdmin && isCustom && eventId != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minSize: 36,
+                  onPressed: () => _deleteEvent(eventId),
+                  child: const Icon(
+                    CupertinoIcons.trash,
+                    color: AppTheme.destructiveRed,
+                    size: 20,
+                  ),
                 ),
               ),
+            ],
           ],
         ),
       ),

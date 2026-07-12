@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
 import 'train_request_add_page.dart';
 
@@ -641,6 +642,11 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
         backgroundColor: primaryBlue,
         actions: [
           IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _visibleRequests.isEmpty ? null : _exportCsv,
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: fetchRequests,
           ),
@@ -820,6 +826,55 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
       final dt = DateTime.tryParse(r['createdAt']?.toString() ?? '');
       return dateInRange(dt, from: _dateFrom, to: _dateTo);
     }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'train_requests',
+      headers: [
+        'Passenger',
+        'PNR',
+        'From',
+        'To',
+        'Journey Date',
+        'Class',
+        'Train',
+        'Created'
+      ],
+      rows: _visibleRequests.map((r) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        String journey = '';
+        try {
+          journey = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['dateOfJourney'].toString()));
+        } catch (_) {}
+        final passengers = r['passengers'] as List? ?? [];
+        final names = passengers
+            .map((p) => p['name']?.toString() ?? '')
+            .where((n) => n.isNotEmpty)
+            .join(', ');
+        final passenger =
+            names.isNotEmpty ? names : (r['passengerName']?.toString() ?? '');
+        final trainNo = r['trainNumber']?.toString() ?? '';
+        final trainName = r['trainName']?.toString() ?? '';
+        final train = '$trainNo${trainName.isNotEmpty ? ' - $trainName' : ''}';
+        return [
+          passenger,
+          r['pnrNumber'] ?? r['pnr'] ?? '',
+          r['fromStation'] ?? r['from'] ?? '',
+          r['toStation'] ?? r['to'] ?? '',
+          journey,
+          r['journeyClass'] ?? '',
+          train,
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   Widget _buildRequestCard(Map<String, dynamic> r, bool isAdmin) {

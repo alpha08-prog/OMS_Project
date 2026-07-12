@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:mime/mime.dart';
+import 'package:path_provider/path_provider.dart';
+import '../models/attachment_model.dart';
 import 'auth_service.dart';
 import 'http_service.dart';
 
@@ -130,6 +132,68 @@ class ImageUploadService {
     String msg = 'Upload failed (${response.statusCode})';
     try {
       final err = jsonDecode(response.body);
+      msg = err['message'] ?? msg;
+    } catch (_) {}
+    throw Exception(msg);
+  }
+
+  /// Lists the attachments tied to a parent record.
+  ///
+  /// Calls `GET /api/uploads?contextType=<type>&contextId=<id>` and parses the
+  /// `data` array into [Attachment]s. `contextType` must be one of the
+  /// backend's ALLOWED_CONTEXTS (e.g. 'GRIEVANCE').
+  static Future<List<Attachment>> listAttachments(
+    String contextType,
+    String contextId,
+  ) async {
+    final res = await HttpService.get(
+      '/api/uploads?contextType=$contextType&contextId=$contextId',
+    );
+
+    if (res.statusCode == 200) {
+      final decoded = jsonDecode(res.body);
+      final data = decoded is Map<String, dynamic>
+          ? (decoded['data'] ?? decoded)
+          : decoded;
+      if (data is List) {
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(Attachment.fromJson)
+            .toList();
+      }
+      return const [];
+    }
+
+    String msg = 'Failed to load attachments (${res.statusCode})';
+    try {
+      final err = jsonDecode(res.body);
+      msg = err['message'] ?? msg;
+    } catch (_) {}
+    throw Exception(msg);
+  }
+
+  /// Downloads an attachment's bytes to a temp file and returns it.
+  ///
+  /// Streams `GET /api/uploads/<id>` (the backend proxies the bytes back with
+  /// the right Content-Type). The caller opens the returned file with
+  /// `OpenFilex` so images/PDFs render in the OS viewer — the same pattern the
+  /// app uses for grievance/train PDFs.
+  static Future<File> downloadAttachment(String id, String filename) async {
+    final res = await HttpService.downloadFile('/api/uploads/$id');
+
+    if (res.statusCode == 200) {
+      final dir = await getTemporaryDirectory();
+      final safe = filename.isEmpty
+          ? 'attachment_$id'
+          : filename.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final file = File('${dir.path}/$safe');
+      await file.writeAsBytes(res.bodyBytes);
+      return file;
+    }
+
+    String msg = 'Download failed (${res.statusCode})';
+    try {
+      final err = jsonDecode(res.body);
       msg = err['message'] ?? msg;
     } catch (_) {}
     throw Exception(msg);

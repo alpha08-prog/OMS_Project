@@ -6,6 +6,9 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../utils/csv_export.dart';
 
 class CupertinoTourQueuePage extends StatefulWidget {
   const CupertinoTourQueuePage({super.key});
@@ -22,6 +25,10 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
   List<Map<String, dynamic>> _pending = [];
   List<Map<String, dynamic>> _staffList = [];
   final Set<String> _busyIds = {};
+
+  // Date-range filter (applied client-side on the event date).
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   @override
   void initState() {
@@ -154,6 +161,50 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
     }
   }
 
+  // The card's primary date is the event `dateTime`, so filter on that.
+  List<Map<String, dynamic>> get _visiblePending {
+    if (_dateFrom == null && _dateTo == null) return _pending;
+    return _pending.where((p) {
+      final dt = DateTime.tryParse(p['dateTime']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'tour_queue',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date',
+        'Status',
+        'Created'
+      ],
+      rows: _visiblePending.map((p) {
+        String eventDate = '';
+        try {
+          eventDate = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(p['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(p['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          p['eventName'] ?? '',
+          p['organizer'] ?? '',
+          p['venue'] ?? '',
+          eventDate,
+          'PENDING',
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -171,10 +222,22 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
           child: const Icon(CupertinoIcons.back,
               color: CupertinoColors.white),
         ),
-        trailing: GestureDetector(
-          onTap: _loadAll,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white, size: 22),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _visiblePending.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  color: CupertinoColors.white, size: 22),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _loadAll,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white, size: 22),
+            ),
+          ],
         ),
       ),
       child: SafeArea(
@@ -192,7 +255,7 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
                     )
                   else ...[
                     Text(
-                      "Pending Invitations (${_pending.length})",
+                      "Pending Invitations (${_visiblePending.length})",
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -200,12 +263,31 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: AppTheme.shadowSm,
+                      ),
+                      child: CupertinoDateRangeFilter(
+                        from: _dateFrom,
+                        to: _dateTo,
+                        tint: AppTheme.primaryIndigo,
+                        onFromChanged: (d) => setState(() => _dateFrom = d),
+                        onToChanged: (d) => setState(() => _dateTo = d),
+                        onClear: () => setState(() {
+                          _dateFrom = null;
+                          _dateTo = null;
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     if (_error != null)
                       _buildError()
-                    else if (_pending.isEmpty)
+                    else if (_visiblePending.isEmpty)
                       _buildEmpty()
                     else
-                      ..._pending.map(_buildCard),
+                      ..._visiblePending.map(_buildCard),
                     const SizedBox(height: 24),
                   ],
                 ]),
@@ -296,7 +378,7 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
                 onTap: () => _viewDetails(p),
               ),
               _btn(
-                label: "Verify and Assign to Staff",
+                label: "Accept and Assign to Staff",
                 icon: CupertinoIcons.checkmark_seal,
                 bg: AppTheme.saffron,
                 fg: CupertinoColors.white,
@@ -617,7 +699,7 @@ class _CupertinoVerifyAssignTourSheetState
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          "Verify & Assign Tour",
+                          "Accept & Assign Tour",
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,

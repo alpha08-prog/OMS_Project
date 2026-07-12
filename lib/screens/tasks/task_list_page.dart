@@ -4,7 +4,9 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
+import '../../widgets/task_forward_sheet.dart';
 
 /// Admin-only Task Tracker page.
 /// Shows stats, staff workload, filterable list with View / Resolve / Delete
@@ -88,7 +90,9 @@ class _TaskListPageState extends State<TaskListPage> {
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final data = Map<String, dynamic>.from(decoded["data"] ?? decoded);
-        final stats = Map<String, dynamic>.from(data["stats"] ?? {});
+        // Backend returns `summary` (older builds used `stats`) — accept both.
+        final stats =
+            Map<String, dynamic>.from(data["summary"] ?? data["stats"] ?? {});
         _total = (stats["total"] ?? 0) as int;
         _assigned = (stats["assigned"] ?? 0) as int;
         _inProgress = (stats["inProgress"] ?? 0) as int;
@@ -258,6 +262,38 @@ class _TaskListPageState extends State<TaskListPage> {
     );
   }
 
+  Future<void> _forward(Map<String, dynamic> task) async {
+    final ok = await showForwardTaskSheet(
+      context,
+      taskId: task["id"]?.toString() ?? "",
+      taskTitle: task["title"]?.toString() ?? "Task",
+    );
+    if (ok) _loadAll();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'task_tracker',
+      headers: ['Title', 'Type', 'Status', 'Assigned To', 'Reference No', 'Created'],
+      rows: _visibleTasks.map((t) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(t['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          t['title'] ?? '',
+          (t['taskType'] ?? '').toString().replaceAll('_', ' '),
+          (t['status'] ?? '').toString().replaceAll('_', ' '),
+          (t['assignedTo'] is Map ? t['assignedTo']['name'] : '') ?? '',
+          t['referenceNo'] ?? '',
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -270,6 +306,11 @@ class _TaskListPageState extends State<TaskListPage> {
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _visibleTasks.isEmpty ? null : _exportCsv,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadAll,
@@ -832,9 +873,14 @@ class _TaskListPageState extends State<TaskListPage> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              _cardActions(task, isCompleted),
             ],
+          ),
+          const SizedBox(height: 10),
+          // Actions on their own full-width row so the title / chips / assigned
+          // text above get the full card width (no mid-word wrapping).
+          Align(
+            alignment: Alignment.centerRight,
+            child: _cardActions(task, isCompleted),
           ),
           if (isExpanded) ...[
             const SizedBox(height: 10),
@@ -894,6 +940,20 @@ class _TaskListPageState extends State<TaskListPage> {
               size: 20, color: Colors.black87),
           style: IconButton.styleFrom(
             backgroundColor: Colors.grey.shade100,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        const SizedBox(width: 6),
+        IconButton(
+          tooltip: "Forward",
+          onPressed: () => _forward(task),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          icon: const Icon(Icons.forward,
+              size: 20, color: AppTheme.saffronDark),
+          style: IconButton.styleFrom(
+            backgroundColor: AppTheme.saffronSoft,
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8)),
           ),

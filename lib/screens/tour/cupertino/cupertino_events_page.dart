@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
 class CupertinoEventsPage extends StatefulWidget {
@@ -164,6 +165,41 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
     );
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'events',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date',
+        'Report',
+        'Created'
+      ],
+      rows: _filtered.map((e) {
+        String eventDate = '';
+        try {
+          eventDate = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(e['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(e['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          e['eventName'] ?? '',
+          e['organizer'] ?? '',
+          e['venue'] ?? '',
+          eventDate,
+          (e['isCompleted'] == true) ? 'Reported' : 'Pending',
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAllMode = _viewMode == "All";
@@ -220,6 +256,13 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
               ),
               const SizedBox(width: 12),
             ],
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _filtered.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  color: CupertinoColors.white, size: 22),
+            ),
+            const SizedBox(width: 8),
             GestureDetector(
               onTap: _fetch,
               child: const Icon(CupertinoIcons.refresh,

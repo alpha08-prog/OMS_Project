@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
@@ -137,6 +138,41 @@ class _CupertinoSuperAdminTourListPageState
     return u;
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'tour_programs',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date & Time',
+        'Status',
+        'Created'
+      ],
+      rows: _visible.map((r) {
+        String dateTime = '';
+        try {
+          dateTime = DateFormat('dd MMM yyyy, h:mm a')
+              .format(DateTime.parse(r['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          r['eventName'] ?? '',
+          r['organizer'] ?? '',
+          r['venue'] ?? '',
+          dateTime,
+          _statusLabel((r['decision'] ?? 'PENDING').toString()),
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = _visible;
@@ -147,11 +183,22 @@ class _CupertinoSuperAdminTourListPageState
             style: const TextStyle(color: CupertinoColors.white)),
         backgroundColor: primaryBlue,
         brightness: Brightness.dark,
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _load,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: list.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _load,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white),
+            ),
+          ],
         ),
       ),
       child: SafeArea(

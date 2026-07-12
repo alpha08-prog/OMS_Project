@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../utils/csv_export.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/cupertino/cupertino_toast.dart';
 import '../../widgets/cupertino/cupertino_form_helpers.dart';
@@ -265,11 +266,69 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
     setState(() => sendingAll = false);
   }
 
+  void _exportCsv() {
+    final isToday = _selectedSegment == 0;
+    if (isToday) {
+      CsvExport.export(
+        context,
+        fileName: 'birthdays_today',
+        headers: const [
+          'Name',
+          'Phone',
+          'Age',
+          'Relation',
+          'Designation',
+          'Wish Sent'
+        ],
+        rows: todayList
+            .map((b) => [
+                  b['name'] ?? '',
+                  b['phone'] ?? '',
+                  b['age'] ?? '',
+                  b['relation'] ?? '',
+                  b['designation'] ?? '',
+                  b['wishSent'] == true ? 'Yes' : 'No',
+                ])
+            .toList(),
+      );
+    } else {
+      CsvExport.export(
+        context,
+        fileName: 'birthdays_upcoming',
+        headers: const [
+          'Name',
+          'Phone',
+          'Date of Birth',
+          'Days Until',
+          'Relation'
+        ],
+        rows: upcomingList.map((b) {
+          String dob = '';
+          if (b['dob'] != null) {
+            try {
+              dob = DateFormat('dd MMM')
+                  .format(DateTime.parse(b['dob'].toString()));
+            } catch (_) {}
+          }
+          return [
+            b['name'] ?? '',
+            b['phone'] ?? '',
+            dob,
+            b['days_until'] ?? '',
+            b['relation'] ?? '',
+          ];
+        }).toList(),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final canCreate = widget.role == Roles.staff;
     final isAdmin =
         widget.role == Roles.admin || widget.role == Roles.superAdmin;
+    final exportEnabled =
+        (_selectedSegment == 0 ? todayList : upcomingList).isNotEmpty;
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
@@ -280,6 +339,12 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: exportEnabled ? _exportCsv : null,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
             CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: _loadAll,

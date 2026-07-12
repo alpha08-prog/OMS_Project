@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../widgets/attachments_section.dart';
 
 /// Grievance details — single-pane view. Timeline + History tabs were removed
 /// 2026-05-22 (only the Details pane is shown). Admin can still Verify and
@@ -45,52 +46,6 @@ class _GrievanceViewPageState extends State<GrievanceViewPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Access denied for role: ${widget.role}")),
     );
-  }
-
-  Future<void> _approveGrievance() async {
-    final canApprove = AccessControl.can(widget.role, ActionPermission.approve);
-    if (!canApprove) return _deny();
-
-    final id = _getId();
-    if (id == null) return;
-
-    if (grievanceData["isLocked"] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Grievance is locked.")),
-      );
-      return;
-    }
-
-    setState(() => _updating = true);
-
-    try {
-      final res = await HttpService.patch("/api/grievances/$id/verify", {});
-
-      if (res.statusCode == 200) {
-        if (!mounted) return;
-        setState(() {
-          grievanceData["status"] = "VERIFIED";
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Approved / Verified")),
-        );
-      } else {
-        String msg = "Approval failed (${res.statusCode})";
-        try {
-          final data = jsonDecode(res.body);
-          msg = data["message"] ?? msg;
-        } catch (_) {}
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-      }
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error / No internet")),
-      );
-    } finally {
-      if (mounted) setState(() => _updating = false);
-    }
   }
 
   Future<void> _completeGrievance() async {
@@ -239,40 +194,21 @@ class _GrievanceViewPageState extends State<GrievanceViewPage> {
                       ),
                     ],
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _updating ? null : _approveGrievance,
-                          icon: const Icon(Icons.verified, size: 18),
-                          label: const Text("Verify"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _updating ? null : _completeGrievance,
+                      icon: const Icon(Icons.done_all, size: 18),
+                      label: const Text("Complete & Lock"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: successGreen,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _updating ? null : _completeGrievance,
-                          icon: const Icon(Icons.done_all, size: 18),
-                          label: const Text("Complete & Lock"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: successGreen,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 )
               : null,
@@ -289,6 +225,10 @@ class _GrievanceViewPageState extends State<GrievanceViewPage> {
           const SizedBox(height: 16),
           _statusCard(),
           const SizedBox(height: 16),
+          if (_getId() != null) ...[
+            _attachmentsCard(_getId()!),
+            const SizedBox(height: 16),
+          ],
           if (!canEdit && !canApprove)
             Container(
               padding: const EdgeInsets.all(14),
@@ -342,6 +282,35 @@ class _GrievanceViewPageState extends State<GrievanceViewPage> {
           _row("Action Required", grievanceData["actionRequired"]),
           _row("Letter Template", grievanceData["letterTemplate"]),
           _row("Referenced By", grievanceData["referencedBy"]),
+        ],
+      ),
+    );
+  }
+
+  Widget _attachmentsCard(String id) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.attach_file, size: 18, color: primaryBlue),
+              SizedBox(width: 6),
+              Text(
+                "ATTACHMENTS",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: primaryBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          AttachmentsSection(contextId: id),
         ],
       ),
     );

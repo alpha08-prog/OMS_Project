@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../utils/csv_export.dart';
+import '../../widgets/date_range_filter.dart';
 
 // ✅ Global constant so all classes can access it
 const Color kNewsPrimaryBlue = Color(0xFF0A2E5C);
@@ -38,6 +40,11 @@ class _NewsListPageState extends State<NewsListPage> {
   DateTime? _startDate;
   DateTime? _endDate;
   bool _showFilters = false;
+
+  // Client-side From/To range filter applied on createdAt (matches the app
+  // pattern in task_list_page.dart). Feeds the visible list + CSV export.
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   List<Map<String, dynamic>> newsList = [];
 
@@ -253,6 +260,11 @@ class _NewsListPageState extends State<NewsListPage> {
         backgroundColor: kNewsPrimaryBlue,
         actions: [
           IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _visibleNews.isEmpty ? null : _exportCsv,
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadAll,
           )
@@ -286,12 +298,55 @@ class _NewsListPageState extends State<NewsListPage> {
                       ],
                       const SizedBox(height: 12),
                     ],
-                    if (newsList.isEmpty)
+                    DateRangeFilter(
+                      from: _dateFrom,
+                      to: _dateTo,
+                      tint: kNewsPrimaryBlue,
+                      padding: EdgeInsets.zero,
+                      onFromChanged: (d) => setState(() => _dateFrom = d),
+                      onToChanged: (d) => setState(() => _dateTo = d),
+                      onClear: () => setState(() {
+                        _dateFrom = null;
+                        _dateTo = null;
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_visibleNews.isEmpty)
                       const Center(child: Text("No news available"))
                     else
-                      ...newsList.map((n) => _newsCard(n)).toList(),
+                      ..._visibleNews.map((n) => _newsCard(n)),
                   ],
                 ),
+    );
+  }
+
+  List<Map<String, dynamic>> get _visibleNews {
+    if (_dateFrom == null && _dateTo == null) return newsList;
+    return newsList.where((n) {
+      final dt = DateTime.tryParse(n['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'news',
+      headers: const ['Headline', 'Priority', 'Category', 'Source', 'Created'],
+      rows: _visibleNews.map((n) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(n['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          n['headline'] ?? n['title'] ?? '',
+          n['priority'] ?? n['severity'] ?? '',
+          n['category'] ?? '',
+          n['source'] ?? '',
+          created,
+        ];
+      }).toList(),
     );
   }
 
@@ -598,70 +653,83 @@ class _NewsListPageState extends State<NewsListPage> {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: kNewsPrimaryBlue.withOpacity(0.1),
-              child: const Icon(Icons.newspaper, color: kNewsPrimaryBlue),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: kNewsPrimaryBlue.withOpacity(0.1),
+                  child:
+                      const Icon(Icons.newspaper, color: kNewsPrimaryBlue),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: priorityColor.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              priority,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: priorityColor,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: priorityColor.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          priority,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: priorityColor,
-                          ),
-                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Category: $category",
+                        style: const TextStyle(
+                            color: Colors.grey, fontSize: 12),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        createdAt,
+                        style: const TextStyle(
+                            color: Colors.grey, fontSize: 12),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "Category: $category",
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    createdAt,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            if (isAdmin && id != null)
-              IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: () => _deleteNews(id),
+            if (isAdmin && id != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: () => _deleteNews(id),
+                ),
               ),
+            ],
           ],
         ),
       ),

@@ -14,6 +14,7 @@ import '../screens/grievance/grievance_hub_page.dart';
 import '../screens/grievance/rejected_grievances_page.dart';
 import '../screens/visitors/visitor_list_page.dart';
 import '../screens/visitors/visitor_log_page.dart';
+import '../screens/visitors/people_add_page.dart';
 import '../screens/birthday_page.dart';
 import '../screens/train/train_request_list_page.dart';
 import '../screens/train/train_request_add_page.dart';
@@ -25,8 +26,10 @@ import '../screens/news/news_list_page.dart';
 import '../screens/news/news_add_page.dart';
 import '../screens/tasks/task_list_page.dart';
 import '../screens/tasks/staff_tasks_page.dart';
-import '../screens/admin/action_center_page.dart';
-import '../screens/admin/verification_queue_page.dart';
+import '../screens/tasks/all_tasks_page.dart';
+import '../screens/tasks/forwarded_tasks_page.dart';
+import '../screens/meetings/meetings_page.dart';
+import '../screens/admin/activity_log_page.dart';
 import '../screens/admin/train_queue_page.dart';
 import '../screens/admin/tour_queue_page.dart';
 import '../screens/admin/print_center_page.dart';
@@ -69,8 +72,6 @@ import '../screens/news/cupertino/cupertino_news_list_page.dart';
 import '../screens/news/cupertino/cupertino_news_add_page.dart';
 import '../screens/tasks/cupertino/cupertino_task_list_page.dart';
 import '../screens/tasks/cupertino/cupertino_staff_tasks_page.dart';
-import '../screens/admin/cupertino/cupertino_action_center_page.dart';
-import '../screens/admin/cupertino/cupertino_verification_queue_page.dart';
 import '../screens/admin/cupertino/cupertino_train_queue_page.dart';
 import '../screens/admin/cupertino/cupertino_tour_queue_page.dart';
 import '../screens/admin/cupertino/cupertino_print_center_page.dart';
@@ -163,13 +164,13 @@ class AppNavigator {
   }
 
   /// Role-aware grievance entry: STAFF -> hub (Public/Office/Old),
-  /// ADMIN+ -> Verify Grievance queue (no add capability).
+  /// ADMIN+ -> grievance list (view all).
   static void toGrievanceEntry(BuildContext context,
       {required String role}) {
     if (role == Roles.staff) {
       toGrievanceHub(context, role: role);
     } else {
-      toVerificationQueue(context);
+      toGrievanceList(context, role: role);
     }
   }
 
@@ -222,6 +223,15 @@ class AppNavigator {
       context,
       () => const VisitorLogPage(),
       () => const CupertinoVisitorLogPage(),
+    );
+  }
+
+  /// Combined "Add Visitor / Birthday" form (mirrors web /people/new).
+  static Future<T?> toAddPerson<T>(BuildContext context) {
+    return push<T>(
+      context,
+      () => const PeopleAddPage(),
+      () => const PeopleAddPage(),
     );
   }
 
@@ -363,19 +373,52 @@ class AppNavigator {
     );
   }
 
-  static void toActionCenter(BuildContext context, {required String role}) {
+  /// Office-wide master task list ("All Tasks"). Available to staff + admin;
+  /// the backend scopes OFFICE tasks out for staff automatically.
+  static void toAllTasks(BuildContext context, {required String role}) {
     push(
       context,
-      () => ActionCenterPage(role: role),
-      () => CupertinoActionCenterPage(role: role),
+      () => AllTasksPage(role: role),
+      () => AllTasksPage(role: role),
     );
   }
 
-  static void toVerificationQueue(BuildContext context) {
+  /// Admin "Office Tasks" — the master task list pre-filtered to GENERAL
+  /// (office-created) tasks.
+  static void toOfficeTasks(BuildContext context, {required String role}) {
     push(
       context,
-      () => const VerificationQueuePage(),
-      () => const CupertinoVerificationQueuePage(),
+      () => AllTasksPage(
+          role: role, title: 'Office Tasks', initialType: 'GENERAL'),
+      () => AllTasksPage(
+          role: role, title: 'Office Tasks', initialType: 'GENERAL'),
+    );
+  }
+
+  /// "Forwarded to Me" — tasks + grievances forwarded to the current user.
+  static void toForwardedTasks(BuildContext context) {
+    push(
+      context,
+      () => const ForwardedTasksPage(),
+      () => const ForwardedTasksPage(),
+    );
+  }
+
+  /// Admin "Meetings" module (schedule + summary + status).
+  static void toMeetings(BuildContext context) {
+    push(
+      context,
+      () => const MeetingsPage(),
+      () => const MeetingsPage(),
+    );
+  }
+
+  /// Admin "Activity Log" — global who-did-what feed.
+  static void toActivityLog(BuildContext context) {
+    push(
+      context,
+      () => const ActivityLogPage(),
+      () => const ActivityLogPage(),
     );
   }
 

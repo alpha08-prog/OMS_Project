@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
@@ -33,6 +34,10 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
   DateTime? _tourStartDate;
   DateTime? _tourEndDate;
 
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
@@ -41,11 +46,49 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
     _fetchTempleVisits();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  // Query fragment appended to each segment's endpoint. Empty when no term.
+  String get _searchParam => _searchQuery.trim().isEmpty
+      ? ''
+      : '&search=${Uri.encodeQueryComponent(_searchQuery.trim())}';
+
+  void _onSearchChanged(String value) {
+    setState(() => _searchQuery = value);
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), _runActiveSearch);
+  }
+
+  void _runActiveSearch() {
+    switch (_selectedSegment) {
+      case 0:
+        _fetchGrievances();
+        break;
+      case 1:
+        _fetchTempleVisits();
+        break;
+      case 2:
+        _fetchTrainRequests();
+        break;
+    }
+  }
+
+  void _clearSearch() {
+    _debounce?.cancel();
+    _searchController.clear();
+    setState(() => _searchQuery = '');
+    _runActiveSearch();
+  }
+
   Future<void> _fetchGrievances() async {
     setState(() => _loadingGrievances = true);
     try {
-      final res =
-          await HttpService.get("/api/grievances?isVerified=true&limit=100");
+      final res = await HttpService.get("/api/grievances?limit=100$_searchParam");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
@@ -63,7 +106,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
     setState(() => _loadingTempleVisits = true);
     try {
       final res = await HttpService.get(
-          "/api/grievances?grievanceType=TEMPLE_VISIT&limit=100");
+          "/api/grievances?grievanceType=TEMPLE_VISIT&limit=100$_searchParam");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
@@ -78,7 +121,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
   Future<void> _fetchTrainRequests() async {
     setState(() => _loadingTrainRequests = true);
     try {
-      final res = await HttpService.get("/api/train-requests?limit=100");
+      final res = await HttpService.get("/api/train-requests?limit=100$_searchParam");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
@@ -216,10 +259,14 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
                 onValueChanged: (value) {
                   if (value != null) {
                     setState(() => _selectedSegment = value);
+                    // Re-run the active search against the newly selected list.
+                    if (_searchQuery.trim().isNotEmpty) _runActiveSearch();
                   }
                 },
               ),
             ),
+            // Search bar — hidden on the Tour segment (3), which has no list.
+            if (_selectedSegment != 3) _buildSearchBar(),
             const SizedBox(height: 12),
             Expanded(
               child: _selectedSegment == 0
@@ -236,6 +283,18 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
     );
   }
 
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: CupertinoSearchTextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        onSuffixTap: _clearSearch,
+        placeholder: "Search name, PNR, reference…",
+      ),
+    );
+  }
+
   Widget _buildGrievanceTab() {
     if (_loadingGrievances) {
       return const Center(child: CupertinoActivityIndicator());
@@ -248,7 +307,10 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
             Icon(CupertinoIcons.printer,
                 size: 64, color: CupertinoColors.systemGrey4),
             const SizedBox(height: 16),
-            Text("No verified grievances to print",
+            Text(
+                _searchQuery.trim().isNotEmpty
+                    ? "No grievances match \"${_searchQuery.trim()}\""
+                    : "No verified grievances to print",
                 style: TextStyle(color: CupertinoColors.systemGrey)),
           ],
         ),
@@ -288,7 +350,10 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
             Icon(CupertinoIcons.printer,
                 size: 64, color: CupertinoColors.systemGrey4),
             const SizedBox(height: 16),
-            Text("No train requests to print",
+            Text(
+                _searchQuery.trim().isNotEmpty
+                    ? "No train requests match \"${_searchQuery.trim()}\""
+                    : "No train requests to print",
                 style: TextStyle(color: CupertinoColors.systemGrey)),
           ],
         ),
@@ -334,7 +399,10 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
             Icon(CupertinoIcons.building_2_fill,
                 size: 64, color: CupertinoColors.systemGrey4),
             const SizedBox(height: 16),
-            Text("No temple-visit grievances",
+            Text(
+                _searchQuery.trim().isNotEmpty
+                    ? "No temple visits match \"${_searchQuery.trim()}\""
+                    : "No temple-visit grievances",
                 style: TextStyle(color: CupertinoColors.systemGrey)),
           ],
         ),
@@ -528,52 +596,66 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: AppTheme.shadowSm,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(title,
-                          style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.bold)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(title,
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.bold)),
+                        ),
+                        if (badge != null && badge.isNotEmpty)
+                          _statusPill(badge),
+                      ],
                     ),
-                    if (badge != null && badge.isNotEmpty)
-                      _statusPill(badge),
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12, color: CupertinoColors.systemGrey),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
                   ],
                 ),
-                Text(subtitle,
-                    style: TextStyle(
-                        fontSize: 12, color: CupertinoColors.systemGrey),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: const EdgeInsets.all(8),
+                  onPressed: onPreview,
+                  child: Icon(CupertinoIcons.eye,
+                      color: CupertinoColors.systemGrey),
+                ),
+                CupertinoButton(
+                  padding: const EdgeInsets.all(8),
+                  onPressed: onDownload,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      color: AppTheme.primaryIndigo),
+                ),
               ],
             ),
-          ),
-          CupertinoButton(
-            padding: const EdgeInsets.all(8),
-            onPressed: onPreview,
-            child:
-                Icon(CupertinoIcons.eye, color: CupertinoColors.systemGrey),
-          ),
-          CupertinoButton(
-            padding: const EdgeInsets.all(8),
-            onPressed: onDownload,
-            child: const Icon(CupertinoIcons.arrow_down_doc,
-                color: AppTheme.primaryIndigo),
           ),
         ],
       ),

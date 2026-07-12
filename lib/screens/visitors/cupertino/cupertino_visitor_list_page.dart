@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
@@ -147,6 +149,28 @@ class _CupertinoVisitorListPageState
     }
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'visitors',
+      headers: const ['Name', 'Designation', 'Phone', 'Purpose', 'Date'],
+      rows: _visibleVisitors.map((v) {
+        final raw =
+            (v['date'] ?? v['visitDate'] ?? v['createdAt'] ?? '').toString();
+        String dateStr = raw;
+        final dt = DateTime.tryParse(raw);
+        if (dt != null) dateStr = DateFormat('dd MMM yyyy').format(dt);
+        return [
+          v['name'] ?? v['visitorName'] ?? '',
+          v['designation'] ?? '',
+          v['phone'] ?? v['mobile'] ?? '',
+          v['purpose'] ?? v['note'] ?? '',
+          dateStr,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canCreate = widget.role != Roles.admin &&
@@ -161,6 +185,12 @@ class _CupertinoVisitorListPageState
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _visibleVisitors.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
             if (canCreate)
               CupertinoButton(
                 padding: EdgeInsets.zero,
@@ -270,8 +300,12 @@ class _CupertinoVisitorListPageState
                                   return CupertinoStyledCard(
                                     margin: const EdgeInsets.only(
                                         bottom: 12),
-                                    child: Row(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
+                                        Row(
+                                          children: [
                                         Container(
                                           width: 44,
                                           height: 44,
@@ -343,24 +377,27 @@ class _CupertinoVisitorListPageState
                                             ],
                                           ),
                                         ),
-
-                                        // Delete for Admin
+                                          ],
+                                        ),
                                         if (widget.role ==
                                                 Roles.admin &&
-                                            id != null)
-                                          CupertinoButton(
-                                            padding:
-                                                EdgeInsets.zero,
-                                            minSize: 0,
-                                            onPressed: () =>
-                                                _deleteVisitor(
-                                                    id),
-                                            child: const Icon(
-                                                CupertinoIcons
-                                                    .delete,
-                                                color: AppTheme
-                                                    .destructiveRed),
+                                            id != null) ...[
+                                          const SizedBox(height: 8),
+                                          Align(
+                                            alignment:
+                                                Alignment.centerRight,
+                                            child: CupertinoButton(
+                                              padding: EdgeInsets.zero,
+                                              minSize: 0,
+                                              onPressed: () =>
+                                                  _deleteVisitor(id),
+                                              child: const Icon(
+                                                  CupertinoIcons.delete,
+                                                  color: AppTheme
+                                                      .destructiveRed),
+                                            ),
                                           ),
+                                        ],
                                       ],
                                     ),
                                   );

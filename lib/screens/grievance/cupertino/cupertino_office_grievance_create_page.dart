@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 
@@ -10,6 +9,7 @@ import '../../../services/temple_registry_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../utils/attachment_picker.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
@@ -132,21 +132,17 @@ class _CupertinoOfficeGrievanceCreatePageState
   }
 
   Future<void> _pickAttachment() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final picked = await AttachmentPicker.pick(
+      context,
       allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
     );
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.first.path;
-    if (path == null) return;
-    final f = File(path);
-    final size = await f.length();
-    if (size > 10 * 1024 * 1024) {
+    if (picked == null) return;
+    if (picked.size > 10 * 1024 * 1024) {
       if (!mounted) return;
       CupertinoToast.show(context, 'File is larger than 10 MB.', isError: true);
       return;
     }
-    setState(() => _attachment = f);
+    setState(() => _attachment = picked.file);
   }
 
   String _getLabelForValue(List<Map<String, String>> items, String value) {

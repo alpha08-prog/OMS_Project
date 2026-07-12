@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
@@ -627,6 +628,12 @@ class _CupertinoTrainRequestListPageState
               ),
             CupertinoButton(
               padding: EdgeInsets.zero,
+              onPressed: _visibleRequests.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  color: CupertinoColors.white, size: 22),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
               onPressed: fetchRequests,
               child: const Icon(CupertinoIcons.refresh,
                   color: CupertinoColors.white),
@@ -800,6 +807,55 @@ class _CupertinoTrainRequestListPageState
       final dt = DateTime.tryParse(r['createdAt']?.toString() ?? '');
       return dateInRange(dt, from: _dateFrom, to: _dateTo);
     }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'train_requests',
+      headers: [
+        'Passenger',
+        'PNR',
+        'From',
+        'To',
+        'Journey Date',
+        'Class',
+        'Train',
+        'Created'
+      ],
+      rows: _visibleRequests.map((r) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        String journey = '';
+        try {
+          journey = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['dateOfJourney'].toString()));
+        } catch (_) {}
+        final passengers = r['passengers'] as List? ?? [];
+        final names = passengers
+            .map((p) => p['name']?.toString() ?? '')
+            .where((n) => n.isNotEmpty)
+            .join(', ');
+        final passenger =
+            names.isNotEmpty ? names : (r['passengerName']?.toString() ?? '');
+        final trainNo = r['trainNumber']?.toString() ?? '';
+        final trainName = r['trainName']?.toString() ?? '';
+        final train = '$trainNo${trainName.isNotEmpty ? ' - $trainName' : ''}';
+        return [
+          passenger,
+          r['pnrNumber'] ?? r['pnr'] ?? '',
+          r['fromStation'] ?? r['from'] ?? '',
+          r['toStation'] ?? r['to'] ?? '',
+          journey,
+          r['journeyClass'] ?? '',
+          train,
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   Widget _statItem(String label, int count, IconData icon,
