@@ -899,7 +899,13 @@ export default function StaffHistory() {
                   </div>
                   <div>
                     <Label>PNR Number</Label>
-                    <Input value={editForm.pnrNumber} onChange={(e) => editChange("pnrNumber", e.target.value)} />
+                    <Input
+                      value={editForm.pnrNumber}
+                      onChange={(e) => editChange("pnrNumber", e.target.value.replace(/\D/g, "").slice(0, 10))}
+                      maxLength={10}
+                      inputMode="numeric"
+                      placeholder="10-digit PNR"
+                    />
                   </div>
                   <div>
                     <Label>Train Name</Label>

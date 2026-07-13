@@ -611,10 +611,20 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
       y += 16;
     } else {
       rows.forEach((p, i) => {
+        const nameWidth = colW[1] - 8;
+        // Measure the name's rendered height first: a long name wraps to two (or
+        // more) lines within the Name column, and everything that follows — the
+        // mobile line and the next row — must sit *below* the whole name so it
+        // never overlaps.
+        doc.font('Helvetica-Bold').fontSize(14);
+        const nameHeight = doc.heightOfString(p.name, { width: nameWidth });
+
         doc.font('Helvetica').fontSize(12).fillColor(COLORS.black)
           .text(String(i + 1), colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
-        // Passenger name in bold — larger than the regular cells.
-        doc.font('Helvetica-Bold').fontSize(14).text(p.name, colX[1] + 4, y, { width: colW[1] - 8, lineBreak: false });
+        // Passenger name in bold — larger than the regular cells. Wraps within
+        // the Name column when long instead of running into the Sex/Age column.
+        doc.font('Helvetica-Bold').fontSize(14).fillColor(COLORS.black)
+          .text(p.name, colX[1] + 4, y, { width: nameWidth });
         const sa = sexAgeCell(p);
         if (sa) {
           doc.font('Helvetica').fontSize(12).text(sa, colX[2] + 4, y, { width: colW[2] - 8, lineBreak: false });
@@ -627,17 +637,22 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
         if (p.waitlist && String(p.waitlist).trim()) {
           doc.font('Helvetica').fontSize(12).text(String(p.waitlist).trim(), colX[4] + 4, y, { width: colW[4] - 8, lineBreak: false });
         }
-        // Primary passenger's mobile number, printed just under his name.
+        // Height consumed by this row: at least a standard row, but taller when
+        // the name wraps.
+        let rowContentHeight = Math.max(nameHeight, 16);
+        // Primary passenger's mobile number, printed just under his (possibly
+        // multi-line) name so a long name never overlaps it.
         if (i === 0 && data.contactNumber && data.contactNumber.trim()) {
+          const mobileY = y + nameHeight + 1;
           doc.font('Helvetica').fontSize(13).fillColor(COLORS.gray)
-            .text(`Mob: ${data.contactNumber.trim()}`, colX[1] + 4, y + 13, {
-              width: colW[1] - 8,
+            .text(`Mob: ${data.contactNumber.trim()}`, colX[1] + 4, mobileY, {
+              width: nameWidth,
               lineBreak: false,
             });
           doc.fontSize(12).fillColor(COLORS.black);
-          y += 16; // extra room so the larger mobile line doesn't collide with the next row
+          rowContentHeight = nameHeight + 1 + 15; // name + gap + mobile line
         }
-        y += 16;
+        y += rowContentHeight + 4; // small inter-row padding
       });
     }
 
