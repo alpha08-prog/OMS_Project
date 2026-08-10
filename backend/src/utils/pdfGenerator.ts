@@ -611,10 +611,20 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
       y += 16;
     } else {
       rows.forEach((p, i) => {
+        const nameWidth = colW[1] - 8;
+        // Measure the name's rendered height first: a long name wraps to two (or
+        // more) lines within the Name column, and everything that follows — the
+        // mobile line and the next row — must sit *below* the whole name so it
+        // never overlaps.
+        doc.font('Helvetica-Bold').fontSize(14);
+        const nameHeight = doc.heightOfString(p.name, { width: nameWidth });
+
         doc.font('Helvetica').fontSize(12).fillColor(COLORS.black)
           .text(String(i + 1), colX[0] + 4, y, { width: colW[0] - 8, lineBreak: false });
-        // Passenger name in bold — larger than the regular cells.
-        doc.font('Helvetica-Bold').fontSize(14).text(p.name, colX[1] + 4, y, { width: colW[1] - 8, lineBreak: false });
+        // Passenger name in bold — larger than the regular cells. Wraps within
+        // the Name column when long instead of running into the Sex/Age column.
+        doc.font('Helvetica-Bold').fontSize(14).fillColor(COLORS.black)
+          .text(p.name, colX[1] + 4, y, { width: nameWidth });
         const sa = sexAgeCell(p);
         if (sa) {
           doc.font('Helvetica').fontSize(12).text(sa, colX[2] + 4, y, { width: colW[2] - 8, lineBreak: false });
@@ -627,17 +637,22 @@ export function generateTrainEQLetter(data: TrainEQLetter, res: Response): void 
         if (p.waitlist && String(p.waitlist).trim()) {
           doc.font('Helvetica').fontSize(12).text(String(p.waitlist).trim(), colX[4] + 4, y, { width: colW[4] - 8, lineBreak: false });
         }
-        // Primary passenger's mobile number, printed just under his name.
+        // Height consumed by this row: at least a standard row, but taller when
+        // the name wraps.
+        let rowContentHeight = Math.max(nameHeight, 16);
+        // Primary passenger's mobile number, printed just under his (possibly
+        // multi-line) name so a long name never overlaps it.
         if (i === 0 && data.contactNumber && data.contactNumber.trim()) {
+          const mobileY = y + nameHeight + 1;
           doc.font('Helvetica').fontSize(13).fillColor(COLORS.gray)
-            .text(`Mob: ${data.contactNumber.trim()}`, colX[1] + 4, y + 13, {
-              width: colW[1] - 8,
+            .text(`Mob: ${data.contactNumber.trim()}`, colX[1] + 4, mobileY, {
+              width: nameWidth,
               lineBreak: false,
             });
           doc.fontSize(12).fillColor(COLORS.black);
-          y += 16; // extra room so the larger mobile line doesn't collide with the next row
+          rowContentHeight = nameHeight + 1 + 15; // name + gap + mobile line
         }
-        y += 16;
+        y += rowContentHeight + 4; // small inter-row padding
       });
     }
 
@@ -959,7 +974,10 @@ export function generateTempleVisitLetter(
     }
 
     const pageWidth = doc.page.width;
-    const margin = 50;
+    // 2.5cm side margins per the office's letterhead spec. 2.5cm ≈ 70.87pt at
+    // 72dpi; rounded to 71pt. Applied to both edges via `margin`, so the body,
+    // subject, signature and recipient block all indent to the same 2.5cm gutter.
+    const margin = 71;
     const innerWidth = pageWidth - margin * 2;
     const headerTop = 50;
     const officerW = 220;
@@ -977,8 +995,16 @@ export function generateTempleVisitLetter(
       y = Math.round(doc.page.height * 0.23);
     } else {
       // ── Letterhead — left officer block ────────────────────────────────
+      // The digital letterhead band reproduces the office's pre-printed
+      // stationery, whose three columns (officer | emblem | contact) were laid
+      // out for a 50pt gutter. The typed letter below uses the wider 2.5cm
+      // (71pt) content margin, but this decorative band keeps its own 50pt
+      // gutter so the right contact column still fits without wrapping. A
+      // letterhead graphic sitting slightly wider than the body text is the
+      // normal look — and this band isn't drawn at all in letterhead mode.
+      const headerMargin = 50;
       doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.navy)
-        .text('MALLIKARJUNGOUDA PATIL', margin, headerTop, { width: officerW, lineBreak: false });
+        .text('MALLIKARJUNGOUDA PATIL', headerMargin, headerTop, { width: officerW, lineBreak: false });
       const descLines = [
         'ADDITIONAL PRIVATE SECRETARY TO MINISTER OF',
         'FOOD & PUBLIC DISTRIBUTION AND CONSUMER AFFAIRS',
@@ -988,11 +1014,11 @@ export function generateTempleVisitLetter(
       const descLineGap = 11;
       doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.black);
       descLines.forEach((line, i) => {
-        doc.text(line, margin, headerTop + 22 + i * descLineGap, { width: officerW, lineBreak: false });
+        doc.text(line, headerMargin, headerTop + 22 + i * descLineGap, { width: officerW, lineBreak: false });
       });
 
       // Center emblem
-      const centerX = margin + officerW + 5;
+      const centerX = headerMargin + officerW + 5;
       const centerW = 65;
       const emblem = getEmblemBuffer();
       if (emblem) {
@@ -1008,10 +1034,10 @@ export function generateTempleVisitLetter(
       }
 
       // Right contact block
-      const rightX = margin + officerW + 5 + centerW + 5;
+      const rightX = headerMargin + officerW + 5 + centerW + 5;
       const rightLabelW = 55;
       const rightValueX = rightX + rightLabelW;
-      const rightValueW = pageWidth - margin - rightValueX;
+      const rightValueW = pageWidth - headerMargin - rightValueX;
       let rightY = headerTop;
       const rowGap = 12;
       const writeRow = (label: string, value: string) => {
@@ -1039,25 +1065,24 @@ export function generateTempleVisitLetter(
     // ── Reference number + Date row ───────────────────────────────────────
     // Date is hard-right-aligned to the page margin — the text's right edge
     // sits at (pageWidth - margin) regardless of how short the date string is.
-    doc.font('Helvetica').fontSize(10).fillColor(COLORS.black)
+    doc.font('Helvetica').fontSize(12).fillColor(COLORS.black)
       .text(data.refNumber, margin, y, { lineBreak: false });
     doc.text(`Date: ${data.date}`, margin, y, { width: innerWidth, align: 'right', lineBreak: false });
     y += 28;
 
     // ── Salutation + Subject ──────────────────────────────────────────────
     // "Dear Sir," is bold and at the left margin; the subject is bold and
-    // first-line-indented, matching the office's standard letter format.
-    const bodyIndent = 36;
-    doc.font('Helvetica-Bold').fontSize(11).text('Dear Sir,', margin, y, { lineBreak: false });
-    y += 24;
-    doc.font('Helvetica-Bold').text(`Sub: ${data.subject}`, margin, y, {
+    // centred across the content width (per the office's letterhead spec).
+    doc.font('Helvetica-Bold').fontSize(13).text('Dear Sir,', margin, y, { lineBreak: false });
+    y += 26;
+    doc.font('Helvetica-Bold').fontSize(13).text(`Sub: ${data.subject}`, margin, y, {
       width: innerWidth,
-      indent: bodyIndent,
+      align: 'center',
     });
     y = doc.y + 16;
 
     // ── Body ──────────────────────────────────────────────────────────────
-    doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
+    doc.font('Helvetica').fontSize(13).fillColor(COLORS.black);
 
     // "The Bearer of this letter <Name> and <N> members from <originLine> are
     //  on pilgrimage to the Holy Shrine of <Deity> <visitDateLine>."
@@ -1074,11 +1099,12 @@ export function generateTempleVisitLetter(
         `on above said ${data.visitDateLine.startsWith('from') ? 'dates' : 'date'} for them and oblige.`
     );
 
+    // No first-line indent — every line of a paragraph starts flush at the
+    // left margin (block-paragraph style, per the office's request).
     bodyParas.forEach((p) => {
       doc.text(p, margin, y, {
         width: innerWidth,
         align: 'justify',
-        indent: bodyIndent,
         lineGap: 6,
       });
       y = doc.y + 14;
@@ -1093,7 +1119,7 @@ export function generateTempleVisitLetter(
     // under the body with a sea of whitespace below.
     y += 6;
     const bodyEndY = y;
-    const recipientLineHeight = 14;
+    const recipientLineHeight = 16;
     const recipientLineCount = Math.max(1, data.recipientLines.length);
     // Anchor the recipient block roughly two-thirds down the page — high
     // enough to leave a comfortable margin above the (pre-printed or
@@ -1133,14 +1159,14 @@ export function generateTempleVisitLetter(
       recipientStartY - sigBlockHeight - 24
     );
 
-    doc.font('Helvetica').fontSize(11).fillColor(COLORS.black);
+    doc.font('Helvetica').fontSize(13).fillColor(COLORS.black);
     doc.text(data.closing, margin, closingY, { lineBreak: false });
     doc.text('Yours sincerely,', margin, closingY + 20, {
       width: innerWidth,
       align: 'right',
       lineBreak: false,
     });
-    doc.font('Helvetica-Bold').fontSize(11).text(data.signerName, margin, closingY + 70, {
+    doc.font('Helvetica-Bold').fontSize(13).text(data.signerName, margin, closingY + 70, {
       width: innerWidth,
       align: 'right',
       lineBreak: false,
@@ -1151,7 +1177,7 @@ export function generateTempleVisitLetter(
     // first line (the office/designation) is bold, like the sample letter.
     let recipY = recipientStartY;
     data.recipientLines.forEach((line, i) => {
-      doc.font(i === 0 ? 'Helvetica-Bold' : 'Helvetica').fontSize(11).fillColor(COLORS.black);
+      doc.font(i === 0 ? 'Helvetica-Bold' : 'Helvetica').fontSize(13).fillColor(COLORS.black);
       doc.text(line, margin, recipY, { width: innerWidth, lineBreak: false });
       recipY += recipientLineHeight;
     });
