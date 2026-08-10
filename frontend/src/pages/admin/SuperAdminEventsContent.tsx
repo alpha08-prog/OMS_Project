@@ -10,7 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Pagination, usePagination } from "@/components/common/Pagination";
-import { tourProgramApi, type TourProgram } from "@/lib/api";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
+import { tourProgramApi, type ApiResponse, type TourProgram } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -31,16 +32,27 @@ export function SuperAdminEventsContent() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<TourProgram | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // We ask the server for at most 100 rows and then page them in the browser,
+  // so the pager's "Page 1 of 10" describes the chunk, not the dataset. Keep the
+  // response meta (it carries a real total) and the row count the server
+  // actually sent, so the gap can be shown instead of quietly swallowed.
+  const [meta, setMeta] = useState<ApiResponse<TourProgram[]>["meta"]>();
+  const [loaded, setLoaded] = useState(0);
 
   const fetchEvents = async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await tourProgramApi.getEvents({ limit: "100" });
-      setEvents(res.data ?? []);
+      const rows = res.data ?? [];
+      setEvents(rows);
+      setLoaded(rows.length);
+      setMeta(res.meta);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load events");
       setEvents([]);
+      setLoaded(0);
+      setMeta(undefined);
     } finally {
       setLoading(false);
     }
@@ -89,6 +101,14 @@ export function SuperAdminEventsContent() {
           <CardTitle>Events ({events.length})</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* Above the rows on purpose — the shortfall has to be read before
+              the data it describes, not discovered under it. */}
+          <TruncationNotice
+            loaded={loaded}
+            total={meta?.total}
+            totalKnown={meta?.totalKnown}
+            hint="The server returns the most recent events first, so older ones aren't shown here."
+          />
           {loading ? (
             <p className="text-muted-foreground text-center py-8">Loading…</p>
           ) : events.length === 0 ? (

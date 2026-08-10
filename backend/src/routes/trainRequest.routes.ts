@@ -11,6 +11,7 @@ import {
   deleteTrainRequest,
   getPendingQueue,
   checkPNRStatus,
+  exportTrainRequests,
 } from '../controllers-catalyst/trainRequest.controller';
 import { authenticate, staffOnly, adminOnly } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -46,6 +47,11 @@ router.use(authenticate);
 
 router.post('/', staffOnly, validate(createTrainRequestValidation), createTrainRequest);
 router.get('/', getTrainRequests);
+// MUST stay above '/:id' — Express matches in registration order, and the
+// param route would otherwise answer /export.csv with an ID validation error.
+// Not adminOnly on purpose: it reuses the list's staff scoping, so a STAFF
+// caller exports exactly their own rows.
+router.get('/export.csv', exportTrainRequests);
 router.get('/queue/pending', adminOnly, getPendingQueue);
 router.get('/pnr/:pnr', checkPNRStatus);
 router.get('/:id', validate(idParamValidation), getTrainRequestById);

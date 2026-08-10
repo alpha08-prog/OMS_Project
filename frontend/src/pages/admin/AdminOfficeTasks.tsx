@@ -43,16 +43,22 @@ import { SearchBar } from "@/components/common/SearchBar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import type { CsvColumn } from "@/lib/exportCsv";
 import { CardListSkeleton } from "@/components/common/Skeletons";
 import { useToast } from "@/components/AuthForm/Toast";
 import {
   taskApi,
   grievanceApi,
+  type ApiResponse,
   type TaskAssignment,
   type TaskProgressHistory,
   type TaskStatus,
 } from "@/lib/api";
+
+// Paging metadata as the list endpoints return it (total is present only when
+// the server got a real count).
+type ListMeta = ApiResponse<unknown>["meta"];
 
 // Statuses the admin can move an office task through.
 const MANAGE_STATUSES: TaskStatus[] = [
@@ -113,6 +119,12 @@ export default function AdminOfficeTasks() {
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // How many task rows the server actually handed over, plus its count meta.
+  // The fetch below is capped, so without these the pager would quietly imply
+  // that the capped chunk is every office task there is.
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [taskMeta, setTaskMeta] = useState<ListMeta>();
+
   // Filters (all client-side over the fetched office-task set).
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [enteredByFilter, setEnteredByFilter] = useState<string>("all");
@@ -161,7 +173,8 @@ export default function AdminOfficeTasks() {
       const officeGrievanceIds = new Set(
         (grievResp.data ?? []).map((g) => String(g.id))
       );
-      const office = (taskResp.data ?? []).filter(
+      const rows = taskResp.data ?? [];
+      const office = rows.filter(
         (t) =>
           (t.source ?? "PUBLIC") === "OFFICE" ||
           (t.referenceType === "GRIEVANCE" &&
@@ -169,6 +182,12 @@ export default function AdminOfficeTasks() {
             officeGrievanceIds.has(String(t.referenceId)))
       );
       setTasks(office);
+      // Truncation is judged on the task response — it is what fills the
+      // tracker; the grievance fetch is only a lookup for the narrow above.
+      // Record what the SERVER sent, not what survived the narrow, so the
+      // notice reports the cap and not our own filtering.
+      setLoadedCount(rows.length);
+      setTaskMeta(taskResp.meta);
     } catch (e) {
       console.error("Failed to load office tasks", e);
     } finally {
@@ -465,6 +484,15 @@ export default function AdminOfficeTasks() {
               </CardHeader>
 
               <CardContent className="space-y-4">
+                {/* Seen before the rows: the server capped this fetch, so the
+                    pager's "Page 1 of N" is about what arrived, not about how
+                    many office tasks exist. */}
+                <TruncationNotice
+                  loaded={loadedCount}
+                  total={taskMeta?.total}
+                  totalKnown={taskMeta?.totalKnown}
+                  hint="Narrow the status, person or date range to reach older office tasks."
+                />
                 {loading ? (
                   <CardListSkeleton rows={5} />
                 ) : visible.length === 0 ? (

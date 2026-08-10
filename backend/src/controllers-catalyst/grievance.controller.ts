@@ -24,7 +24,19 @@ import {
   executeZCQL,
   zcqlEscapeValue,
   zcqlAnyOf,
-  zcqlSafeLimit,
+  zcqlLike,
+  // zcqlSafeLimit is deliberately NOT used here: it clamps silently, and the
+  // list contract allows limit=1000 (GrievanceView asks for exactly that).
+  // assertZcqlLimit + chunking serve the window the caller asked for instead.
+  assertZcqlLimit,
+  countRows,
+  fetchOffsetWindow,
+  dateRangeClauses,
+  countZcqlConditions,
+  zcqlSearchWithinBudget,
+  fetchChildrenByParentIds,
+  MAX_ZCQL_CONDITIONS,
+  ZCQL_MAX_LIMIT,
   CatalystRow,
 } from '../lib/catalyst-client';
 import {
@@ -34,8 +46,15 @@ import {
   sendServerError,
 } from '../utils/response';
 import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
-import { cacheClear } from '../lib/cache';
+import { cacheClear, cacheSWR } from '../lib/cache';
 import { lookupUsers, getUserIdAliases } from '../lib/catalyst-user-lookup';
+import {
+  keysetPredicate,
+  keysetOrderBy,
+  encodeCursor,
+  decodeCursor,
+} from '../lib/keyset';
+import { parseKeysetQuery } from '../utils/keyset-query';
 import { useZCQL } from '../config/feature-flags';
 import { emitNotification } from './notification.controller';
 import { autoCreateSelfTask } from './task.controller';
@@ -117,6 +136,10 @@ function parseNumber(v: unknown): number | null {
 }
 
 function invalidateStatCaches() {
+  // The list total is cached per-predicate (see getGrievances); any write
+  // changes it, so drop it here rather than serving a count that disagrees
+  // with the rows on screen for up to two minutes.
+  cacheClear('grievance:count');
   cacheClear('dashboard_stats');
   cacheClear('stats_by_type');
   cacheClear('stats_by_status');
@@ -263,22 +286,29 @@ async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
  * POST /api/grievances
  */
 /**
- * Best-effort sequential reference number: GRV-<IST year>-NNNN. Scans existing
- * grievanceNumber values for the current year and returns max+1. Not
- * transaction-safe — adequate for office-scale concurrency.
+ * Best-effort sequential reference number: GRV-<IST year>-NNNN. Returns max+1
+ * for the current year. Still NOT transaction-safe — pre-existing, and
+ * adequate for office-scale concurrency.
+ *
+ * One query, not a full-table scan: the sequence is zero-padded to 4 digits, so
+ * lexical DESC equals numeric DESC up to 9999 and the highest existing number
+ * is the first row. Previously this read EVERY grievance on every create —
+ * i.e. the cost of filing grievance N was proportional to the N-1 before it.
  */
 async function nextGrievanceNumber(): Promise<string> {
   const istYear = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCFullYear();
   const prefix = `GRV-${istYear}-`;
   let maxSeq = 0;
   try {
-    const rows = await listAllRows(GRIEVANCE_TABLE);
-    for (const r of rows) {
-      const num = String(r.grievanceNumber ?? '');
-      if (num.startsWith(prefix)) {
-        const seq = parseInt(num.slice(prefix.length), 10);
-        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
-      }
+    const rows = await executeZCQL<CatalystRow>(
+      `SELECT grievanceNumber FROM ${GRIEVANCE_TABLE} ` +
+        `WHERE ${zcqlLike('grievanceNumber', prefix, 'prefix')} ` +
+        `ORDER BY grievanceNumber DESC LIMIT 1`
+    );
+    const num = String(rows[0]?.grievanceNumber ?? '');
+    if (num.startsWith(prefix)) {
+      const seq = parseInt(num.slice(prefix.length), 10);
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
     }
   } catch {
     /* table unreadable — fall back to 1 */
@@ -473,11 +503,33 @@ export async function createGrievance(
   }
 }
 
-/** Build a ZCQL WHERE clause + ORDER BY for the grievance list. */
-function buildGrievanceZCQL(
+/**
+ * The "GRV-<rowid>" / bare-ROWID search shape, recognised identically by the
+ * ZCQL branch and the JS fallback. 6+ digits so a short numeric search (a
+ * partial mobile number, say) isn't mistaken for a ROWID.
+ */
+const ROWID_SEARCH = /^(?:GRV-)?(\d{6,})$/i;
+
+/**
+ * WHERE clauses only — no ORDER BY, no LIMIT. Kept separate so the page query
+ * and the COUNT query are built from the SAME predicate; a total that
+ * disagrees with the rows on screen is its own bug.
+ *
+ * `unsatisfiable` means the filter set is legal but cannot be expressed within
+ * ZCQL's 10-condition ceiling. The caller must answer with an empty page
+ * rather than send a query that would 400 and surface as a 500.
+ */
+function buildGrievanceWhere(
   staffIds: string[] | null,
   filters: GrievanceFilters
-): string {
+): { clauses: string[]; unsatisfiable: boolean } {
+  // Every NON-search clause is built FIRST; the search box then gets whatever
+  // is left of the 10-condition budget. Search is the only variable-width
+  // clause, so it is the one that has to yield — and it yields visibly (a
+  // warning names the dropped columns) instead of 400-ing the whole query.
+  // The old form hard-coded seven LIKE columns, which together with a status
+  // filter (1) and a date range (2) was already exactly 10: a single staff
+  // alias tipped it to 11 and killed the entire search.
   const conditions: string[] = [];
 
   // STAFF scoping — match ALL identity aliases (ROWID + legacy UUID), since
@@ -507,37 +559,133 @@ function buildGrievanceZCQL(
     conditions.push(`source = '${zcqlEscapeValue(String(filters.source))}'`);
   }
   if (filters.constituency) {
-    const q = zcqlEscapeValue(String(filters.constituency));
-    conditions.push(`constituency LIKE '%${q}%'`);
+    conditions.push(zcqlLike('constituency', String(filters.constituency)));
   }
-  if (filters.search) {
-    const raw = String(filters.search).trim();
-    const q = zcqlEscapeValue(raw);
-    const clauses = [
-      `petitionerName LIKE '%${q}%'`,
-      `mobileNumber LIKE '%${q}%'`,
-      `description LIKE '%${q}%'`,
-      `grievanceNumber LIKE '%${q}%'`,
-      `constituency LIKE '%${q}%'`,
-      `wardVillage LIKE '%${q}%'`,
-      `grievanceType LIKE '%${q}%'`,
-    ];
-    // Legacy "GRV-<rowid>" reference → match the ROWID directly.
-    const m = raw.match(/^GRV-(\d+)$/i);
-    if (m) clauses.push(`ROWID = ${m[1]}`);
-    conditions.push(`(${clauses.join(' OR ')})`);
-  }
-  if (filters.startDate) {
-    const start = toCatalystDate(filters.startDate as unknown as string);
-    if (start) conditions.push(`CREATEDTIME >= '${start}'`);
-  }
-  if (filters.endDate) {
-    const end = toCatalystDate(filters.endDate as unknown as string);
-    if (end) conditions.push(`CREATEDTIME <= '${end}'`);
-  }
+  // Half-open upper bound. CREATEDTIME is 'YYYY-MM-DD HH:mm:ss:SSS' (millis
+  // after a COLON) and compares lexicographically, so the old
+  // `<= toCatalystDate(endDate)` bound — a midnight timestamp — excluded every
+  // grievance filed ON the end date.
+  conditions.push(
+    ...dateRangeClauses(
+      'CREATEDTIME',
+      filters.startDate as unknown as string,
+      filters.endDate as unknown as string
+    )
+  );
 
-  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-  return `SELECT * FROM ${GRIEVANCE_TABLE}${where} ORDER BY CREATEDTIME DESC`;
+  const term = filters.search ? String(filters.search).trim() : '';
+  if (!term) return { clauses: conditions, unsatisfiable: false };
+
+  const usedBase = countZcqlConditions(conditions);
+  // An exact ROWID term draws on the same budget as the LIKE columns, so
+  // reserve it before sizing them — and skip it entirely if nothing is left.
+  const rowidMatch = term.match(ROWID_SEARCH);
+  const rowidClause =
+    rowidMatch && usedBase < MAX_ZCQL_CONDITIONS ? `ROWID = ${rowidMatch[1]}` : null;
+  // Most-identifying FIRST: when the budget forces columns to be shed, the
+  // ones people actually search by have to be the ones that survive.
+  const { clause } = zcqlSearchWithinBudget(
+    [
+      'grievanceNumber',
+      'petitionerName',
+      'mobileNumber',
+      'constituency',
+      'wardVillage',
+      'grievanceType',
+      'description',
+    ],
+    term,
+    usedBase + (rowidClause ? 1 : 0)
+  );
+  const parts = [clause, rowidClause].filter((c): c is string => Boolean(c));
+  if (parts.length === 0) {
+    // Not one search column fits. Returning the unfiltered list would ignore
+    // the search box, and even a `ROWID = 0` sentinel would itself be the 11th
+    // condition — so tell the caller to answer with an empty page.
+    return { clauses: conditions, unsatisfiable: true };
+  }
+  conditions.push(parts.length === 1 ? parts[0] : `(${parts.join(' OR ')})`);
+  return { clauses: conditions, unsatisfiable: false };
+}
+
+function whereSql(clauses: string[]): string {
+  return clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+}
+
+/**
+ * Fetch `want` rows starting at `skip`, in ZCQL-legal chunks.
+ *
+ * The list contract permits limits up to 1000 (GrievanceView asks for exactly
+ * that) while ZCQL rejects LIMIT > 300. The old code ran the request through
+ * zcqlSafeLimit, which clamps to 299 SILENTLY while the meta still echoed the
+ * requested limit — so at limit=1000 page 1 returned rows 0-298 and page 2
+ * (skip=1000) returned rows 1000-1298, and rows 299-999 were returned by no
+ * page at all with nothing erroring. Serve the window actually asked for.
+ */
+async function fetchGrievanceWindow(
+  filterWhere: string,
+  skip: number,
+  want: number
+): Promise<CatalystRow[]> {
+  // Delegates to the shared KEYSET walk. The obvious implementation — LIMIT 299
+  // with a marching OFFSET — silently DUPLICATES rows at chunk boundaries:
+  // measured on a 2067-row table with a full total order and no concurrent
+  // writes, the OFFSET walk returned 2068 rows / 2067 unique while the keyset
+  // walk returned exactly 2067. Catalyst's OFFSET is not stable, and a
+  // tiebreaker in ORDER BY does not fix it.
+  return fetchOffsetWindow(GRIEVANCE_TABLE, filterWhere, 'CREATEDTIME', 'newest', skip, want);
+}
+
+/**
+ * The date bounds the ZCQL branch filters on, as plain strings — read back out
+ * of the very clauses it builds so the two paths cannot drift apart.
+ *
+ * CREATEDTIME is 'YYYY-MM-DD HH:mm:ss:SSS' and compares lexicographically, so
+ * comparing the raw strings in JS is the IDENTICAL predicate, half-open upper
+ * bound included. The old fallback did `new Date(r.CREATEDTIME) <= new
+ * Date(endDate)`, which read the row as local time and the bound as UTC
+ * midnight — dropping the whole of the end date plus a 5.5h sliver either side.
+ */
+function createdTimeBounds(filters: GrievanceFilters): {
+  gte: string | null;
+  lt: string | null;
+} {
+  let gte: string | null = null;
+  let lt: string | null = null;
+  for (const clause of dateRangeClauses(
+    'CREATEDTIME',
+    filters.startDate as unknown as string,
+    filters.endDate as unknown as string
+  )) {
+    const m = clause.match(/^\S+\s*(>=|<)\s*'([^']+)'$/);
+    if (!m) {
+      console.warn(
+        `[grievance] unrecognised date clause "${clause}" — skipping it in the ` +
+          `JS fallback rather than filtering differently from ZCQL`
+      );
+      continue;
+    }
+    if (m[1] === '>=') gte = m[2];
+    else lt = m[2];
+  }
+  return { gte, lt };
+}
+
+/**
+ * CREATEDTIME DESC, ROWID DESC — the same order the ZCQL branch asks for.
+ * CREATEDTIME is fixed-width, so a string compare orders it chronologically
+ * and matches ZCQL exactly. ROWIDs are ~17 digits, past
+ * Number.MAX_SAFE_INTEGER, so they are compared as digit strings (longer =
+ * larger) rather than coerced to numbers that would collide.
+ */
+function compareGrievanceDesc(a: CatalystRow, b: CatalystRow): number {
+  const sa = String(a.CREATEDTIME ?? '');
+  const sb = String(b.CREATEDTIME ?? '');
+  if (sa !== sb) return sb < sa ? -1 : 1;
+  const ra = String(a.ROWID ?? '');
+  const rb = String(b.ROWID ?? '');
+  if (ra.length !== rb.length) return rb.length - ra.length;
+  return rb < ra ? -1 : rb > ra ? 1 : 0;
 }
 
 /**
@@ -564,18 +712,108 @@ export async function getGrievances(
     // the JS path: it reliably matches grievanceNumber + ROWID and scans the
     // whole table, sidestepping ZCQL LIKE/ROWID quirks. ZCQL still handles the
     // common filtered/sorted list when there's no search term.
-    if (useZCQL() && !filters.search) {
-      const baseQuery = buildGrievanceZCQL(staffIds, filters);
-      // Catalyst ZCQL caps LIMIT at 300; +1 for hasMore probe → user limit ≤ 299.
-      const safeLimit = zcqlSafeLimit(limit);
-      const pagedQuery = `${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`;
-      const fetched = await executeZCQL<CatalystRow>(pagedQuery);
-      const hasMore = fetched.length > safeLimit;
-      const pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+    const zcqlPlan =
+      useZCQL() && !filters.search ? buildGrievanceWhere(staffIds, filters) : null;
+    // ZCQL can only answer when the WHOLE predicate fits the 10-condition
+    // ceiling, and NOTHING sizes the non-search clauses: six dropdowns + a
+    // constituency LIKE + both date bounds + two staff aliases land exactly on
+    // 10, with zero headroom, and one more would be a hard 400 surfacing as a
+    // 500. When it doesn't fit, fall through to the JS path — which can still
+    // answer. (Replying with an empty page carrying `total: 0, totalKnown:
+    // true` would assert a count that was never measured and hide real rows.)
+    const zcqlUsable =
+      zcqlPlan !== null &&
+      !zcqlPlan.unsatisfiable &&
+      countZcqlConditions(zcqlPlan.clauses) <= MAX_ZCQL_CONDITIONS;
+    if (zcqlPlan && !zcqlUsable) {
+      console.warn(
+        '[grievance] filter set does not fit the ZCQL condition budget — ' +
+          'answering this list from the JS path instead'
+      );
+    }
+    if (zcqlPlan && zcqlUsable) {
+      const clauses = zcqlPlan.clauses;
+      const filterWhere = whereSql(clauses);
+
+      // A real COUNT over the SAME predicate as the page query. The old
+      // `skip + pageRows.length + (hasMore ? 1 : 0)` looked like a total but
+      // could never exceed currentPage + 1, so every pager built on it capped
+      // at ~2 pages and hid the rest of the table.
+      //
+      // It runs in PARALLEL with the page query and only on page 1 — later
+      // pages reuse the total the client already has. The cache key is scoped
+      // by role + user id because STAFF results are per-identity: a shared key
+      // would leak one staffer's row count to another.
+      const countKey =
+        `grievance:count:${req.user?.role}:${req.user?.id}:` + JSON.stringify(clauses);
+
+      // ── Cursor mode ──────────────────────────────────────────────────────
+      // Opted into by sending `cursor` or `sort`. Page/limit callers keep the
+      // old contract untouched. A cursor page costs ONE query at any depth,
+      // where page/limit has to walk the rows it skips.
+      const usesCursorApi =
+        req.query.cursor !== undefined || req.query.sort !== undefined;
+      if (usesCursorApi) {
+        const { limit: kLimit, cursor: cursorRaw, sort } = parseKeysetQuery(req.query);
+        const cursor = decodeCursor(cursorRaw);
+        const pageClauses = [...clauses];
+        if (cursor) pageClauses.push(keysetPredicate('CREATEDTIME', cursor, sort));
+
+        const [fetched, total] = await Promise.all([
+          executeZCQL<CatalystRow>(
+            `SELECT * FROM ${GRIEVANCE_TABLE}${whereSql(pageClauses)} ` +
+              `${keysetOrderBy('CREATEDTIME', sort)} LIMIT ${assertZcqlLimit(kLimit + 1)}`
+          ),
+          cursor
+            ? Promise.resolve(null)
+            : cacheSWR(countKey, 30, 120, () => countRows(GRIEVANCE_TABLE, filterWhere)),
+        ]);
+        const more = fetched.length > kLimit;
+        const rowsOut = more ? fetched.slice(0, kLimit) : fetched;
+        const last = rowsOut[rowsOut.length - 1];
+        sendSuccess(
+          res,
+          await attachUsers(rowsOut),
+          'Grievances retrieved successfully',
+          200,
+          {
+            limit: kLimit,
+            count: rowsOut.length,
+            hasMore: more,
+            sort,
+            nextCursor:
+              more && last
+                ? encodeCursor({ t: String(last.CREATEDTIME), r: String(last.ROWID) })
+                : null,
+            ...(total !== null && total !== undefined
+              ? { total, totalKnown: true, totalPages: Math.ceil(total / kLimit) }
+              : { totalKnown: false }),
+          }
+        );
+        return;
+      }
+
+      const [fetched, total] = await Promise.all([
+        fetchGrievanceWindow(filterWhere, skip, limit + 1),
+        page === 1
+          ? cacheSWR(countKey, 30, 120, () => countRows(GRIEVANCE_TABLE, filterWhere))
+          : Promise.resolve(null),
+      ]);
+
+      const hasMore = fetched.length > limit;
+      const pageRows = hasMore ? fetched.slice(0, limit) : fetched;
       const grievances = await attachUsers(pageRows);
-      const total = skip + pageRows.length + (hasMore ? 1 : 0);
-      const meta = calculatePaginationMeta(total, page, safeLimit);
-      sendSuccess(res, grievances, 'Grievances retrieved successfully', 200, meta);
+      sendSuccess(res, grievances, 'Grievances retrieved successfully', 200, {
+        page,
+        limit,
+        count: pageRows.length,
+        hasMore,
+        // `total` is present ONLY when it is real — never derived from the
+        // page contents. countRows returns null when COUNT is unavailable.
+        ...(total !== null && total !== undefined
+          ? { total, totalKnown: true, totalPages: Math.ceil(total / limit) }
+          : { totalKnown: false }),
+      });
       return;
     }
 
@@ -593,7 +831,11 @@ export async function getGrievances(
     }
     if (filters.isVerified !== undefined) {
       const want = String(filters.isVerified) === 'true';
-      rows = rows.filter((r) => Boolean(r.isVerified) === want);
+      // parseBool, not Boolean(): Catalyst serialises boolean columns as the
+      // STRINGS "true"/"false", and Boolean("false") is true — which would make
+      // ?isVerified=false return nothing and ?isVerified=true return
+      // everything, disagreeing with the ZCQL branch's `isVerified = 'false'`.
+      rows = rows.filter((r) => parseBool(r.isVerified) === want);
     }
     if (filters.grievanceType) {
       rows = rows.filter((r) => r.grievanceType === filters.grievanceType);
@@ -613,9 +855,9 @@ export async function getGrievances(
       const q = raw.toLowerCase();
       // A "GRV-<rowid>" or bare "<rowid>" search → the digits to match on the
       // ROWID directly. This finds a grievance by its ROWID-based reference even
-      // when it also has a sequential grievanceNumber. 6+ digits so short
-      // numeric searches aren't mistaken for a ROWID.
-      const rowidMatch = raw.match(/^(?:GRV-)?(\d{6,})$/i);
+      // when it also has a sequential grievanceNumber. Shared with the ZCQL
+      // branch so both paths recognise the same shape.
+      const rowidMatch = raw.match(ROWID_SEARCH);
       rows = rows.filter((r) => {
         // The SAME human reference the UI shows: the sequential grievanceNumber
         // (GRV-YYYY-NNNN) when present, else the ROWID fallback (GRV-<rowid>).
@@ -637,31 +879,32 @@ export async function getGrievances(
         );
       });
     }
-    if (filters.startDate) {
-      const start = new Date(filters.startDate as unknown as string).getTime();
-      rows = rows.filter(
-        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
-      );
+    // The SAME half-open window the ZCQL branch applies, compared as strings.
+    // Divergence between the two paths is itself a bug: the fallback used to
+    // include the end date only up to its UTC midnight, so it returned a
+    // different set of rows than ZCQL for the identical query.
+    const { gte, lt } = createdTimeBounds(filters);
+    if (gte) {
+      rows = rows.filter((r) => r.CREATEDTIME && String(r.CREATEDTIME) >= gte);
     }
-    if (filters.endDate) {
-      const end = new Date(filters.endDate as unknown as string).getTime();
-      rows = rows.filter(
-        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
-      );
+    if (lt) {
+      rows = rows.filter((r) => r.CREATEDTIME && String(r.CREATEDTIME) < lt);
     }
 
-    rows.sort((a, b) => {
-      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-      return tb - ta;
-    });
+    // Same ORDER BY as the ZCQL branch, ROWID tiebreaker included.
+    rows.sort(compareGrievanceDesc);
 
     const total = rows.length;
     const paged = rows.slice(skip, skip + limit);
     const grievances = await attachUsers(paged);
 
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, grievances, 'Grievances retrieved successfully', 200, meta);
+    // This path reads the whole table, so the total is genuinely known here.
+    sendSuccess(res, grievances, 'Grievances retrieved successfully', 200, {
+      ...calculatePaginationMeta(total, page, limit),
+      count: paged.length,
+      totalKnown: true,
+      hasMore: skip + paged.length < total,
+    });
   } catch (error) {
     sendServerError(res, 'Failed to get grievances', error);
   }
@@ -1056,8 +1299,9 @@ export async function getGrievanceTimeline(
     // Linked task(s) → their TaskHistory entries (remarks / status changes).
     let taskRows: CatalystRow[] = [];
     try {
+      // Only the ROWID is used below — don't drag every Task column back.
       taskRows = await executeZCQL<CatalystRow>(
-        `SELECT * FROM Task WHERE referenceId = '${zcqlEscapeValue(id)}'`
+        `SELECT ROWID FROM Task WHERE referenceId = '${zcqlEscapeValue(id)}'`
       );
     } catch {
       taskRows = [];
@@ -1065,7 +1309,16 @@ export async function getGrievanceTimeline(
     const taskIds = new Set(taskRows.map((t) => String(t.ROWID)));
     if (taskIds.size > 0) {
       try {
-        const history = await listAllRows('TaskHistory');
+        // Scoped to this grievance's task(s). This used to read the ENTIRE
+        // TaskHistory table and filter it in JS — the whole audit log of every
+        // task in the office, fetched to render one grievance's timeline, and
+        // growing forever. fetchChildrenByParentIds chunks the id OR-chain at
+        // the 10-condition ceiling and runs the chunks in parallel.
+        const history = await fetchChildrenByParentIds(
+          'TaskHistory',
+          'taskId',
+          [...taskIds]
+        );
         for (const h of history) {
           if (!h.taskId || !taskIds.has(String(h.taskId))) continue;
           events.push({
@@ -1147,14 +1400,15 @@ export async function getVerificationQueue(
     rows = rows.filter(
       (r) =>
         r.status === 'OPEN' &&
-        Boolean(r.isVerified) === false &&
+        // parseBool, not Boolean(): a Catalyst "false" string is truthy, which
+        // would empty this queue entirely. Same coercion shapeGrievance uses.
+        parseBool(r.isVerified) === false &&
         r.grievanceType !== 'TEMPLE_VISIT'
     );
-    rows.sort((a, b) => {
-      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-      return ta - tb; // FIFO: oldest first
-    });
+    // FIFO: oldest first — the exact inverse of the list ordering, ROWID
+    // tiebreaker included so same-second arrivals keep a stable queue position
+    // instead of swapping places (and pages) between refreshes.
+    rows.sort((a, b) => -compareGrievanceDesc(a, b));
 
     const total = rows.length;
     const paged = rows.slice(skip, skip + limit);

@@ -1,7 +1,12 @@
+// MUST BE FIRST. Loads .env before any module below can read process.env at
+// import time. `dotenv.config()` used to sit further down this file, AFTER
+// `import routes`, so every flag resolved against an empty environment —
+// see config/load-env.ts for the full story.
+import { assertEnvLoadedBeforeFlags } from './config/load-env';
+
 import express from 'express';
 import cors, { type CorsOptions } from 'cors';
 import compression from 'compression';
-import dotenv from 'dotenv';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import config, { isWildcardAllowed } from './config';
@@ -9,8 +14,9 @@ import { withRequestMetrics } from './lib/request-metrics';
 import { catalystRuntimeInfo } from './lib/catalyst-client';
 import { useZCQL } from './config/feature-flags';
 
-// Load environment variables
-dotenv.config();
+// Catch an import re-order immediately, at boot, rather than letting a flag
+// silently resolve to the wrong value for the life of the process.
+assertEnvLoadedBeforeFlags({ USE_ZCQL: useZCQL() });
 
 // Create Express app
 const app = express();

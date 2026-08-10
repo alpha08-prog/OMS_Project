@@ -91,7 +91,10 @@ export default function StaffTasks() {
     if (!opts.background) setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = {};
+      // Explicit limit: the API defaults to 10 when none is sent, and the
+      // client pager then computes totalPages=1 and hides itself — so the
+      // page looked complete while showing only the first 10 rows.
+      const params: Record<string, string> = { limit: "200" };
       if (filterStatus !== "all") {
         params.status = filterStatus;
       }

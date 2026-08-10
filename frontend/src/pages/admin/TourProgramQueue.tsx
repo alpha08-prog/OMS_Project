@@ -11,7 +11,8 @@ import { Pagination, usePagination } from "@/components/common/Pagination";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { CardListSkeleton } from "@/components/common/Skeletons";
-import { tourProgramApi, taskApi, type TourProgram } from "@/lib/api";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
+import { tourProgramApi, taskApi, type ApiResponse, type TourProgram } from "@/lib/api";
 import { useToast } from "@/components/AuthForm/Toast";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
@@ -42,6 +43,11 @@ export default function TourProgramQueue() {
   const navigate = useNavigate();
   const { push } = useToast();
   const [programs, setPrograms] = useState<TourProgram[]>([]);
+  // The fetch below asks for a capped chunk, so what lands here may not be the
+  // whole queue. Keep the server's meta (and the raw row count it sent) so the
+  // shortfall can be shown instead of silently swallowed.
+  const [listMeta, setListMeta] = useState<ApiResponse<TourProgram[]>["meta"]>();
+  const [loadedCount, setLoadedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -91,7 +97,12 @@ export default function TourProgramQueue() {
       const res = decisionFilter === "ALL"
         ? await tourProgramApi.getPending(params)
         : await tourProgramApi.getAll(params);
-      setPrograms(res.data);
+      const rows = res.data ?? [];
+      setPrograms(rows);
+      // Count what the SERVER sent, not what survives the search box below —
+      // otherwise typing in search would fire the truncation notice.
+      setLoadedCount(rows.length);
+      setListMeta(res.meta);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load tour programs");
     } finally {
@@ -395,6 +406,18 @@ export default function TourProgramQueue() {
             </CardHeader>
 
             <CardContent className="space-y-4">
+              {/*
+                Sits above the rows so the shortfall is read before the data. The
+                search box and CSV export only ever see what was fetched, so the
+                hint points at the filters the SERVER actually honours.
+              */}
+              <TruncationNotice
+                loaded={loadedCount}
+                total={listMeta?.total}
+                totalKnown={listMeta?.totalKnown}
+                hint="Narrow the date range or switch the decision filter to reach older invitations."
+              />
+
               {loading ? (
                 <CardListSkeleton rows={5} />
               ) : filteredPrograms.length === 0 ? (

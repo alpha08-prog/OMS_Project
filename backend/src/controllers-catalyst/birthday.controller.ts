@@ -18,9 +18,14 @@ import {
   toCatalystDate,
   nowCatalystIST,
   executeZCQL,
+  walkRowsByRowId,
   zcqlEscapeValue,
+  columnExists,
+  assertZcqlLimit,
+  ZCQL_MAX_LIMIT,
   CatalystRow,
 } from '../lib/catalyst-client';
+import { cacheGet, cacheSet, cacheClear } from '../lib/cache';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import {
   sendSuccess,
@@ -34,6 +39,40 @@ import type { AuthenticatedRequest } from '../types';
 const BIRTHDAY_TABLE = 'Birthday';
 const VISITOR_TABLE = 'Visitor';
 const PASSENGER_TABLE = 'TrainPassenger';
+
+/** Cache key PREFIX for the three-table DOB union. Cleared on every write below. */
+const SOURCES_CACHE_KEY = 'birthday:sources';
+
+/**
+ * Generation suffix on the cache key.
+ *
+ * cacheClear on its own does NOT guarantee a write is visible. cacheSWR's
+ * background refresh captures the key up front and unconditionally writes its
+ * result when it finishes, so a create/update/delete that lands while a
+ * refresh is in flight has its cacheClear undone moments later by a snapshot
+ * read BEFORE the write — and that resurrected snapshot then sits there for
+ * the full TTL. Bumping the generation retires the key instead: the in-flight
+ * refresh writes under an id no reader will look up, and the prefix sweep
+ * collects it.
+ */
+let sourcesGeneration = 0;
+
+function sourcesCacheKey(): string {
+  return `${SOURCES_CACHE_KEY}:${sourcesGeneration}`;
+}
+
+/** Retire the current snapshot so the next read rebuilds it. */
+function invalidateBirthdaySources(): void {
+  sourcesGeneration += 1;
+  // Prefix sweep — drops the generation just retired along with any older one
+  // an in-flight refresh may since have re-created.
+  cacheClear(SOURCES_CACHE_KEY);
+}
+/** Serve instantly for 5 min; refresh in the background after 1 min. */
+const SOURCES_STALE_SECONDS = 60;
+const SOURCES_TTL_SECONDS = 300;
+/** Ceiling on the paged walk per table — ~30k DOB-bearing rows. */
+const MAX_SOURCE_PAGES = 100;
 
 /** Catalyst serialises boolean columns as "true"/"false" strings — coerce. */
 function parseBool(v: unknown): boolean {
@@ -86,6 +125,49 @@ function shapeBirthday(
 }
 
 /**
+ * Read every row of `table` that actually carries a DOB.
+ *
+ * `dob` is sparse — the overwhelming majority of visitors and train passengers
+ * never supply one — so pushing `dob IS NOT NULL` down means the rows we would
+ * have thrown away in JS never cross the wire at all. Two hazards it has to
+ * respect:
+ *
+ *   - Naming a column the table doesn't have 400s the ENTIRE query, not just
+ *     the predicate, so the reference is gated on columnExists and falls back
+ *     to the plain full read.
+ *   - ZCQL caps a result set at 300 rows. A single unbounded SELECT would stop
+ *     there and silently drop every birthday past it, so this walks in pages —
+ *     seeking on ROWID, NOT OFFSET. Catalyst's OFFSET duplicates rows at chunk
+ *     boundaries (measured: 2068 returned / 2067 unique on a 2067-row table),
+ *     which here would show the same person's birthday twice.
+ */
+async function fetchDobRows(table: string): Promise<CatalystRow[]> {
+  try {
+    if (await columnExists(table, 'dob')) {
+      const { rows, truncated } = await walkRowsByRowId(
+        table,
+        ' WHERE dob IS NOT NULL',
+        { maxPages: MAX_SOURCE_PAGES }
+      );
+      // Never let a cap masquerade as a complete read.
+      if (truncated) {
+        console.warn(
+          `[birthday] ${table} has more than ${MAX_SOURCE_PAGES * ZCQL_MAX_LIMIT} ` +
+            `rows with a dob — the birthday feed is truncated.`
+        );
+      }
+      return rows;
+    }
+  } catch (err) {
+    console.warn(
+      `[birthday] scoped dob read failed for ${table}, falling back to a full scan:`,
+      err instanceof Error ? err.message : err
+    );
+  }
+  return listAllRows(table);
+}
+
+/**
  * Union of every DOB-bearing record across the office, normalised to look like
  * Birthday rows so the existing filter/sort/hydrate code works unchanged.
  *   - Birthday table  (real entries — editable)
@@ -94,16 +176,32 @@ function shapeBirthday(
  * Non-Birthday rows get a prefixed ROWID so their ids never collide with real
  * Birthday ids, and are flagged read-only via __source.
  */
-async function collectBirthdaySources(): Promise<CatalystRow[]> {
+async function buildBirthdaySources(): Promise<{
+  rows: CatalystRow[];
+  /** False when any source failed — the caller must not cache a partial feed. */
+  complete: boolean;
+}> {
   const out: CatalystRow[] = [];
 
-  // Fetch the three DOB sources in parallel — they're independent full-table
-  // reads. Previously these ran as three serial round-trips to Catalyst. Each
-  // falls back to an empty list if its table is missing/unreachable.
+  // Fetch the three DOB sources in parallel — they're independent reads.
+  // Previously these ran as three serial round-trips to Catalyst.
+  // fetchDobRows already falls back to a full scan on a scoped-query failure,
+  // so reaching this catch means the table itself is unreadable. Say so, and
+  // flag the result as incomplete — a silently empty source is
+  // indistinguishable from "nobody has a birthday".
+  let complete = true;
+  const tolerate = (table: string) => (err: unknown) => {
+    complete = false;
+    console.warn(
+      `[birthday] source ${table} unreadable; omitting it from the feed:`,
+      err instanceof Error ? err.message : err
+    );
+    return [] as CatalystRow[];
+  };
   const [birthdayRows, visitorRows, passengerRows] = await Promise.all([
-    listAllRows(BIRTHDAY_TABLE).catch(() => [] as CatalystRow[]),
-    listAllRows(VISITOR_TABLE).catch(() => [] as CatalystRow[]),
-    listAllRows(PASSENGER_TABLE).catch(() => [] as CatalystRow[]),
+    fetchDobRows(BIRTHDAY_TABLE).catch(tolerate(BIRTHDAY_TABLE)),
+    fetchDobRows(VISITOR_TABLE).catch(tolerate(VISITOR_TABLE)),
+    fetchDobRows(PASSENGER_TABLE).catch(tolerate(PASSENGER_TABLE)),
   ]);
 
   for (const r of birthdayRows) {
@@ -154,7 +252,84 @@ async function collectBirthdaySources(): Promise<CatalystRow[]> {
     });
   }
 
-  return out;
+  return { rows: out, complete };
+}
+
+/**
+ * The cached view of the union above — this is what every endpoint calls.
+ *
+ * Four endpoints depend on it (list, today, upcoming, and the dashboard
+ * count), and each call was three full-table reads, so a single dashboard
+ * render paid for the aggregate more than once.
+ *
+ * There is no query to push down instead. A birthday match is a month/day
+ * comparison against a stored date, and ZCQL has no MONTH()/DAY() function —
+ * date functions are a syntax error, not a slow path — so the month and
+ * day-of-year predicates genuinely cannot be expressed server-side. Nor can
+ * the union: it spans three tables with no join. Sharing one snapshot is the
+ * only lever available, which is why it's the one applied. Writes below clear
+ * the key, so an entry added here is visible on the next request.
+ */
+async function collectBirthdaySources(): Promise<CatalystRow[]> {
+  const key = sourcesCacheKey();
+  const cached = cacheGet<CatalystRow[]>(key);
+  // Hand out a copy. Callers sort in place, and sorting the cached array would
+  // silently reorder the snapshot that every other endpoint is about to read.
+  if (cached) return [...cached];
+
+  const { rows, complete } = await buildBirthdaySources();
+
+  // NEVER cache a degraded snapshot. If one of the three sources was
+  // unreadable, the result is missing people — caching it would turn a
+  // momentary blip into minutes of "nobody has a birthday today", which reads
+  // as fact rather than failure. Leaving it uncached means the very next
+  // request retries.
+  if (complete) {
+    cacheSet(key, rows, SOURCES_TTL_SECONDS);
+  } else {
+    console.warn(
+      '[birthday] partial snapshot (a source was unreadable) — not caching it, ' +
+        'so the next request retries rather than serving an incomplete feed.'
+    );
+  }
+  return [...rows];
+}
+
+/**
+ * Final tiebreaker for every birthday ordering.
+ *
+ * Day-of-month and dob keys produce enormous tie groups — everyone born on the
+ * 12th compares equal, and rows with no dob all collapse onto the same
+ * sentinel. Without a total order the group is re-sequenced arbitrarily
+ * between requests, so slicing it into pages (or into a top-10) shows an entry
+ * twice on one page and never on the next. Name, then id, makes it total.
+ */
+function tieBreak(a: CatalystRow, b: CatalystRow): number {
+  const byName = String(a.name ?? '').localeCompare(String(b.name ?? ''));
+  if (byName !== 0) return byName;
+  return String(a.ROWID ?? '').localeCompare(String(b.ROWID ?? ''));
+}
+
+/**
+ * Local-midnight epoch for a date filter, `plusDays` days after it — the JS
+ * twin of dateRangeClauses().
+ *
+ * These rows are a union assembled in Node, so the filter can't be a SQL
+ * clause, but the BOUNDS have to be the ones dateRangeClauses would produce.
+ * The old code got both ends wrong, and both silently dropped rows:
+ *   - `new Date('2026-08-07')` is UTC midnight while `new Date(CREATEDTIME)`
+ *     parses as LOCAL time, so on an IST server the window was 5h30 off.
+ *   - the end bound was `<=` midnight, which excluded the entire end date.
+ *     Callers pass plusDays=1 and compare with `<` — half-open, so it holds
+ *     regardless of whether the stored value carries milliseconds.
+ */
+function dayBoundMs(value: unknown, plusDays: number): number | null {
+  const formatted = toCatalystDate(
+    value === undefined || value === null ? undefined : String(value)
+  );
+  if (!formatted) return null;
+  const [y, m, d] = formatted.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d + plusDays).getTime();
 }
 
 /** Look up users from cached Catalyst AppUser. Best-effort. */
@@ -172,7 +347,12 @@ async function lookupUsers(
       const legacyId = u.legacyId ? String(u.legacyId) : null;
       if (wanted.has(rowId)) {
         map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
-      } else if (legacyId && wanted.has(legacyId)) {
+      }
+      // INDEPENDENT if, not else-if: one user can be referenced by their
+      // Catalyst ROWID on some rows and their pre-migration legacy UUID on
+      // others. With else-if, a page containing both forms resolved only the
+      // ROWID and rendered the user's name blank on the legacy rows.
+      if (legacyId && wanted.has(legacyId)) {
         map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
       }
     }
@@ -241,6 +421,10 @@ export async function createBirthday(
     if (wardVillage?.trim()) payload.wardVillage = wardVillage.trim();
 
     const row = await insertRow(BIRTHDAY_TABLE, payload);
+    // The list/today/upcoming endpoints read a cached snapshot; drop it so the
+    // entry the user just created shows up on their next request instead of
+    // when the snapshot happens to expire.
+    invalidateBirthdaySources();
 
     const [shaped] = await hydrate([row]);
     sendSuccess(res, shaped, 'Birthday entry created successfully', 201);
@@ -262,16 +446,19 @@ export async function getBirthdays(
 
     let rows = await collectBirthdaySources();
 
-    if (startDate) {
-      const start = new Date(startDate).getTime();
+    // Half-open [startDate 00:00, endDate+1day 00:00) in local time — see
+    // dayBoundMs. The previous `<= endDate` bound landed on midnight, so
+    // filtering "up to today" returned nothing entered today.
+    const startMs = dayBoundMs(startDate, 0);
+    if (startMs !== null) {
       rows = rows.filter(
-        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
+        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= startMs
       );
     }
-    if (endDate) {
-      const end = new Date(endDate).getTime();
+    const endMs = dayBoundMs(endDate, 1);
+    if (endMs !== null) {
       rows = rows.filter(
-        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
+        (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() < endMs
       );
     }
 
@@ -293,19 +480,25 @@ export async function getBirthdays(
           if (!r.dob) return false;
           return new Date(r.dob).getMonth() + 1 === m;
         });
-        // When filtering by month, sort by day-of-month asc
+        // When filtering by month, sort by day-of-month asc. Day-of-month has
+        // at most 31 distinct values over the whole month, so this key alone
+        // leaves tie groups far larger than a page — hence tieBreak, which is
+        // what stops the slice below from repeating and skipping entries.
         rows.sort((a, b) => {
           const da = a.dob ? new Date(a.dob).getDate() : 99;
           const db = b.dob ? new Date(b.dob).getDate() : 99;
-          return da - db;
+          if (da !== db) return da - db;
+          return tieBreak(a, b);
         });
       }
     } else {
-      // Default sort: dob ascending
+      // Default sort: dob ascending, then tieBreak — same reasoning; rows with
+      // no parsable dob all collapse onto 0 and would otherwise be unordered.
       rows.sort((a, b) => {
         const ta = a.dob ? new Date(a.dob).getTime() : 0;
         const tb = b.dob ? new Date(b.dob).getTime() : 0;
-        return ta - tb;
+        if (ta !== tb) return ta - tb;
+        return tieBreak(a, b);
       });
     }
 
@@ -376,7 +569,13 @@ export async function getUpcomingBirthdays(
       // wraparound: if md < todayMD, add 12*100 + 31 ish to push to next year
       return md >= todayMD ? md - todayMD : md + 1300 - todayMD;
     }
-    matched.sort((a, b) => daysUntil(a) - daysUntil(b));
+    // days-until has 8 distinct values here and the result is then sliced to
+    // 10, so the cut lands inside a tie group nearly every time — the same
+    // duplicate/skip hazard as the list sorts, hence the same tiebreaker.
+    matched.sort((a, b) => {
+      const diff = daysUntil(a) - daysUntil(b);
+      return diff !== 0 ? diff : tieBreak(a, b);
+    });
 
     const data = await hydrate(matched.slice(0, 10));
     sendSuccess(res, data, 'Upcoming birthdays retrieved successfully');
@@ -443,6 +642,7 @@ export async function updateBirthday(
       updateData as any,
       ['lastEditedById', 'lastEditedAt']
     );
+    invalidateBirthdaySources(); // edited row must not linger in the snapshot
     const [shaped] = await hydrate([updated]);
     sendSuccess(res, shaped, 'Birthday entry updated successfully');
   } catch (error) {
@@ -463,6 +663,7 @@ export async function deleteBirthday(
       return;
     }
     await deleteRow(BIRTHDAY_TABLE, id);
+    invalidateBirthdaySources(); // deleted row must not linger in the snapshot
     sendSuccess(res, null, 'Birthday entry deleted successfully');
   } catch (error) {
     sendServerError(res, 'Failed to delete birthday entry', error);

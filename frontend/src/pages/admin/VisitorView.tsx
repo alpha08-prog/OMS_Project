@@ -19,11 +19,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { visitorApi, type Visitor } from "@/lib/api";
+import { visitorApi, type ApiResponse, type Visitor } from "@/lib/api";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
 import { CardListSkeleton } from "@/components/common/Skeletons";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
 import type { CsvColumn } from "@/lib/exportCsv";
@@ -57,12 +58,22 @@ export default function VisitorView() {
   const [constituency, setConstituency] = useState("");
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") ?? "");
   const [dateFilter, setDateFilter] = useState<string>("");
+  // Truncation bookkeeping: the fetch below is capped, so `visitors` may be a
+  // slice of a much larger log. `loadedCount` is what the SERVER returned — the
+  // designation/constituency filters shrink the rows afterwards, and comparing
+  // a filtered length against the real total would cry truncation every time
+  // someone picks a filter.
+  const [listMeta, setListMeta] = useState<ApiResponse<Visitor[]>["meta"]>(undefined);
+  const [loadedCount, setLoadedCount] = useState(0);
 
   const fetchVisitors = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = {};
+      // Explicit limit: the API defaults to 10 when none is sent, and the
+      // client pager then computes totalPages=1 and hides itself — so the
+      // page looked complete while showing only the first 10 rows.
+      const params: Record<string, string> = { limit: "200" };
       if (searchQuery) {
         params.search = searchQuery;
       }
@@ -71,8 +82,12 @@ export default function VisitorView() {
         params.endDate = dateFilter;
       }
       const res = await visitorApi.getAll(params);
-      let filteredData = res.data;
-      
+      const serverRows = res.data;
+      // Record the raw server response before any client-side narrowing.
+      setListMeta(res.meta);
+      setLoadedCount(serverRows.length);
+      let filteredData = serverRows;
+
       // Client-side filter for designation
       if (filterDesignation !== "all") {
         filteredData = filteredData.filter(v => v.designation === filterDesignation);
@@ -380,6 +395,18 @@ export default function VisitorView() {
             </CardHeader>
 
             <CardContent className="space-y-4">
+              {/* The fetch is capped at 200 rows, so the pager below can read as
+                  "this is everything" when it is not. Shown even when the list
+                  looks empty — a missing visitor may simply be past the cap. */}
+              {!loading && (
+                <TruncationNotice
+                  loaded={loadedCount}
+                  total={listMeta?.total}
+                  totalKnown={listMeta?.totalKnown}
+                  hint="Use search or pick a date to reach older visitor entries."
+                />
+              )}
+
               {loading ? (
                 <CardListSkeleton rows={5} />
               ) : filteredVisitors.length === 0 ? (

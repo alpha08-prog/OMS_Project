@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, Check, CheckCheck } from "lucide-react";
@@ -73,14 +73,59 @@ export function NotificationBell() {
     staleTime: 15_000,
   });
 
-  const { data: items = [], isLoading } = useQuery({
+  // First page only. Older pages are appended into `older` on demand — keeping
+  // them out of the query cache means the 30s poll refreshes the newest page
+  // without discarding what the user has already loaded.
+  const { data: firstPage, isLoading } = useQuery({
     queryKey: ["notifications", "list"],
-    queryFn: () => notificationsApi.list(false),
+    queryFn: () => notificationsApi.listPage(),
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
 
+  const [older, setOlder] = useState<Notification[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Cursor for the NEXT fetch: the tail of whatever is currently on screen.
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [exhausted, setExhausted] = useState(false);
+
+  // A refetch of page 1 invalidates every cursor derived from the old page, so
+  // drop the appended tail rather than splice a stale cursor onto fresh rows.
+  useEffect(() => {
+    setOlder([]);
+    setCursor(firstPage?.nextCursor ?? null);
+    setExhausted(!firstPage?.hasMore);
+  }, [firstPage]);
+
+  // De-duplicate defensively: a notification created between two fetches can
+  // shift the page boundary, and rendering the same id twice would throw a
+  // duplicate-key warning and show the entry twice.
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    return [...(firstPage?.items ?? []), ...older].filter((n) => {
+      if (seen.has(n.id)) return false;
+      seen.add(n.id);
+      return true;
+    });
+  }, [firstPage, older]);
+
+  const loadOlder = async () => {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await notificationsApi.listPage({ cursor });
+      setOlder((prev) => [...prev, ...page.items]);
+      setCursor(page.nextCursor);
+      if (!page.hasMore || !page.nextCursor) setExhausted(true);
+    } catch {
+      // Leave what is already loaded on screen; the button stays available.
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const refresh = () => {
+    setOlder([]);
     queryClient.invalidateQueries({ queryKey: ["notifications"] });
   };
 
@@ -182,6 +227,27 @@ export function NotificationBell() {
               </div>
             </button>
           ))}
+
+          {/*
+            Without this, the dropdown showed only the newest page and there was
+            no way to reach anything older — the rows existed, counted toward the
+            badge, and could never be opened or marked read.
+          */}
+          {!isLoading && items.length > 0 && !exhausted && (
+            <button
+              type="button"
+              onClick={loadOlder}
+              disabled={loadingMore}
+              className="w-full px-3 py-2.5 text-xs text-indigo-700 hover:bg-muted/60 disabled:opacity-60"
+            >
+              {loadingMore ? "Loading…" : "Load older notifications"}
+            </button>
+          )}
+          {!isLoading && items.length > 0 && exhausted && (
+            <div className="px-3 py-2 text-center text-[10px] text-muted-foreground">
+              That's everything.
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>

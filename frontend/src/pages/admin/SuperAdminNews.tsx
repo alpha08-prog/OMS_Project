@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
 import type { CsvColumn } from "@/lib/exportCsv";
@@ -43,6 +44,13 @@ import {
  *  and the dashboard popup on the SUPER_ADMIN home screen. */
 export function SuperAdminNewsContent() {
   const [news, setNews] = useState<NewsIntelligence[]>([]);
+  // Rows the SERVER handed us, plus the server's real total when it has one.
+  // Tracked separately from `news` because the client-side search narrows the
+  // list — counting post-filter rows would fire the truncation notice on every
+  // search, which is exactly the kind of wrong warning people learn to ignore.
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [total, setTotal] = useState<number | undefined>(undefined);
+  const [totalKnown, setTotalKnown] = useState<boolean | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -56,7 +64,10 @@ export function SuperAdminNewsContent() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = {};
+      // Explicit limit: the API defaults to 10 when none is sent, and the
+      // client pager then computes totalPages=1 and hides itself — so the
+      // page looked complete while showing only the first 10 rows.
+      const params: Record<string, string> = { limit: "200" };
       if (filterPriority !== "all") params.priority = filterPriority;
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
@@ -67,10 +78,16 @@ export function SuperAdminNewsContent() {
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       setNews(sorted);
+      setLoadedCount(arr.length);
+      setTotal(res?.meta?.total);
+      setTotalKnown(res?.meta?.totalKnown);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load news';
       setError(message);
       setNews([]);
+      setLoadedCount(0);
+      setTotal(undefined);
+      setTotalKnown(undefined);
     } finally {
       setLoading(false);
     }
@@ -206,6 +223,14 @@ export function SuperAdminNewsContent() {
                 <CardTitle>News ({filteredNews.length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
+                {/* The 200-row cap above is deliberate; hiding it is not. Sits
+                    above the feed so it is read before the rows, not after. */}
+                <TruncationNotice
+                  loaded={loadedCount}
+                  total={total}
+                  totalKnown={totalKnown}
+                  hint="Narrow the priority or date range to reach older news — search only looks inside what is loaded here."
+                />
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading…</p>
                 ) : filteredNews.length === 0 ? (

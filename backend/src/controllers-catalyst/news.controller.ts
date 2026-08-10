@@ -16,12 +16,22 @@ import {
   deleteRow,
   executeZCQL,
   zcqlEscapeValue,
-  zcqlSafeLimit,
+  zcqlLike,
+  // zcqlSafeLimit is deliberately NOT used here: it clamps silently, which is
+  // how rows past the ZCQL ceiling went missing. See fetchNewsWindow.
+  assertZcqlLimit,
+  countRows,
+  fetchOffsetWindow,
+  countZcqlConditions,
+  zcqlSearchWithinBudget,
+  dateRangeClauses,
   toCatalystDate,
   nowCatalystIST,
   updateRowTolerant,
+  ZCQL_MAX_LIMIT,
   CatalystRow,
 } from '../lib/catalyst-client';
+import { cacheSWR, cacheClear } from '../lib/cache';
 import { useZCQL } from '../config/feature-flags';
 import { getCachedTableList } from '../lib/catalyst-user-lookup';
 import { emitNotifications } from './notification.controller';
@@ -31,10 +41,25 @@ import {
   sendNotFound,
   sendServerError,
 } from '../utils/response';
-import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
+// calculatePaginationMeta is intentionally not imported any more: it requires a
+// `total`, which is what pushed this controller into fabricating one.
+// parsePagination stays for the page/limit contract the frontend still uses.
+import { parsePagination } from '../utils/pagination';
 import type { AuthenticatedRequest, NewsFilters } from '../types';
 
 const NEWS_TABLE = 'News';
+
+/**
+ * Drop cached numbers a news write invalidates.
+ *
+ * getNews serves `total` from a per-predicate SWR cache; without this, creating
+ * or deleting an item left the count on screen disagreeing with the list for up
+ * to two minutes. Prefix-based because the keys embed the filter predicate.
+ */
+function invalidateNewsCaches(): void {
+  cacheClear('news:count');
+  cacheClear('dashboard_stats');
+}
 
 const VALID_CATEGORIES = new Set([
   'DEVELOPMENT_WORK',
@@ -87,7 +112,12 @@ async function lookupUsers(
       const legacyId = u.legacyId ? String(u.legacyId) : null;
       if (wanted.has(rowId)) {
         map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
-      } else if (legacyId && wanted.has(legacyId)) {
+      }
+      // INDEPENDENT if, not else-if: one user can be referenced by their
+      // Catalyst ROWID on some rows and their pre-migration legacy UUID on
+      // others. With else-if, a page containing both forms resolved only the
+      // ROWID and rendered the user's name blank on the legacy rows.
+      if (legacyId && wanted.has(legacyId)) {
         map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
       }
     }
@@ -120,6 +150,49 @@ function priorityWeight(p: unknown): number {
   if (p === 'CRITICAL') return 2;
   if (p === 'HIGH') return 1;
   return 0;
+}
+
+/**
+ * Ordering for a news list: CRITICAL first, then newest.
+ *
+ * The trailing ROWID key is not decoration. Bulk-entered items share a
+ * CREATEDTIME to the millisecond, and a tie group with no total order is
+ * re-sequenced arbitrarily between requests — so a group straddling a page
+ * boundary shows the same item twice on one page and never on the next.
+ * Descending, to agree with the `ORDER BY CREATEDTIME DESC, ROWID DESC` the
+ * page query uses.
+ */
+function compareNews(a: CatalystRow, b: CatalystRow): number {
+  const pa = priorityWeight(a.newsPriority);
+  const pb = priorityWeight(b.newsPriority);
+  if (pa !== pb) return pb - pa;
+  const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
+  const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
+  if (ta !== tb) return tb - ta;
+  // ROWIDs are same-width numeric strings, so lexical order is numeric order.
+  return String(b.ROWID ?? '').localeCompare(String(a.ROWID ?? ''));
+}
+
+/**
+ * Local-midnight epoch for a date filter, `plusDays` days after it — the JS
+ * twin of dateRangeClauses().
+ *
+ * The fallback branch below filters in Node, so it can't use the SQL helper,
+ * but it MUST agree with it or the two branches answer the same request
+ * differently. Two traps, both of which silently drop rows:
+ *   - `new Date('2026-08-07')` is UTC midnight while `new Date(CREATEDTIME)`
+ *     parses as LOCAL time, so on an IST server the old bounds shifted by 5h30
+ *     — entries created before 05:30 on the start date vanished.
+ *   - a `<=` end bound lands on midnight, so it excluded the whole end date.
+ *     Callers pass plusDays=1 and compare with `<` instead.
+ */
+function dayBoundMs(value: unknown, plusDays: number): number | null {
+  const formatted = toCatalystDate(
+    value === undefined || value === null ? undefined : String(value)
+  );
+  if (!formatted) return null;
+  const [y, m, d] = formatted.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d + plusDays).getTime();
 }
 
 // ── Endpoints ─────────────────────────────────────────────────────────────
@@ -181,13 +254,25 @@ export async function createNews(
     }
 
     const [shaped] = await hydrate([row]);
+    invalidateNewsCaches();
     sendSuccess(res, shaped, 'News intelligence created successfully', 201);
   } catch (error) {
     sendServerError(res, 'Failed to create news intelligence', error);
   }
 }
 
-function buildNewsZCQL(filters: NewsFilters): string {
+/**
+ * WHERE clauses only — no ORDER BY, no LIMIT.
+ *
+ * Kept separate from the query text so the page query and the COUNT query are
+ * built from the SAME predicate. A total that disagrees with the rows on
+ * screen is its own bug, and the only way to guarantee they agree is to derive
+ * both from one array of clauses.
+ */
+function buildNewsWhere(filters: NewsFilters): string[] {
+  // Every fixed-width clause first, then hand the search box whatever is left
+  // of the 10-condition budget. Search is the only clause whose width varies,
+  // so it is the one that has to yield.
   const conditions: string[] = [];
   if (filters.priority) {
     conditions.push(`newsPriority = '${zcqlEscapeValue(String(filters.priority))}'`);
@@ -196,28 +281,64 @@ function buildNewsZCQL(filters: NewsFilters): string {
     conditions.push(`category = '${zcqlEscapeValue(String(filters.category))}'`);
   }
   if (filters.region) {
-    const q = zcqlEscapeValue(String(filters.region));
-    conditions.push(`region LIKE '%${q}%'`);
+    conditions.push(zcqlLike('region', String(filters.region)));
   }
-  if (filters.search) {
-    const q = zcqlEscapeValue(String(filters.search));
-    conditions.push(
-      `(headline LIKE '%${q}%' OR description LIKE '%${q}%' OR mediaSource LIKE '%${q}%')`
+  // Half-open upper bound. The old `CREATEDTIME <= toCatalystDate(endDate)`
+  // compared against MIDNIGHT of the end date, so "up to today" returned
+  // nothing from today; and patching it to 23:59:59 would still lose the last
+  // second, because stored values carry milliseconds after a colon and the
+  // comparison is lexicographic.
+  conditions.push(
+    ...dateRangeClauses('CREATEDTIME', filters.startDate, filters.endDate)
+  );
+
+  if (filters.search && String(filters.search).trim()) {
+    // Columns most-identifying first: if the budget forces one to be shed, the
+    // headline must be the last to go. Over budget the whole query 400s and
+    // the list comes back empty, so this yields loudly (the helper warns)
+    // instead.
+    const { clause } = zcqlSearchWithinBudget(
+      ['headline', 'mediaSource', 'description'],
+      String(filters.search),
+      countZcqlConditions(conditions)
     );
+    // No budget left at all — match nothing rather than silently ignoring the
+    // search box and handing back the unfiltered list.
+    conditions.push(clause ?? 'ROWID = 0');
   }
-  if (filters.startDate) {
-    const start = toCatalystDate(String(filters.startDate));
-    if (start) conditions.push(`CREATEDTIME >= '${start}'`);
-  }
-  if (filters.endDate) {
-    const end = toCatalystDate(String(filters.endDate));
-    if (end) conditions.push(`CREATEDTIME <= '${end}'`);
-  }
-  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-  // ZCQL can't express HIGH > NORMAL > LOW order natively. Order by priority
-  // desc + CREATEDTIME desc — for typical priority value strings this yields
-  // alphabetical (NORMAL > LOW > HIGH); we resort the page in JS afterwards.
-  return `SELECT * FROM ${NEWS_TABLE}${where} ORDER BY CREATEDTIME DESC`;
+  return conditions;
+}
+
+function whereSql(clauses: string[]): string {
+  return clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+}
+
+/**
+ * Fetch `want` rows starting at `skip`, in ZCQL-legal chunks.
+ *
+ * parsePagination permits limit up to 1000 while ZCQL rejects LIMIT > 300.
+ * This used to run the requested limit through zcqlSafeLimit, which clamps
+ * SILENTLY: at limit=1000, page 1 returned rows 0-298 and page 2 (OFFSET 1000)
+ * returned rows 1000-1298 — rows 299-999 were returned by no page at all. That
+ * stayed hidden while `total` was fabricated and the pager capped itself at
+ * two pages; with a real count below it would have become a visible hole.
+ *
+ * ZCQL can't express CRITICAL > HIGH > NORMAL natively, so the ordering here
+ * is chronological and the priority weighting is applied to the fetched window
+ * afterwards, as before.
+ */
+async function fetchNewsWindow(
+  filterWhere: string,
+  skip: number,
+  want: number
+): Promise<CatalystRow[]> {
+  // Delegates to the shared KEYSET walk. The obvious implementation — LIMIT 299
+  // with a marching OFFSET — silently DUPLICATES rows at chunk boundaries:
+  // measured on a 2067-row table with a full total order and no concurrent
+  // writes, the OFFSET walk returned 2068 rows / 2067 unique while the keyset
+  // walk returned exactly 2067. Catalyst's OFFSET is not stable, and a
+  // tiebreaker in ORDER BY does not fix it.
+  return fetchOffsetWindow(NEWS_TABLE, filterWhere, 'CREATEDTIME', 'newest', skip, want);
 }
 
 /** GET /api/news */
@@ -232,24 +353,32 @@ export async function getNews(
     const filters = req.query as NewsFilters;
 
     let pageRows: CatalystRow[];
-    let total: number;
+    let hasMore: boolean;
+    // null means "we could not obtain a count" — the response then OMITS total
+    // rather than inventing one.
+    let total: number | null;
 
     if (useZCQL()) {
-      const baseQuery = buildNewsZCQL(filters);
-      const safeLimit = zcqlSafeLimit(limit);
-      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
-      const hasMore = fetched.length > safeLimit;
-      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
-      // Re-sort the page in JS to honor priority weight (HIGH > NORMAL > LOW).
-      pageRows.sort((a, b) => {
-        const pa = priorityWeight(a.newsPriority);
-        const pb = priorityWeight(b.newsPriority);
-        if (pa !== pb) return pb - pa;
-        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-        return tb - ta;
-      });
-      total = skip + pageRows.length + (hasMore ? 1 : 0);
+      const filterClauses = buildNewsWhere(filters);
+      const filterWhere = whereSql(filterClauses);
+
+      const [fetched, counted] = await Promise.all([
+        fetchNewsWindow(filterWhere, skip, limit + 1),
+        // A real COUNT, run in PARALLEL with the page query and behind a
+        // stale-while-revalidate cache because it is display-only. News is
+        // office-wide with no per-user scoping, so one key can serve everyone
+        // — the key still varies by predicate so a filtered list gets its own
+        // filtered count.
+        cacheSWR(`news:count:${JSON.stringify(filterClauses)}`, 30, 120, () =>
+          countRows(NEWS_TABLE, filterWhere)
+        ),
+      ]);
+      hasMore = fetched.length > limit;
+      pageRows = hasMore ? fetched.slice(0, limit) : fetched;
+      // Re-sort the page in JS to honor priority weight (CRITICAL > HIGH >
+      // NORMAL) — ZCQL can't express that order over the stored strings.
+      pageRows.sort(compareNews);
+      total = counted;
     } else {
       let rows = await listAllRows(NEWS_TABLE);
 
@@ -263,7 +392,11 @@ export async function getNews(
         const q = String(filters.region).toLowerCase();
         rows = rows.filter((r) => (r.region || '').toLowerCase().includes(q));
       }
-      if (filters.search) {
+      // Guard on the TRIMMED term, exactly as the ZCQL branch does. Without
+      // the trim these two branches answered a whitespace-only `search`
+      // differently: ZCQL treated it as "no search" and returned the list,
+      // this path filtered on '   ' and returned nothing.
+      if (filters.search && String(filters.search).trim()) {
         const q = String(filters.search).toLowerCase();
         rows = rows.filter(
           (r) =>
@@ -272,36 +405,45 @@ export async function getNews(
             (r.mediaSource || '').toLowerCase().includes(q)
         );
       }
-      if (filters.startDate) {
-        const start = new Date(String(filters.startDate)).getTime();
+      // Same half-open day window the ZCQL branch gets from dateRangeClauses.
+      // The two branches must answer the same request identically; the old
+      // bounds here were both timezone-shifted and inclusive-of-midnight, so
+      // this path quietly returned a different set of rows.
+      const startMs = dayBoundMs(filters.startDate, 0);
+      if (startMs !== null) {
         rows = rows.filter(
-          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
+          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= startMs
         );
       }
-      if (filters.endDate) {
-        const end = new Date(String(filters.endDate)).getTime();
+      const endMs = dayBoundMs(filters.endDate, 1);
+      if (endMs !== null) {
         rows = rows.filter(
-          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
+          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() < endMs
         );
       }
 
-      rows.sort((a, b) => {
-        const pa = priorityWeight(a.newsPriority);
-        const pb = priorityWeight(b.newsPriority);
-        if (pa !== pb) return pb - pa;
-        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-        return tb - ta;
-      });
+      rows.sort(compareNews);
 
       total = rows.length;
       pageRows = rows.slice(skip, skip + limit);
+      hasMore = skip + pageRows.length < total;
     }
 
     const data = await hydrate(pageRows);
 
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, data, 'News retrieved successfully', 200, meta);
+    sendSuccess(res, data, 'News retrieved successfully', 200, {
+      page,
+      limit,
+      count: pageRows.length,
+      hasMore,
+      // `total` is present ONLY when it is real. It used to be
+      // skip + rows.length + (hasMore ? 1 : 0), which can never exceed
+      // currentPage + 1 — so every pager built on it stopped at two pages and
+      // the rest of the table was unreachable.
+      ...(total !== null
+        ? { total, totalKnown: true, totalPages: Math.ceil(total / limit) }
+        : { totalKnown: false }),
+    });
   } catch (error) {
     sendServerError(res, 'Failed to get news', error);
   }
@@ -378,6 +520,7 @@ export async function updateNews(
       'lastEditedAt',
     ]);
     const [shaped] = await hydrate([updated]);
+    invalidateNewsCaches();
     sendSuccess(res, shaped, 'News updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update news', error);
@@ -392,6 +535,7 @@ export async function deleteNews(
   try {
     const { id } = req.params;
     await deleteRow(NEWS_TABLE, id);
+    invalidateNewsCaches();
     sendSuccess(res, null, 'News deleted successfully');
   } catch (error) {
     sendServerError(res, 'Failed to delete news', error);
@@ -407,11 +551,12 @@ export async function getCriticalAlerts(
     const rows = await listAllRows(NEWS_TABLE);
     const matched = rows
       .filter((r) => r.newsPriority === 'CRITICAL')
-      .sort((a, b) => {
-        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-        return tb - ta;
-      })
+      // compareNews, not a bare CREATEDTIME compare: every row here is
+      // CRITICAL so the priority key is a no-op, but the trailing ROWID key is
+      // not. Bulk-entered alerts tie to the millisecond, and slicing an
+      // unordered tie group at 10 means which alerts make the cut changes
+      // between two identical requests.
+      .sort(compareNews)
       .slice(0, 10);
 
     const data = await hydrate(matched);

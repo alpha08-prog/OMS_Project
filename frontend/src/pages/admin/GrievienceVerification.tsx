@@ -13,8 +13,9 @@ import { Pagination, usePagination } from "@/components/common/Pagination";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { CardListSkeleton } from "@/components/common/Skeletons";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { StaffMultiSelect } from "@/components/StaffMultiSelect";
-import { grievanceApi, pdfApi, taskApi, type Grievance, type TaskAssignment } from "@/lib/api";
+import { grievanceApi, pdfApi, taskApi, type ApiResponse, type Grievance, type TaskAssignment } from "@/lib/api";
 import type { CsvColumn } from "@/lib/exportCsv";
 import { usePrompt } from "@/components/common/PromptDialog";
 import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
@@ -40,7 +41,13 @@ export default function GrievanceVerification() {
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
-  
+  // The queue is fetched capped (limit=50) and then paged in the browser, so the
+  // server's real total is the only way to know we're hiding part of the queue.
+  const [grievancesMeta, setGrievancesMeta] = useState<ApiResponse<Grievance[]>["meta"]>();
+  // Rows the SERVER returned — not the post-filter count, which would make the
+  // notice fire every time the search box or constituency filter narrows the list.
+  const [loadedCount, setLoadedCount] = useState(0);
+
   // Status filter
   const [statusFilter, setStatusFilter] = useState<string>("all");
   // Source + priority filters
@@ -138,6 +145,12 @@ export default function GrievanceVerification() {
       
       // All rows are already unverified (filtered by backend)
       setGrievances(grievancesArray);
+
+      // Truncation is reported off the grievance call only — that is the list on
+      // screen. The tasks call is a secondary lookup for reference IDs and never
+      // renders rows, so its cap is not something the user needs told about.
+      setGrievancesMeta(Array.isArray(grievancesRes) ? undefined : grievancesRes?.meta);
+      setLoadedCount(grievancesArray.length);
 
       // No verified grievances to track (they were excluded by the isVerified=false filter)
       setVerifiedGrievances([]);
@@ -392,6 +405,17 @@ export default function GrievanceVerification() {
             </CardHeader>
 
             <CardContent className="space-y-4">
+              {/* Above the rows, so the cap is seen before the data is trusted.
+                  Hidden while loading — the counts are still from the last fetch. */}
+              {!loading && (
+                <TruncationNotice
+                  loaded={loadedCount}
+                  total={grievancesMeta?.total}
+                  totalKnown={grievancesMeta?.totalKnown}
+                  hint="Clear this batch, or narrow the filters above, to reach the rest of the queue."
+                />
+              )}
+
               {loading ? (
                 <CardListSkeleton rows={5} />
               ) : filteredGrievances.length === 0 ? (

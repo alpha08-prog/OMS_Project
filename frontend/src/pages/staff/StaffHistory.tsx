@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   grievanceApi,
   trainRequestApi,
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/table";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { SearchBar } from "@/components/common/SearchBar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
@@ -95,8 +97,20 @@ type SubmissionItem = {
   details: Grievance | TrainRequest | TourProgram;
 };
 
+/**
+ * What the three sources together told us about how much data exists.
+ *
+ * `loaded` is rows the SERVER handed back (before the per-user / status / date
+ * filtering below), so a narrowing filter can't trip the notice. `totalKnown`
+ * is false unless EVERY fetched source reported a real count — one unknown
+ * total would leave the sum short by a whole module, which is worse than
+ * saying nothing.
+ */
+type FetchTally = { loaded: number; total?: number; totalKnown: boolean };
+
 export default function StaffHistory() {
   const [submissions, setSubmissions] = useState<SubmissionItem[]>([]);
+  const [tally, setTally] = useState<FetchTally>({ loaded: 0, totalKnown: false });
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<SubmissionItem | null>(null);
 
@@ -207,13 +221,27 @@ export default function StaffHistory() {
     try {
       const items: SubmissionItem[] = [];
 
+      // Running truncation tally across the three capped sources. A source that
+      // fails outright is also "unknown" — we can't claim a total for rows we
+      // never received.
+      let loadedFromServer = 0;
+      let totalFromServer = 0;
+      let allTotalsKnown = true;
+
       // Fetch grievances created by current user
       if (typeFilter === "ALL" || typeFilter === "GRIEVANCE") {
         try {
           const grievanceRes = await grievanceApi.getAll({ limit: '100' });
           console.log('StaffHistory - Grievances response:', grievanceRes);
           const grievances = Array.isArray(grievanceRes?.data) ? grievanceRes.data : [];
-          
+          loadedFromServer += grievances.length;
+          const grievanceTotal = grievanceRes?.meta?.total;
+          if (grievanceRes?.meta?.totalKnown === false || typeof grievanceTotal !== "number") {
+            allTotalsKnown = false;
+          } else {
+            totalFromServer += grievanceTotal;
+          }
+
           // Get current user ID from localStorage
           const userStr = localStorage.getItem('user');
           let currentUserId: string | null = null;
@@ -243,6 +271,7 @@ export default function StaffHistory() {
           });
         } catch (error: unknown) {
           console.error('Failed to fetch grievances:', error);
+          allTotalsKnown = false;
         }
       }
 
@@ -252,7 +281,14 @@ export default function StaffHistory() {
           const trainRes = await trainRequestApi.getAll({ limit: '100' });
           console.log('StaffHistory - Train requests response:', trainRes);
           const trainRequests = Array.isArray(trainRes?.data) ? trainRes.data : [];
-          
+          loadedFromServer += trainRequests.length;
+          const trainTotal = trainRes?.meta?.total;
+          if (trainRes?.meta?.totalKnown === false || typeof trainTotal !== "number") {
+            allTotalsKnown = false;
+          } else {
+            totalFromServer += trainTotal;
+          }
+
           const userStr = localStorage.getItem('user');
           let currentUserId: string | null = null;
           if (userStr) {
@@ -279,6 +315,7 @@ export default function StaffHistory() {
           });
         } catch (error: unknown) {
           console.error('Failed to fetch train requests:', error);
+          allTotalsKnown = false;
         }
       }
 
@@ -288,7 +325,14 @@ export default function StaffHistory() {
           const tourRes = await tourProgramApi.getAll({ limit: '100' });
           console.log('StaffHistory - Tour programs response:', tourRes);
           const tourPrograms = Array.isArray(tourRes?.data) ? tourRes.data : [];
-          
+          loadedFromServer += tourPrograms.length;
+          const tourTotal = tourRes?.meta?.total;
+          if (tourRes?.meta?.totalKnown === false || typeof tourTotal !== "number") {
+            allTotalsKnown = false;
+          } else {
+            totalFromServer += tourTotal;
+          }
+
           const userStr = localStorage.getItem('user');
           let currentUserId: string | null = null;
           if (userStr) {
@@ -315,8 +359,15 @@ export default function StaffHistory() {
           });
         } catch (error: unknown) {
           console.error('Failed to fetch tour programs:', error);
+          allTotalsKnown = false;
         }
       }
+
+      setTally({
+        loaded: loadedFromServer,
+        total: allTotalsKnown ? totalFromServer : undefined,
+        totalKnown: allTotalsKnown,
+      });
 
       // Apply status filter
       let filteredItems = items;
@@ -342,6 +393,7 @@ export default function StaffHistory() {
     } catch (error: unknown) {
       console.error("Error fetching submissions:", error);
       setSubmissions([]);
+      setTally({ loaded: 0, totalKnown: false }); // don't leave a stale notice up
     } finally {
       setLoading(false);
     }
@@ -556,7 +608,15 @@ export default function StaffHistory() {
                 </h1>
               </div>
               <p className="text-sm text-muted-foreground ml-12">
-                View all your submitted grievances, train requests, and tour programs
+                A recent view across your grievances, train requests, and tour
+                programs. For the complete, searchable Train EQ log see{" "}
+                <Link
+                  to="/staff/train-eq"
+                  className="text-indigo-700 underline underline-offset-2 hover:text-indigo-900"
+                >
+                  My Train EQ
+                </Link>
+                .
               </p>
             </div>
             <Button variant="outline" onClick={fetchSubmissions} disabled={loading}>
@@ -640,6 +700,18 @@ export default function StaffHistory() {
               <CardTitle className="text-indigo-900">Submissions ({filteredSubmissions.length})</CardTitle>
             </CardHeader>
             <CardContent>
+              {/* Each source is capped at 100 rows, so this is a recent view, not
+                  the whole history — say so above the rows, including when the
+                  filters leave the table empty. */}
+              {!loading && (
+                <TruncationNotice
+                  loaded={tally.loaded}
+                  total={tally.total}
+                  totalKnown={tally.totalKnown}
+                  hint="Older submissions may not be listed — narrow the type, status or date range to reach them."
+                  className="mb-4"
+                />
+              )}
               {loading ? (
                 <TableSkeleton rows={6} cols={6} />
               ) : filteredSubmissions.length === 0 ? (

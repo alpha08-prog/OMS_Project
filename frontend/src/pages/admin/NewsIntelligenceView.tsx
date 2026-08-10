@@ -26,9 +26,10 @@ import { Pagination, usePagination } from "@/components/common/Pagination";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { CardListSkeleton } from "@/components/common/Skeletons";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 import type { CsvColumn } from "@/lib/exportCsv";
-import { newsApi, type NewsIntelligence, type NewsPriority } from "@/lib/api";
+import { newsApi, type ApiResponse, type NewsIntelligence, type NewsPriority } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +57,12 @@ export default function NewsIntelligenceView() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [search, setSearch] = useState("");
+  // The fetch below is capped and the pager is client-side, so this screen can
+  // show a slice of a much bigger feed. Keep the server's meta and the row
+  // count it actually returned — `filteredNews.length` would shrink whenever
+  // the search box narrows the list and fire the notice for no reason.
+  const [meta, setMeta] = useState<ApiResponse<NewsIntelligence[]>["meta"]>(undefined);
+  const [loadedCount, setLoadedCount] = useState(0);
 
   // Client-side text filter over headline + description.
   const filteredNews = useMemo(() => {
@@ -86,7 +93,10 @@ export default function NewsIntelligenceView() {
     setLoading(true);
     setError(null);
     try {
-      const params: Record<string, string> = {};
+      // Explicit limit: the API defaults to 10 when none is sent, and the
+      // client pager then computes totalPages=1 and hides itself — so the
+      // page looked complete while showing only the first 10 rows.
+      const params: Record<string, string> = { limit: "200" };
       if (filterPriority !== "all") {
         params.priority = filterPriority;
       }
@@ -97,12 +107,16 @@ export default function NewsIntelligenceView() {
       const newsArray = Array.isArray(res?.data) ? res.data : [];
       console.log('NewsIntelligenceView - News array:', newsArray);
       setNews(newsArray);
+      setMeta(res?.meta);
+      setLoadedCount(newsArray.length);
     } catch (err: unknown) {
       console.error('Failed to fetch news:', err);
       const errorObj = err as Record<string, unknown> | null;
       const message = errorObj && typeof errorObj === 'object' && typeof errorObj.message === 'string' ? errorObj.message : String(err);
       setError(message || "Failed to load news");
       setNews([]); // Set empty array on error
+      setMeta(undefined); // stale counts would outlive the rows they described
+      setLoadedCount(0);
     } finally {
       setLoading(false);
     }
@@ -144,6 +158,9 @@ export default function NewsIntelligenceView() {
     try {
       await newsApi.delete(id);
       setNews(prev => prev.filter(n => n.id !== id));
+      // A delete removes a row we were holding, so the "showing N" figure has
+      // to follow it down — this is a real removal, not a filter.
+      setLoadedCount(prev => Math.max(0, prev - 1));
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error.message || "Failed to delete news");
@@ -368,6 +385,17 @@ export default function NewsIntelligenceView() {
             </CardHeader>
 
             <CardContent className="space-y-4">
+              {/* Read before the rows: the feed is capped server-side, so the
+                  pager below counts the slice we were given, not the archive. */}
+              {!loading && (
+                <TruncationNotice
+                  loaded={loadedCount}
+                  total={meta?.total}
+                  totalKnown={meta?.totalKnown}
+                  hint="Filter by priority or narrow the date range to reach older entries."
+                />
+              )}
+
               {loading ? (
                 <CardListSkeleton rows={5} />
               ) : filteredNews.length === 0 ? (
