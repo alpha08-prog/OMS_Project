@@ -184,8 +184,18 @@ async function findByIdentifier(identifier: string): Promise<CatalystRow | null>
     const lowerQ = zcqlEscapeValue(lower);
     const idQ = zcqlEscapeValue(identifier);
     const query = `SELECT * FROM ${APPUSER_TABLE} WHERE email = '${lowerQ}' OR phone = '${idQ}' LIMIT 1`;
-    const rows = await executeZCQL<CatalystRow>(query);
-    return rows[0] ?? null;
+    try {
+      const rows = await executeZCQL<CatalystRow>(query);
+      return rows[0] ?? null;
+    } catch (err) {
+      // The two branches must be interchangeable, so a ZCQL hiccup drops
+      // through to the scan rather than 500-ing a login. Warn loudly: a
+      // silently degraded fast path is how the scan comes back unnoticed.
+      console.warn(
+        '[auth] ZCQL identifier lookup failed, falling back to cached list:',
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 
   const all = await getCachedTableList(APPUSER_TABLE);
@@ -196,6 +206,39 @@ async function findByIdentifier(identifier: string): Promise<CatalystRow | null>
         (r.phone || '').toString() === identifier
     ) ?? null
   );
+}
+
+/**
+ * Find an AppUser by whichever id form the caller holds.
+ *
+ * `req.user.id` / `:id` is a Catalyst ROWID for accounts created here and the
+ * preserved UUID for accounts that predate the migration, so this was
+ * open-coded four times: ROWID → point read, UUID → read the WHOLE AppUser
+ * table and scan it for a legacyId match. The UUID branch is the one that hurt
+ * — /auth/me runs on every page load. ZCQL turns it into the same indexed
+ * point lookup the auth middleware already uses (resolveUserForAuth). The
+ * cached-list scan stays as the flag-off path, and both return the same row
+ * for the same id.
+ */
+async function findAppUserById(id: string): Promise<CatalystRow | null> {
+  if (/^\d+$/.test(id)) return getRow(APPUSER_TABLE, id);
+
+  if (useZCQL()) {
+    try {
+      const rows = await executeZCQL<CatalystRow>(
+        `SELECT * FROM ${APPUSER_TABLE} WHERE legacyId = '${zcqlEscapeValue(id)}' LIMIT 1`
+      );
+      return rows[0] ?? null;
+    } catch (err) {
+      console.warn(
+        '[auth] ZCQL legacyId lookup failed, falling back to cached list:',
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  const all = await getCachedTableList(APPUSER_TABLE);
+  return all.find((r) => r.legacyId === id) ?? null;
 }
 
 // ── Endpoints ─────────────────────────────────────────────────────────────
@@ -331,13 +374,7 @@ export async function getMe(req: AuthenticatedRequest, res: Response): Promise<v
       return;
     }
     // req.user.id may be UUID (legacyId) or numeric (ROWID).
-    let row: CatalystRow | null = null;
-    if (/^\d+$/.test(req.user.id)) {
-      row = await getRow(APPUSER_TABLE, req.user.id);
-    } else {
-      const all = await getCachedTableList(APPUSER_TABLE);
-      row = all.find((r) => r.legacyId === req.user!.id) ?? null;
-    }
+    const row = await findAppUserById(req.user.id);
     if (!row) {
       sendError(res, 'User not found', 404);
       return;
@@ -360,13 +397,7 @@ export async function updatePassword(
     }
     const { currentPassword, newPassword } = req.body;
 
-    let row: CatalystRow | null = null;
-    if (/^\d+$/.test(req.user.id)) {
-      row = await getRow(APPUSER_TABLE, req.user.id);
-    } else {
-      const all = await getCachedTableList(APPUSER_TABLE);
-      row = all.find((r) => r.legacyId === req.user!.id) ?? null;
-    }
+    const row = await findAppUserById(req.user.id);
     if (!row) {
       sendError(res, 'User not found', 404);
       return;
@@ -567,13 +598,7 @@ export async function updateUserRole(
       return;
     }
 
-    let row: CatalystRow | null = null;
-    if (/^\d+$/.test(id)) {
-      row = await getRow(APPUSER_TABLE, id);
-    } else {
-      const all = await getCachedTableList(APPUSER_TABLE);
-      row = all.find((r) => r.legacyId === id) ?? null;
-    }
+    const row = await findAppUserById(id);
     if (!row) {
       sendError(res, 'User not found', 404);
       return;
@@ -603,13 +628,7 @@ export async function deactivateUser(
       return;
     }
 
-    let row: CatalystRow | null = null;
-    if (/^\d+$/.test(id)) {
-      row = await getRow(APPUSER_TABLE, id);
-    } else {
-      const all = await getCachedTableList(APPUSER_TABLE);
-      row = all.find((r) => r.legacyId === id) ?? null;
-    }
+    const row = await findAppUserById(id);
     if (!row) {
       sendError(res, 'User not found', 404);
       return;

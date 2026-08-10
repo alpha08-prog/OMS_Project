@@ -27,12 +27,13 @@ import {
 } from "@/components/ui/dialog";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 import type { CsvColumn } from "@/lib/exportCsv";
 import { CardListSkeleton } from "@/components/common/Skeletons";
-import { meetingApi, type Meeting, type MeetingStatus } from "@/lib/api";
+import { meetingApi, type ApiResponse, type Meeting, type MeetingStatus } from "@/lib/api";
 
 // "YYYY-MM-DD HH:mm:ss" (Catalyst IST) -> "YYYY-MM-DDTHH:mm" (datetime-local).
 function toInputValue(dt: string | null): string {
@@ -88,6 +89,8 @@ const STATUS_STYLES: Record<MeetingStatus, string> = {
 export default function AdminMeetings() {
   const confirm = useConfirm();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  // Kept so the page can tell the user how much of the dataset it actually has.
+  const [meta, setMeta] = useState<ApiResponse<Meeting[]>["meta"]>();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"upcoming" | "past" | "all">("upcoming");
   const [query, setQuery] = useState("");
@@ -101,7 +104,13 @@ export default function AdminMeetings() {
   const load = async () => {
     setLoading(true);
     try {
-      setMeetings(await meetingApi.getAll());
+      // Explicit limit: the API defaults to 10 when none is sent, and the
+      // client pager then computes totalPages=1 and hides itself — so the
+      // page looked complete while showing only the first 10 rows.
+      // The 200 cap can still hide rows, so keep the meta and say so.
+      const res = await meetingApi.getAllWithMeta({ limit: "200" });
+      setMeetings(res.items);
+      setMeta(res.meta);
     } catch (e) {
       console.error("Failed to load meetings", e);
     } finally {
@@ -278,6 +287,21 @@ export default function AdminMeetings() {
               </TabsList>
 
               <TabsContent value={tab} className="mt-4 space-y-4">
+                {/*
+                  Count what the SERVER sent, not `filtered` — the tabs and the
+                  search box both narrow the list client-side, and measuring
+                  those would fire this warning every time someone typed.
+                  Shown on the empty result too: "no matches" is the moment a
+                  user most needs to know the search never saw the older rows.
+                */}
+                {!loading && (
+                  <TruncationNotice
+                    loaded={meetings.length}
+                    total={meta?.total}
+                    totalKnown={meta?.totalKnown}
+                    hint="Only the most recent meetings are loaded — search and CSV export cover just these."
+                  />
+                )}
                 {loading ? (
                   <CardListSkeleton rows={5} />
                 ) : filtered.length === 0 ? (

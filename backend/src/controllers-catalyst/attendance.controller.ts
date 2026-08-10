@@ -24,11 +24,16 @@ import {
   updateRow,
   deleteRow,
   executeZCQL,
+  walkRowsByRowId,
   zcqlEscapeValue,
+  zcqlAnyOf,
+  assertZcqlLimit,
+  assertConditionBudget,
+  ZCQL_MAX_LIMIT,
   nowCatalystIST,
   CatalystRow,
 } from '../lib/catalyst-client';
-import { getCachedTableList } from '../lib/catalyst-user-lookup';
+import { getCachedTableList, getUserIdAliases } from '../lib/catalyst-user-lookup';
 import {
   sendSuccess,
   sendError,
@@ -52,17 +57,86 @@ function todayIST(): string {
 }
 
 /**
- * ZCQL `SELECT *` silently caps at 299 rows. For wide ranges (a year × many
- * staff easily exceeds that) we have to chunk. 15 days × any plausible team
- * size stays well under the cap, and the chunks run in parallel so latency
- * scales with one round-trip, not N.
+ * WHERE clauses for a `dates` range.
+ *
+ * Deliberately NOT dateRangeClauses(): that helper emits DATETIME bounds
+ * (`>= 'YYYY-MM-DD 00:00:00'` … `< next-day 00:00:00`) because CREATEDTIME-style
+ * columns carry a time component with milliseconds after a colon. `dates` is
+ * date-only — markAttendance writes a bare 'YYYY-MM-DD' and the frontend
+ * compares it with `row.date === todayStr` — and comparison here is
+ * lexicographic, where '2026-08-07' < '2026-08-07 00:00:00'. A datetime lower
+ * bound would therefore silently drop every row ON the start date. Date-only
+ * values need date-only bounds; both ends are inclusive and exact.
+ */
+function attendanceDateClauses(startDate?: string, endDate?: string): string[] {
+  const clauses: string[] = [];
+  if (startDate) clauses.push(`dates >= '${zcqlEscapeValue(startDate)}'`);
+  if (endDate) clauses.push(`dates <= '${zcqlEscapeValue(endDate)}'`);
+  return clauses;
+}
+
+/**
+ * Thrown when a window genuinely cannot be read in one request. Callers turn it
+ * into an actionable 400 — the point is that a range this big NEVER comes back
+ * as a short, plausible-looking list.
+ */
+class AttendanceWindowTooLargeError extends Error {}
+
+/** 40 × 299 ≈ 12k rows per window — a ceiling no real office reaches. */
+const MAX_ATTENDANCE_PAGES = 40;
+
+/**
+ * Read EVERY Attendance row matching `where`, paging until a short page proves
+ * we reached the end.
+ *
+ * The previous version took ONE page per query and justified it with a
+ * headcount guess ("7 days × ≤40 staff = 280 rows, safely under the 299 cap").
+ * That guess is load-bearing and invisible: the day the office grows past it,
+ * or one staffer double-marks, the query comes back exactly full and the extra
+ * rows are dropped with nothing in the logs — an aggregate that is quietly
+ * wrong. Page instead of guessing, and if even the ceiling is hit, fail LOUD.
+ *
+ * `orderBy` must be deterministic (carry a ROWID tiebreaker), or OFFSET paging
+ * can repeat and skip rows across page boundaries when values tie.
+ */
+async function fetchAttendanceWhere(
+  where: string,
+  orderBy: string
+): Promise<CatalystRow[]> {
+  // Walks by ROWID, not OFFSET. Catalyst's OFFSET duplicates rows at chunk
+  // boundaries even under a total order (measured: 2068 returned / 2067 unique
+  // on a 2067-row table) — and here a duplicated row means a staff member
+  // counted present twice in the aggregate.
+  //
+  // ROWID order is fine because every caller re-sorts the result: this is a
+  // "read everything matching" primitive, not a paged read. `orderBy` is kept
+  // in the signature for call-site clarity but the walk imposes ROWID ASC.
+  void orderBy;
+  const { rows, truncated } = await walkRowsByRowId(ATTENDANCE_TABLE, where, {
+    maxPages: MAX_ATTENDANCE_PAGES,
+  });
+  if (truncated) {
+    throw new AttendanceWindowTooLargeError(
+      `Too many attendance records in this range (over ${
+        MAX_ATTENDANCE_PAGES * ZCQL_MAX_LIMIT
+      }). Please narrow the date range.`
+    );
+  }
+  return rows;
+}
+
+/**
+ * All attendance rows in an inclusive date range.
+ *
+ * Chunked by week so each chunk is a bounded, parallel read — latency scales
+ * with one round-trip rather than N — and each chunk is read to completion by
+ * fetchAttendanceWhere, so chunk size is now a latency knob rather than a
+ * silent correctness limit.
  */
 async function fetchAttendanceRange(
   startDate: string,
   endDate: string
 ): Promise<CatalystRow[]> {
-  // 7 days × ≤40 staff = 280 rows, safely under the 299 cap. Smaller chunks
-  // give the system headroom if the office grows.
   const CHUNK_DAYS = 7;
   const DAY_MS = 24 * 60 * 60 * 1000;
   const start = Date.UTC(
@@ -83,13 +157,22 @@ async function fetchAttendanceRange(
     const chunkStart = toIso(t);
     const chunkEnd = toIso(Math.min(t + (CHUNK_DAYS - 1) * DAY_MS, end));
     promises.push(
-      executeZCQL<CatalystRow>(
-        `SELECT * FROM ${ATTENDANCE_TABLE} WHERE dates >= '${chunkStart}' AND dates <= '${chunkEnd}' LIMIT 299`
+      fetchAttendanceWhere(
+        attendanceDateClauses(chunkStart, chunkEnd).join(' AND '),
+        // Deterministic order — OFFSET paging inside the chunk depends on it.
+        'ORDER BY dates ASC, ROWID ASC'
       )
     );
   }
   const chunks = await Promise.all(promises);
   return chunks.flat();
+}
+
+/** Recency of a row: MODIFIEDTIME, else CREATEDTIME, else ROWID order. */
+function rowRecency(row: CatalystRow): number {
+  const stamp = row.MODIFIEDTIME ?? row.CREATEDTIME;
+  const t = stamp ? new Date(String(stamp)).getTime() : NaN;
+  return Number.isFinite(t) ? t : Number(row.ROWID ?? 0);
 }
 
 /**
@@ -107,18 +190,23 @@ async function resolveAttendanceRow(
   userId: string,
   targetDate: string
 ): Promise<CatalystRow | null> {
+  // Match EVERY identity form this user can be stored under (Catalyst ROWID and
+  // pre-migration legacy UUID). The JWT `id` claim prefers legacyId, so a single
+  // -form predicate missed the row a migrated user had already written under the
+  // other alias — and this helper is the upsert probe, so a miss did not just
+  // hide the row: it INSERTED a second one for the same day, which then showed
+  // the staffer as both present and absent. Matching all aliases makes the
+  // upsert an upsert again and lets the dedupe below collapse existing pairs.
+  const aliases = await getUserIdAliases(userId);
   const rows = await executeZCQL<CatalystRow>(
-    `SELECT * FROM ${ATTENDANCE_TABLE} WHERE userId = '${zcqlEscapeValue(userId)}' AND dates = '${zcqlEscapeValue(targetDate)}' LIMIT 50`
+    `SELECT * FROM ${ATTENDANCE_TABLE} WHERE ${zcqlAnyOf('userId', aliases)} ` +
+      `AND dates = '${zcqlEscapeValue(targetDate)}' LIMIT 50`
   );
   if (rows.length === 0) return null;
 
   rows.sort((a, b) => {
-    const ta =
-      new Date(a.MODIFIEDTIME ?? a.CREATEDTIME ?? 0).getTime() ||
-      Number(a.ROWID ?? 0);
-    const tb =
-      new Date(b.MODIFIEDTIME ?? b.CREATEDTIME ?? 0).getTime() ||
-      Number(b.ROWID ?? 0);
+    const ta = rowRecency(a);
+    const tb = rowRecency(b);
     if (tb !== ta) return tb - ta;
     return Number(b.ROWID ?? 0) - Number(a.ROWID ?? 0);
   });
@@ -499,15 +587,24 @@ export async function getMyHistory(
     };
 
     const requested = Number(limitRaw);
-    const pageSize = Math.min(
-      Math.max(Number.isFinite(requested) && requested > 0 ? requested : 50, 1),
-      200
+    // Floor it: assertZcqlLimit below (rightly) rejects a fractional LIMIT, and
+    // `?limit=50.5` is a client typo, not a reason to fail the request.
+    const pageSize = Math.floor(
+      Math.min(
+        Math.max(Number.isFinite(requested) && requested > 0 ? requested : 50, 1),
+        200
+      )
     );
 
-    const escapedUser = zcqlEscapeValue(req.user.id);
-    const clauses: string[] = [`userId = '${escapedUser}'`];
-    if (startDate) clauses.push(`dates >= '${zcqlEscapeValue(startDate)}'`);
-    if (endDate) clauses.push(`dates <= '${zcqlEscapeValue(endDate)}'`);
+    // Own-rows filter must match EVERY identity alias (ROWID + legacy UUID).
+    // Matching the single form carried in the JWT made a migrated user's older
+    // marks invisible to their own history — the rows exist, they are just keyed
+    // by the other alias. Costs one condition per alias (2 in practice), which
+    // with the date bounds (2) and the keyset predicate (3) stays inside the
+    // 10-condition ZCQL budget; assertConditionBudget below keeps it honest.
+    const aliases = await getUserIdAliases(req.user.id);
+    const clauses: string[] = [zcqlAnyOf('userId', aliases)];
+    clauses.push(...attendanceDateClauses(startDate, endDate));
 
     const cursor = decodeCursor(cursorRaw);
     if (cursor) {
@@ -518,10 +615,13 @@ export async function getMyHistory(
       );
     }
 
-    const where = clauses.join(' AND ');
+    const where = assertConditionBudget(clauses, 'attendance history').join(' AND ');
     // Fetch pageSize + 1 to detect whether more rows exist after this page.
+    // pageSize is capped at 200 above, so +1 is always a legal ZCQL limit —
+    // assert rather than clamp, because a silent clamp is how rows vanish.
     const fetched = await executeZCQL<CatalystRow>(
-      `SELECT * FROM ${ATTENDANCE_TABLE} WHERE ${where} ORDER BY dates DESC, ROWID DESC LIMIT ${pageSize + 1}`
+      `SELECT * FROM ${ATTENDANCE_TABLE} WHERE ${where} ` +
+        `ORDER BY dates DESC, ROWID DESC LIMIT ${assertZcqlLimit(pageSize + 1)}`
     );
 
     const hasMore = fetched.length > pageSize;
@@ -537,7 +637,10 @@ export async function getMyHistory(
       page.map(shapeAttendance),
       'Attendance history retrieved',
       200,
-      { nextCursor }
+      // No `total`: this is a keyset walk and there is no honest count to give
+      // without a second query nobody asked for. `count` and `hasMore` describe
+      // what was actually returned, which is the part a client can trust.
+      { limit: pageSize, count: page.length, hasMore, nextCursor }
     );
   } catch (error) {
     sendServerError(res, 'Failed to fetch attendance history', error);
@@ -558,14 +661,18 @@ export async function getAllAttendance(
 
     const clauses: string[] = [];
     if (date) clauses.push(`dates = '${zcqlEscapeValue(date)}'`);
-    if (startDate) clauses.push(`dates >= '${zcqlEscapeValue(startDate)}'`);
-    if (endDate) clauses.push(`dates <= '${zcqlEscapeValue(endDate)}'`);
+    clauses.push(...attendanceDateClauses(startDate, endDate));
     // Default: today only
     if (clauses.length === 0) clauses.push(`dates = '${todayIST()}'`);
 
-    const where = clauses.join(' AND ');
-    const rows = await executeZCQL<CatalystRow>(
-      `SELECT * FROM ${ATTENDANCE_TABLE} WHERE ${where} ORDER BY userName ASC LIMIT 300`
+    // Read the whole match, not one 300-row page: a multi-day range over a full
+    // team blows past 300 easily, and the old single-page query dropped the
+    // remainder with no error — the admin saw a short list that looked complete.
+    // ROWID tiebreaker because names tie, and OFFSET paging over a non-total
+    // order repeats and skips rows at the page boundary.
+    const rows = await fetchAttendanceWhere(
+      clauses.join(' AND '),
+      'ORDER BY userName ASC, ROWID ASC'
     );
 
     // Pad with "ABSENT" entries: every active STAFF with no row for the queried
@@ -588,7 +695,15 @@ export async function getAllAttendance(
         .filter((u) => {
           const role = String(u.role ?? '');
           const isActive = u.isActive === true || u.isActive === 'true' || u.isActive === undefined;
-          return role === 'STAFF' && isActive && !markedIds.has(String(u.ROWID));
+          // Match against EVERY identity form this user can be stored under.
+          // The JWT `id` claim prefers legacyId (auth.controller jwtIdFor), so a
+          // migrated user's attendance row is keyed by their legacy UUID while
+          // this list is keyed by ROWID. Comparing ROWID alone made a staffer
+          // who HAD marked present also appear in the absentee list — counted
+          // both present and absent on the same day.
+          const forms = [String(u.ROWID), u.legacyId ? String(u.legacyId) : null]
+            .filter(Boolean) as string[];
+          return role === 'STAFF' && isActive && !forms.some((f) => markedIds.has(f));
         })
         .map((u) => ({
           id: `absent-${u.ROWID}`,
@@ -610,6 +725,12 @@ export async function getAllAttendance(
 
     sendSuccess(res, augmented, 'Attendance retrieved');
   } catch (error) {
+    // A range too big to read completely is a caller problem with a fix the
+    // caller can act on — say so instead of returning a truncated 200.
+    if (error instanceof AttendanceWindowTooLargeError) {
+      sendError(res, error.message, 400);
+      return;
+    }
     sendServerError(res, 'Failed to fetch attendance', error);
   }
 }
@@ -643,9 +764,9 @@ export async function getAggregate(
     }
 
     const [rows, users] = await Promise.all([
-      // Chunked: a single ZCQL caps at 299 rows, which a year × multiple staff
-      // easily blows past. fetchAttendanceRange splits into 15-day windows and
-      // runs them in parallel.
+      // Chunked: a single ZCQL page caps at 299 rows, which a year × multiple
+      // staff easily blows past. fetchAttendanceRange splits the range into
+      // week-long windows, runs them in parallel, and reads each to completion.
       fetchAttendanceRange(startDate, endDate),
       getCachedTableList(APPUSER_TABLE),
     ]);
@@ -660,13 +781,28 @@ export async function getAggregate(
     };
     const perStaff = new Map<string, Counters>();
 
+    // Every identity form (ROWID and legacy UUID) → the canonical ROWID, so a
+    // user whose rows were written under one form and whose seed entry uses the
+    // other lands in ONE bucket instead of being counted as two people.
+    const aliasToCanonical = new Map<string, string>();
+
     // Seed with every active STAFF so zeros show up.
     for (const u of users) {
+      // The alias map is built for EVERY user, before the active-STAFF gate.
+      // Rows from a demoted/deactivated staffer still land in the output (see
+      // the edge case below), and mapping only active staff left those rows
+      // keyed by their raw id — so someone holding rows under both their ROWID
+      // and their legacy UUID landed in two buckets and was reported as two
+      // people, which is exactly the duplicate this collapse exists to kill.
+      const canonical = String(u.ROWID);
+      aliasToCanonical.set(canonical, canonical);
+      if (u.legacyId) aliasToCanonical.set(String(u.legacyId), canonical);
+
       const role = String(u.role ?? '');
       const isActive = u.isActive === true || u.isActive === 'true' || u.isActive === undefined;
       if (role !== 'STAFF' || !isActive) continue;
-      perStaff.set(String(u.ROWID), {
-        userId: String(u.ROWID),
+      perStaff.set(canonical, {
+        userId: canonical,
         userName: String(u.name ?? ''),
         present: 0,
         halfDay: 0,
@@ -677,7 +813,7 @@ export async function getAggregate(
 
     for (const r of rows) {
       if (String(r.userRole ?? '') !== 'STAFF') continue;
-      const id = String(r.userId);
+      const id = aliasToCanonical.get(String(r.userId)) ?? String(r.userId);
       let entry = perStaff.get(id);
       if (!entry) {
         // Edge case: staff was demoted/deactivated but had records in range —
@@ -713,6 +849,10 @@ export async function getAggregate(
       'Attendance aggregate retrieved'
     );
   } catch (error) {
+    if (error instanceof AttendanceWindowTooLargeError) {
+      sendError(res, error.message, 400);
+      return;
+    }
     sendServerError(res, 'Failed to fetch attendance aggregate', error);
   }
 }
@@ -725,9 +865,9 @@ export async function getTodayStats(
   try {
     const today = todayIST();
     const [rows, users] = await Promise.all([
-      executeZCQL<CatalystRow>(
-        `SELECT * FROM ${ATTENDANCE_TABLE} WHERE dates = '${today}'`
-      ),
+      // Explicit, complete read. The bare query relied on whatever default page
+      // size ZCQL applies, which is a silent cap the day the team outgrows it.
+      fetchAttendanceWhere(`dates = '${today}'`, 'ORDER BY ROWID ASC'),
       getCachedTableList(APPUSER_TABLE),
     ]);
 
@@ -736,18 +876,36 @@ export async function getTodayStats(
       return String(u.role ?? '') === 'STAFF' && isActive;
     }).length;
 
+    // Same identity duality as the absentee list and the per-staff aggregate:
+    // one person can hold rows under their ROWID and their legacy UUID. Counting
+    // raw ids let a pre-existing duplicate pair count that staffer twice —
+    // inflating `present` and shrinking `absent` past what the headcount allows.
+    // Collapse to one row per canonical person (the newest wins, matching the
+    // upsert semantics resolveAttendanceRow enforces) before tallying.
+    const aliasToCanonical = new Map<string, string>();
+    for (const u of users) {
+      const canonical = String(u.ROWID);
+      aliasToCanonical.set(canonical, canonical);
+      if (u.legacyId) aliasToCanonical.set(String(u.legacyId), canonical);
+    }
+
+    const latestPerStaff = new Map<string, CatalystRow>();
+    for (const r of rows) {
+      if (String(r.userRole ?? '') !== 'STAFF') continue;
+      const id = aliasToCanonical.get(String(r.userId)) ?? String(r.userId);
+      const prev = latestPerStaff.get(id);
+      if (!prev || rowRecency(r) >= rowRecency(prev)) latestPerStaff.set(id, r);
+    }
+
     let present = 0;
     let halfDay = 0;
     let leave = 0;
-    const markedStaffIds = new Set<string>();
-    for (const r of rows) {
-      if (String(r.userRole ?? '') !== 'STAFF') continue;
-      markedStaffIds.add(String(r.userId));
+    for (const r of latestPerStaff.values()) {
       if (r.status === 'PRESENT') present++;
       else if (r.status === 'HALF_DAY') halfDay++;
       else if (r.status === 'LEAVE') leave++;
     }
-    const absent = Math.max(0, totalStaff - markedStaffIds.size);
+    const absent = Math.max(0, totalStaff - latestPerStaff.size);
 
     sendSuccess(
       res,
@@ -762,6 +920,13 @@ export async function getTodayStats(
       "Today's attendance stats"
     );
   } catch (error) {
+    // Same contract as the other two fetchAttendanceWhere callers: a window we
+    // cannot read completely is a 400 with a fix, never a truncated 200 or an
+    // opaque 500.
+    if (error instanceof AttendanceWindowTooLargeError) {
+      sendError(res, error.message, 400);
+      return;
+    }
     sendServerError(res, 'Failed to fetch attendance stats', error);
   }
 }

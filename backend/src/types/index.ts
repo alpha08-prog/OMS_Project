@@ -41,11 +41,28 @@ export interface ApiResponse<T = unknown> {
   meta?: {
     page?: number;
     limit?: number;
+    /**
+     * Total matching rows. Present ONLY when it is a real count.
+     *
+     * MUST NOT be derived from the page contents. The idiom
+     * `total = skip + rows.length + (hasMore ? 1 : 0)` looks like a total but
+     * can never exceed currentPage + 1, so any pager built on it caps itself
+     * at two pages and hides the rest of the table. It is optional precisely
+     * so that "unknown" is representable and the lie is not.
+     */
     total?: number;
+    /** False when the count could not be obtained — render without a total. */
+    totalKnown?: boolean;
     totalPages?: number;
+    /** Rows in THIS page. Always honest, unlike `total`. */
+    count?: number;
+    /** Whether another page exists after this one. */
+    hasMore?: boolean;
     // For cursor-based pagination (keyset). Returned by endpoints whose result
     // set has no fixed total — `null` when the last page has been reached.
     nextCursor?: string | null;
+    /** Sort direction the rows were returned in. */
+    sort?: 'newest' | 'oldest';
   };
 }
 

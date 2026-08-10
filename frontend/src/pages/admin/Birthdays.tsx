@@ -5,10 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { birthdayApi, type Birthday } from "@/lib/api";
+import { birthdayApi, type ApiResponse, type Birthday } from "@/lib/api";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { SearchBar } from "@/components/common/SearchBar";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { CardListSkeleton } from "@/components/common/Skeletons";
 import { CONSTITUENCY_OPTIONS } from "@/lib/constituencies";
@@ -38,6 +39,9 @@ const RELATION_OPTIONS = [
 
 export default function Birthdays() {
   const [birthdays, setBirthdays] = useState<Birthday[]>([]);
+  // Server meta for the main list — carries the real total when the datastore
+  // could count it, so the limit=200 cap below can admit what it is hiding.
+  const [listMeta, setListMeta] = useState<ApiResponse<Birthday[]>["meta"]>();
   const [todayBirthdays, setTodayBirthdays] = useState<Birthday[]>([]);
   const [upcomingBirthdays, setUpcomingBirthdays] = useState<Birthday[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,6 +101,7 @@ export default function Birthdays() {
         }
       }
       setBirthdays(birthdaysArray);
+      setListMeta(Array.isArray(allRes) ? undefined : allRes?.meta);
       setTodayBirthdays(Array.isArray(todayRes) ? todayRes : []);
       setUpcomingBirthdays(Array.isArray(upcomingRes) ? upcomingRes : []);
     } catch (err: unknown) {
@@ -498,6 +503,18 @@ export default function Birthdays() {
               </CardHeader>
 
               <CardContent className="space-y-4">
+                {/* The fetch is capped at 200 and paged in the browser, so the
+                    pager alone reads as "this is all of them". Compare against
+                    the server's real total and say otherwise when it isn't.
+                    `loaded` is the server row count, NOT filteredBirthdays —
+                    a constituency/source filter must not trigger the warning. */}
+                <TruncationNotice
+                  loaded={birthdays.length}
+                  total={listMeta?.total}
+                  totalKnown={listMeta?.totalKnown}
+                  hint="Use search, the month filter or the date range to reach the rest."
+                />
+
                 {loading ? (
                   <CardListSkeleton rows={5} />
                 ) : filteredBirthdays.length === 0 ? (

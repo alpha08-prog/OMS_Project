@@ -15,8 +15,19 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { Pagination, usePagination } from "@/components/common/Pagination";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import type { CsvColumn } from "@/lib/exportCsv";
-import { meetingApi, type Meeting, type MeetingStatus } from "@/lib/api";
+import {
+  meetingApi,
+  type ApiResponse,
+  type Meeting,
+  type MeetingStatus,
+} from "@/lib/api";
+
+/** How many rows we pull in one go. Everything on this page — tabs, search,
+ *  CSV export, pager — works off this slice, so the number is quoted in the
+ *  truncation hint to keep the two from drifting apart. */
+const FETCH_LIMIT = 200;
 
 function formatDateTime(dt: string | null): string {
   if (!dt) return "—";
@@ -59,15 +70,24 @@ export function SuperAdminMeetingsContent() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"upcoming" | "past" | "all">("upcoming");
   const [query, setQuery] = useState("");
+  // Response meta carries the real dataset total, which is the only way to
+  // know whether the fetch cap above is quietly hiding meetings.
+  const [meta, setMeta] = useState<ApiResponse<Meeting[]>["meta"]>();
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      setMeetings(await meetingApi.getAll());
+      // Explicit limit: the API defaults to 10 when none is sent, and the
+      // client pager then computes totalPages=1 and hides itself — so the
+      // page looked complete while showing only the first 10 rows.
+      const res = await meetingApi.getAllWithMeta({ limit: String(FETCH_LIMIT) });
+      setMeetings(res.items);
+      setMeta(res.meta);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load meetings");
       setMeetings([]);
+      setMeta(undefined);
     } finally {
       setLoading(false);
     }
@@ -154,6 +174,19 @@ export function SuperAdminMeetingsContent() {
         </TabsList>
 
         <TabsContent value={tab} className="mt-4 space-y-4">
+          {/* Sits above the rows so the cap is known before the list is read.
+              `loaded` is the raw server count, not `filtered.length` — tabs and
+              search only narrow what we already have, and counting those would
+              cry truncation on every search. Also shown over the empty state:
+              "no results" is exactly when a hidden older meeting misleads. */}
+          {!loading && (
+            <TruncationNotice
+              loaded={meetings.length}
+              total={meta?.total}
+              totalKnown={meta?.totalKnown}
+              hint={`Only the newest ${FETCH_LIMIT} are loaded — the tabs, search and CSV export cover just these.`}
+            />
+          )}
           {loading ? (
             <div className="flex items-center gap-2 text-muted-foreground py-12 justify-center">
               <Loader2 className="h-5 w-5 animate-spin" /> Loading meetings…

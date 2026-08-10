@@ -421,12 +421,24 @@ export type ApiResponse<T> = {
   message: string
   data: T
   meta?: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
+    page?: number
+    limit?: number
+    /**
+     * Total matching rows — present ONLY when the server obtained a real count.
+     * Never assume it exists; render "N shown (more available)" when it doesn't.
+     */
+    total?: number
+    /** False when the count is unavailable. Check this before showing a total. */
+    totalKnown?: boolean
+    totalPages?: number
+    /** Rows in THIS page. Always present and always honest. */
+    count?: number
+    /** Whether another page exists after this one. */
+    hasMore?: boolean
     /** Cursor-based pagination (keyset). null on the last page. */
     nextCursor?: string | null
+    /** Sort direction the rows came back in. */
+    sort?: 'newest' | 'oldest'
   }
 }
 
@@ -723,6 +735,28 @@ export const trainRequestApi = {
   getAll: async (params?: Record<string, string>) => {
     const res = await http.get<ApiResponse<TrainRequest[]>>('/train-requests', { params })
     return res.data
+  },
+
+  /**
+   * Download every row matching the current filters as CSV.
+   *
+   * Server-side, streamed, and keyset-walked — so it exports the whole result
+   * set rather than just the page on screen. Uses fetch + blob rather than a
+   * plain link because the endpoint needs the Authorization header.
+   */
+  exportCsv: async (params?: Record<string, string>) => {
+    const res = await http.get('/train-requests/export.csv', {
+      params,
+      responseType: 'blob',
+    })
+    const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'text/csv' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `train-eq-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   },
 
   getById: async (id: string) => {
@@ -1550,6 +1584,28 @@ export type Notification = {
 }
 
 export const notificationsApi = {
+  /**
+   * One page of notifications, with the cursor needed to fetch older ones.
+   *
+   * `list()` below returns only the first page and drops the paging metadata,
+   * which is why notification #51 was unreachable from the UI even after the
+   * backend learned to serve it — nothing ever asked for page 2.
+   */
+  listPage: async (opts: { unreadOnly?: boolean; cursor?: string | null; limit?: number } = {}) => {
+    const params: Record<string, string> = {}
+    if (opts.unreadOnly) params.unread = 'true'
+    if (opts.cursor) params.cursor = opts.cursor
+    if (opts.limit) params.limit = String(opts.limit)
+    const res = await http.get<ApiResponse<Notification[]>>('/notifications', { params })
+    return {
+      items: Array.isArray(res.data.data) ? res.data.data : [],
+      nextCursor: res.data.meta?.nextCursor ?? null,
+      hasMore: Boolean(res.data.meta?.hasMore),
+      total: res.data.meta?.total,
+      totalKnown: res.data.meta?.totalKnown,
+    }
+  },
+
   list: async (unreadOnly = false): Promise<Notification[]> => {
     const params = unreadOnly ? { unread: 'true' } : undefined
     const res = await http.get<ApiResponse<Notification[]>>('/notifications', { params })
@@ -1745,6 +1801,19 @@ export const meetingApi = {
   }): Promise<Meeting[]> => {
     const res = await http.get<ApiResponse<Meeting[]>>('/meetings', { params })
     return res.data.data ?? []
+  },
+
+  // Same request as `getAll`, but keeps the envelope so callers can read
+  // `meta.total` and tell a capped list apart from a complete one. Separate
+  // helper on purpose: `getAll`'s array return type is relied on elsewhere.
+  getAllWithMeta: async (params?: {
+    status?: MeetingStatus
+    scope?: 'upcoming' | 'past'
+    page?: string
+    limit?: string
+  }): Promise<{ items: Meeting[]; meta?: ApiResponse<Meeting[]>['meta'] }> => {
+    const res = await http.get<ApiResponse<Meeting[]>>('/meetings', { params })
+    return { items: res.data.data ?? [], meta: res.data.meta }
   },
 
   getById: async (id: string): Promise<Meeting> => {

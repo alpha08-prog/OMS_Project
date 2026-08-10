@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
 import type { CsvColumn } from "@/lib/exportCsv";
@@ -53,6 +54,11 @@ export function SuperAdminGrievancesContent() {
   const [grievances, setGrievances] = useState<Grievance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Rows the server actually sent, kept apart from `grievances` because that
+  // list is already thinned client-side. Compared against meta.total to tell
+  // the user when the 50-row window is hiding data.
+  const [loaded, setLoaded] = useState(0);
+  const [meta, setMeta] = useState<{ total?: number; totalKnown?: boolean }>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selected, setSelected] = useState<Grievance | null>(null);
 
@@ -98,12 +104,19 @@ export function SuperAdminGrievancesContent() {
         if (Array.isArray(res)) arr = res as unknown as Grievance[];
         else if (Array.isArray(res.data)) arr = res.data;
       }
+      // Count what the server sent, BEFORE the RESOLVED filter below —
+      // dropping resolved rows is our choice, not missing data, and measuring
+      // after it would fire the notice on a window that arrived complete.
+      setLoaded(arr.length);
+      setMeta({ total: res?.meta?.total, totalKnown: res?.meta?.totalKnown });
       // RESOLVED filter stays client-side because the backend has no "status
       // != RESOLVED" param. The 50-row window is mostly active anyway.
       setGrievances(arr.filter((g) => g.status !== 'RESOLVED'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load grievances');
       setGrievances([]);
+      setLoaded(0);
+      setMeta({});
     } finally {
       setLoading(false);
     }
@@ -271,6 +284,17 @@ export function SuperAdminGrievancesContent() {
                 <CardTitle>Grievances ({filtered.length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* The fetch is capped at 50 rows; without this the pager reads
+                    as "that's all there is". Hidden while loading so a stale
+                    count from the previous filter isn't shown as current. */}
+                {!loading && (
+                  <TruncationNotice
+                    loaded={loaded}
+                    total={meta.total}
+                    totalKnown={meta.totalKnown}
+                    hint="Narrow the status filter or date range to reach older grievances."
+                  />
+                )}
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading grievances...</p>
                 ) : filtered.length === 0 ? (

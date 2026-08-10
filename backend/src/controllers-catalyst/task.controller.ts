@@ -23,9 +23,32 @@ import {
   executeZCQL,
   zcqlEscapeValue,
   zcqlAnyOf,
-  zcqlSafeLimit,
+
+  // zcqlSafeLimit is deliberately NOT imported: it clamps silently, so a
+  // caller asking for limit=300 (AllTasks does) got 299 rows on page 1 while
+  // page 2 started at 300 — row 299 was returned by no page at all. Compute a
+  // legal batch size and assert it instead.
+  assertZcqlLimit,
+  countRows,
+  fetchOffsetWindow,
+  columnExists,
+  dateRangeClauses,
+  countZcqlConditions,
+  zcqlSearchWithinBudget,
+  fetchChildrenByParentIds,
+  MAX_ZCQL_CONDITIONS,
+  ZCQL_MAX_LIMIT,
   CatalystRow,
 } from '../lib/catalyst-client';
+import { cacheSWR, cacheClear } from '../lib/cache';
+import {
+  keysetPredicate,
+  keysetOrderBy,
+  encodeCursor,
+  decodeCursor,
+  type ListCursor,
+} from '../lib/keyset';
+import { parseKeysetQuery } from '../utils/keyset-query';
 import { useZCQL } from '../config/feature-flags';
 import {
   getCachedTableList,
@@ -64,6 +87,123 @@ function parseInteger(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : Number(v);
   return isNaN(n) ? 0 : Math.trunc(n);
+}
+
+/**
+ * The raw Catalyst timestamp bounds for a date filter, derived from the SAME
+ * helper the ZCQL path uses so the two can never disagree.
+ *
+ * The JS filters here used to be `new Date(r.CREATEDTIME) <= new Date(endDate)`,
+ * which is wrong twice over: a bare `endDate` parses as UTC midnight (so every
+ * row created ON the end date was dropped) while CREATEDTIME parses as server
+ * local time, mixing two zones in one comparison. Catalyst timestamps are
+ * fixed-width `YYYY-MM-DD HH:mm:ss:SSS`, so comparing the raw strings is both
+ * correct and zone-free — and the upper bound is half-open, matching
+ * dateRangeClauses.
+ */
+function catalystDateBounds(
+  column: string,
+  startDate?: string,
+  endDate?: string
+): { start?: string; endExclusive?: string } {
+  const bounds: { start?: string; endExclusive?: string } = {};
+  for (const clause of dateRangeClauses(column, startDate, endDate)) {
+    const literal = clause.match(/'([^']+)'/)?.[1];
+    if (!literal) continue;
+    if (clause.includes('>=')) bounds.start = literal;
+    else bounds.endExclusive = literal;
+  }
+  return bounds;
+}
+
+/** Row predicate matching the ZCQL date range exactly. */
+function inDateRange(
+  row: CatalystRow,
+  column: string,
+  bounds: { start?: string; endExclusive?: string }
+): boolean {
+  const value = row[column] ? String(row[column]) : '';
+  // A row with no timestamp can't satisfy a date filter — same as before.
+  if (!value) return false;
+  if (bounds.start && value < bounds.start) return false;
+  if (bounds.endExclusive && value >= bounds.endExclusive) return false;
+  return true;
+}
+
+/**
+ * Descending ROWID comparison, done on the STRING.
+ *
+ * `Number(ROWID)` is NOT safe here: Catalyst ROWIDs are ~17 digits
+ * (37719000000744038), well past Number.MAX_SAFE_INTEGER, so two ids less than
+ * ~8 apart collapse onto the same double and compare EQUAL — which is exactly
+ * the multi-assign case (adjacent ROWIDs, identical CREATEDTIME) the tiebreaker
+ * exists for. catalyst-client's parseSafe deliberately keeps ROWID a string for
+ * this reason; don't hand it back to Number(). Same-table ROWIDs are equal
+ * width, but compare length first so a shorter id can never sort above a
+ * longer one.
+ */
+function compareRowIdDesc(a: unknown, b: unknown): number {
+  const sa = String(a ?? '');
+  const sb = String(b ?? '');
+  if (sa.length !== sb.length) return sb.length - sa.length;
+  return sb < sa ? -1 : sb > sa ? 1 : 0;
+}
+
+/**
+ * JS twin of the ZCQL search clause (title/description, case-insensitive
+ * contains). `term` must already be trimmed and lower-cased.
+ */
+function matchesTaskSearch(row: CatalystRow, term: string): boolean {
+  return (
+    String(row.title ?? '').toLowerCase().includes(term) ||
+    String(row.description ?? '').toLowerCase().includes(term)
+  );
+}
+
+/**
+ * Fetch specific rows by ROWID, scoped and chunked.
+ *
+ * fetchChildrenByParentIds() is the usual tool for this shape, but it quotes
+ * its values and ROWID is compared as a number, so the OR-chain is built here.
+ * Chunked at MAX_ZCQL_CONDITIONS because every id costs one leaf condition and
+ * an 11th is a hard 400 that returns nothing at all.
+ */
+async function fetchRowsByRowId(
+  table: string,
+  ids: string[],
+  columns = '*'
+): Promise<CatalystRow[]> {
+  // Non-numeric ids can never equal a ROWID; the old whole-table scan matched
+  // none of them either, so dropping them changes nothing but the query.
+  const numeric = [...new Set(ids.map(String))].filter((id) => /^\d+$/.test(id));
+  if (numeric.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < numeric.length; i += MAX_ZCQL_CONDITIONS) {
+    chunks.push(numeric.slice(i, i + MAX_ZCQL_CONDITIONS));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      executeZCQL<CatalystRow>(
+        `SELECT ${columns} FROM ${table} ` +
+          `WHERE ${chunk.map((id) => `ROWID = ${id}`).join(' OR ')} ` +
+          `LIMIT ${assertZcqlLimit(chunk.length)}`
+      )
+    )
+  );
+  return results.flat();
+}
+
+/** Honest list meta: `total` is present ONLY when a real COUNT came back. */
+function listMeta(
+  page: number,
+  limit: number,
+  count: number,
+  hasMore: boolean,
+  total: number | null
+) {
+  return total !== null
+    ? { page, limit, count, hasMore, total, totalKnown: true, totalPages: Math.ceil(total / limit) }
+    : { page, limit, count, hasMore, totalKnown: false };
 }
 
 /** Compact per-assignee summary shown to staff so they can see who else
@@ -163,7 +303,12 @@ async function lookupUsers(
       const email = hidden ? '' : String(u.email);
       if (wanted.has(rowId)) {
         map.set(rowId, { id: rowId, name, email });
-      } else if (legacyId && wanted.has(legacyId)) {
+      }
+      // INDEPENDENT if, not else-if: one user can be referenced by their
+      // Catalyst ROWID on some rows and their pre-migration legacy UUID on
+      // others. With else-if, a page containing both forms resolved only the
+      // ROWID and rendered the user's name blank on the legacy rows.
+      if (legacyId && wanted.has(legacyId)) {
         map.set(legacyId, { id: legacyId, name, email });
       }
     }
@@ -210,9 +355,22 @@ async function attachUsers(rows: CatalystRow[]): Promise<any[]> {
  *   - TOUR_PROGRAM  → TOUR-YYYY-NNNN (fallback TOUR-<rowid>)
  *   - TRAIN_REQUEST → TREQ-YYYY-NNNN (fallback TREQ-<rowid>)
  * Best-effort: a per-type lookup failure just leaves those tasks' referenceNo
- * null. Each record table is read once, in parallel.
+ * null.
+ *
+ * Scoped to the referenceIds ON THIS PAGE. This used to read Grievance,
+ * TourProgram AND TrainRequest IN FULL to decorate ten task rows, so rendering
+ * one page of the largest table in the app cost O(three unrelated tables) and
+ * grew forever. Now a type is queried only when the page actually references
+ * it, in ROWID chunks that fit the 10-condition ZCQL budget.
+ *
+ * `prefetched` lets a caller that has ALREADY read one of those tables hand its
+ * numbers in — the source=OFFICE path reads Grievance to decide which tasks are
+ * office tasks, and used to read it a second time right here in the same request.
  */
-async function attachReferenceNumbers(tasks: any[]): Promise<void> {
+async function attachReferenceNumbers(
+  tasks: any[],
+  prefetched?: Partial<Record<string, Map<string, string>>>
+): Promise<void> {
   const idsByType: Record<string, Set<string>> = {
     GRIEVANCE: new Set(),
     TOUR_PROGRAM: new Set(),
@@ -240,14 +398,33 @@ async function attachReferenceNumbers(tasks: any[]): Promise<void> {
   await Promise.all(
     sources.map(async ([table, ids, type, numberCol, prefix]) => {
       if (ids.size === 0) return;
+      const map = refByType[type];
+
+      // Caller already read this table this request — don't read it again.
+      const pre = prefetched?.[type];
+      if (pre) {
+        for (const id of ids) {
+          const found = pre.get(id);
+          if (found !== undefined) map.set(id, found);
+        }
+        return;
+      }
+
       try {
-        const rows = await listAllRows(table);
-        const map = refByType[type];
+        // ZCQL 400s the ENTIRE query when it references an unknown column, and
+        // both TourProgram.tourNumber and TrainRequest.trainRequestNumber are
+        // absent in Development — so only ask for the column when it exists.
+        // Absent column ⇒ every row falls back to the <PREFIX>-<rowid> form,
+        // which is exactly what the old row-by-row `r[numberCol]` check did.
+        const hasNumber = await columnExists(table, numberCol);
+        const rows = await fetchRowsByRowId(
+          table,
+          [...ids],
+          hasNumber ? `ROWID, ${numberCol}` : 'ROWID'
+        );
         for (const r of rows) {
           const rid = String(r.ROWID);
-          if (ids.has(rid)) {
-            map.set(rid, r[numberCol] ? String(r[numberCol]) : `${prefix}-${rid}`);
-          }
+          map.set(rid, hasNumber && r[numberCol] ? String(r[numberCol]) : `${prefix}-${rid}`);
         }
       } catch {
         /* table unreadable — leave these refs null */
@@ -281,14 +458,15 @@ async function attachUsersWithCoAssignees(
     new Set(safe.map((r) => (r.groupId ? String(r.groupId) : '')).filter(Boolean))
   );
 
-  // 2. One ZCQL fetch for all sibling rows across all groups.
+  // 2. Scoped fetch for all sibling rows across all groups. This was a bare
+  //    `groupId IN (...)`, which is both unbudgeted — an 11th group is a hard
+  //    400 that returns NOTHING, silently emptying every coAssignees list on
+  //    the page — and reliant on an IN operator Catalyst does not honour
+  //    consistently. The helper OR-chains and chunks by the 10-condition limit.
   let siblings: CatalystRow[] = [];
   if (groupIds.length > 0) {
-    const inClause = groupIds.map((g) => `'${zcqlEscapeValue(g)}'`).join(',');
     try {
-      siblings = await executeZCQL<CatalystRow>(
-        `SELECT * FROM ${TASK_TABLE} WHERE groupId IN (${inClause})`
-      );
+      siblings = await fetchChildrenByParentIds(TASK_TABLE, 'groupId', groupIds);
     } catch {
       siblings = [];
     }
@@ -341,22 +519,80 @@ async function attachUsersWithCoAssignees(
   });
 }
 
-/** For a list of task ROWIDs, return up to N most-recent history entries each. */
+/**
+ * Newest-first comparator for history rows.
+ *
+ * The ROWID tiebreaker is not decoration: TaskHistory rows written in the same
+ * request share a CREATEDTIME to the millisecond, and without a tiebreaker
+ * their relative order is whatever the engine felt like — which reorders the
+ * timeline between two identical requests.
+ */
+function historyNewestFirst(a: CatalystRow, b: CatalystRow): number {
+  const ta = a.CREATEDTIME ? new Date(String(a.CREATEDTIME)).getTime() : 0;
+  const tb = b.CREATEDTIME ? new Date(String(b.CREATEDTIME)).getTime() : 0;
+  if (ta !== tb) return tb - ta;
+  return compareRowIdDesc(a.ROWID, b.ROWID);
+}
+
+/**
+ * Every TaskHistory row for ONE task, newest first.
+ *
+ * Replaces `listAllRows(HISTORY_TABLE)` + filter: TaskHistory grows with every
+ * remark on every task forever, so reading it whole to show one task's timeline
+ * got slower with each remark anyone anywhere left. Paged by ROWID rather than
+ * capped at the 299-row ZCQL ceiling, because a truncated audit trail is worse
+ * than a slow one.
+ *
+ * Throws on failure, exactly as the listAllRows form did — callers that can
+ * tolerate a missing TaskHistory table catch it themselves. Returning an empty
+ * timeline for a task that has one would be a silent lie.
+ */
+async function historyRowsForTask(taskId: string): Promise<CatalystRow[]> {
+  const out: CatalystRow[] = [];
+  let after = '0';
+  for (let i = 0; i < 40; i++) {
+    const rows = await executeZCQL<CatalystRow>(
+      `SELECT * FROM ${HISTORY_TABLE} ` +
+        `WHERE taskId = '${zcqlEscapeValue(taskId)}' AND ROWID > ${after} ` +
+        `ORDER BY ROWID ASC LIMIT ${assertZcqlLimit(ZCQL_MAX_LIMIT)}`
+    );
+    out.push(...rows);
+    if (rows.length < ZCQL_MAX_LIMIT) break;
+    after = String(rows[rows.length - 1].ROWID);
+  }
+  return out.sort(historyNewestFirst);
+}
+
+/**
+ * For a list of task ROWIDs, return up to N most-recent history entries each.
+ *
+ * Scoped + chunked on taskId. This used to read the ENTIRE TaskHistory table to
+ * attach three rows per task, on every render of every task list — the single
+ * fastest-growing cost in the module, since TaskHistory gains a row on every
+ * remark, status change and forward.
+ */
 async function recentHistoryByTaskId(
   taskRowIds: string[],
   perTask = 3
 ): Promise<Map<string, any[]>> {
   const out = new Map<string, any[]>();
   if (taskRowIds.length === 0) return out;
-  const idSet = new Set(taskRowIds);
-  let allHistory: CatalystRow[] = [];
+  const idSet = new Set(taskRowIds.map(String));
+
+  let scoped: CatalystRow[] = [];
   try {
-    allHistory = await listAllRows(HISTORY_TABLE);
+    // ORDER BY inside the helper matters: a chunk that comes back at the ZCQL
+    // row ceiling is truncated from the OLDEST end, so the entries we actually
+    // keep (the newest `perTask`) survive regardless.
+    scoped = await fetchChildrenByParentIds(HISTORY_TABLE, 'taskId', taskRowIds, {
+      orderBy: 'ORDER BY CREATEDTIME DESC, ROWID DESC',
+    });
   } catch {
     return out; // Table might not exist yet — degrade gracefully.
   }
+
   const byTask: Record<string, CatalystRow[]> = {};
-  for (const h of allHistory) {
+  for (const h of scoped) {
     if (!h.taskId) continue;
     const tid = String(h.taskId);
     if (!idSet.has(tid)) continue;
@@ -369,11 +605,7 @@ async function recentHistoryByTaskId(
   }
   const creators = await lookupUsers(creatorIds);
   for (const [tid, arr] of Object.entries(byTask)) {
-    arr.sort((a, b) => {
-      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-      return tb - ta;
-    });
+    arr.sort(historyNewestFirst);
     out.set(
       tid,
       arr.slice(0, perTask).map((h) =>
@@ -619,6 +851,7 @@ export async function createTask(
       ids.length === 1
         ? 'Task assigned successfully'
         : `Task assigned to ${ids.length} staff members successfully`;
+    invalidateTaskCaches();
     sendSuccess(res, shaped, message, 201);
   } catch (error: any) {
     sendServerError(res, error?.message || 'Failed to create task', error);
@@ -703,6 +936,11 @@ export async function assignTask(
 /**
  * Standard list ordering for tasks: COMPLETED rows always sink to the bottom,
  * within each bucket HIGH priority floats up, ties break newest-first.
+ *
+ * The ROWID tiebreaker is load-bearing. Tasks created by one multi-assign share
+ * a CREATEDTIME to the millisecond, so without it their relative order differs
+ * between two calls — and since pages are cut out of this sorted array, a row
+ * that moves across the cut appears twice or not at all.
  */
 function taskListCompare(a: CatalystRow, b: CatalystRow): number {
   const ca = String(a.status) === 'COMPLETED' ? 1 : 0;
@@ -713,10 +951,11 @@ function taskListCompare(a: CatalystRow, b: CatalystRow): number {
   if (pa !== pb) return pb - pa;
   const ta = a.CREATEDTIME ? new Date(String(a.CREATEDTIME)).getTime() : 0;
   const tb = b.CREATEDTIME ? new Date(String(b.CREATEDTIME)).getTime() : 0;
-  return tb - ta;
+  if (ta !== tb) return tb - ta;
+  return compareRowIdDesc(a.ROWID, b.ROWID);
 }
 
-function buildTaskZCQL(params: {
+type TaskFilterParams = {
   status?: string;
   taskType?: string;
   assignedToId?: string;
@@ -725,8 +964,19 @@ function buildTaskZCQL(params: {
   priority?: string;
   startDate?: string;
   endDate?: string;
-  orderBy?: 'created' | 'due';
-}): string {
+  search?: string;
+};
+
+/**
+ * WHERE clauses only — no ORDER BY, no LIMIT. Kept separate so the page query
+ * and the COUNT query derive from the SAME predicate; a total that disagrees
+ * with the rows on screen is its own bug.
+ */
+function buildTaskWhere(params: TaskFilterParams): string[] {
+  // Every NON-search clause first, then hand the search box whatever is left of
+  // the 10-condition budget. Search is the only variable-width clause, so it is
+  // the one that must yield — visibly (a warning names the dropped columns)
+  // rather than 400-ing the whole query into an empty result.
   const conditions: string[] = [];
   if (params.status) conditions.push(`status = '${zcqlEscapeValue(params.status)}'`);
   if (params.taskType) conditions.push(`taskType = '${zcqlEscapeValue(params.taskType)}'`);
@@ -735,22 +985,208 @@ function buildTaskZCQL(params: {
   else if (params.assignedToId)
     conditions.push(`assignedToId = '${zcqlEscapeValue(params.assignedToId)}'`);
   if (params.priority) conditions.push(`priorities = '${zcqlEscapeValue(params.priority)}'`);
-  if (params.startDate) {
-    const start = toCatalystDate(params.startDate);
-    if (start) conditions.push(`CREATEDTIME >= '${start}'`);
+  // Half-open upper bound: a `<= '<end>'` bound drops every row created ON the
+  // end date, and patching it to 23:59:59 still drops the last second because
+  // CREATEDTIME carries milliseconds after a colon.
+  conditions.push(...dateRangeClauses('CREATEDTIME', params.startDate, params.endDate));
+
+  if (params.search && params.search.trim()) {
+    // Most-identifying first, so a squeezed budget keeps the column people
+    // actually search. LIKE goes through the helper because the Catalyst
+    // wildcard is `*` — `%` matches zero rows and does not error.
+    const { clause } = zcqlSearchWithinBudget(
+      ['title', 'description'],
+      params.search.trim(),
+      countZcqlConditions(conditions)
+    );
+    // No budget left at all — match nothing rather than silently ignoring the
+    // search box and handing back the unfiltered list.
+    conditions.push(clause ?? 'ROWID = 0');
   }
-  if (params.endDate) {
-    const end = toCatalystDate(params.endDate);
-    if (end) conditions.push(`CREATEDTIME <= '${end}'`);
+  return conditions;
+}
+
+function whereSql(clauses: string[]): string {
+  return clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+}
+
+/**
+ * SELECT + WHERE + ORDER BY for a task list page (LIMIT/OFFSET added by the
+ * caller). Compound ORDER BY works fine on Catalyst — the comment that used to
+ * live here claiming only single-column ORDER BY is supported was simply wrong,
+ * and it cost every list a ROWID tiebreaker. Without one, rows that tie on the
+ * sort column shuffle between requests and duplicate/vanish across page edges.
+ *
+ * The page is still re-sorted in JS afterwards to honour priority weight
+ * (HIGH > NORMAL > LOW), which ZCQL cannot express; the page is small, so that
+ * is cheap.
+ */
+function buildTaskQuery(where: string, orderBy: 'created' | 'due'): string {
+  const order =
+    orderBy === 'due' ? 'dueDate ASC, ROWID ASC' : 'CREATEDTIME DESC, ROWID DESC';
+  return `SELECT * FROM ${TASK_TABLE}${where} ORDER BY ${order}`;
+}
+
+/**
+ * Fetch `want` rows starting at `skip`, in ZCQL-legal chunks.
+ *
+ * The legacy page/limit contract permits up to 1000 (AllTasks asks for 300,
+ * Office Tasks for 200) while ZCQL rejects LIMIT > 300. The old code ran the
+ * limit through zcqlSafeLimit, which clamps SILENTLY and echoed the requested
+ * limit back in the meta — so at limit=300, page 1 returned rows 0-298 and page
+ * 2 (skip=300) started at row 300. Row 299 was returned by no page at all, and
+ * nothing errored.
+ */
+/**
+ * The four buckets of `taskListCompare`, in display order.
+ *
+ * taskListCompare sinks COMPLETED and floats HIGH before ordering by
+ * CREATEDTIME. That is a GLOBAL ordering: the JS path sorts the whole table
+ * with it and then slices, so a three-month-old HIGH task still appears on
+ * page 1. Ordering by CREATEDTIME and re-sorting only the fetched page does
+ * NOT reproduce that — it buries that task on page 8 — and a differential run
+ * caught the two paths returning different rows for the same request.
+ *
+ * The buckets are disjoint and exhaustive, and each is internally ordered by
+ * CREATEDTIME DESC, so walking them in order IS taskListCompare order.
+ *
+ * NULL-SAFETY IS LOAD-BEARING: Catalyst's `!=` excludes NULLs. Measured on the
+ * live table, `status != 'COMPLETED'` (145) + `status = 'COMPLETED'` (48) = 193
+ * of 195 rows — the two NULL-status rows belong to NEITHER side and would
+ * silently disappear. Hence the explicit `OR ... IS NULL`.
+ */
+const NOT_COMPLETED = `(status != 'COMPLETED' OR status IS NULL)`;
+const IS_COMPLETED = `status = 'COMPLETED'`;
+const IS_HIGH = `priorities = 'HIGH'`;
+const NOT_HIGH = `(priorities != 'HIGH' OR priorities IS NULL)`;
+
+const TASK_DISPLAY_BUCKETS: string[][] = [
+  [NOT_COMPLETED, IS_HIGH],
+  [NOT_COMPLETED, NOT_HIGH],
+  [IS_COMPLETED, IS_HIGH],
+  [IS_COMPLETED, NOT_HIGH],
+];
+
+/**
+ * Fetch the window [skip, skip+want) in taskListCompare order, bucket by
+ * bucket. Returns null when the filter set leaves no room for the bucket
+ * predicates plus a keyset seek within the 10-condition budget — the caller
+ * then falls back to the JS path, which is slower but always correctly ordered.
+ *
+ * DELIBERATELY USES NO ROW COUNTS.
+ *
+ * The obvious implementation asks each bucket for its size, so `skip` can jump
+ * whole buckets without reading them. That is faster and it is WRONG: a bucket
+ * size is a fact about the table at one instant, and pagination arithmetic
+ * built on a CACHED size silently breaks the moment anyone writes. Complete a
+ * task and bucket 1 shrinks by one while the cached size still says otherwise —
+ * every subsequent page computes its offset against a number that is no longer
+ * true, and rows get skipped or repeated across page boundaries. Invalidating
+ * the cache on write narrows that window; it does not close it, because a page
+ * can be requested between the write and the invalidation, and because two
+ * pages of one user's session can straddle any write at all.
+ *
+ * Walking instead removes the class of bug rather than shrinking it: each
+ * bucket is read in keyset order and rows are counted off as they stream past,
+ * so the arithmetic is derived from the rows themselves and cannot disagree
+ * with them. The cost is reading the rows you skip — bounded by the page
+ * contract, and paid only on deep pages.
+ */
+async function fetchTaskWindowDisplayOrdered(
+  baseClauses: string[],
+  skip: number,
+  want: number
+): Promise<CatalystRow[] | null> {
+  // bucket predicates (max 4 conditions) + keyset seek (3) must fit alongside
+  // whatever the user filtered by.
+  const worstBucketCost = 4;
+  if (countZcqlConditions(baseClauses) + worstBucketCost + 3 > MAX_ZCQL_CONDITIONS) {
+    return null;
   }
 
-  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-  // Catalyst ZCQL supports only single-column ORDER BY. We sort by the time
-  // column server-side, then re-sort the page in JS to honor priority weight
-  // (HIGH > NORMAL > LOW) — the page is small (limit ~10), so JS sort is cheap.
-  const orderCol = params.orderBy === 'due' ? 'dueDate' : 'CREATEDTIME';
-  const orderDir = params.orderBy === 'due' ? 'ASC' : 'DESC';
-  return `SELECT * FROM ${TASK_TABLE}${where} ORDER BY ${orderCol} ${orderDir}`;
+  const collected: CatalystRow[] = [];
+  let skipped = 0;
+  // Backstop only: (skip + want) is bounded by the page contract.
+  const MAX_PAGES_PER_BUCKET = 64;
+
+  for (const bucket of TASK_DISPLAY_BUCKETS) {
+    if (collected.length >= want) break;
+    const clauses = [...baseClauses, ...bucket];
+    let cursor: ListCursor | null = null;
+
+    for (let page = 0; page < MAX_PAGES_PER_BUCKET; page++) {
+      const pageClauses = [...clauses];
+      if (cursor) pageClauses.push(keysetPredicate('CREATEDTIME', cursor, 'newest'));
+
+      const rows = await executeZCQL<CatalystRow>(
+        `SELECT * FROM ${TASK_TABLE}${whereSql(pageClauses)} ` +
+          `${keysetOrderBy('CREATEDTIME', 'newest')} LIMIT ${assertZcqlLimit(ZCQL_MAX_LIMIT)}`
+      );
+      if (rows.length === 0) break;
+
+      for (const row of rows) {
+        if (skipped < skip) skipped += 1;
+        else if (collected.length < want) collected.push(row);
+        else break;
+      }
+      if (collected.length >= want) break;
+      if (rows.length < ZCQL_MAX_LIMIT) break; // bucket exhausted
+
+      const last = rows[rows.length - 1];
+      const t = String(last.CREATEDTIME ?? '');
+      const r = String(last.ROWID ?? '');
+      if (!t || !r) break; // cannot build a cursor — stop rather than loop
+      cursor = { t, r };
+    }
+  }
+  return collected;
+}
+
+async function fetchTaskWindow(
+  where: string,
+  orderBy: 'created' | 'due',
+  skip: number,
+  want: number
+): Promise<CatalystRow[]> {
+  // Delegates to the shared KEYSET walk. Chunking with a marching OFFSET —
+  // which is what this did — silently DUPLICATES rows at chunk boundaries:
+  // measured on a 2067-row table with a full total order and no concurrent
+  // writes, the OFFSET walk returned 2068 rows / 2067 unique, the keyset walk
+  // exactly 2067. Catalyst's OFFSET is not stable and a ROWID tiebreaker in
+  // ORDER BY does not rescue it.
+  const [timeColumn, sort] =
+    orderBy === 'due'
+      ? (['dueDate', 'oldest'] as const) // dueDate ASC
+      : (['CREATEDTIME', 'newest'] as const); // CREATEDTIME DESC
+  return fetchOffsetWindow(TASK_TABLE, where, timeColumn, sort, skip, want);
+}
+
+/**
+ * Real COUNT for a task predicate, cached briefly and shared by every page of
+ * the same query. Returns null when Catalyst cannot answer — callers MUST then
+ * render without a total rather than inventing one.
+ */
+function countTasks(scope: string, where: string): Promise<number | null> {
+  return cacheSWR(`tasks:count:${scope}:${where}`, 30, 120, () =>
+    countRows(TASK_TABLE, where)
+  );
+}
+
+/**
+ * Drop every cached number that a task write can invalidate.
+ *
+ * getTasks serves its `total` from a per-predicate SWR cache, so without this a
+ * newly created or completed task left the count on screen wrong for up to two
+ * minutes — the list and its own total disagreeing. The dashboard aggregates
+ * count tasks too, so they go with it.
+ *
+ * Prefix-based (cacheClear matches by prefix), because the keys embed the role,
+ * user id and predicate — there is no single key to delete.
+ */
+function invalidateTaskCaches(): void {
+  cacheClear('tasks:count');
+  cacheClear('dashboard_stats');
+  cacheClear('history:count');
 }
 
 /**
@@ -908,11 +1344,16 @@ export async function getTasks(
     const { page, limit, skip } = parsePagination(
       req.query as { page?: string; limit?: string }
     );
-    const { status, taskType, assignedToId, priority, startDate, endDate, source } =
+    const { status, taskType, assignedToId, priority, startDate, endDate, source, search } =
       req.query as Record<string, string>;
 
+    const bounds = catalystDateBounds('CREATEDTIME', startDate, endDate);
+    const hasDateFilter = Boolean(bounds.start || bounds.endExclusive);
+    const term = search?.trim().toLowerCase() ?? '';
+
     let pageRows: CatalystRow[];
-    let total: number;
+    // null means "no real count available" — never a number derived from the page.
+    let total: number | null;
 
     // ── Source filter (e.g. the Office Tasks page) ──────────────────────────
     // A task counts as OFFICE if its own row says so OR it's linked to an OFFICE
@@ -924,16 +1365,27 @@ export async function getTasks(
       const wantOffice = source.toUpperCase() === 'OFFICE';
       let rows = await listAllRows(TASK_TABLE);
 
+      // ONE read of Grievance, reused for BOTH the office test and the
+      // reference-number decoration below. attachReferenceNumbers used to read
+      // the very same table a second time later in this request.
       const officeGrievanceIds = new Set<string>();
+      let grievanceNumbers: Map<string, string> | undefined;
       try {
         const grievances = await listAllRows('Grievance');
+        grievanceNumbers = new Map<string, string>();
         for (const g of grievances) {
+          const gid = String(g.ROWID);
           if (String(g.source ?? 'PUBLIC').toUpperCase() === 'OFFICE') {
-            officeGrievanceIds.add(String(g.ROWID));
+            officeGrievanceIds.add(gid);
           }
+          grievanceNumbers.set(
+            gid,
+            g.grievanceNumber ? String(g.grievanceNumber) : `GRV-${gid}`
+          );
         }
       } catch {
-        /* Grievance table unreadable — fall back to the row's own source. */
+        /* Grievance unreadable — fall back to the row's own source, and let
+           attachReferenceNumbers do its own scoped lookup. */
       }
 
       const isOfficeTask = (r: CatalystRow) =>
@@ -947,21 +1399,18 @@ export async function getTasks(
       if (taskType) rows = rows.filter((r) => r.taskType === taskType);
       if (assignedToId) rows = rows.filter((r) => String(r.assignedToId) === assignedToId);
       if (priority) rows = rows.filter((r) => r.priorities === priority);
-      if (startDate) {
-        const start = new Date(startDate).getTime();
-        rows = rows.filter((r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start);
-      }
-      if (endDate) {
-        const end = new Date(endDate).getTime();
-        rows = rows.filter((r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end);
-      }
+      if (hasDateFilter) rows = rows.filter((r) => inDateRange(r, 'CREATEDTIME', bounds));
+      if (term) rows = rows.filter((r) => matchesTaskSearch(r, term));
       rows.sort(taskListCompare);
       total = rows.length;
       const officePageRows = rows.slice(skip, skip + limit);
 
       const tasks = await attachUsers(officePageRows);
       const [, historyMap] = await Promise.all([
-        attachReferenceNumbers(tasks),
+        attachReferenceNumbers(
+          tasks,
+          grievanceNumbers ? { GRIEVANCE: grievanceNumbers } : undefined
+        ),
         recentHistoryByTaskId(officePageRows.map((r) => String(r.ROWID))),
       ]);
       for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
@@ -969,46 +1418,131 @@ export async function getTasks(
       // Task.source column is absent.
       if (wantOffice) for (const t of tasks) t.source = 'OFFICE';
 
-      const meta = calculatePaginationMeta(total, page, limit);
-      sendSuccess(res, tasks, 'Tasks retrieved successfully', 200, meta);
+      sendSuccess(
+        res,
+        tasks,
+        'Tasks retrieved successfully',
+        200,
+        listMeta(page, limit, tasks.length, skip + tasks.length < total, total)
+      );
       return;
     }
 
+    let hasMore: boolean;
+
     if (useZCQL()) {
-      const baseQuery = buildTaskZCQL({
-        status, taskType, assignedToId, priority, startDate, endDate, orderBy: 'created',
+      const where = whereSql(
+        buildTaskWhere({
+          status, taskType, assignedToId, priority, startDate, endDate, search,
+        })
+      );
+      // ── Cursor mode ────────────────────────────────────────────────────
+      // Opted into by sending `cursor` or `sort`; page/limit callers keep the
+      // old contract. A cursor page is ONE query at any depth, where page/limit
+      // has to walk the rows it skips.
+      if (req.query.cursor !== undefined || req.query.sort !== undefined) {
+        const { limit: kLimit, cursor: cursorRaw, sort } = parseKeysetQuery(req.query);
+        const cursor = decodeCursor(cursorRaw);
+        const clauses = buildTaskWhere({
+          status, taskType, assignedToId, priority, startDate, endDate, search,
+        });
+        if (cursor) clauses.push(keysetPredicate('CREATEDTIME', cursor, sort));
+
+        const [fetchedK, countedK] = await Promise.all([
+          executeZCQL<CatalystRow>(
+            `SELECT * FROM ${TASK_TABLE}${whereSql(clauses)} ` +
+              `${keysetOrderBy('CREATEDTIME', sort)} LIMIT ${assertZcqlLimit(kLimit + 1)}`
+          ),
+          cursor ? Promise.resolve(null) : countTasks('all', where),
+        ]);
+        const moreK = fetchedK.length > kLimit;
+        const rowsK = moreK ? fetchedK.slice(0, kLimit) : fetchedK;
+        // Same page-level ordering the page/limit branch applies.
+        rowsK.sort(taskListCompare);
+        const lastK = rowsK[rowsK.length - 1];
+        sendSuccess(
+          res,
+          await attachUsers(rowsK),
+          'Tasks retrieved successfully',
+          200,
+          {
+            limit: kLimit,
+            count: rowsK.length,
+            hasMore: moreK,
+            sort,
+            // Cursor is built from the LAST row in QUERY order, which after the
+            // in-page re-sort is no longer rowsK[last] — take it from the
+            // pre-sort fetch or the walk skips rows.
+            nextCursor:
+              moreK && fetchedK[kLimit - 1]
+                ? encodeCursor({
+                    t: String(fetchedK[kLimit - 1].CREATEDTIME),
+                    r: String(fetchedK[kLimit - 1].ROWID),
+                  })
+                : null,
+            ...(countedK !== null && countedK !== undefined
+              ? { total: countedK, totalKnown: true, totalPages: Math.ceil(countedK / kLimit) }
+              : { totalKnown: false }),
+          }
+        );
+        return;
+      }
+
+      // A real COUNT replaces `skip + pageRows.length + (hasMore ? 1 : 0)`,
+      // which read like a total but could never exceed currentPage + 1 — so the
+      // pager built on it stopped after two pages and hid the rest of the table.
+      // Counted in PARALLEL with the page and shared across pages via the cache.
+      const baseClauses = buildTaskWhere({
+        status, taskType, assignedToId, priority, startDate, endDate, search,
       });
-      const safeLimit = zcqlSafeLimit(limit);
-      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
-      const hasMore = fetched.length > safeLimit;
-      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
-      // Page-level sort: completed sinks to the bottom; within each bucket,
-      // HIGH priority floats up; ties break on newest-first.
-      pageRows.sort(taskListCompare);
-      total = skip + pageRows.length + (hasMore ? 1 : 0);
+      const [ordered, counted] = await Promise.all([
+        fetchTaskWindowDisplayOrdered(baseClauses, skip, limit + 1),
+        countTasks('all', where),
+      ]);
+
+      if (ordered === null) {
+        // The filter set left no room for the bucket predicates. Rather than
+        // serve a DIFFERENTLY-ORDERED page (which is what made the ZCQL and JS
+        // paths disagree), drop to the scan path, which is slower but always
+        // ordered the way the user expects.
+        console.warn(
+          '[task] filter set leaves no budget for display-ordered paging — ' +
+            'answering this list from the JS path to preserve ordering'
+        );
+        let rows = await listAllRows(TASK_TABLE);
+        if (status) rows = rows.filter((r) => r.status === status);
+        if (taskType) rows = rows.filter((r) => r.taskType === taskType);
+        if (assignedToId) rows = rows.filter((r) => r.assignedToId === assignedToId);
+        if (priority) rows = rows.filter((r) => r.priorities === priority);
+        if (hasDateFilter) rows = rows.filter((r) => inDateRange(r, 'CREATEDTIME', bounds));
+        if (search) rows = rows.filter((r) => matchesTaskSearch(r, search));
+        rows.sort(taskListCompare);
+        total = rows.length;
+        pageRows = rows.slice(skip, skip + limit);
+        hasMore = skip + pageRows.length < total;
+      } else {
+        hasMore = ordered.length > limit;
+        pageRows = hasMore ? ordered.slice(0, limit) : ordered;
+        // Already in taskListCompare order (bucket walk) — the sort below is a
+        // no-op safety net, not the thing that establishes the order.
+        pageRows.sort(taskListCompare);
+        total = counted;
+      }
     } else {
       let rows = await listAllRows(TASK_TABLE);
       if (status) rows = rows.filter((r) => r.status === status);
       if (taskType) rows = rows.filter((r) => r.taskType === taskType);
       if (assignedToId) rows = rows.filter((r) => r.assignedToId === assignedToId);
       if (priority) rows = rows.filter((r) => r.priorities === priority);
-      if (startDate) {
-        const start = new Date(startDate).getTime();
-        rows = rows.filter(
-          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
-        );
-      }
-      if (endDate) {
-        const end = new Date(endDate).getTime();
-        rows = rows.filter(
-          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
-        );
-      }
+      // Same bounds the ZCQL branch pushes down, so the two branches agree.
+      if (hasDateFilter) rows = rows.filter((r) => inDateRange(r, 'CREATEDTIME', bounds));
+      if (term) rows = rows.filter((r) => matchesTaskSearch(r, term));
 
       rows.sort(taskListCompare);
 
       total = rows.length;
       pageRows = rows.slice(skip, skip + limit);
+      hasMore = skip + pageRows.length < total;
     }
 
     // attachReferenceNumbers and recentHistoryByTaskId are independent Catalyst
@@ -1020,8 +1554,13 @@ export async function getTasks(
     ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, tasks, 'Tasks retrieved successfully', 200, meta);
+    sendSuccess(
+      res,
+      tasks,
+      'Tasks retrieved successfully',
+      200,
+      listMeta(page, limit, tasks.length, hasMore, total)
+    );
   } catch (error) {
     sendServerError(res, 'Failed to get tasks', error);
   }
@@ -1055,21 +1594,16 @@ export async function getAllTasks(
     if (taskType) rows = rows.filter((r) => r.taskType === taskType);
     if (assignedToId) rows = rows.filter((r) => String(r.assignedToId) === assignedToId);
     if (priority) rows = rows.filter((r) => r.priorities === priority);
-    if (startDate) {
-      const start = new Date(startDate).getTime();
-      rows = rows.filter((r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start);
-    }
-    if (endDate) {
-      const end = new Date(endDate).getTime();
-      rows = rows.filter((r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end);
+    // Half-open, lexicographic bounds — the old `new Date(endDate)` comparison
+    // parsed a bare end date as UTC midnight and dropped every row created ON
+    // that date, while comparing it against a CREATEDTIME parsed as local time.
+    const bounds = catalystDateBounds('CREATEDTIME', startDate, endDate);
+    if (bounds.start || bounds.endExclusive) {
+      rows = rows.filter((r) => inDateRange(r, 'CREATEDTIME', bounds));
     }
     if (search) {
-      const q = String(search).toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          String(r.title ?? '').toLowerCase().includes(q) ||
-          String(r.description ?? '').toLowerCase().includes(q)
-      );
+      const q = String(search).trim().toLowerCase();
+      if (q) rows = rows.filter((r) => matchesTaskSearch(r, q));
     }
 
     rows.sort(taskListCompare);
@@ -1085,8 +1619,13 @@ export async function getAllTasks(
     ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, tasks, 'All tasks retrieved successfully', 200, meta);
+    sendSuccess(
+      res,
+      tasks,
+      'All tasks retrieved successfully',
+      200,
+      listMeta(page, limit, tasks.length, skip + tasks.length < total, total)
+    );
   } catch (error) {
     sendServerError(res, 'Failed to get all tasks', error);
   }
@@ -1192,6 +1731,7 @@ export async function forwardTask(
     });
 
     const [shaped] = await attachUsers([updated]);
+    invalidateTaskCaches();
     sendSuccess(res, shaped, `Task forwarded to ${recipientName}`);
   } catch (error) {
     sendServerError(res, 'Failed to forward task', error);
@@ -1395,13 +1935,9 @@ export async function getTaskAudit(
       sendNotFound(res, 'Task not found');
       return;
     }
-    const allHistory = await listAllRows(HISTORY_TABLE);
-    const matched = allHistory.filter((h) => h.taskId === id);
-    matched.sort((a, b) => {
-      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-      return tb - ta;
-    });
+    // Scoped to this task — the old form read the WHOLE TaskHistory table and
+    // threw away everything but one task's rows.
+    const matched = await historyRowsForTask(id);
     const creatorIds = new Set(matched.map((h) => String(h.createdById)).filter(Boolean));
     const creators = await lookupUsers(creatorIds);
     const history = matched.map((h) =>
@@ -1434,55 +1970,57 @@ export async function getMyTasks(
     // grievances they entered (those are read-only in the UI; staff edits are
     // blocked server-side in updateTaskProgress/editTaskShared).
     let pageRows: CatalystRow[];
-    let total: number;
+    // null means "no real count available" — never a number derived from the page.
+    let total: number | null;
+    let hasMore: boolean;
 
     // Match against all identity aliases (ROWID + legacy UUID) — tasks
     // assigned before/after a migration may carry either form.
     const me = await userIdForms(req.user.id);
 
     if (useZCQL()) {
-      const baseQuery = buildTaskZCQL({
-        status,
-        assignedToIds: [...me],
-        startDate,
-        endDate,
-        orderBy: 'due',
-      });
-      const safeLimit = zcqlSafeLimit(limit);
-      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
-      const hasMore = fetched.length > safeLimit;
-      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      const where = whereSql(
+        buildTaskWhere({ status, assignedToIds: [...me], startDate, endDate })
+      );
+      // Real COUNT instead of `skip + pageRows.length + (hasMore ? 1 : 0)`,
+      // which capped any pager at two pages. The cache key carries the WHERE,
+      // which already contains this staff member's identity aliases, so one
+      // staffer's count can't be served to another.
+      const [fetched, counted] = await Promise.all([
+        fetchTaskWindow(where, 'due', skip, limit + 1),
+        countTasks('mine', where),
+      ]);
+      hasMore = fetched.length > limit;
+      pageRows = hasMore ? fetched.slice(0, limit) : fetched;
       // Re-sort: completed sinks; otherwise HIGH priority first, then newest.
       pageRows.sort(taskListCompare);
-      total = skip + pageRows.length + (hasMore ? 1 : 0);
+      total = counted;
     } else {
       let rows = await listAllRows(TASK_TABLE);
       rows = rows.filter((r) => me.has(String(r.assignedToId)));
       if (status) rows = rows.filter((r) => r.status === status);
-      if (startDate) {
-        const start = new Date(startDate).getTime();
-        rows = rows.filter(
-          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() >= start
-        );
-      }
-      if (endDate) {
-        const end = new Date(endDate).getTime();
-        rows = rows.filter(
-          (r) => r.CREATEDTIME && new Date(r.CREATEDTIME).getTime() <= end
-        );
+      // Same bounds the ZCQL branch pushes down, so the two branches agree.
+      const bounds = catalystDateBounds('CREATEDTIME', startDate, endDate);
+      if (bounds.start || bounds.endExclusive) {
+        rows = rows.filter((r) => inDateRange(r, 'CREATEDTIME', bounds));
       }
 
       rows.sort((a, b) => {
         const pa = a.priorities === 'HIGH' ? 1 : 0;
         const pb = b.priorities === 'HIGH' ? 1 : 0;
         if (pa !== pb) return pb - pa;
-        const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-        const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-        return da - db;
+        const da = a.dueDate ? new Date(String(a.dueDate)).getTime() : Infinity;
+        const db = b.dueDate ? new Date(String(b.dueDate)).getTime() : Infinity;
+        if (da !== db) return da - db;
+        // Tiebreaker: tasks with no due date all compare equal above, so
+        // without this the order shifts between requests and rows duplicate or
+        // vanish across the page boundary carved out of this array.
+        return compareRowIdDesc(a.ROWID, b.ROWID);
       });
 
       total = rows.length;
       pageRows = rows.slice(skip, skip + limit);
+      hasMore = skip + pageRows.length < total;
     }
 
     // Use the co-assignee-aware variant so each task carries a list of
@@ -1497,8 +2035,13 @@ export async function getMyTasks(
     ]);
     for (const t of tasks) t.progressHistory = historyMap.get(t.id) ?? [];
 
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, tasks, 'My tasks retrieved successfully', 200, meta);
+    sendSuccess(
+      res,
+      tasks,
+      'My tasks retrieved successfully',
+      200,
+      listMeta(page, limit, tasks.length, hasMore, total)
+    );
   } catch (error) {
     sendServerError(res, 'Failed to get tasks', error);
   }
@@ -1630,6 +2173,7 @@ export async function updateTaskProgress(
     const [shaped] = await attachUsers([updated]);
     const historyMap = await recentHistoryByTaskId([id], 10);
     shaped.progressHistory = historyMap.get(id) ?? [];
+    invalidateTaskCaches();
     sendSuccess(res, shaped, 'Task progress updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update task progress', error);
@@ -1662,13 +2206,9 @@ export async function getTaskHistory(
       }
     }
 
-    const allHistory = await listAllRows(HISTORY_TABLE);
-    const matched = allHistory.filter((h) => h.taskId === id);
-    matched.sort((a, b) => {
-      const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-      const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-      return tb - ta;
-    });
+    // Scoped to this task — the old form read the WHOLE TaskHistory table and
+    // threw away everything but one task's rows.
+    const matched = await historyRowsForTask(id);
 
     const creatorIds = new Set(matched.map((h) => String(h.createdById)).filter(Boolean));
     const creators = await lookupUsers(creatorIds);
@@ -1706,6 +2246,7 @@ export async function updateTaskStatus(
     // full row, so it carries referenceType / referenceId.
     await syncGrievanceForTask(updated, status);
     const [shaped] = await attachUsers([updated]);
+    invalidateTaskCaches();
     sendSuccess(res, shaped, 'Task status updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update task status', error);
@@ -1777,23 +2318,19 @@ export async function deleteTask(
     const { id } = req.params;
 
     // Cascade-delete history rows first (Catalyst doesn't auto-cascade).
+    // Scoped lookup: reading the whole TaskHistory table to find one task's
+    // children was the same full-scan pattern as the list path, and the deletes
+    // were serial on top of it. allSettled keeps the "ignore individual
+    // failures" semantics while collapsing N round-trips into one batch.
     try {
-      const allHistory = await listAllRows(HISTORY_TABLE);
-      const matchedIds = allHistory
-        .filter((h) => h.taskId === id)
-        .map((h) => String(h.ROWID));
-      for (const hid of matchedIds) {
-        try {
-          await deleteRow(HISTORY_TABLE, hid);
-        } catch {
-          /* keep going */
-        }
-      }
+      const matchedIds = (await historyRowsForTask(id)).map((h) => String(h.ROWID));
+      await Promise.allSettled(matchedIds.map((hid) => deleteRow(HISTORY_TABLE, hid)));
     } catch {
       // History table may not exist yet — proceed with task delete anyway.
     }
 
     await deleteRow(TASK_TABLE, id);
+    invalidateTaskCaches();
     sendSuccess(res, null, 'Task deleted successfully');
   } catch (error) {
     sendServerError(res, 'Failed to delete task', error);

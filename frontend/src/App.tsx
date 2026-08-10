@@ -20,6 +20,7 @@ const BirthdayCreate = lazy(() => import("./pages/Birthday/BirthdayCreate"));
 const StaffHome = lazy(() => import("./pages/staff/StaffHome"));
 const StaffTasks = lazy(() => import("./pages/staff/StaffTasks"));
 const StaffHistory = lazy(() => import("./pages/staff/StaffHistory"));
+const StaffTrainEQ = lazy(() => import("./pages/staff/StaffTrainEQ"));
 const PrintCenter = lazy(() => import("./pages/admin/PrintCenter"));
 const TourProgramQueue = lazy(() => import("./pages/admin/TourProgramQueue"));
 const NewsIntelligenceView = lazy(() => import("./pages/admin/NewsIntelligenceView"));
@@ -104,6 +105,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['STAFF']}>
               <StaffTasks />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/staff/train-eq"
+          element={
+            <ProtectedRoute allowedRoles={['STAFF']}>
+              <StaffTrainEQ />
             </ProtectedRoute>
           }
         />

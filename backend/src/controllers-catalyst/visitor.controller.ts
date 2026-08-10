@@ -19,9 +19,13 @@ import {
   toCatalystDate,
   nowCatalystIST,
   executeZCQL,
-  zcqlEscapeValue,
   zcqlAnyOf,
   zcqlSafeLimit,
+  countRows,
+  fetchOffsetWindow,
+  dateRangeClauses,
+  countZcqlConditions,
+  zcqlSearchWithinBudget,
   CatalystRow,
 } from '../lib/catalyst-client';
 import {
@@ -30,12 +34,18 @@ import {
   sendNotFound,
   sendServerError,
 } from '../utils/response';
-import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
+// calculatePaginationMeta is deliberately not used on the list path any more:
+// it takes `total` as a required argument, which is what pushed this controller
+// into fabricating one. parsePagination stays for the page/limit contract.
+import { parsePagination } from '../utils/pagination';
+import { cacheSWR, cacheClear } from '../lib/cache';
 import { lookupUsers, getUserIdAliases } from '../lib/catalyst-user-lookup';
 import { useZCQL } from '../config/feature-flags';
 import type { AuthenticatedRequest, VisitorFilters } from '../types';
 
 const VISITOR_TABLE = 'Visitor';
+/** Cache-key prefix for the list totals, so writes can drop a stale count. */
+const COUNT_CACHE_PREFIX = 'visitors:count:';
 
 /**
  * Catalyst returns boolean columns as the strings "true"/"false" rather than
@@ -46,6 +56,55 @@ function parseBool(v: unknown): boolean {
   if (typeof v === 'string') return v.toLowerCase() === 'true';
   if (typeof v === 'number') return v !== 0;
   return Boolean(v);
+}
+
+/**
+ * Ascending compare of two Catalyst ROWIDs.
+ *
+ * ROWIDs are ~17-digit strings (e.g. 37719000000744038), which is past
+ * Number.MAX_SAFE_INTEGER — Number() would silently round neighbouring ids to
+ * the same value. Compare them as numeric strings: longer wins, then lexical.
+ */
+function compareRowIdAsc(a: unknown, b: unknown): number {
+  const x = String(a ?? '');
+  const y = String(b ?? '');
+  if (x.length !== y.length) return x.length - y.length;
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+/** Milliseconds for a sort key, with malformed dates pinned to 0 rather than NaN. */
+function sortTime(value: unknown): number {
+  if (!value) return 0;
+  const t = new Date(String(value)).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * JS twin of dateRangeClauses, so the fallback path filters EXACTLY the rows
+ * the ZCQL path does. Returns null when no bound was supplied.
+ *
+ * The fallback used to compare `new Date(row.visitDate).getTime()` against
+ * `new Date(filters.endDate).getTime()`. A bare 'YYYY-MM-DD' parses as UTC
+ * midnight while the row's 'YYYY-MM-DD HH:mm:ss' parses as LOCAL time, so on an
+ * IST box every visitor logged after 05:30 on the end date was dropped —
+ * "show me today" returned almost nothing, and the two branches disagreed.
+ * Comparing the 'YYYY-MM-DD' prefix is the same day-inclusive window
+ * dateRangeClauses emits, and needs no date parsing at all.
+ */
+function dayRangeFilter(
+  startDate?: string | null,
+  endDate?: string | null
+): ((value: unknown) => boolean) | null {
+  const start = toCatalystDate(startDate ?? undefined)?.slice(0, 10) ?? null;
+  const end = toCatalystDate(endDate ?? undefined)?.slice(0, 10) ?? null;
+  if (!start && !end) return null;
+  return (value: unknown) => {
+    const day = String(value ?? '').slice(0, 10);
+    if (day.length < 10) return false;
+    if (start && day < start) return false;
+    if (end && day > end) return false;
+    return true;
+  };
 }
 
 /** Reshape a Catalyst row into the JSON shape the frontend expects. */
@@ -151,6 +210,11 @@ export async function createVisitor(
     // write (column missing) so logging a visitor never fails on the new flag.
     const row = await insertRowTolerant(VISITOR_TABLE, payload, ['isOfficial']);
 
+    // The list totals are now real counts served from a short-lived cache —
+    // drop them so the new visitor is reflected immediately instead of after
+    // the TTL.
+    cacheClear(COUNT_CACHE_PREFIX);
+
     const [shaped] = await attachCreators([row]);
     sendSuccess(res, shaped, 'Visitor logged successfully', 201);
   } catch (error) {
@@ -165,13 +229,14 @@ export async function createVisitor(
 }
 
 /**
- * Build a ZCQL WHERE clause + ORDER BY for the visitor list. Returns the
- * full query so the caller can also append LIMIT/OFFSET.
+ * WHERE clauses only — no ORDER BY, no LIMIT. Kept separate so the page query
+ * and the COUNT query are derived from the SAME predicate; a total that
+ * disagrees with the rows on screen is its own bug.
  */
-function buildVisitorZCQL(
+function buildVisitorWhere(
   staffIds: string[] | null,
   filters: VisitorFilters
-): string {
+): string[] {
   const conditions: string[] = [];
 
   // STAFF scoping — match ALL identity aliases (ROWID + legacy UUID), since
@@ -180,24 +245,40 @@ function buildVisitorZCQL(
     conditions.push(zcqlAnyOf('createdById', staffIds));
   }
 
-  if (filters.search) {
-    const q = zcqlEscapeValue(String(filters.search));
-    conditions.push(
-      `(name LIKE '%${q}%' OR designation LIKE '%${q}%' OR purpose LIKE '%${q}%')`
+  // Half-open upper bound. The old `visitDate <= toCatalystDate(endDate)` used
+  // a MIDNIGHT timestamp as an inclusive bound, so every visitor logged during
+  // the end date was excluded — picking one day in the UI returned nothing.
+  conditions.push(
+    ...dateRangeClauses(
+      'visitDate',
+      filters.startDate as unknown as string,
+      filters.endDate as unknown as string
+    )
+  );
+
+  // Search is built LAST, from whatever is left of the 10-condition budget: it
+  // is the only variable-width clause here, so it is the one that must yield.
+  // Over budget is a hard 400 — the whole query returns nothing, which reads
+  // to the user as "no such visitor" rather than as an error.
+  if (filters.search && String(filters.search).trim()) {
+    const used = countZcqlConditions(conditions);
+    // Most-identifying first, so the columns people actually search survive
+    // when the budget forces one to be shed.
+    const { clause } = zcqlSearchWithinBudget(
+      ['name', 'designation', 'purpose'],
+      String(filters.search).trim(),
+      used
     );
+    // No budget left at all — match nothing rather than silently ignoring the
+    // search box and handing back the unfiltered list.
+    conditions.push(clause ?? 'ROWID = 0');
   }
 
-  if (filters.startDate) {
-    const start = toCatalystDate(filters.startDate as unknown as string);
-    if (start) conditions.push(`visitDate >= '${start}'`);
-  }
-  if (filters.endDate) {
-    const end = toCatalystDate(filters.endDate as unknown as string);
-    if (end) conditions.push(`visitDate <= '${end}'`);
-  }
+  return conditions;
+}
 
-  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-  return `SELECT * FROM ${VISITOR_TABLE}${where} ORDER BY visitDate DESC`;
+function visitorWhereSql(clauses: string[]): string {
+  return clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
 }
 
 /**
@@ -222,18 +303,58 @@ export async function getVisitors(
     const staffIds =
       req.user?.role === 'STAFF' ? await getUserIdAliases(req.user.id) : null;
     if (useZCQL()) {
-      const baseQuery = buildVisitorZCQL(staffIds, filters);
-      // Catalyst ZCQL caps LIMIT at 300. zcqlSafeLimit clamps user-requested
-      // limit to 299 so we have room for the +1 hasMore probe.
-      const safeLimit = zcqlSafeLimit(limit);
-      const pagedQuery = `${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`;
-      const fetched = await executeZCQL<CatalystRow>(pagedQuery);
-      const hasMore = fetched.length > safeLimit;
-      const pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
+      const clauses = buildVisitorWhere(staffIds, filters);
+      const where = visitorWhereSql(clauses);
+      // ZCQL caps LIMIT at 300 but the list contract allows up to 1000, so a
+      // request for more than 299 rows is served in chunks (fetchOffsetWindow)
+      // rather than clamped. Clamping silently either loses rows 299-999
+      // outright or quietly hands back a page a third of the size the caller
+      // asked for; chunking returns the window that was actually requested.
+
+      // A real count, run in PARALLEL with the page query and only on page 1,
+      // behind a stale-while-revalidate cache. The key is scoped by role + user
+      // id because STAFF results are per-identity — a shared key would leak one
+      // staffer's row count to another.
+      const countKey =
+        `${COUNT_CACHE_PREFIX}${req.user?.role}:${req.user?.id}:` + JSON.stringify(clauses);
+
+      const [fetched, total] = await Promise.all([
+        // ROWID tiebreaker: a busy office logs dozens of visitors against the
+        // same visitDate, and with only a partial order those tied rows get
+        // re-shuffled per query — the same visitor shows up on two pages and
+        // another is never returned at all.
+        fetchOffsetWindow(
+          VISITOR_TABLE,
+          where,
+          'visitDate',
+          'newest',
+          skip,
+          limit + 1 // +1 probes for a next page
+        ),
+        // Counted on EVERY page, not just the first: the key is derived from
+        // the predicate (not the page), so pages 2+ hit the cache page 1 warmed
+        // and cost nothing. Gating on page 1 made meta.totalKnown false the
+        // moment the user clicked Next, which leaves the pager rendering
+        // "Page 2 of undefined" — the same lost-total symptom this replaced.
+        cacheSWR(countKey, 30, 120, () => countRows(VISITOR_TABLE, where)),
+      ]);
+
+      const hasMore = fetched.length > limit;
+      const pageRows = hasMore ? fetched.slice(0, limit) : fetched;
       const visitors = await attachCreators(pageRows);
-      const total = skip + pageRows.length + (hasMore ? 1 : 0);
-      const meta = calculatePaginationMeta(total, page, safeLimit);
-      sendSuccess(res, visitors, 'Visitors retrieved successfully', 200, meta);
+      sendSuccess(res, visitors, 'Visitors retrieved successfully', 200, {
+        page,
+        limit,
+        count: pageRows.length,
+        hasMore,
+        // `total` appears ONLY when it is real. The old
+        // `skip + rows.length + (hasMore ? 1 : 0)` looked like a count but can
+        // never exceed currentPage + 1, so the pager capped itself at two pages
+        // and hid the rest of the table.
+        ...(total !== null && total !== undefined
+          ? { total, totalKnown: true, totalPages: Math.ceil(total / limit) }
+          : { totalKnown: false }),
+      });
       return;
     }
 
@@ -257,32 +378,41 @@ export async function getVisitors(
       );
     }
 
-    // Date range filter
-    if (filters.startDate) {
-      const start = new Date(filters.startDate as unknown as string).getTime();
-      rows = rows.filter(
-        (r) => r.visitDate && new Date(r.visitDate).getTime() >= start
-      );
-    }
-    if (filters.endDate) {
-      const end = new Date(filters.endDate as unknown as string).getTime();
-      rows = rows.filter(
-        (r) => r.visitDate && new Date(r.visitDate).getTime() <= end
-      );
+    // Date range filter — day-inclusive on both ends, matching the half-open
+    // bound the ZCQL branch emits. The two paths have to agree.
+    const inDayRange = dayRangeFilter(
+      filters.startDate as unknown as string,
+      filters.endDate as unknown as string
+    );
+    if (inDayRange) {
+      rows = rows.filter((r) => inDayRange(r.visitDate));
     }
 
     rows.sort((a, b) => {
-      const ta = a.visitDate ? new Date(a.visitDate).getTime() : 0;
-      const tb = b.visitDate ? new Date(b.visitDate).getTime() : 0;
-      return tb - ta;
+      const ta = sortTime(a.visitDate);
+      const tb = sortTime(b.visitDate);
+      // Mirrors `ORDER BY visitDate DESC, ROWID DESC`. Same-day visitors are
+      // the norm here, so without a total order this page and the ZCQL page
+      // disagree about which rows land where.
+      if (tb !== ta) return tb - ta;
+      return compareRowIdAsc(b.ROWID, a.ROWID);
     });
 
+    // Honest total: this path has the whole filtered set in memory, so the
+    // count is exact rather than inferred from the current page.
     const total = rows.length;
     const paged = rows.slice(skip, skip + limit);
     const visitors = await attachCreators(paged);
 
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, visitors, 'Visitors retrieved successfully', 200, meta);
+    sendSuccess(res, visitors, 'Visitors retrieved successfully', 200, {
+      page,
+      limit,
+      count: paged.length,
+      hasMore: skip + paged.length < total,
+      total,
+      totalKnown: true,
+      totalPages: Math.ceil(total / limit),
+    });
   } catch (error) {
     sendServerError(res, 'Failed to get visitors', error);
   }
@@ -369,6 +499,9 @@ export async function updateVisitor(
       'lastEditedAt',
       'isOfficial',
     ]);
+    // An edited visitDate moves the row between date buckets, so the cached
+    // per-filter totals are no longer trustworthy.
+    cacheClear(COUNT_CACHE_PREFIX);
     const [shaped] = await attachCreators([updated]);
     sendSuccess(res, shaped, 'Visitor updated successfully');
   } catch (error) {
@@ -386,6 +519,7 @@ export async function deleteVisitor(
   try {
     const { id } = req.params;
     await deleteRow(VISITOR_TABLE, id);
+    cacheClear(COUNT_CACHE_PREFIX);
     sendSuccess(res, null, 'Visitor deleted successfully');
   } catch (error) {
     sendServerError(res, 'Failed to delete visitor', error);
@@ -440,10 +574,15 @@ export async function getVisitorsByDate(
         const t = new Date(r.visitDate).getTime();
         return t >= startMs && t < endMs;
       })
-      .sort(
-        (a, b) =>
-          new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime()
-      );
+      // ROWID tiebreaker: every row here shares the same day, so visitDate
+      // alone leaves most of the list in an arbitrary, request-to-request
+      // order. Same total order the list endpoint uses.
+      .sort((a, b) => {
+        const ta = sortTime(a.visitDate);
+        const tb = sortTime(b.visitDate);
+        if (tb !== ta) return tb - ta;
+        return compareRowIdAsc(b.ROWID, a.ROWID);
+      });
 
     const visitors = await attachCreators(matches);
     sendSuccess(res, visitors, 'Visitors retrieved successfully');

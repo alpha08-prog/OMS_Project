@@ -75,6 +75,9 @@ const allMenuItems: MenuItem[] = [
   // (Old /visitors/new and /birthday/new still resolve.)
   { icon: Users, label: "Add Visitor/Birthday", route: "/people/new", roles: ['STAFF', 'ADMIN'] },
   { icon: Train, label: "Train EQ Request", route: "/train-eq/new", roles: ['STAFF', 'ADMIN'] },
+  // Staff counterpart to the admin Train EQ Queue — their own entries, paged
+  // and searchable, instead of the capped slice inside My History.
+  { icon: Train, label: "My Train EQ", route: "/staff/train-eq", roles: ['STAFF'] },
   { icon: Calendar, label: "Add Invitation", route: "/tour-program/new", roles: ['STAFF', 'ADMIN'] },
   { icon: Star, label: "Event Reports", route: "/events/report", roles: ['STAFF', 'ADMIN'] },
   { icon: Newspaper, label: "Add News", route: "/news-intelligence/new", roles: ['STAFF', 'ADMIN'] },

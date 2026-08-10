@@ -176,11 +176,13 @@ export async function listAttachments(
       return;
     }
 
+    // ROWID tiebreaker: two attachments uploaded in the same second otherwise
+    // order arbitrarily between calls, so the list reshuffles on refresh.
     const query =
       `SELECT * FROM ${ATTACHMENT_TABLE} ` +
       `WHERE contextType = '${zcqlEscapeValue(contextTypeRaw)}' ` +
       `AND contextId = '${zcqlEscapeValue(contextId)}' ` +
-      `ORDER BY CREATEDTIME DESC`;
+      `ORDER BY CREATEDTIME DESC, ROWID DESC`;
     const rows = await executeZCQL<CatalystRow>(query);
 
     const attachments = rows.map(shapeAttachment);

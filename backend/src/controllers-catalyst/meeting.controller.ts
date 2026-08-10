@@ -19,16 +19,25 @@
 import { Response } from 'express';
 import {
   insertRow,
-  listAllRows,
   getRow,
   updateRow,
   deleteRow,
   toCatalystDate,
   nowCatalystIST,
+  executeZCQL,
+  zcqlEscapeValue,
+  zcqlSearchWithinBudget,
+  countZcqlConditions,
+  assertConditionBudget,
+  assertZcqlLimit,
+  dateRangeClauses,
+  countRows,
+  fetchOffsetWindow,
+  ZCQL_MAX_LIMIT,
   CatalystRow,
 } from '../lib/catalyst-client';
 import { lookupUsers } from '../lib/catalyst-user-lookup';
-import { cacheClear } from '../lib/cache';
+import { cacheClear, cacheSWR } from '../lib/cache';
 import { createMeetingGoogleEvent } from '../services/google.service';
 import {
   sendSuccess,
@@ -36,10 +45,15 @@ import {
   sendNotFound,
   sendServerError,
 } from '../utils/response';
-import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
+// calculatePaginationMeta is deliberately not imported: it takes `total` as a
+// REQUIRED argument, which forces a caller that cannot count to invent one.
+// parsePagination stays — the page/limit contract is unchanged.
+import { parsePagination } from '../utils/pagination';
 import type { AuthenticatedRequest } from '../types';
 
 const MEETING_TABLE = 'Meeting';
+/** Count cache prefix — cleared on every write so the pager can't lag a create. */
+const MEETING_COUNT_PREFIX = 'meetings:count:';
 
 const VALID_STATUSES = new Set(['SCHEDULED', 'COMPLETED', 'CANCELLED']);
 
@@ -166,8 +180,10 @@ export async function createMeeting(
     }
 
     // The calendar view caches its merged event list per user — drop it so the
-    // new meeting appears immediately.
+    // new meeting appears immediately. Same for the list's cached COUNT, or the
+    // pager reports one meeting fewer than the list shows for up to 30s.
     cacheClear('calendar_events_');
+    cacheClear(MEETING_COUNT_PREFIX);
 
     const [shaped] = await attachUsers([row]);
     sendSuccess(res, shaped, 'Meeting scheduled successfully', 201);
@@ -180,12 +196,105 @@ export async function createMeeting(
   }
 }
 
+type MeetingQuery = {
+  status?: string;
+  scope?: string;
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+};
+
+/**
+ * WHERE clauses only — no ORDER BY, no LIMIT. Kept separate so the page query
+ * and the COUNT query are built from the SAME predicate; a total that disagrees
+ * with the rows on screen is its own bug.
+ */
+function buildMeetingWhere(q: MeetingQuery): string[] {
+  const clauses: string[] = [];
+
+  if (q.status) {
+    const want = String(q.status).toUpperCase();
+    // Rows written before `status` existed read back null, and the previous
+    // in-JS filter treated them as SCHEDULED (`String(r.status ?? 'SCHEDULED')`).
+    // Keep that, or filtering the default tab quietly hides those meetings.
+    clauses.push(
+      want === 'SCHEDULED'
+        ? `(status = 'SCHEDULED' OR status IS NULL)`
+        : `status = '${zcqlEscapeValue(want)}'`
+    );
+  }
+
+  if (q.scope === 'upcoming' || q.scope === 'past') {
+    // Catalyst datetimes are IST strings in `YYYY-MM-DD HH:mm:ss` form, so a
+    // direct compare against nowCatalystIST() orders correctly.
+    const now = nowCatalystIST();
+    clauses.push(
+      q.scope === 'upcoming'
+        ? // An undated meeting counted as upcoming before; keep it there rather
+          // than letting it fall out of both halves of the split.
+          `(dateTime >= '${now}' OR dateTime IS NULL)`
+        : `dateTime < '${now}'`
+    );
+  }
+
+  // dateTime is a real datetime (toCatalystDate on write), so the half-open
+  // upper bound matters here: a `<=` end-of-day bound drops the last second.
+  clauses.push(...dateRangeClauses('dateTime', q.startDate, q.endDate));
+
+  if (q.search && String(q.search).trim()) {
+    // Search is the only variable-width clause, so it is the one that yields to
+    // the 10-condition ZCQL budget — visibly (it warns), not by 400-ing the
+    // whole query. Most-identifying column first.
+    const { clause } = zcqlSearchWithinBudget(
+      ['title', 'location', 'attendees', 'agenda'],
+      String(q.search).trim(),
+      countZcqlConditions(clauses)
+    );
+    // No budget left for search at all — match nothing rather than silently
+    // ignoring the search box and returning the unfiltered list.
+    clauses.push(clause ?? 'ROWID = 0');
+  }
+  return clauses;
+}
+
+function whereSql(clauses: string[]): string {
+  return clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+}
+
+/**
+ * Fetch `want` rows starting at `skip`, in ZCQL-legal chunks.
+ *
+ * parsePagination permits limit up to 1000 while ZCQL rejects LIMIT > 300, and
+ * both meetings screens ask for 200 in one go. Clamping silently is how rows
+ * 299-999 disappear from every page at once, so serve the window the caller
+ * actually asked for instead.
+ */
+async function fetchMeetingWindow(
+  filterWhere: string,
+  skip: number,
+  want: number
+): Promise<CatalystRow[]> {
+  // Delegates to the shared KEYSET walk. The obvious implementation — LIMIT 299
+  // with a marching OFFSET — silently DUPLICATES rows at chunk boundaries:
+  // measured on a 2067-row table with a full total order and no concurrent
+  // writes, the OFFSET walk returned 2068 rows / 2067 unique while the keyset
+  // walk returned exactly 2067. Catalyst's OFFSET is not stable, and a
+  // tiebreaker in ORDER BY does not fix it.
+  return fetchOffsetWindow(MEETING_TABLE, filterWhere, 'dateTime', 'newest', skip, want);
+}
+
 /**
  * GET /api/meetings — list meetings (upcoming + past), newest first.
  *
  * Optional query:
  *   - status=SCHEDULED|COMPLETED|CANCELLED
- *   - scope=upcoming|past   (split on dateTime vs now, IST)
+ *   - scope=upcoming|past          (split on dateTime vs now, IST)
+ *   - startDate / endDate          (inclusive, on dateTime)
+ *   - search                       (title / location / attendees / agenda)
+ *
+ * Filtering, sorting and paging are pushed down to the datastore. This used to
+ * read the ENTIRE Meeting table on every request and slice it in Node, so the
+ * cost of showing 25 rows grew with every meeting ever scheduled.
  */
 export async function getMeetings(
   req: AuthenticatedRequest,
@@ -195,40 +304,42 @@ export async function getMeetings(
     const { page, limit, skip } = parsePagination(
       req.query as { page?: string; limit?: string }
     );
-    const { status, scope } = req.query as Record<string, string>;
+    const query = req.query as MeetingQuery;
 
-    let rows = await listAllRows(MEETING_TABLE);
+    const clauses = assertConditionBudget(buildMeetingWhere(query), 'meeting list');
+    const filterWhere = whereSql(clauses);
 
-    if (status) {
-      const want = status.toUpperCase();
-      rows = rows.filter(
-        (r) => String(r.status ?? 'SCHEDULED').toUpperCase() === want
-      );
-    }
+    // Count runs in PARALLEL with the page query behind a short SWR cache.
+    // Keyed on the raw filters rather than the generated SQL because the
+    // `scope` predicate embeds "now" and would otherwise miss the cache every
+    // second. Meetings are not user-scoped (every admin sees the same list), so
+    // a shared key leaks nothing.
+    const countKey =
+      MEETING_COUNT_PREFIX +
+      JSON.stringify([query.status, query.scope, query.startDate, query.endDate, query.search]);
 
-    if (scope === 'upcoming' || scope === 'past') {
-      // Catalyst datetimes are IST strings in `YYYY-MM-DD HH:mm:ss` form, so a
-      // direct string compare against nowCatalystIST() orders correctly.
-      const now = nowCatalystIST();
-      rows = rows.filter((r) => {
-        const dt = r.dateTime ? String(r.dateTime) : '';
-        if (!dt) return scope === 'upcoming';
-        return scope === 'upcoming' ? dt >= now : dt < now;
-      });
-    }
+    const [fetched, total] = await Promise.all([
+      // +1 probe row tells us whether another page exists without a count.
+      fetchMeetingWindow(filterWhere, skip, limit + 1),
+      cacheSWR(countKey, 30, 120, () => countRows(MEETING_TABLE, filterWhere)),
+    ]);
 
-    rows.sort((a, b) => {
-      const ta = a.dateTime ? new Date(a.dateTime).getTime() : 0;
-      const tb = b.dateTime ? new Date(b.dateTime).getTime() : 0;
-      return tb - ta; // newest first
+    const hasMore = fetched.length > limit;
+    const rows = hasMore ? fetched.slice(0, limit) : fetched;
+    const meetings = await attachUsers(rows);
+
+    sendSuccess(res, meetings, 'Meetings retrieved successfully', 200, {
+      page,
+      limit,
+      count: rows.length,
+      hasMore,
+      // `total` is present ONLY when it is a real count. When COUNT is
+      // unavailable the response says so instead of inventing a number the
+      // pager would then cap itself against.
+      ...(total !== null && total !== undefined
+        ? { total, totalKnown: true, totalPages: Math.ceil(total / limit) }
+        : { totalKnown: false }),
     });
-
-    const total = rows.length;
-    const paged = rows.slice(skip, skip + limit);
-    const meetings = await attachUsers(paged);
-
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, meetings, 'Meetings retrieved successfully', 200, meta);
   } catch (error) {
     sendServerError(res, 'Failed to get meetings', error);
   }
@@ -316,6 +427,8 @@ export async function updateMeeting(
 
     const updated = await updateRow(MEETING_TABLE, updateData as { ROWID: string });
     cacheClear('calendar_events_');
+    // A status/dateTime edit moves the row between filtered counts.
+    cacheClear(MEETING_COUNT_PREFIX);
     const [shaped] = await attachUsers([updated]);
     sendSuccess(res, shaped, 'Meeting updated successfully');
   } catch (error) {
@@ -334,6 +447,7 @@ export async function deleteMeeting(
     const { id } = req.params;
     await deleteRow(MEETING_TABLE, id);
     cacheClear('calendar_events_');
+    cacheClear(MEETING_COUNT_PREFIX);
     sendSuccess(res, null, 'Meeting deleted successfully');
   } catch (error) {
     sendServerError(res, 'Failed to delete meeting', error);

@@ -197,8 +197,11 @@ export default function AdminHistory() {
       console.log('History - History array length:', historyArray.length);
       setHistory(historyArray);
       if (res?.meta) {
-        setTotalPages(res.meta.totalPages);
-        setTotal(res.meta.total);
+        // total/totalPages are optional now — an endpoint that cannot compute
+        // a real count omits them rather than inventing one. Keep the previous
+        // value in that case instead of writing `undefined` into the pager.
+        if (typeof res.meta.totalPages === 'number') setTotalPages(res.meta.totalPages);
+        if (typeof res.meta.total === 'number') setTotal(res.meta.total);
       }
     } catch (error: unknown) {
       console.error("Error fetching history:", error);

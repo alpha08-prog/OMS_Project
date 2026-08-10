@@ -18,6 +18,7 @@ import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import type { CsvColumn } from "@/lib/exportCsv";
 import { tourProgramApi, type TourProgram } from "@/lib/api";
 import {
@@ -46,6 +47,16 @@ export function SuperAdminTourProgramsContent() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
+  // What the SERVER handed back, kept separate from `programs` on purpose:
+  // `loaded` is the raw row count before the decision filter and the search
+  // narrow it, so the truncation notice only fires for rows the cap actually
+  // withheld — not for rows this page chose to hide.
+  const [serverMeta, setServerMeta] = useState<{
+    loaded: number;
+    total?: number;
+    totalKnown?: boolean;
+  }>({ loaded: 0 });
+
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -68,6 +79,11 @@ export function SuperAdminTourProgramsContent() {
       if (endDate) params.endDate = endDate;
       const res = await tourProgramApi.getAll(params);
       const all = Array.isArray(res?.data) ? res.data : [];
+      setServerMeta({
+        loaded: all.length,
+        total: res?.meta?.total,
+        totalKnown: res?.meta?.totalKnown,
+      });
       const decided = all
         .filter((p) => {
           const d = String(p.decision);
@@ -83,6 +99,9 @@ export function SuperAdminTourProgramsContent() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load tour programs');
       setPrograms([]);
+      // Drop the stale total too — a failed load must not keep claiming
+      // "showing 50 of 1,247" over an empty list.
+      setServerMeta({ loaded: 0 });
     } finally {
       setLoading(false);
     }
@@ -180,6 +199,17 @@ export function SuperAdminTourProgramsContent() {
                 <CardTitle>Tour Programs ({filteredPrograms.length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
+                {/* The fetch is capped at limit=50, so the pager below counts
+                    the window rather than the dataset. Say so before the rows,
+                    not after. Hidden mid-refetch so it can't show a stale count. */}
+                {!loading && (
+                  <TruncationNotice
+                    loaded={serverMeta.loaded}
+                    total={serverMeta.total}
+                    totalKnown={serverMeta.totalKnown}
+                    hint="Narrow the event date range to reach older programs — search only covers the rows already loaded."
+                  />
+                )}
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading…</p>
                 ) : filteredPrograms.length === 0 ? (

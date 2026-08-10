@@ -9,7 +9,16 @@
  * the frontend now passes the new ROWID-based ids.
  */
 import { Response } from 'express';
-import { getRow, listAllRows, updateRow, toCatalystDate, nowCatalystIST, CatalystRow } from '../lib/catalyst-client';
+import {
+  getRow,
+  listAllRows,
+  updateRow,
+  toCatalystDate,
+  nowCatalystIST,
+  executeZCQL,
+  zcqlEscapeValue,
+  CatalystRow,
+} from '../lib/catalyst-client';
 import {
   sendSuccess,
   sendError,
@@ -42,15 +51,22 @@ const TOUR_TABLE = 'TourProgram';
  * passengerName by comma (legacy behaviour).
  */
 async function loadTrainPassengers(trainRequestId: string): Promise<TrainEQPassenger[]> {
-  let allRows: CatalystRow[] = [];
+  let rows: CatalystRow[] = [];
   try {
-    allRows = await listAllRows(PASSENGER_TABLE);
+    // Scoped to this one request. This used to read the ENTIRE passenger table
+    // and filter in JS, so printing a single letter cost a round-trip per 300
+    // passenger rows in the database — and reprinting an old letter is exactly
+    // the workflow this page exists for. ROWID ASC is insertion order, which
+    // is the ordering the letter wants.
+    rows = await executeZCQL<CatalystRow>(
+      `SELECT * FROM ${PASSENGER_TABLE} ` +
+        `WHERE trainRequestId = '${zcqlEscapeValue(String(trainRequestId))}' ` +
+        `ORDER BY ROWID ASC`
+    );
   } catch {
     return [];
   }
-  return allRows
-    .filter((p) => String(p.trainRequestId) === String(trainRequestId))
-    .sort((a, b) => String(a.CREATEDTIME).localeCompare(String(b.CREATEDTIME)))
+  return rows
     .map((p) => ({
       name: String(p.passengerName || '').trim(),
       gender: p.gender ? String(p.gender) : undefined,

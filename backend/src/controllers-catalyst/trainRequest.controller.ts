@@ -23,9 +23,32 @@ import {
   executeZCQL,
   zcqlEscapeValue,
   zcqlAnyOf,
-  zcqlSafeLimit,
+  zcqlLike,
+  zcqlLikeAny,
+
+  // zcqlSafeLimit is intentionally not used in this controller: it clamps
+  // silently, which is how rows went missing here. Use assertZcqlLimit and
+  // compute a legal page size instead.
+  assertZcqlLimit,
+  countRows,
+  fetchOffsetWindow,
+  columnExists,
+  dateRangeClauses,
+  countZcqlConditions,
+  zcqlSearchWithinBudget,
+  fetchChildrenByParentIds,
+  ZCQL_MAX_LIMIT,
   CatalystRow,
 } from '../lib/catalyst-client';
+import {
+  decodeCursor,
+  encodeCursor,
+  keysetOrderBy,
+  keysetPredicate,
+  type ListCursor,
+} from '../lib/keyset';
+import { parseKeysetQuery, DEFAULT_KEYSET_LIMIT } from '../utils/keyset-query';
+import { cacheSWR } from '../lib/cache';
 import { useZCQL } from '../config/feature-flags';
 import { getCachedTableList, getUserIdAliases } from '../lib/catalyst-user-lookup';
 import { autoCreateSelfTask } from './task.controller';
@@ -35,7 +58,10 @@ import {
   sendNotFound,
   sendServerError,
 } from '../utils/response';
-import { parsePagination, calculatePaginationMeta } from '../utils/pagination';
+// calculatePaginationMeta is deliberately NOT imported here any more: it takes
+// a `total` as a required argument, which is what pushed this controller into
+// fabricating one. parsePagination stays for the legacy page= shim.
+import { parsePagination } from '../utils/pagination';
 import type { AuthenticatedRequest, TrainRequestFilters } from '../types';
 
 const TRAIN_TABLE = 'TrainRequest';
@@ -53,23 +79,34 @@ const VALID_GENDERS = new Set(['MALE', 'FEMALE', 'OTHER']);
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 /**
- * Best-effort sequential reference number: TREQ-<IST year>-NNNN. Scans existing
- * trainRequestNumber values for the current year and returns max+1. Not
- * transaction-safe — adequate for office-scale concurrency. Mirrors
- * nextGrievanceNumber().
+ * Best-effort sequential reference number: TREQ-<IST year>-NNNN. Returns
+ * max+1 for the current year. Still NOT transaction-safe — two concurrent
+ * creates can race to the same number, which is pre-existing and adequate for
+ * office-scale concurrency. Mirrors nextGrievanceNumber().
+ *
+ * One query, not a full-table scan: the sequence is zero-padded to 4 digits
+ * (see the padStart below), so lexical DESC equals numeric DESC up to 9999 and
+ * the highest existing number is simply the first row. Previously this read
+ * every train request ever created just to issue the next number — meaning the
+ * cost of creating request 2001 was proportional to the 2000 before it.
  */
 async function nextTrainRequestNumber(): Promise<string> {
   const istYear = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCFullYear();
   const prefix = `TREQ-${istYear}-`;
   let maxSeq = 0;
+  // Skip the query entirely when the column is absent (as it is in
+  // Development) — querying it would 400 on every create.
+  if (!(await hasRefNumberColumn())) return `${prefix}0001`;
   try {
-    const rows = await listAllRows(TRAIN_TABLE);
-    for (const r of rows) {
-      const num = String(r.trainRequestNumber ?? '');
-      if (num.startsWith(prefix)) {
-        const seq = parseInt(num.slice(prefix.length), 10);
-        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
-      }
+    const rows = await executeZCQL<CatalystRow>(
+      `SELECT trainRequestNumber FROM ${TRAIN_TABLE} ` +
+        `WHERE ${zcqlLike('trainRequestNumber', prefix, 'prefix')} ` +
+        `ORDER BY trainRequestNumber DESC LIMIT 1`
+    );
+    const num = String(rows[0]?.trainRequestNumber ?? '');
+    if (num.startsWith(prefix)) {
+      const seq = parseInt(num.slice(prefix.length), 10);
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
     }
   } catch {
     /* table unreadable — fall back to 1 */
@@ -162,9 +199,16 @@ async function lookupUsers(
     for (const u of users) {
       const rowId = String(u.ROWID);
       const legacyId = u.legacyId ? String(u.legacyId) : null;
+      // Two INDEPENDENT ifs, not if/else: one user can be referenced by their
+      // Catalyst ROWID on some rows and their pre-migration legacy UUID on
+      // others. With `else if`, a page containing both forms resolved only the
+      // ROWID and rendered "Created By" blank for the legacy rows — and bigger
+      // pages make that collision more likely, so it would have worsened
+      // exactly as we raise the row count.
       if (wanted.has(rowId)) {
         map.set(rowId, { id: rowId, name: String(u.name), email: String(u.email) });
-      } else if (legacyId && wanted.has(legacyId)) {
+      }
+      if (legacyId && wanted.has(legacyId)) {
         map.set(legacyId, { id: legacyId, name: String(u.name), email: String(u.email) });
       }
     }
@@ -174,30 +218,53 @@ async function lookupUsers(
   return map;
 }
 
-/** Fetch passengers for a set of train request IDs (single Catalyst call). */
+/**
+ * Fetch passengers for a set of train request IDs, scoped to just those IDs.
+ *
+ * This used to call `listAllRows(PASSENGER_TABLE)` and filter in JS, i.e. read
+ * EVERY passenger row in the database to answer a question about (at most) one
+ * page of parents. At 6000 passenger rows that was ~20 sequential round-trips
+ * per list render, and it grew forever. Now each chunk is one scoped query and
+ * the chunks run in parallel, so the cost tracks page size, not table size.
+ */
 async function passengersByRequestId(
   requestIds: string[]
 ): Promise<Map<string, any[]>> {
   const out = new Map<string, any[]>();
   if (requestIds.length === 0) return out;
-  const idSet = new Set(requestIds);
-  let allPassengers: CatalystRow[] = [];
-  try {
-    allPassengers = await listAllRows(PASSENGER_TABLE);
-  } catch {
-    return out; // Table may not exist yet
-  }
-  for (const p of allPassengers) {
+
+  // Chunking is handled by the shared helper, which caps each OR-chain at the
+  // ZCQL 10-condition ceiling. An earlier version chunked by 25, which made
+  // every chunk a 400 that was then swallowed — passengers vanished from
+  // pages larger than a handful of rows, with no error anywhere.
+  const rows = await fetchChildrenByParentIds(
+    PASSENGER_TABLE,
+    'trainRequestId',
+    requestIds,
+    { orderBy: 'ORDER BY ROWID ASC' }
+  );
+
+  for (const p of rows) {
     if (!p.trainRequestId) continue;
     const tid = String(p.trainRequestId);
-    if (!idSet.has(tid)) continue;
-    (out.get(tid) || out.set(tid, []).get(tid))!.push(shapePassenger(p));
+    if (!out.has(tid)) out.set(tid, []);
+    out.get(tid)!.push(shapePassenger(p));
   }
   return out;
 }
 
-/** Attach createdBy + approvedBy + nested passengers to a list of train requests. */
-async function hydrate(rows: CatalystRow[]): Promise<any[]> {
+/**
+ * Attach createdBy + approvedBy (+ optionally nested passengers) to rows.
+ *
+ * Passengers are OPT-IN because no list screen renders them — the list shows
+ * the scalar `numberOfPassengers`, and PDF letters load their own passengers
+ * separately. Fetching them for every list row was pure waste on the hottest
+ * path in the module.
+ */
+async function hydrate(
+  rows: CatalystRow[],
+  opts: { passengers?: boolean } = {}
+): Promise<any[]> {
   const safe = rows.filter((r): r is CatalystRow => Boolean(r));
   if (safe.length === 0) return [];
 
@@ -210,7 +277,9 @@ async function hydrate(rows: CatalystRow[]): Promise<any[]> {
   // Independent reads — run in parallel instead of two serial round-trips.
   const [users, passengersMap] = await Promise.all([
     lookupUsers(userIds),
-    passengersByRequestId(safe.map((r) => String(r.ROWID))),
+    opts.passengers
+      ? passengersByRequestId(safe.map((r) => String(r.ROWID)))
+      : Promise.resolve(new Map<string, any[]>()),
   ]);
 
   return safe.map((r) =>
@@ -286,10 +355,14 @@ async function writePassengers(
 /** Delete all TrainPassenger rows for a parent. Best-effort; logs failures. */
 async function deletePassengersFor(trainRequestId: string): Promise<void> {
   try {
-    const all = await listAllRows(PASSENGER_TABLE);
-    const matches = all
-      .filter((p) => p.trainRequestId === trainRequestId)
-      .map((p) => String(p.ROWID));
+    // Scoped lookup — reading the whole passenger table to find one parent's
+    // children was the same full-scan pattern as the list path.
+    const matches = (
+      await executeZCQL<CatalystRow>(
+        `SELECT ROWID FROM ${PASSENGER_TABLE} ` +
+          `WHERE trainRequestId = '${zcqlEscapeValue(trainRequestId)}'`
+      )
+    ).map((p) => String(p.ROWID));
     // Parallel best-effort delete — allSettled keeps the "ignore individual
     // failures" semantics while collapsing N serial round-trips into one batch.
     await Promise.allSettled(matches.map((id) => deleteRow(PASSENGER_TABLE, id)));
@@ -524,17 +597,110 @@ export async function createTrainRequest(
       description: remarks ? String(remarks).slice(0, 500) : null,
     });
 
-    const [shaped] = await hydrate([row]);
+    const [shaped] = await hydrate([row], { passengers: true });
     sendSuccess(res, shaped, 'Train request created successfully', 201);
   } catch (error) {
     sendServerError(res, 'Failed to create train request', error);
   }
 }
 
-function buildTrainZCQL(
+/**
+ * Turn a free-text search box into the most selective predicate its SHAPE
+ * allows.
+ *
+ * The point is that most real searches here are identifiers, not prose: staff
+ * hunting an old letter hold a PNR or a printed TREQ- reference. Recognising
+ * those shapes turns the query into an equality match the datastore can
+ * satisfy directly, instead of an unanchored contains-match that can't use an
+ * index. Only a genuine name fragment falls through to the slow form — and
+ * even that is now ONE server-side query rather than reading the whole table
+ * into Node and filtering it there.
+ *
+ * All LIKE conditions go through zcqlLike() because the Catalyst wildcard is
+ * `*`, not `%`, and getting that wrong matches zero rows without erroring.
+ */
+/**
+ * Is the optional `trainRequestNumber` column present in this datastore?
+ *
+ * VERIFIED ABSENT in Development — ZCQL answers "Unkown Table TrainRequest or
+ * Unkown Column trainRequestNumber". ZCQL rejects the ENTIRE query when it
+ * references an unknown column, so a single unguarded mention of this column
+ * would 400 the whole search and show the user an error instead of results.
+ * Every query below that touches it must be gated on this.
+ */
+function hasRefNumberColumn(): Promise<boolean> {
+  return columnExists(TRAIN_TABLE, 'trainRequestNumber');
+}
+
+function classifySearch(raw: string, hasRefNo: boolean, usedConditions = 0): string {
+  const t = raw.trim();
+  const q = zcqlEscapeValue(t);
+
+  // Issued reference number: TREQ-YYYY-NNNN
+  if (hasRefNo && /^TREQ-\d{4}-\d{1,6}$/i.test(t)) {
+    return `trainRequestNumber = '${q}'`;
+  }
+  // "TREQ-<rowid>" — the reference the UI displays for rows that predate the
+  // trainRequestNumber column. The prefix makes it unambiguous.
+  const prefixed = t.match(/^TREQ-(\d+)$/i);
+  if (prefixed) {
+    return `ROWID = ${prefixed[1]}`;
+  }
+  // A BARE number is ambiguous, and the disambiguator is length. Catalyst
+  // ROWIDs are ~17 digits (e.g. 37719000000744038) while a PNR is 10. An
+  // earlier `\d{6,}` threshold classified every PNR as a ROWID, so searching a
+  // PNR returned nothing — the exact false-negative this rewrite exists to
+  // kill. Anything shorter than a ROWID is treated as a PNR prefix.
+  if (/^\d{15,}$/.test(t)) {
+    return `ROWID = ${t}`;
+  }
+  if (/^\d{3,14}$/.test(t)) {
+    return zcqlLike('pnrNumber', t, 'prefix');
+  }
+  // A TREQ- reference we can't match as a column: with no such column, the
+  // only rows that could match are ones whose displayed reference is the
+  // ROWID fallback, and that shape was handled above. Match nothing rather
+  // than returning every row.
+  if (/^TREQ-/i.test(t)) {
+    return `ROWID = 0`;
+  }
+  // Most-identifying first: if the condition budget forces columns to be
+  // dropped, the ones people actually search must survive.
+  const columns = ['passengerName', 'pnrNumber', 'trainName'];
+  if (hasRefNo) columns.splice(2, 0, 'trainRequestNumber');
+  const { clause } = zcqlSearchWithinBudget(columns, t, usedConditions);
+  // No budget left for search at all — match nothing rather than silently
+  // ignoring the search box and returning the unfiltered list.
+  return clause ?? 'ROWID = 0';
+}
+
+/**
+ * Inclusive end-of-day bound for a date filter.
+ *
+ * `toCatalystDate('2026-08-07')` yields a midnight timestamp, so using it as a
+ * `<=` bound excludes every row ON the end date — the filter silently drops a
+ * day. Pin the bound to 23:59:59 of that date instead.
+ */
+function endOfDayBound(value: string): string | null {
+  const formatted = toCatalystDate(value);
+  if (!formatted) return null;
+  return `${formatted.slice(0, 10)} 23:59:59`;
+}
+
+/**
+ * WHERE clauses only — no ORDER BY, no LIMIT. Kept separate so the page query,
+ * the COUNT query and the CSV export all derive from the SAME predicate. A
+ * total that disagrees with the rows on screen is its own bug.
+ */
+function buildTrainWhere(
   staffIds: string[] | null,
-  filters: TrainRequestFilters
-): string {
+  filters: TrainRequestFilters,
+  hasRefNo: boolean
+): string[] {
+  // Build every NON-search clause first, then give the search box whatever is
+  // left of the 10-condition budget. Search is the only variable-width clause,
+  // so it is the one that must yield — and it yields visibly (a warning names
+  // the dropped columns) rather than 400-ing the whole query.
   const conditions: string[] = [];
   // STAFF scoping — match ALL identity aliases (ROWID + legacy UUID), since
   // rows written in different eras carry different forms of the same user.
@@ -544,120 +710,193 @@ function buildTrainZCQL(
   if (filters.status) {
     conditions.push(`status = '${zcqlEscapeValue(String(filters.status))}'`);
   }
-  if (filters.search) {
-    const raw = String(filters.search).trim();
-    const q = zcqlEscapeValue(raw);
-    const clauses = [
-      `passengerName LIKE '%${q}%'`,
-      `pnrNumber LIKE '%${q}%'`,
-      `trainName LIKE '%${q}%'`,
-      `trainRequestNumber LIKE '%${q}%'`,
-    ];
-    // Legacy "TREQ-<rowid>" reference → match the ROWID directly.
-    const m = raw.match(/^TREQ-(\d+)$/i);
-    if (m) clauses.push(`ROWID = ${m[1]}`);
-    conditions.push(`(${clauses.join(' OR ')})`);
+  conditions.push(
+    ...dateRangeClauses(
+      'dateOfJourney',
+      filters.startDate as unknown as string,
+      filters.endDate as unknown as string
+    )
+  );
+
+  if (filters.search && String(filters.search).trim()) {
+    // +1 leaves headroom for the keyset predicate the page query appends.
+    const used = countZcqlConditions(conditions) + 3;
+    conditions.push(classifySearch(String(filters.search), hasRefNo, used));
   }
-  if (filters.startDate) {
-    const start = toCatalystDate(filters.startDate as unknown as string);
-    if (start) conditions.push(`dateOfJourney >= '${start}'`);
-  }
-  if (filters.endDate) {
-    const end = toCatalystDate(filters.endDate as unknown as string);
-    if (end) conditions.push(`dateOfJourney <= '${end}'`);
-  }
-  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-  return `SELECT * FROM ${TRAIN_TABLE}${where} ORDER BY CREATEDTIME DESC`;
+  return conditions;
+}
+
+function whereSql(clauses: string[]): string {
+  return clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+}
+
+/**
+ * Fetch `want` rows starting at `skip`, in ZCQL-legal chunks.
+ *
+ * Exists only for the legacy page/limit contract, which permits limits up to
+ * 1000 while ZCQL rejects LIMIT > 300. The old code clamped to 299 and echoed
+ * the requested limit back in the meta, so at limit=1000 page 1 returned rows
+ * 0-298 and page 2 (skip=1000) returned rows 1000-1298 — rows 299-999 were
+ * returned by no page at all, with no error. Chunking serves the window the
+ * caller actually asked for.
+ *
+ * New callers should use cursor pagination; this is a compatibility path.
+ */
+async function fetchTrainWindow(
+  filterWhere: string,
+  skip: number,
+  want: number
+): Promise<CatalystRow[]> {
+  // Delegates to the shared KEYSET walk. The obvious implementation — LIMIT 299
+  // with a marching OFFSET — silently DUPLICATES rows at chunk boundaries:
+  // measured on a 2067-row table with a full total order and no concurrent
+  // writes, the OFFSET walk returned 2068 rows / 2067 unique while the keyset
+  // walk returned exactly 2067. Catalyst's OFFSET is not stable, and a
+  // tiebreaker in ORDER BY does not fix it.
+  return fetchOffsetWindow(TRAIN_TABLE, filterWhere, 'CREATEDTIME', 'newest', skip, want);
+}
+
+/**
+ * Resolve STAFF identity aliases, or null for admin-level roles.
+ *
+ * Returns an empty array when a staff user resolves to no aliases at all —
+ * callers MUST treat that as "match nothing", never as "no filter". Dropping
+ * an empty scope would hand one staffer the whole table.
+ */
+async function resolveStaffScope(
+  req: AuthenticatedRequest
+): Promise<string[] | null> {
+  if (req.user?.role !== 'STAFF') return null;
+  return getUserIdAliases(req.user.id);
 }
 
 /**
  * GET /api/train-requests
+ *
+ * Cursor-paged (keyset). Query params:
+ *   limit   1-100, default 25
+ *   cursor  opaque; omit for the first page
+ *   sort    'newest' (default) | 'oldest'
+ *   status, search, startDate, endDate
+ *   include=passengers  opt into nested passenger rows (list screens don't need them)
+ *
+ * `sort=oldest` is not decoration: it is how you reach the far end of the
+ * table. The oldest record is row 1 of an oldest-first list, so "jump to the
+ * end" costs exactly one query no matter how many rows exist. That is why
+ * there is no OFFSET anywhere on this path.
+ *
+ * Legacy `page=` callers still work — see the shim below — but new callers
+ * should use cursors.
  */
 export async function getTrainRequests(
   req: AuthenticatedRequest,
   res: Response
 ): Promise<void> {
   try {
-    const { page, limit, skip } = parsePagination(
-      req.query as { page?: string; limit?: string }
-    );
     const filters = req.query as TrainRequestFilters;
+    const wantPassengers = String(req.query.include ?? '')
+      .split(',')
+      .includes('passengers');
 
-    let pageRows: CatalystRow[];
-    let total: number;
-
-    // STAFF see only their own rows — resolved to the full identity-alias set
-    // (Catalyst ROWID + legacy UUID) so pre-migration rows still match.
-    const staffIds =
-      req.user?.role === 'STAFF' ? await getUserIdAliases(req.user.id) : null;
-
-    // Free-text search (incl. reference number / TREQ-<rowid>) always runs
-    // through the JS path: it reliably matches trainRequestNumber + ROWID and
-    // scans the whole table, sidestepping ZCQL quirks and a possibly-missing
-    // trainRequestNumber column. ZCQL still handles the common list with no search.
-    if (useZCQL() && !filters.search) {
-      const baseQuery = buildTrainZCQL(staffIds, filters);
-      const safeLimit = zcqlSafeLimit(limit);
-      const fetched = await executeZCQL<CatalystRow>(`${baseQuery} LIMIT ${safeLimit + 1} OFFSET ${skip}`);
-      const hasMore = fetched.length > safeLimit;
-      pageRows = hasMore ? fetched.slice(0, safeLimit) : fetched;
-      total = skip + pageRows.length + (hasMore ? 1 : 0);
-    } else {
-      let rows = await listAllRows(TRAIN_TABLE);
-
-      if (staffIds) {
-        const idSet = new Set(staffIds);
-        rows = rows.filter((r) => idSet.has(String(r.createdById)));
-      }
-      if (filters.status) rows = rows.filter((r) => r.status === filters.status);
-      if (filters.search) {
-        const raw = String(filters.search).trim();
-        const q = raw.toLowerCase();
-        // "TREQ-<rowid>" or a bare ROWID search → the digits to match directly.
-        const rowidMatch = raw.match(/^(?:TREQ-)?(\d{6,})$/i);
-        rows = rows.filter((r) => {
-          // The SAME human reference the UI shows: trainRequestNumber
-          // (TREQ-YYYY-NNNN) when present, else the ROWID fallback (TREQ-<rowid>).
-          const refNo = (r.trainRequestNumber
-            ? String(r.trainRequestNumber)
-            : `TREQ-${String(r.ROWID)}`
-          ).toLowerCase();
-          return (
-            (r.passengerName || '').toLowerCase().includes(q) ||
-            (r.pnrNumber || '').includes(q) ||
-            (r.trainName || '').toLowerCase().includes(q) ||
-            refNo.includes(q) ||
-            (rowidMatch ? String(r.ROWID) === rowidMatch[1] : false)
-          );
-        });
-      }
-      if (filters.startDate) {
-        const start = new Date(filters.startDate as unknown as string).getTime();
-        rows = rows.filter(
-          (r) => r.dateOfJourney && new Date(r.dateOfJourney).getTime() >= start
-        );
-      }
-      if (filters.endDate) {
-        const end = new Date(filters.endDate as unknown as string).getTime();
-        rows = rows.filter(
-          (r) => r.dateOfJourney && new Date(r.dateOfJourney).getTime() <= end
-        );
-      }
-
-      rows.sort((a, b) => {
-        const ta = a.CREATEDTIME ? new Date(a.CREATEDTIME).getTime() : 0;
-        const tb = b.CREATEDTIME ? new Date(b.CREATEDTIME).getTime() : 0;
-        return tb - ta;
+    const staffIds = await resolveStaffScope(req);
+    if (staffIds && staffIds.length === 0) {
+      sendSuccess(res, [], 'Train requests retrieved successfully', 200, {
+        limit: DEFAULT_KEYSET_LIMIT,
+        count: 0,
+        total: 0,
+        totalKnown: true,
+        hasMore: false,
+        nextCursor: null,
+        sort: 'newest',
       });
-
-      total = rows.length;
-      pageRows = rows.slice(skip, skip + limit);
+      return;
     }
 
-    const data = await hydrate(pageRows);
+    const filterClauses = buildTrainWhere(staffIds, filters, await hasRefNumberColumn());
+    const filterWhere = whereSql(filterClauses);
 
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, data, 'Train requests retrieved successfully', 200, meta);
+    // Count is display-only and runs in PARALLEL with the page query, only on
+    // the first page, behind a stale-while-revalidate cache. Scoping the cache
+    // key by role + user id is mandatory: STAFF results are per-identity, and a
+    // shared key would leak one staffer's row count to another.
+    const countKey =
+      `traineq:count:${req.user?.role}:${req.user?.id}:` + JSON.stringify(filterClauses);
+    const countPromise = () =>
+      cacheSWR(countKey, 30, 120, () => countRows(TRAIN_TABLE, filterWhere));
+
+    // ── Legacy page/limit path ──────────────────────────────────────────────
+    // A caller opts into cursor pagination by sending `cursor` or `sort`;
+    // everything else keeps the old page/limit contract exactly, including
+    // limits above the keyset page cap (PrintCenter asks for 200 in one go).
+    // Silently clamping those callers would have been the same class of bug
+    // this change exists to remove.
+    const usesCursorApi =
+      req.query.cursor !== undefined || req.query.sort !== undefined;
+
+    if (!usesCursorApi) {
+      const { page, limit, skip } = parsePagination(
+        req.query as { page?: string; limit?: string }
+      );
+      const [fetched, total] = await Promise.all([
+        // ZCQL caps LIMIT at 300, but the legacy contract allows up to 1000,
+        // so satisfy the window in chunks instead of quietly truncating it.
+        fetchTrainWindow(filterWhere, skip, limit + 1),
+        countPromise(),
+      ]);
+      const hasMore = fetched.length > limit;
+      const rows = hasMore ? fetched.slice(0, limit) : fetched;
+      const data = await hydrate(rows, { passengers: wantPassengers });
+      sendSuccess(res, data, 'Train requests retrieved successfully', 200, {
+        page,
+        limit,
+        count: rows.length,
+        hasMore,
+        ...(total !== null
+          ? { total, totalKnown: true, totalPages: Math.ceil(total / limit) }
+          : { totalKnown: false }),
+      });
+      return;
+    }
+
+    // ── Keyset path ─────────────────────────────────────────────────────────
+    const { limit, cursor: cursorRaw, sort } = parseKeysetQuery(req.query);
+    const cursor = decodeCursor(cursorRaw);
+
+    const pageClauses = [...filterClauses];
+    if (cursor) pageClauses.push(keysetPredicate('CREATEDTIME', cursor, sort));
+
+    const [fetched, total] = await Promise.all([
+      executeZCQL<CatalystRow>(
+        `SELECT * FROM ${TRAIN_TABLE}${whereSql(pageClauses)} ` +
+          `${keysetOrderBy('CREATEDTIME', sort)} LIMIT ${assertZcqlLimit(limit + 1)}`
+      ),
+      // Only page 1 pays for the count; later pages reuse what the client has.
+      cursor ? Promise.resolve(null) : countPromise(),
+    ]);
+
+    const hasMore = fetched.length > limit;
+    const pageRows = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = pageRows[pageRows.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCursor({ t: String(last.CREATEDTIME), r: String(last.ROWID) })
+        : null;
+
+    const data = await hydrate(pageRows, { passengers: wantPassengers });
+
+    sendSuccess(res, data, 'Train requests retrieved successfully', 200, {
+      limit,
+      count: pageRows.length,
+      hasMore,
+      nextCursor,
+      sort,
+      // `total` is present ONLY when it is real. It is never derived from the
+      // page contents — a count computed as skip + rows.length + hasMore is a
+      // fabrication that can never exceed currentPage + 1.
+      ...(total !== null && total !== undefined
+        ? { total, totalKnown: true, totalPages: Math.ceil(total / limit) }
+        : { totalKnown: false }),
+    });
   } catch (error) {
     sendServerError(res, 'Failed to get train requests', error);
   }
@@ -684,7 +923,7 @@ export async function getTrainRequestById(
         return;
       }
     }
-    const [shaped] = await hydrate([row]);
+    const [shaped] = await hydrate([row], { passengers: true });
     sendSuccess(res, shaped, 'Train request retrieved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to get train request', error);
@@ -790,7 +1029,7 @@ export async function updateTrainRequest(
       await writePassengers(id, body.passengers);
     }
 
-    const [shaped] = await hydrate([updated]);
+    const [shaped] = await hydrate([updated], { passengers: true });
     sendSuccess(res, shaped, 'Train request updated successfully');
   } catch (error) {
     sendServerError(res, 'Failed to update train request', error);
@@ -826,7 +1065,7 @@ export async function approveTrainRequest(
       approvedById: req.user.id,
       approvedAt: nowCatalystIST(),
     });
-    const [shaped] = await hydrate([updated]);
+    const [shaped] = await hydrate([updated], { passengers: true });
     sendSuccess(res, shaped, 'Train request approved successfully');
   } catch (error) {
     sendServerError(res, 'Failed to approve train request', error);
@@ -863,7 +1102,7 @@ export async function rejectTrainRequest(
       rejectionReason: reason || null,
       approvedById: req.user.id,
     });
-    const [shaped] = await hydrate([updated]);
+    const [shaped] = await hydrate([updated], { passengers: true });
     sendSuccess(res, shaped, 'Train request rejected');
   } catch (error) {
     sendServerError(res, 'Failed to reject train request', error);
@@ -900,7 +1139,7 @@ export async function resolveTrainRequest(
       ROWID: id,
       status: 'RESOLVED',
     });
-    const [shaped] = await hydrate([updated]);
+    const [shaped] = await hydrate([updated], { passengers: true });
     sendSuccess(res, shaped, 'Train request marked as resolved');
   } catch (error) {
     sendServerError(res, 'Failed to resolve train request', error);
@@ -933,25 +1172,164 @@ export async function getPendingQueue(
   res: Response
 ): Promise<void> {
   try {
-    const { page, limit, skip } = parsePagination(
-      _req.query as { page?: string; limit?: string }
-    );
-    let rows = await listAllRows(TRAIN_TABLE);
-    rows = rows.filter((r) => r.status === 'PENDING');
-    rows.sort((a, b) => {
-      const ta = a.dateOfJourney ? new Date(a.dateOfJourney).getTime() : Infinity;
-      const tb = b.dateOfJourney ? new Date(b.dateOfJourney).getTime() : Infinity;
-      return ta - tb;
+    // Previously read the entire table and filtered `status === 'PENDING'` in
+    // JS — paying the full scan even though status is the most selective
+    // column in the schema. Push it down instead.
+    const { limit, cursor: cursorRaw } = parseKeysetQuery(_req.query);
+    const cursor = decodeCursor(cursorRaw);
+
+    const clauses = [`status = 'PENDING'`];
+    const filterWhere = whereSql(clauses);
+    if (cursor) clauses.push(keysetPredicate('dateOfJourney', cursor, 'oldest'));
+
+    const [fetched, total] = await Promise.all([
+      executeZCQL<CatalystRow>(
+        `SELECT * FROM ${TRAIN_TABLE}${whereSql(clauses)} ` +
+          `${keysetOrderBy('dateOfJourney', 'oldest')} LIMIT ${assertZcqlLimit(limit + 1)}`
+      ),
+      cursor
+        ? Promise.resolve(null)
+        : cacheSWR('traineq:count:pending', 30, 120, () =>
+            countRows(TRAIN_TABLE, filterWhere)
+          ),
+    ]);
+
+    const hasMore = fetched.length > limit;
+    const rows = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = rows[rows.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCursor({ t: String(last.dateOfJourney), r: String(last.ROWID) })
+        : null;
+
+    const data = await hydrate(rows);
+
+    sendSuccess(res, data, 'Pending queue retrieved', 200, {
+      limit,
+      count: rows.length,
+      hasMore,
+      nextCursor,
+      ...(total !== null && total !== undefined
+        ? { total, totalKnown: true, totalPages: Math.ceil(total / limit) }
+        : { totalKnown: false }),
     });
-
-    const total = rows.length;
-    const paged = rows.slice(skip, skip + limit);
-    const data = await hydrate(paged);
-
-    const meta = calculatePaginationMeta(total, page, limit);
-    sendSuccess(res, data, 'Pending queue retrieved', 200, meta);
   } catch (error) {
     sendServerError(res, 'Failed to get pending queue', error);
+  }
+}
+
+// ── CSV export ─────────────────────────────────────────────────────────────
+
+const CSV_COLUMNS: Array<[string, (r: CatalystRow, creator: string) => string]> = [
+  ['Reference No', (r) => String(r.trainRequestNumber ?? `TREQ-${r.ROWID}`)],
+  ['Passenger', (r) => String(r.passengerName ?? '')],
+  ['PNR', (r) => String(r.pnrNumber ?? '')],
+  ['Contact', (r) => String(r.contactNumber ?? '')],
+  ['Train Name', (r) => String(r.trainName ?? '')],
+  ['Train No', (r) => String(r.trainNumber ?? '')],
+  ['Class', (r) => String(r.journeyClass ?? '')],
+  ['Journey Date', (r) => String(r.dateOfJourney ?? '')],
+  ['From', (r) => String(r.fromStation ?? '')],
+  ['To', (r) => String(r.toStation ?? '')],
+  ['Passengers', (r) => String(r.numberOfPassengers ?? '')],
+  ['Status', (r) => String(r.status ?? '')],
+  ['Created By', (_r, creator) => creator],
+  ['Created', (r) => String(r.CREATEDTIME ?? '')],
+];
+
+function csvCell(value: string): string {
+  // Quote always — simpler than deciding, and immune to embedded , " or newline.
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+/**
+ * GET /api/train-requests/export.csv
+ *
+ * Streams every row matching the SAME filters as the list. Exists because
+ * server-side pagination would otherwise silently downgrade the export button
+ * from "the 200 rows we happened to load" to "the 25 on screen" — the bulk
+ * need is real, it just doesn't belong on the interactive path.
+ *
+ * Walks with a keyset cursor rather than OFFSET, so memory and per-batch cost
+ * stay flat regardless of how many rows are exported, and writes each batch
+ * straight to the socket instead of buffering the whole file.
+ */
+export async function exportTrainRequests(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const filters = req.query as TrainRequestFilters;
+    const staffIds = await resolveStaffScope(req);
+    // Same guard as the list: an empty staff scope must match nothing.
+    if (staffIds && staffIds.length === 0) {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="train-eq.csv"');
+      res.end('﻿' + CSV_COLUMNS.map(([h]) => csvCell(h)).join(',') + '\n');
+      return;
+    }
+
+    const filterClauses = buildTrainWhere(staffIds, filters, await hasRefNumberColumn());
+
+    // Resolve creator names once — the AppUser list is cached, so naming
+    // 30,000 rows costs no extra round-trips.
+    const userMap = new Map<string, string>();
+    try {
+      for (const u of await getCachedTableList('AppUser')) {
+        const name = String(u.name ?? '');
+        userMap.set(String(u.ROWID), name);
+        if (u.legacyId) userMap.set(String(u.legacyId), name);
+      }
+    } catch {
+      /* names are cosmetic — export without them rather than failing */
+    }
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="train-eq-${new Date().toISOString().slice(0, 10)}.csv"`
+    );
+    // BOM so Excel reads it as UTF-8 and renders Indian-language names.
+    res.write('﻿' + CSV_COLUMNS.map(([h]) => csvCell(h)).join(',') + '\n');
+
+    const PAGE = ZCQL_MAX_LIMIT;
+    const MAX_BATCHES = 120; // ~35k rows — a ceiling, but a LOUD one (see below)
+    let cursor: ListCursor | null = null;
+    let truncated = false;
+
+    for (let i = 0; i < MAX_BATCHES; i++) {
+      const clauses = [...filterClauses];
+      if (cursor) clauses.push(keysetPredicate('CREATEDTIME', cursor, 'newest'));
+
+      const rows = await executeZCQL<CatalystRow>(
+        `SELECT * FROM ${TRAIN_TABLE}${whereSql(clauses)} ` +
+          `ORDER BY CREATEDTIME DESC, ROWID DESC LIMIT ${assertZcqlLimit(PAGE)}`
+      );
+      if (rows.length === 0) break;
+
+      for (const r of rows) {
+        const creator = userMap.get(String(r.createdById)) ?? '';
+        res.write(CSV_COLUMNS.map(([, get]) => csvCell(get(r, creator))).join(',') + '\n');
+      }
+
+      if (rows.length < PAGE) break;
+      const last = rows[rows.length - 1];
+      cursor = { t: String(last.CREATEDTIME), r: String(last.ROWID) };
+      truncated = i === MAX_BATCHES - 1;
+    }
+
+    // Never let a cap masquerade as a complete export.
+    if (truncated) {
+      res.write(csvCell('-- truncated at the export limit; narrow the date range --') + '\n');
+    }
+    res.end();
+  } catch (error) {
+    // Headers may already be sent mid-stream; only send an error body if not.
+    if (res.headersSent) {
+      res.end('\n"-- export failed partway through; retry --"\n');
+      return;
+    }
+    sendServerError(res, 'Failed to export train requests', error);
   }
 }
 
