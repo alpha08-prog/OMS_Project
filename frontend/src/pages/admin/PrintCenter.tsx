@@ -17,6 +17,7 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { SearchBar } from "@/components/common/SearchBar";
 import { TruncationNotice } from "@/components/common/TruncationNotice";
+import { Pagination, usePagination } from "@/components/common/Pagination";
 import { grievanceApi, trainRequestApi, tourProgramApi, pdfApi, http, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
 import { useToast } from "@/components/AuthForm/Toast";
 import {
@@ -48,7 +49,6 @@ export default function PrintCenter() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
-  // What the three sources together said exists, vs what we actually hold.
   const [tally, setTally] = useState<{ loaded: number; total?: number; totalKnown: boolean }>({
     loaded: 0,
     totalKnown: false,
@@ -59,38 +59,73 @@ export default function PrintCenter() {
     setError(null);
     try {
       const items: PrintableItem[] = [];
-      // Truncation is tracked per source and summed. This page has NO pager —
-      // it renders exactly what it fetched — so a capped source means letters
-      // that exist but cannot be reached or printed from here at all, and the
-      // tab counts below (which are derived from `printableItems`) would report
-      // the capped number as though it were the total.
       let loadedFromServer = 0;
       let totalFromServer = 0;
       let totalKnown = true;
+
       const noteSource = (res: { data?: unknown; meta?: { total?: number; totalKnown?: boolean } }) => {
         const rows = Array.isArray(res?.data) ? res.data.length : 0;
         loadedFromServer += rows;
         const t = res?.meta?.total;
-        // One unknown count would leave the sum short by a whole module, which
-        // is worse than saying nothing at all.
         if (res?.meta?.totalKnown === false || typeof t !== 'number') totalKnown = false;
         else totalFromServer += t;
       };
 
-      // Fetch verified/resolved grievances (ready for printing).
-      // limit=200 (not the backend default of 10) so older letters stay
-      // reachable — stays under the ZCQL 299-row cap.
-      const grievanceParams: Record<string, string> = { limit: '200' };
+      // Helper to iteratively fetch all pages for a source using cursor / pagination
+      const fetchSourcePages = async <T,>(
+        fetcher: (params: Record<string, string>) => Promise<{ data?: T[]; meta?: { total?: number; totalKnown?: boolean; hasMore?: boolean; nextCursor?: string | null } }>,
+        baseParams: Record<string, string>
+      ) => {
+        let allData: T[] = [];
+        let cursor: string | undefined = undefined;
+        let pageNum = 1;
+        let hasMore = true;
+        let lastMeta: { total?: number; totalKnown?: boolean } | undefined = undefined;
+        let iter = 0;
+
+        while (hasMore && iter < 100) {
+          iter++;
+          const params: Record<string, string> = { ...baseParams, limit: '100' };
+          if (cursor) {
+            params.cursor = cursor;
+          } else if (pageNum > 1) {
+            params.page = String(pageNum);
+          }
+
+          const res = await fetcher(params);
+          const rows = Array.isArray(res?.data) ? res.data : [];
+          allData = allData.concat(rows);
+          if (res?.meta) lastMeta = res.meta;
+
+          if (res?.meta?.hasMore && rows.length > 0) {
+            if (res.meta.nextCursor) {
+              cursor = res.meta.nextCursor;
+            } else {
+              pageNum++;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        return {
+          data: allData,
+          meta: {
+            total: lastMeta?.total ?? allData.length,
+            totalKnown: lastMeta?.totalKnown ?? true,
+          },
+        };
+      };
+
+      // Fetch all grievances and temple visit letters (ready/available for printing).
+      const grievanceParams: Record<string, string> = {};
       if (startDate) grievanceParams.startDate = startDate;
       if (endDate) grievanceParams.endDate = endDate;
-      const grievanceRes = await grievanceApi.getAll(grievanceParams);
+      const grievanceRes = await fetchSourcePages((p) => grievanceApi.getAll(p), grievanceParams);
       noteSource(grievanceRes);
       console.log('PrintCenter - Grievances response:', grievanceRes);
-      const grievances = Array.isArray(grievanceRes?.data) ? grievanceRes.data : [];
+      const grievances = grievanceRes.data;
       grievances.forEach((g: Grievance) => {
-        // Temple-visit grievances are a self-service flow — they never go
-        // through admin verification, so they're always printable from the
-        // moment they're created. Listed as a separate type/chip.
         if (g.grievanceType === 'TEMPLE_VISIT') {
           items.push({
             id: g.id,
@@ -98,35 +133,30 @@ export default function PrintCenter() {
             title: `Temple Visit Letter - ${g.petitionerName}`,
             subtitle: `${g.memberCount ?? '?'} member(s) • ${g.constituency}`,
             date: g.resolvedAt || g.createdAt,
-            status: g.status === 'RESOLVED' ? 'Resolved' : 'Open',
+            status: g.status === 'RESOLVED' ? 'Resolved' : g.status === 'REJECTED' ? 'Rejected' : g.status === 'IN_PROGRESS' ? 'In Progress' : 'Open',
             data: g,
           });
           return;
         }
-        // Other grievances: only listed after admin verification.
-        if (g.isVerified || g.status === 'RESOLVED' || g.status === 'IN_PROGRESS') {
-          items.push({
-            id: g.id,
-            type: 'grievance',
-            title: `Grievance Letter - ${g.grievanceType.replace(/_/g, ' ')}`,
-            subtitle: `${g.petitionerName} • ${g.constituency}`,
-            date: g.verifiedAt || g.createdAt,
-            status: g.status === 'RESOLVED' ? 'Resolved' : g.status === 'IN_PROGRESS' ? 'In Progress' : 'Verified',
-            data: g,
-          });
-        }
+        items.push({
+          id: g.id,
+          type: 'grievance',
+          title: `Grievance Letter - ${g.grievanceType.replace(/_/g, ' ')}`,
+          subtitle: `${g.petitionerName} • ${g.constituency}`,
+          date: g.verifiedAt || g.createdAt,
+          status: g.status === 'RESOLVED' ? 'Resolved' : g.status === 'IN_PROGRESS' ? 'In Progress' : g.status === 'REJECTED' ? 'Rejected' : g.isVerified ? 'Verified' : 'Open',
+          data: g,
+        });
       });
 
-      // Fetch approved train requests. The missing limit here previously fell
-      // back to the backend default page size of 10 — capping the Train EQ
-      // tab at 10 letters no matter how many existed.
-      const trainParams: Record<string, string> = { status: 'APPROVED', limit: '200' };
+      // Fetch all train requests (Train EQ).
+      const trainParams: Record<string, string> = {};
       if (startDate) trainParams.startDate = startDate;
       if (endDate) trainParams.endDate = endDate;
-      const trainRes = await trainRequestApi.getAll(trainParams);
+      const trainRes = await fetchSourcePages((p) => trainRequestApi.getAll(p), trainParams);
       noteSource(trainRes);
       console.log('PrintCenter - Train requests response:', trainRes);
-      const trainRequests = Array.isArray(trainRes?.data) ? trainRes.data : [];
+      const trainRequests = trainRes.data;
       trainRequests.forEach((t: TrainRequest) => {
         items.push({
           id: t.id,
@@ -134,20 +164,19 @@ export default function PrintCenter() {
           title: `Train EQ Letter - ${t.trainName || 'N/A'}`,
           subtitle: `${t.passengerName} • PNR: ${t.pnrNumber}`,
           date: t.approvedAt || t.createdAt,
-          status: 'Approved',
+          status: t.status === 'APPROVED' ? 'Approved' : t.status === 'REJECTED' ? 'Rejected' : 'Pending',
           data: t,
         });
       });
 
-      // Fetch accepted tour programs (tour invitations) — available to
-      // staff and admins, matching the staffOnly /pdf/tour-program/:id route.
-      const tourParams: Record<string, string> = { decision: 'ACCEPTED', limit: '200' };
+      // Fetch all tour programs (tour invitations).
+      const tourParams: Record<string, string> = {};
       if (startDate) tourParams.startDate = startDate;
       if (endDate) tourParams.endDate = endDate;
-      const tourRes = await tourProgramApi.getAll(tourParams);
+      const tourRes = await fetchSourcePages((p) => tourProgramApi.getAll(p), tourParams);
       noteSource(tourRes);
       console.log('PrintCenter - Tour programs response:', tourRes);
-      const tours = Array.isArray(tourRes?.data) ? tourRes.data : [];
+      const tours = tourRes.data;
       tours.forEach((t: TourProgram) => {
         items.push({
           id: t.id,
@@ -155,7 +184,7 @@ export default function PrintCenter() {
           title: `Tour Invitation - ${t.eventName}`,
           subtitle: `${t.organizer} • ${t.venue}`,
           date: t.dateTime || t.createdAt,
-          status: 'Accepted',
+          status: t.decision === 'ACCEPTED' ? 'Accepted' : t.decision === 'REGRET' ? 'Regret' : 'Pending',
           data: t,
         });
       });
@@ -193,6 +222,8 @@ export default function PrintCenter() {
       String(f ?? "").toLowerCase().includes(q)
     );
   });
+
+  const { page, setPage, totalPages, rangeStart, rangeEnd, pageItems } = usePagination(filteredItems, 20);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -452,85 +483,96 @@ export default function PrintCenter() {
                     </p>
                   </div>
                 ) : (
-                  filteredItems.map((item) => (
-                    <div
-                      key={`${item.type}-${item.id}`}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-4 hover:bg-indigo-50/40 transition relative z-10"
-                    >
-                      {/* Left */}
-                      <div className="flex items-start gap-4 flex-1 min-w-0">
-                        <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                          {getItemIcon(item.type)}
+                  <>
+                    {pageItems.map((item) => (
+                      <div
+                        key={`${item.type}-${item.id}`}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-4 hover:bg-indigo-50/40 transition relative z-10"
+                      >
+                        {/* Left */}
+                        <div className="flex items-start gap-4 flex-1 min-w-0">
+                          <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                            {getItemIcon(item.type)}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-indigo-900 break-words">
+                              {item.title}
+                            </p>
+                            <p className="text-sm text-muted-foreground break-words">
+                              {item.subtitle}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDate(item.date)}
+                            </p>
+                          </div>
                         </div>
 
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-indigo-900 break-words">
-                            {item.title}
-                          </p>
-                          <p className="text-sm text-muted-foreground break-words">
-                            {item.subtitle}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatDate(item.date)}
-                          </p>
-                        </div>
-                      </div>
+                        {/* Right */}
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-shrink-0 relative z-20">
+                          <Badge className={getItemBadgeColor(item.type)}>
+                            {item.type === 'grievance'
+                              ? 'Grievance'
+                              : item.type === 'temple'
+                              ? 'Temple Visit'
+                              : item.type === 'train'
+                              ? 'Train EQ'
+                              : 'Tour Invitation'}
+                          </Badge>
 
-                      {/* Right */}
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-shrink-0 relative z-20">
-                        <Badge className={getItemBadgeColor(item.type)}>
-                          {item.type === 'grievance'
-                            ? 'Grievance'
-                            : item.type === 'temple'
-                            ? 'Temple Visit'
-                            : item.type === 'train'
-                            ? 'Train EQ'
-                            : 'Tour Invitation'}
-                        </Badge>
+                          {(item.type === 'train' || item.type === 'grievance' || item.type === 'temple' || item.type === 'tour') && (
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              title="Preview"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePreview(item);
+                              }}
+                              disabled={previewLoading}
+                              className="relative z-20"
+                            >
+                              <Eye className="h-4 w-4 flex-shrink-0" />
+                            </Button>
+                          )}
 
-                        {(item.type === 'train' || item.type === 'grievance' || item.type === 'temple' || item.type === 'tour') && (
                           <Button 
                             size="icon" 
                             variant="ghost" 
-                            title="Preview"
+                            title="Download PDF"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handlePreview(item);
+                              handleDownloadPDF(item);
                             }}
-                            disabled={previewLoading}
                             className="relative z-20"
                           >
-                            <Eye className="h-4 w-4 flex-shrink-0" />
+                            <Download className="h-4 w-4 flex-shrink-0" />
                           </Button>
-                        )}
 
-                        <Button 
-                          size="icon" 
-                          variant="ghost" 
-                          title="Download PDF"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadPDF(item);
-                          }}
-                          className="relative z-20"
-                        >
-                          <Download className="h-4 w-4 flex-shrink-0" />
-                        </Button>
-
-                        <Button
-                          size="icon"
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white relative z-20"
-                          title="Print"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePrint(item);
-                          }}
-                        >
-                          <Printer className="h-4 w-4 flex-shrink-0" />
-                        </Button>
+                          <Button
+                            size="icon"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white relative z-20"
+                            title="Print"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePrint(item);
+                            }}
+                          >
+                            <Printer className="h-4 w-4 flex-shrink-0" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    ))}
+
+                    <Pagination
+                      page={page}
+                      totalPages={totalPages}
+                      total={filteredItems.length}
+                      rangeStart={rangeStart}
+                      rangeEnd={rangeEnd}
+                      onChange={setPage}
+                    />
+                  </>
                 )}
               </CardContent>
             </Card>
