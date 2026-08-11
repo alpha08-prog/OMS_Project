@@ -18,9 +18,11 @@ import { ForwardDialog } from "@/components/ForwardDialog";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
   taskApi,
+  type ApiResponse,
   type TaskAssignment,
   type TaskStatus,
   type TaskProgressHistory,
@@ -67,6 +69,14 @@ export default function AllTasks() {
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Truncation bookkeeping: the fetch below is capped at 300 and there is no
+  // pager, so `tasks` may be a slice of a much larger board. `loadedCount` is
+  // what the SERVER returned — every filter on this page narrows the rows
+  // afterwards, and comparing a filtered length against the real total would
+  // cry truncation the moment anyone types in the search box.
+  const [listMeta, setListMeta] = useState<ApiResponse<TaskAssignment[]>["meta"]>(undefined);
+  const [loadedCount, setLoadedCount] = useState(0);
+
   // Filters (all client-side over the fetched set).
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -101,7 +111,11 @@ export default function AllTasks() {
     setLoading(true);
     try {
       const res = await taskApi.getAllShared({ limit: "300" });
-      setTasks(res.data ?? []);
+      const serverRows = res.data ?? [];
+      // Record the raw server response before any client-side narrowing.
+      setListMeta(res.meta);
+      setLoadedCount(serverRows.length);
+      setTasks(serverRows);
     } catch (err) {
       console.error("Failed to load tasks", err);
     } finally {
@@ -320,6 +334,22 @@ export default function AllTasks() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {/* The fetch is capped at 300 rows and there is no pager, so the
+                    table below reads as "this is every task" when it is not.
+                    Shown even when nothing matches — a task someone cannot find
+                    may simply be past the cap. The search box, the filters and
+                    the CSV export all run over the fetched slice, so pointing
+                    the user at them would be a remedy that does not work. */}
+                {!loading && (
+                  <TruncationNotice
+                    loaded={loadedCount}
+                    total={listMeta?.total}
+                    totalKnown={listMeta?.totalKnown}
+                    hint="Search, the filters and CSV export only cover these fetched tasks — the rest are not on this page."
+                    className="mb-4"
+                  />
+                )}
+
                 {loading ? (
                   <p className="text-sm text-muted-foreground">Loading…</p>
                 ) : filtered.length === 0 ? (

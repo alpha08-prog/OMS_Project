@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { StaffMultiSelect } from "@/components/StaffMultiSelect";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { 
   grievanceApi, 
   trainRequestApi, 
@@ -102,7 +103,15 @@ export default function AdminActionCenter() {
   const [pendingTrainRequests, setPendingTrainRequests] = useState<TrainRequest[]>([]);
   const [pendingTourPrograms, setPendingTourPrograms] = useState<TourProgram[]>([]);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  
+  // What the three queues together said exists, vs what we actually hold.
+  // Each source is fetched at limit=50; these are drainable work queues so the
+  // cap rarely bites, but when it does the counts on this page (summary card,
+  // tile badges, "View all N") would report the capped number as the total.
+  const [tally, setTally] = useState<{ loaded: number; total?: number; totalKnown: boolean }>({
+    loaded: 0,
+    totalKnown: false,
+  });
+
   // Dialog states
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -160,6 +169,28 @@ export default function AdminActionCenter() {
           ? (staffRes as { data: StaffMember[] }).data
           : [];
 
+      // Truncation is tracked per source and summed, the same way Print Center
+      // does it. `loaded` counts the rows the SERVER returned — not the
+      // post-filter lists below — otherwise dropping a RESOLVED/REJECTED
+      // grievance would look like truncation.
+      let loadedFromServer = 0;
+      let totalFromServer = 0;
+      let totalKnown = true;
+      const noteSource = (
+        res: { meta?: { total?: number; totalKnown?: boolean } },
+        rows: number
+      ) => {
+        loadedFromServer += rows;
+        const t = res?.meta?.total;
+        // One unknown count would leave the sum short by a whole queue, which is
+        // worse than saying nothing at all.
+        if (res?.meta?.totalKnown === false || typeof t !== 'number') totalKnown = false;
+        else totalFromServer += t;
+      };
+      noteSource(grievancesRes, grievances.length);
+      noteSource(trainRes, trainRequests.length);
+      noteSource(tourRes, tourPrograms.length);
+
       console.log('ActionCenter - Processed grievances:', grievances.length);
       console.log('ActionCenter - Processed train requests:', trainRequests.length);
       console.log('ActionCenter - Processed tour programs:', tourPrograms.length);
@@ -179,6 +210,7 @@ export default function AdminActionCenter() {
       setPendingTrainRequests(pendingTrainRequests);
       setPendingTourPrograms(pendingTourPrograms);
       setStaffMembers(staff);
+      setTally({ loaded: loadedFromServer, total: totalKnown ? totalFromServer : undefined, totalKnown });
     } catch (err: unknown) {
       console.error('Failed to fetch data:', err);
       setError(getErrorMessage(err) || 'Failed to load pending actions. Check your connection and that the server is running.');
@@ -186,6 +218,7 @@ export default function AdminActionCenter() {
       setPendingTrainRequests([]);
       setPendingTourPrograms([]);
       setStaffMembers([]);
+      setTally({ loaded: 0, totalKnown: false });
     } finally {
       setLoading(false);
     }
@@ -525,6 +558,21 @@ export default function AdminActionCenter() {
                 </div>
               </CardContent>
             </Card>
+
+            {/*
+              Sits ABOVE the three tiles, and outside each tile's
+              loading/empty/rows branch, so it still shows when every queue looks
+              empty — the moment an admin is most likely to conclude there is no
+              pending work left. The summed figure covers all three queues.
+            */}
+            {!loading && !error && (
+              <TruncationNotice
+                loaded={tally.loaded}
+                total={tally.total}
+                totalKnown={tally.totalKnown}
+                hint="Each queue loads at most 50 — verify or decide on items and refresh to pull in more. The grievance and tour queue pages load the same 50; only the Train EQ queue pages through everything."
+              />
+            )}
 
             {/* Action Tiles Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

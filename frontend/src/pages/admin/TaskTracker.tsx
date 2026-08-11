@@ -27,13 +27,14 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { ForwardDialog } from "@/components/ForwardDialog";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 import { useToast } from "@/components/AuthForm/Toast";
 import type { CsvColumn } from "@/lib/exportCsv";
 import { CardListSkeleton } from "@/components/common/Skeletons";
-import { taskApi, type TaskAssignment, type TaskProgressHistory, type TaskStatus, type TaskTrackingData, type TaskType } from "@/lib/api";
+import { taskApi, type ApiResponse, type TaskAssignment, type TaskProgressHistory, type TaskStatus, type TaskTrackingData, type TaskType } from "@/lib/api";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -66,6 +67,13 @@ export default function AdminTaskTracker() {
   const [loading, setLoading] = useState(true);
   const [trackingData, setTrackingData] = useState<TaskTrackingData | null>(null);
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
+  // Truncation bookkeeping: the fetch below asks for 1000 — the contract
+  // ceiling, so there is no headroom left to raise it. `loadedCount` is what
+  // the SERVER returned, not filteredTasks.length: every status/staff/search
+  // filter narrows the rows client-side, and comparing a filtered length
+  // against the real total would shout "truncated" on every filter click.
+  const [listMeta, setListMeta] = useState<ApiResponse<TaskAssignment[]>["meta"]>(undefined);
+  const [loadedCount, setLoadedCount] = useState(0);
   const [selectedTask, setSelectedTask] = useState<TaskAssignment | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -153,6 +161,10 @@ export default function AdminTaskTracker() {
       if (tasksRes) {
         if (Array.isArray(tasksRes.data)) tasksArray = tasksRes.data;
       }
+      // Record the raw server response before any client-side narrowing, so
+      // the notice reflects the fetch and not the active filters.
+      setListMeta(tasksRes?.meta);
+      setLoadedCount(tasksArray.length);
       setTasks(tasksArray);
     } catch (error: unknown) {
       console.error('Failed to fetch data:', error);
@@ -161,6 +173,8 @@ export default function AdminTaskTracker() {
       if (!background) {
         setTrackingData(null);
         setTasks([]);
+        setListMeta(undefined);
+        setLoadedCount(0);
       }
     } finally {
       if (!background) {
@@ -757,6 +771,19 @@ export default function AdminTaskTracker() {
               </CardHeader>
 
               <CardContent className="space-y-4">
+                {/* The fetch is capped at 1000, so the pager and the header
+                    count below can read as "this is everything" when it is
+                    not. Kept outside the empty-state branch — a task the admin
+                    can't find may simply be past the cap. */}
+                {!loading && (
+                  <TruncationNotice
+                    loaded={loadedCount}
+                    total={listMeta?.total}
+                    totalKnown={listMeta?.totalKnown}
+                    hint="Only the date range narrows the server query — the search box, the filters above and the CSV export all work on these fetched tasks alone."
+                  />
+                )}
+
                 {loading ? (
                   <CardListSkeleton rows={5} />
                 ) : filteredTasks.length === 0 ? (
