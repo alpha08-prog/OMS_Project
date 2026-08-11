@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { SearchBar } from "@/components/common/SearchBar";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { grievanceApi, trainRequestApi, tourProgramApi, pdfApi, http, type Grievance, type TrainRequest, type TourProgram } from "@/lib/api";
 import { useToast } from "@/components/AuthForm/Toast";
 import {
@@ -47,12 +48,34 @@ export default function PrintCenter() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  // What the three sources together said exists, vs what we actually hold.
+  const [tally, setTally] = useState<{ loaded: number; total?: number; totalKnown: boolean }>({
+    loaded: 0,
+    totalKnown: false,
+  });
 
   const fetchPrintableItems = async () => {
     setLoading(true);
     setError(null);
     try {
       const items: PrintableItem[] = [];
+      // Truncation is tracked per source and summed. This page has NO pager —
+      // it renders exactly what it fetched — so a capped source means letters
+      // that exist but cannot be reached or printed from here at all, and the
+      // tab counts below (which are derived from `printableItems`) would report
+      // the capped number as though it were the total.
+      let loadedFromServer = 0;
+      let totalFromServer = 0;
+      let totalKnown = true;
+      const noteSource = (res: { data?: unknown; meta?: { total?: number; totalKnown?: boolean } }) => {
+        const rows = Array.isArray(res?.data) ? res.data.length : 0;
+        loadedFromServer += rows;
+        const t = res?.meta?.total;
+        // One unknown count would leave the sum short by a whole module, which
+        // is worse than saying nothing at all.
+        if (res?.meta?.totalKnown === false || typeof t !== 'number') totalKnown = false;
+        else totalFromServer += t;
+      };
 
       // Fetch verified/resolved grievances (ready for printing).
       // limit=200 (not the backend default of 10) so older letters stay
@@ -61,6 +84,7 @@ export default function PrintCenter() {
       if (startDate) grievanceParams.startDate = startDate;
       if (endDate) grievanceParams.endDate = endDate;
       const grievanceRes = await grievanceApi.getAll(grievanceParams);
+      noteSource(grievanceRes);
       console.log('PrintCenter - Grievances response:', grievanceRes);
       const grievances = Array.isArray(grievanceRes?.data) ? grievanceRes.data : [];
       grievances.forEach((g: Grievance) => {
@@ -100,6 +124,7 @@ export default function PrintCenter() {
       if (startDate) trainParams.startDate = startDate;
       if (endDate) trainParams.endDate = endDate;
       const trainRes = await trainRequestApi.getAll(trainParams);
+      noteSource(trainRes);
       console.log('PrintCenter - Train requests response:', trainRes);
       const trainRequests = Array.isArray(trainRes?.data) ? trainRes.data : [];
       trainRequests.forEach((t: TrainRequest) => {
@@ -120,6 +145,7 @@ export default function PrintCenter() {
       if (startDate) tourParams.startDate = startDate;
       if (endDate) tourParams.endDate = endDate;
       const tourRes = await tourProgramApi.getAll(tourParams);
+      noteSource(tourRes);
       console.log('PrintCenter - Tour programs response:', tourRes);
       const tours = Array.isArray(tourRes?.data) ? tourRes.data : [];
       tours.forEach((t: TourProgram) => {
@@ -136,6 +162,7 @@ export default function PrintCenter() {
 
       console.log('PrintCenter - Printable items:', items);
       setPrintableItems(items);
+      setTally({ loaded: loadedFromServer, total: totalKnown ? totalFromServer : undefined, totalKnown });
     } catch (err: unknown) {
       console.error('Failed to fetch printable items:', err);
       const e = err as Record<string, unknown> | null;
@@ -144,6 +171,7 @@ export default function PrintCenter() {
         'Failed to load printable letters. Check your connection and that the server is running.';
       setError(msg);
       setPrintableItems([]);
+      setTally({ loaded: 0, totalKnown: false });
     } finally {
       setLoading(false);
     }
@@ -386,6 +414,22 @@ export default function PrintCenter() {
               </CardHeader>
 
               <CardContent className="space-y-4">
+                {/*
+                  Sits ABOVE the loading/empty/rows branch on purpose. The empty
+                  state is the single most misleading moment on this page: an
+                  admin who searches for an old letter, finds nothing, and is
+                  not told the fetch was capped will conclude the letter does
+                  not exist. There is no pager here, so a capped source is
+                  genuinely unreachable rather than merely further down.
+                */}
+                {!loading && !error && (
+                  <TruncationNotice
+                    loaded={tally.loaded}
+                    total={tally.total}
+                    totalKnown={tally.totalKnown}
+                    hint="Narrow the date range to reach older letters — search and the tabs only cover what is loaded."
+                  />
+                )}
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading...</p>
                 ) : error ? (

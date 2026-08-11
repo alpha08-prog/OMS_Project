@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
-import { tourProgramApi, type TourProgram } from "@/lib/api";
+import { tourProgramApi, type ApiResponse, type TourProgram } from "@/lib/api";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
 import { CardListSkeleton } from "@/components/common/Skeletons";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import type { CsvColumn } from "@/lib/exportCsv";
 import {
@@ -34,6 +35,12 @@ export default function EventsView() {
   const [error, setError] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<TourProgram | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Truncation bookkeeping: the fetch below is capped at 50 and this page has NO
+  // pager — it renders exactly what it fetched, so events past the cap are not
+  // "further down", they are absent. `loadedCount` is what the SERVER returned,
+  // kept separate from `events.length` so the notice stays tied to the fetch.
+  const [listMeta, setListMeta] = useState<ApiResponse<TourProgram[]>["meta"]>(undefined);
+  const [loadedCount, setLoadedCount] = useState(0);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -68,9 +75,18 @@ export default function EventsView() {
       if (endDate) params.endDate = endDate;
       if (completionFilter !== "all") params.isCompleted = completionFilter === "completed" ? "true" : "false";
       const res = await tourProgramApi.getEvents(params);
-      setEvents(res.data ?? []);
+      const serverRows = res.data ?? [];
+      // Record the raw server response alongside the rows.
+      setEvents(serverRows);
+      setListMeta(res.meta);
+      setLoadedCount(serverRows.length);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load events");
+      // Deliberately leave `listMeta`/`loadedCount` alone: this catch does NOT
+      // clear `events`, so the previous fetch's rows stay on screen. Clearing
+      // the tally would hide the notice while those capped rows are still
+      // rendered — the exact silence this component exists to prevent. Tally
+      // and rows move together; on a first-load failure both are still empty.
     } finally {
       setLoading(false);
     }
@@ -288,6 +304,19 @@ export default function EventsView() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Above the loading/empty/rows branch on purpose: the empty state
+                  is where a user is most likely to conclude an event does not
+                  exist, when in truth it fell past the 50-row cap. The header
+                  count above reads as a total and there is no pager to reveal
+                  the rest. */}
+              {!loading && (
+                <TruncationNotice
+                  loaded={loadedCount}
+                  total={listMeta?.total}
+                  totalKnown={listMeta?.totalKnown}
+                  hint="Search and the date range re-query the server, so use them to reach older events — the CSV export only covers the events loaded here."
+                />
+              )}
               {loading ? (
                 <CardListSkeleton rows={5} />
               ) : events.length === 0 ? (

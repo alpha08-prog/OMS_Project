@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { tourProgramApi, type TourProgram } from "@/lib/api";
 import {
   Dialog,
@@ -23,6 +24,11 @@ export default function EventReport() {
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<TourProgram | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // What the server said exists, vs how many rows it actually handed us.
+  const [tally, setTally] = useState<{ loaded: number; total?: number; totalKnown?: boolean }>({
+    loaded: 0,
+    totalKnown: false,
+  });
 
   // Form fields
   const [driveLink, setDriveLink] = useState("");
@@ -36,9 +42,19 @@ export default function EventReport() {
     setError(null);
     try {
       const res = await tourProgramApi.getEvents({ limit: "50" });
-      setEvents(res.data ?? []);
+      const rows = res.data ?? [];
+      setEvents(rows);
+      // Count what the SERVER returned, not either section's length — the
+      // pending/completed split below is client-side, so using it would make
+      // the notice fire on every event that already has a report filed.
+      setTally({ loaded: rows.length, total: res.meta?.total, totalKnown: res.meta?.totalKnown });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load events");
+      // Deliberately NOT resetting the tally: this catch does not clear
+      // `events`, so the previous fetch's rows stay in the cards below.
+      // Zeroing the tally would hide the notice while capped rows are still
+      // on screen. On a first-load failure the initial totalKnown:false
+      // already renders nothing.
     } finally {
       setLoading(false);
     }
@@ -118,6 +134,29 @@ export default function EventReport() {
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">{error}</div>
+          )}
+
+          {/*
+            Sits above BOTH cards because a single capped fetch feeds them: the
+            pending/completed split is client-side, so a cap silently shortens
+            each section and the counts in their headers. There is no pager and
+            no search here, so anything past the cap is simply unreachable — and
+            the "All events have reports submitted!" empty state is the worst
+            place to leave that unsaid.
+
+            Not gated on `error`: a failed report SUBMIT sets that banner while
+            the capped list stays on screen, and the notice must not vanish
+            underneath it. A failed FETCH leaves the previous rows rendered too,
+            so the tally is deliberately left intact there for the same reason;
+            before any successful fetch it is totalKnown:false and shows nothing.
+          */}
+          {!loading && (
+            <TruncationNotice
+              loaded={tally.loaded}
+              total={tally.total}
+              totalKnown={tally.totalKnown}
+              hint="Only the most recent events are loaded — older events, including any still awaiting a report, are not listed on this page."
+            />
           )}
 
           {/* Pending Reports */}

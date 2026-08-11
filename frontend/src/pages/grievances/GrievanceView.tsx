@@ -12,10 +12,12 @@ import { ForwardDialog } from "@/components/ForwardDialog";
 import { AttachmentsList } from "@/components/common/AttachmentsList";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import {
   grievanceApi,
   pdfApi,
+  type ApiResponse,
   type Grievance,
   type GrievanceStatus,
   type GrievancePriority,
@@ -121,6 +123,14 @@ export default function GrievanceView() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
 
+  // Truncation bookkeeping: the fetch below asks for 1000 rows and the server
+  // caps there too, so `grievances` can be a slice of a larger set. `loadedCount`
+  // is what the SERVER returned — the status/date filters narrow the rows
+  // afterwards, and comparing a filtered length against the real total would
+  // shout "truncated" every time someone picks a filter.
+  const [listMeta, setListMeta] = useState<ApiResponse<Grievance[]>["meta"]>(undefined);
+  const [loadedCount, setLoadedCount] = useState(0);
+
   // Progress timeline for the grievance shown in the details dialog. Loaded
   // lazily when the dialog opens; `timelineError` surfaces fetch failures
   // inline without blocking the rest of the details view.
@@ -174,6 +184,9 @@ export default function GrievanceView() {
           grievancesArray = res.data;
         }
       }
+      // Record the raw server response before any client-side narrowing.
+      setListMeta(Array.isArray(res) ? undefined : res?.meta);
+      setLoadedCount(grievancesArray.length);
       setGrievances(grievancesArray);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load grievances";
@@ -634,6 +647,19 @@ export default function GrievanceView() {
               </CardHeader>
 
               <CardContent className="space-y-4">
+                {/* The fetch sits AT the server's 1000-row ceiling, so the pager
+                    and the stat cards above can read as "this is everything"
+                    when they are not. Shown on the empty state too — a missing
+                    grievance may simply be past the cap. */}
+                {!loading && (
+                  <TruncationNotice
+                    loaded={loadedCount}
+                    total={listMeta?.total}
+                    totalKnown={listMeta?.totalKnown}
+                    hint="Search runs on the server, so a reference no, name or phone will still find older grievances. The status and date filters, the counts above and the CSV export only cover the rows loaded here."
+                  />
+                )}
+
                 {loading ? (
                   <p className="text-muted-foreground text-center py-8">Loading grievances...</p>
                 ) : filteredGrievances.length === 0 ? (

@@ -22,10 +22,11 @@ import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/common/Pagination";
 import { ExportCsvButton } from "@/components/common/ExportCsvButton";
 import { SearchBar } from "@/components/common/SearchBar";
+import { TruncationNotice } from "@/components/common/TruncationNotice";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 import type { CsvColumn } from "@/lib/exportCsv";
 import { CardListSkeleton } from "@/components/common/Skeletons";
-import { taskApi, type TaskAssignment, type TaskStatus, type TaskProgressHistory } from "@/lib/api";
+import { taskApi, type ApiResponse, type TaskAssignment, type TaskStatus, type TaskProgressHistory } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -67,6 +68,13 @@ export default function StaffTasks() {
   // Per-card collapse state. Tasks default to collapsed (just title + badges
   // + dates) so the list isn't visually overwhelming. Click to expand.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // Truncation bookkeeping: the fetch below is capped at 200, so `tasks` may be
+  // a slice of a longer assignment history — and every count on this page (the
+  // four tiles, the pager) is derived from that slice. `loadedCount` is what the
+  // SERVER returned, before the client-side title search narrows it; comparing a
+  // searched length against the real total would cry truncation on every keystroke.
+  const [listMeta, setListMeta] = useState<ApiResponse<TaskAssignment[]>["meta"]>(undefined);
+  const [loadedCount, setLoadedCount] = useState(0);
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -101,6 +109,10 @@ export default function StaffTasks() {
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
       const res = await taskApi.getMyTasks(params);
+      // Record the raw server response alongside the rows — the background
+      // polls refresh both, so the notice never goes stale against the list.
+      setListMeta(res.meta);
+      setLoadedCount(res.data.length);
       setTasks(res.data);
     } catch (err) {
       // Background polling errors stay quiet — keep last-known data on screen.
@@ -438,6 +450,21 @@ export default function StaffTasks() {
               </CardHeader>
 
               <CardContent className="space-y-4">
+                {/* The fetch is capped at 200 rows, so the pager below can read
+                    as "this is everything" when it is not. Shown even on the
+                    empty state — a task you can't find may simply be past the
+                    cap. The status filter and date range are sent to the server,
+                    so they genuinely reach further; the search box and CSV only
+                    work on what's already here, and so do the tiles up top. */}
+                {!loading && (
+                  <TruncationNotice
+                    loaded={loadedCount}
+                    total={listMeta?.total}
+                    totalKnown={listMeta?.totalKnown}
+                    hint="The tiles above, the title search and CSV export cover only these rows — narrow the status filter or date range to reach the rest."
+                  />
+                )}
+
                 {loading ? (
                   <CardListSkeleton rows={5} />
                 ) : tasks.length === 0 ? (
