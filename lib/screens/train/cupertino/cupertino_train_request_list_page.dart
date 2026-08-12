@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
@@ -167,8 +168,7 @@ class _CupertinoTrainRequestListPageState
         CupertinoToast.show(context, "Deleted");
         fetchRequests();
       } else {
-        CupertinoToast.show(
-            context, "Delete failed (${res.statusCode})",
+        CupertinoToast.show(context, "Delete failed (${res.statusCode})",
             isError: true);
       }
     } catch (_) {
@@ -201,8 +201,7 @@ class _CupertinoTrainRequestListPageState
     );
 
     try {
-      final response =
-          await HttpService.downloadFile("/api/pdf/train-eq/$id");
+      final response = await HttpService.downloadFile("/api/pdf/train-eq/$id");
 
       if (mounted) Navigator.of(context).pop();
 
@@ -237,7 +236,8 @@ class _CupertinoTrainRequestListPageState
     } catch (_) {
       if (mounted) Navigator.of(context).pop();
       if (mounted) {
-        CupertinoToast.show(context, "Something went wrong. Please try again.", isError: true);
+        CupertinoToast.show(context, "Something went wrong. Please try again.",
+            isError: true);
       }
     }
   }
@@ -318,8 +318,7 @@ class _CupertinoTrainRequestListPageState
                         const SizedBox(height: 4),
                         Text(
                           "$trainNumber - $trainName",
-                          style: TextStyle(
-                              color: CupertinoColors.systemGrey),
+                          style: TextStyle(color: CupertinoColors.systemGrey),
                         ),
                       ],
                     ),
@@ -373,15 +372,14 @@ class _CupertinoTrainRequestListPageState
                           const SizedBox(height: 4),
                           Text(from.toString(),
                               style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold)),
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Icon(CupertinoIcons.arrow_right,
-                          color: primaryBlue),
+                      child:
+                          Icon(CupertinoIcons.arrow_right, color: primaryBlue),
                     ),
                     Expanded(
                       child: Column(
@@ -395,8 +393,7 @@ class _CupertinoTrainRequestListPageState
                           const SizedBox(height: 4),
                           Text(to.toString(),
                               style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold)),
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -412,27 +409,20 @@ class _CupertinoTrainRequestListPageState
                 decoration: BoxDecoration(
                   color: CupertinoColors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: CupertinoColors.systemGrey5),
+                  border: Border.all(color: CupertinoColors.systemGrey5),
                 ),
                 child: Column(
                   children: [
-                    _detailRow(CupertinoIcons.calendar,
-                        "Journey Date", formattedDate),
                     _detailRow(
-                        CupertinoIcons.person_2, "Class", journeyClass),
+                        CupertinoIcons.calendar, "Journey Date", formattedDate),
+                    _detailRow(CupertinoIcons.person_2, "Class", journeyClass),
+                    _detailRow(CupertinoIcons.bookmark, "Booking Type",
+                        bookingType.toString().replaceAll('_', ' ')),
+                    _detailRow(CupertinoIcons.phone, "Contact", contactNumber),
                     _detailRow(
-                        CupertinoIcons.bookmark,
-                        "Booking Type",
-                        bookingType
-                            .toString()
-                            .replaceAll('_', ' ')),
-                    _detailRow(CupertinoIcons.phone, "Contact",
-                        contactNumber),
-                    _detailRow(CupertinoIcons.person,
-                        "Referenced By", referencedBy),
-                    _detailRow(CupertinoIcons.person_fill,
-                        "Created By", createdByName),
+                        CupertinoIcons.person, "Referenced By", referencedBy),
+                    _detailRow(CupertinoIcons.person_fill, "Created By",
+                        createdByName),
                   ],
                 ),
               ),
@@ -449,8 +439,8 @@ class _CupertinoTrainRequestListPageState
                           color: primaryBlue)),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: primaryBlue,
                       borderRadius: BorderRadius.circular(10),
@@ -474,8 +464,7 @@ class _CupertinoTrainRequestListPageState
                   ),
                   child: const Center(
                     child: Text("No passengers",
-                        style: TextStyle(
-                            color: CupertinoColors.systemGrey)),
+                        style: TextStyle(color: CupertinoColors.systemGrey)),
                   ),
                 )
               else
@@ -534,8 +523,7 @@ class _CupertinoTrainRequestListPageState
                 Text(
                   "Age: $age  |  $gender${berthPref.toString().isNotEmpty ? '  |  $berthPref' : ''}",
                   style: TextStyle(
-                      fontSize: 12,
-                      color: CupertinoColors.systemGrey),
+                      fontSize: 12, color: CupertinoColors.systemGrey),
                 ),
               ],
             ),
@@ -543,13 +531,11 @@ class _CupertinoTrainRequestListPageState
           if (currentStatus.toString().isNotEmpty ||
               bookingStatus.toString().isNotEmpty)
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: _getPassengerStatusColor(
-                    currentStatus.toString().isEmpty
-                        ? bookingStatus.toString()
-                        : currentStatus.toString()),
+                color: _getPassengerStatusColor(currentStatus.toString().isEmpty
+                    ? bookingStatus.toString()
+                    : currentStatus.toString()),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -587,14 +573,13 @@ class _CupertinoTrainRequestListPageState
           SizedBox(
             width: 100,
             child: Text(label,
-                style: TextStyle(
-                    fontSize: 13,
-                    color: CupertinoColors.systemGrey)),
+                style:
+                    TextStyle(fontSize: 13, color: CupertinoColors.systemGrey)),
           ),
           Expanded(
             child: Text(value,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w500),
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                 textAlign: TextAlign.right),
           ),
         ],
@@ -604,8 +589,7 @@ class _CupertinoTrainRequestListPageState
 
   @override
   Widget build(BuildContext context) {
-    final canCreate =
-        AccessControl.can(widget.role, ActionPermission.create);
+    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
     final isAdmin =
         widget.role == Roles.admin || widget.role == Roles.superAdmin;
 
@@ -628,6 +612,12 @@ class _CupertinoTrainRequestListPageState
                   ),
                 CupertinoButton(
                   padding: EdgeInsets.zero,
+                  onPressed: _visibleRequests.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      color: CupertinoColors.white, size: 22),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
                   onPressed: fetchRequests,
                   child: const Icon(CupertinoIcons.refresh,
                       color: CupertinoColors.white),
@@ -638,159 +628,155 @@ class _CupertinoTrainRequestListPageState
           Expanded(
             child: Column(
               children: [
-            // Stats Card
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [primaryBlue, primaryBlue.withOpacity(0.8)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: primaryBlue.withOpacity(0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+                // Stats Card
+                Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [primaryBlue, primaryBlue.withOpacity(0.8)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryBlue.withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _statItem(
-                      "Total", _totalCount, CupertinoIcons.train_style_one),
-                ],
-              ),
-            ),
-
-            // Search
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: CupertinoTextField(
-                controller: _searchController,
-                placeholder: "Search by PNR, name, station...",
-                prefix: const Padding(
-                  padding: EdgeInsets.only(left: 12),
-                  child: Icon(CupertinoIcons.search,
-                      color: CupertinoColors.systemGrey, size: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _statItem(
+                          "Total", _totalCount, CupertinoIcons.train_style_one),
+                    ],
+                  ),
                 ),
-                suffix: _searchQuery.isNotEmpty
-                    ? CupertinoButton(
-                        padding: const EdgeInsets.only(right: 8),
-                        minSize: 0,
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = "");
-                          fetchRequests();
-                        },
-                        child: const Icon(CupertinoIcons.clear_circled,
-                            size: 18,
-                            color: CupertinoColors.systemGrey),
-                      )
-                    : null,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 14),
-                decoration: BoxDecoration(
-                  color: CupertinoColors.white,
-                  borderRadius: BorderRadius.circular(12),
+
+                // Search
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CupertinoTextField(
+                    controller: _searchController,
+                    placeholder: "Search by PNR, name, station...",
+                    prefix: const Padding(
+                      padding: EdgeInsets.only(left: 12),
+                      child: Icon(CupertinoIcons.search,
+                          color: CupertinoColors.systemGrey, size: 20),
+                    ),
+                    suffix: _searchQuery.isNotEmpty
+                        ? CupertinoButton(
+                            padding: const EdgeInsets.only(right: 8),
+                            minSize: 0,
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = "");
+                              fetchRequests();
+                            },
+                            child: const Icon(CupertinoIcons.clear_circled,
+                                size: 18, color: CupertinoColors.systemGrey),
+                          )
+                        : null,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    onSubmitted: (v) {
+                      setState(() => _searchQuery = v);
+                      fetchRequests();
+                    },
+                  ),
                 ),
-                onSubmitted: (v) {
-                  setState(() => _searchQuery = v);
-                  fetchRequests();
-                },
-              ),
-            ),
 
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: CupertinoDateRangeFilter(
-                from: _dateFrom,
-                to: _dateTo,
-                tint: primaryBlue,
-                padding: EdgeInsets.zero,
-                onFromChanged: (d) => setState(() => _dateFrom = d),
-                onToChanged: (d) => setState(() => _dateTo = d),
-                onClear: () => setState(() {
-                  _dateFrom = null;
-                  _dateTo = null;
-                }),
-              ),
-            ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CupertinoDateRangeFilter(
+                    from: _dateFrom,
+                    to: _dateTo,
+                    tint: primaryBlue,
+                    padding: EdgeInsets.zero,
+                    onFromChanged: (d) => setState(() => _dateFrom = d),
+                    onToChanged: (d) => setState(() => _dateTo = d),
+                    onClear: () => setState(() {
+                      _dateFrom = null;
+                      _dateTo = null;
+                    }),
+                  ),
+                ),
 
-            const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-            // List
-            Expanded(
-              child: loading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : error != null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(CupertinoIcons.exclamationmark_circle,
-                                  size: 48,
-                                  color: CupertinoColors.systemGrey3),
-                              const SizedBox(height: 16),
-                              Text(error!,
-                                  style: TextStyle(
-                                      color:
-                                          CupertinoColors.systemGrey)),
-                              const SizedBox(height: 16),
-                              CupertinoButton.filled(
-                                onPressed: fetchRequests,
-                                child: const Text("Retry"),
-                              ),
-                            ],
-                          ),
-                        )
-                      : _visibleRequests.isEmpty
+                // List
+                Expanded(
+                  child: loading
+                      ? const Center(child: CupertinoActivityIndicator())
+                      : error != null
                           ? Center(
                               child: Column(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.center,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(CupertinoIcons.train_style_one,
-                                      size: 64,
-                                      color:
-                                          CupertinoColors.systemGrey4),
+                                  Icon(CupertinoIcons.exclamationmark_circle,
+                                      size: 48,
+                                      color: CupertinoColors.systemGrey3),
                                   const SizedBox(height: 16),
-                                  Text("No requests found",
+                                  Text(error!,
                                       style: TextStyle(
-                                          fontSize: 16,
-                                          color: CupertinoColors
-                                              .systemGrey)),
+                                          color: CupertinoColors.systemGrey)),
+                                  const SizedBox(height: 16),
+                                  CupertinoButton.filled(
+                                    onPressed: fetchRequests,
+                                    child: const Text("Retry"),
+                                  ),
                                 ],
                               ),
                             )
-                          : CustomScrollView(
-                              slivers: [
-                                CupertinoSliverRefreshControl(
-                                  onRefresh: fetchRequests,
-                                ),
-                                SliverPadding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                      16, 0, 16, 80),
-                                  sliver: SliverList(
-                                    delegate: SliverChildBuilderDelegate(
-                                      (context, index) {
-                                        final r = _visibleRequests[index];
-                                        return _buildRequestCard(
-                                            r, isAdmin);
-                                      },
-                                      childCount: _visibleRequests.length,
-                                    ),
+                          : _visibleRequests.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(CupertinoIcons.train_style_one,
+                                          size: 64,
+                                          color: CupertinoColors.systemGrey4),
+                                      const SizedBox(height: 16),
+                                      Text("No requests found",
+                                          style: TextStyle(
+                                              fontSize: 16,
+                                              color:
+                                                  CupertinoColors.systemGrey)),
+                                    ],
                                   ),
+                                )
+                              : CustomScrollView(
+                                  slivers: [
+                                    CupertinoSliverRefreshControl(
+                                      onRefresh: fetchRequests,
+                                    ),
+                                    SliverPadding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 0, 16, 80),
+                                      sliver: SliverList(
+                                        delegate: SliverChildBuilderDelegate(
+                                          (context, index) {
+                                            final r = _visibleRequests[index];
+                                            return _buildRequestCard(
+                                                r, isAdmin);
+                                          },
+                                          childCount: _visibleRequests.length,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -805,8 +791,56 @@ class _CupertinoTrainRequestListPageState
     }).toList();
   }
 
-  Widget _statItem(String label, int count, IconData icon,
-      [Color? iconColor]) {
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'train_requests',
+      headers: [
+        'Passenger',
+        'PNR',
+        'From',
+        'To',
+        'Journey Date',
+        'Class',
+        'Train',
+        'Created'
+      ],
+      rows: _visibleRequests.map((r) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        String journey = '';
+        try {
+          journey = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['dateOfJourney'].toString()));
+        } catch (_) {}
+        final passengers = r['passengers'] as List? ?? [];
+        final names = passengers
+            .map((p) => p['name']?.toString() ?? '')
+            .where((n) => n.isNotEmpty)
+            .join(', ');
+        final passenger =
+            names.isNotEmpty ? names : (r['passengerName']?.toString() ?? '');
+        final trainNo = r['trainNumber']?.toString() ?? '';
+        final trainName = r['trainName']?.toString() ?? '';
+        final train = '$trainNo${trainName.isNotEmpty ? ' - $trainName' : ''}';
+        return [
+          passenger,
+          r['pnrNumber'] ?? r['pnr'] ?? '',
+          r['fromStation'] ?? r['from'] ?? '',
+          r['toStation'] ?? r['to'] ?? '',
+          journey,
+          r['journeyClass'] ?? '',
+          train,
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
+  Widget _statItem(String label, int count, IconData icon, [Color? iconColor]) {
     return Column(
       children: [
         Icon(icon, color: iconColor ?? CupertinoColors.white, size: 22),
@@ -818,8 +852,7 @@ class _CupertinoTrainRequestListPageState
                 fontWeight: FontWeight.bold)),
         Text(label,
             style: TextStyle(
-                color: CupertinoColors.white.withOpacity(0.7),
-                fontSize: 11)),
+                color: CupertinoColors.white.withOpacity(0.7), fontSize: 11)),
       ],
     );
   }
@@ -886,15 +919,13 @@ class _CupertinoTrainRequestListPageState
                   children: [
                     Text("PNR: $pnr",
                         style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold)),
+                            fontSize: 15, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     if (trainNumber.isNotEmpty || trainName.isNotEmpty)
                       Text(
                         "$trainNumber${trainName.isNotEmpty ? ' - $trainName' : ''}",
                         style: TextStyle(
-                            fontSize: 12,
-                            color: CupertinoColors.systemGrey),
+                            fontSize: 12, color: CupertinoColors.systemGrey),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -907,8 +938,7 @@ class _CupertinoTrainRequestListPageState
 
           // Route
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: bgLight,
               borderRadius: BorderRadius.circular(10),
@@ -982,7 +1012,6 @@ class _CupertinoTrainRequestListPageState
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
           ],
-
         ],
       ),
     );

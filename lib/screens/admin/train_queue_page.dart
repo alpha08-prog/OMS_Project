@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
 
 /// Admin-only "Train EQ Requests" page.
@@ -120,6 +121,50 @@ class _TrainQueuePageState extends State<TrainQueuePage> {
     }).toList();
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'train_eq_requests',
+      headers: [
+        'Passenger',
+        'PNR',
+        'From',
+        'To',
+        'Journey Date',
+        'Class',
+        'Train',
+        'Created By',
+        'Created'
+      ],
+      rows: _visibleRequests.map((r) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        String journey = '';
+        try {
+          journey = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['dateOfJourney'].toString()));
+        } catch (_) {}
+        final trainNo = r['trainNumber']?.toString() ?? '';
+        final trainName = r['trainName']?.toString() ?? '';
+        final train = '$trainNo${trainName.isNotEmpty ? ' - $trainName' : ''}';
+        return [
+          r['passengerName'] ?? '',
+          r['pnrNumber'] ?? '',
+          r['fromStation'] ?? '',
+          r['toStation'] ?? '',
+          journey,
+          r['journeyClass'] ?? '',
+          train,
+          r['createdBy']?['name'] ?? '',
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final visible = _visibleRequests;
@@ -143,6 +188,11 @@ class _TrainQueuePageState extends State<TrainQueuePage> {
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _visibleRequests.isEmpty ? null : _exportCsv,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _fetchRequests,

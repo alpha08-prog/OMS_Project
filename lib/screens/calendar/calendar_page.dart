@@ -983,9 +983,12 @@ class _CalendarPageState extends State<CalendarPage> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppTheme.spacingMd),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // Type icon
             Container(
               padding: const EdgeInsets.all(8),
@@ -1050,15 +1053,21 @@ class _CalendarPageState extends State<CalendarPage> {
                 ],
               ),
             ),
-
-            // Delete button for admin on custom events
-            if (_isAdmin && isCustom && eventId != null)
-              IconButton(
-                icon: const Icon(Icons.delete_outline, size: 20),
-                color: AppTheme.destructiveRed,
-                tooltip: 'Delete event',
-                onPressed: () => _deleteEvent(eventId),
+              ],
+            ),
+            // Delete button for admin on custom events — own right-aligned row
+            if (_isAdmin && isCustom && eventId != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  color: AppTheme.destructiveRed,
+                  tooltip: 'Delete event',
+                  onPressed: () => _deleteEvent(eventId),
+                ),
               ),
+            ],
           ],
         ),
       ),

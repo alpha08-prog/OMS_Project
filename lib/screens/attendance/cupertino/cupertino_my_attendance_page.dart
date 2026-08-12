@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/attendance_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 
@@ -21,6 +22,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
   AttendanceRecord? _today;
   bool _loadingToday = true;
   bool _markingPresent = false;
+  bool _checkingOut = false;
 
   _ApplyTab _applyTab = _ApplyTab.leave;
   DateTime? _fromDate;
@@ -105,7 +107,8 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
   Future<void> _markPresent() async {
     setState(() => _markingPresent = true);
     try {
-      final rec = await AttendanceService.mark(status: AttendanceStatus.present);
+      final rec =
+          await AttendanceService.mark(status: AttendanceStatus.present);
       if (!mounted) return;
       setState(() {
         _today = rec;
@@ -116,6 +119,24 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _markingPresent = false);
+      CupertinoToast.show(context, '$e', isError: true);
+    }
+  }
+
+  Future<void> _checkOut() async {
+    setState(() => _checkingOut = true);
+    try {
+      final rec = await AttendanceService.checkOut();
+      if (!mounted) return;
+      setState(() {
+        _today = rec;
+        _checkingOut = false;
+      });
+      CupertinoToast.show(context, 'Checked out for the day');
+      await _fetchHistory(reset: true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _checkingOut = false);
       CupertinoToast.show(context, '$e', isError: true);
     }
   }
@@ -175,8 +196,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
 
   Future<void> _pickDate(bool isFrom) async {
     final now = DateTime.now();
-    final minDate =
-        isFrom ? now : (_fromDate ?? now);
+    final minDate = isFrom ? now : (_fromDate ?? now);
     final maxDate = now.add(const Duration(days: 365));
     final initial = (isFrom ? _fromDate : _toDate) ?? minDate;
 
@@ -202,8 +222,8 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
                       setState(() {
                         if (isFrom) {
                           _fromDate = tempPicked;
-                          if (_toDate != null &&
-                              _toDate!.isBefore(tempPicked)) _toDate = null;
+                          if (_toDate != null && _toDate!.isBefore(tempPicked))
+                            _toDate = null;
                         } else {
                           _toDate = tempPicked;
                         }
@@ -230,13 +250,37 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
     );
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'my_attendance',
+      headers: const ['Date', 'Status', 'Reason', 'Marked At'],
+      rows: _history
+          .map((r) => [
+                r.date,
+                r.status.label,
+                r.reason ?? '',
+                r.markedAt == null ? '' : _formatMarkedAt(r.markedAt!),
+              ])
+          .toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
       child: Column(
         children: [
-          const OmsPageHeader(title: 'My Attendance'),
+          OmsPageHeader(
+            title: 'My Attendance',
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _history.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
+            ),
+          ),
           Expanded(
             child: CustomScrollView(
               slivers: [
@@ -281,6 +325,13 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
     final todayIso = _isoFmt.format(DateTime.now());
     final alreadyMarked = today != null;
     final alreadyPresent = today?.status == AttendanceStatus.present;
+    // Check-out is only valid once you're present/half-day for the day and
+    // haven't already stamped a departure. Leave days can't be checked out of.
+    final workedToday = today?.status == AttendanceStatus.present ||
+        today?.status == AttendanceStatus.halfDay;
+    final alreadyCheckedOut =
+        (today?.checkOutAt != null && today!.checkOutAt!.isNotEmpty);
+    final canCheckOut = workedToday && !alreadyCheckedOut;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -316,31 +367,74 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
                 if (today?.markedAt != null)
                   Text(
                     'Marked at ${_formatMarkedAt(today!.markedAt!)}',
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   ),
               ],
             ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: CupertinoButton.filled(
-              onPressed:
-                  (_markingPresent || alreadyMarked) ? null : _markPresent,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              borderRadius: BorderRadius.circular(10),
-              child: _markingPresent
-                  ? const CupertinoActivityIndicator(color: Colors.white)
-                  : Text(
-                      alreadyPresent
-                          ? 'Already marked present today'
-                          : alreadyMarked
-                              ? 'Already marked ${today.status.label.toLowerCase()} today'
-                              : 'Mark Present',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
+          if (alreadyCheckedOut) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Checked out at ${_formatMarkedAt(today.checkOutAt!)}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.destructiveRed,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: CupertinoButton.filled(
+                  onPressed:
+                      (_markingPresent || alreadyMarked) ? null : _markPresent,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  borderRadius: BorderRadius.circular(10),
+                  child: _markingPresent
+                      ? const CupertinoActivityIndicator(color: Colors.white)
+                      : Text(
+                          alreadyPresent
+                              ? 'Marked present'
+                              : alreadyMarked
+                                  ? 'Marked ${today.status.label.toLowerCase()}'
+                                  : 'Mark me present',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: CupertinoButton(
+                  onPressed: (_checkingOut || !canCheckOut) ? null : _checkOut,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  borderRadius: BorderRadius.circular(10),
+                  color: AppTheme.destructiveRed100,
+                  disabledColor: AppTheme.backgroundAlt,
+                  child: _checkingOut
+                      ? const CupertinoActivityIndicator(
+                          color: AppTheme.destructiveRed)
+                      : Text(
+                          alreadyCheckedOut
+                              ? 'Checked out'
+                              : 'Check out (leaving)',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: canCheckOut
+                                ? AppTheme.destructiveRed
+                                : AppTheme.muted,
+                          ),
+                        ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -491,8 +585,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
         GestureDetector(
           onTap: onTap,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: AppTheme.border),
@@ -502,7 +595,9 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
               children: [
                 Expanded(
                   child: Text(
-                    value == null ? 'dd-mm-yyyy' : _displayDateFmt.format(value),
+                    value == null
+                        ? 'dd-mm-yyyy'
+                        : _displayDateFmt.format(value),
                     style: TextStyle(
                       color: value == null
                           ? Colors.grey.shade500
@@ -548,8 +643,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
               child: Center(
                 child: Text(
                   'No attendance records yet',
-                  style:
-                      TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
                 ),
               ),
             )
@@ -574,8 +668,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
 
   Widget _historyRow(AttendanceRecord r) {
     final reason = (r.reason ?? '').isEmpty ? '—' : r.reason!;
-    final markedAt =
-        r.markedAt == null ? '—' : _formatMarkedAt(r.markedAt!);
+    final markedAt = r.markedAt == null ? '—' : _formatMarkedAt(r.markedAt!);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(

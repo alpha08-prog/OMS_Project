@@ -56,6 +56,7 @@ class AttendanceRecord {
   final AttendanceStatus status;
   final String? reason;
   final String? markedAt;
+  final String? checkOutAt;
 
   AttendanceRecord({
     required this.id,
@@ -66,6 +67,7 @@ class AttendanceRecord {
     required this.status,
     required this.reason,
     required this.markedAt,
+    required this.checkOutAt,
   });
 
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
@@ -79,6 +81,7 @@ class AttendanceRecord {
           AttendanceStatus.absent,
       reason: json['reason']?.toString(),
       markedAt: json['markedAt']?.toString(),
+      checkOutAt: json['checkOutAt']?.toString(),
     );
   }
 }
@@ -189,6 +192,22 @@ class AttendanceService {
     if (date != null && date.isNotEmpty) body['date'] = date;
 
     final res = await HttpService.post('/api/attendance', body);
+    final decoded = _decode(res.body);
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final data = decoded['data'];
+      return AttendanceRecord.fromJson(Map<String, dynamic>.from(data as Map));
+    }
+    throw AttendanceException(
+      _extractMessage(decoded, res.statusCode),
+      res.statusCode,
+    );
+  }
+
+  /// POST /api/attendance/checkout — stamps `checkOutAt` on today's row.
+  /// Backend requires the user to already be PRESENT/HALF_DAY today (rejects
+  /// unmarked days and LEAVE days). Re-tapping just refreshes the timestamp.
+  static Future<AttendanceRecord> checkOut() async {
+    final res = await HttpService.post('/api/attendance/checkout', {});
     final decoded = _decode(res.body);
     if (res.statusCode == 200 || res.statusCode == 201) {
       final data = decoded['data'];

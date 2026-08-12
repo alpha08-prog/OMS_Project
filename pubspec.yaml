@@ -3,7 +3,7 @@ description: A comprehensive Anki-like flashcard application
 
 publish_to: "none"
 
-version: 1.0.0+1
+version: 1.0.2+3
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -51,7 +51,8 @@ flutter:
 
   assets:
     - assets/images/
-    - assets/icon/
+    - assets/icon/icon.png
+    - assets/icon/icon_foreground.png
 
 flutter_launcher_icons:
   android: "ic_launcher"

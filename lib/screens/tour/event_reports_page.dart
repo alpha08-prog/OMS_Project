@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
 
 String? _validateOptionalUrl(String? v) {
@@ -91,6 +92,23 @@ class _EventReportsPageState extends State<EventReportsPage> {
     }
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'event_reports',
+      headers: const ['Event', 'Organizer', 'Venue', 'Date', 'Report Status'],
+      rows: _visiblePending.map((r) {
+        return [
+          r['eventName'] ?? '',
+          r['organizer'] ?? '',
+          r['venue'] ?? '',
+          _formatEventDateTime(r['dateTime']?.toString()),
+          'Pending',
+        ];
+      }).toList(),
+    );
+  }
+
   Future<void> _openReportSheet(Map<String, dynamic> event) async {
     final submitted = await showModalBottomSheet<bool>(
       context: context,
@@ -116,6 +134,11 @@ class _EventReportsPageState extends State<EventReportsPage> {
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _visiblePending.isEmpty ? null : _exportCsv,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _fetch,

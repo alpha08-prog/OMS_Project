@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
 
 class StaffTasksPage extends StatefulWidget {
@@ -50,6 +51,29 @@ class _StaffTasksPageState extends State<StaffTasksPage> {
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'my_tasks',
+      headers: ['Title', 'Type', 'Status', 'Assigned To', 'Reference No', 'Created'],
+      rows: _visibleTasks.map((t) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(t['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          t['title'] ?? '',
+          (t['taskType'] ?? '').toString().replaceAll('_', ' '),
+          (t['status'] ?? '').toString().replaceAll('_', ' '),
+          (t['assignedTo'] is Map ? t['assignedTo']['name'] : '') ?? '',
+          t['referenceNo'] ?? '',
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   Future<void> _showUpdateProgressDialog(Map<String, dynamic> task) async {
@@ -235,6 +259,11 @@ class _StaffTasksPageState extends State<StaffTasksPage> {
         title: const Text("My Tasks"),
         backgroundColor: AppTheme.primaryIndigo,
         actions: [
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _visibleTasks.isEmpty ? null : _exportCsv,
+          ),
           IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _fetchTasks),
         ],
       ),
@@ -310,7 +339,6 @@ class _StaffTasksPageState extends State<StaffTasksPage> {
 
   Widget _buildTaskCard(Map<String, dynamic> task) {
     final status = task["status"] ?? "ASSIGNED";
-    final progress = task["progressPercent"] ?? 0;
     final dueDate = task["dueDate"];
     String dueDateStr = "";
     if (dueDate != null) {
@@ -349,22 +377,10 @@ class _StaffTasksPageState extends State<StaffTasksPage> {
             const SizedBox(height: 6),
             Text(task["description"], style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
           ],
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: (progress as num).toDouble() / 100,
-              backgroundColor: Colors.grey.shade200,
-              valueColor: AlwaysStoppedAnimation(_statusColor(status)),
-              minHeight: 6,
-            ),
-          ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Text("${progress}%", style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
               if (dueDateStr.isNotEmpty) ...[
-                const SizedBox(width: 16),
                 Icon(Icons.calendar_today, size: 12, color: Colors.grey.shade500),
                 const SizedBox(width: 4),
                 Text(dueDateStr, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),

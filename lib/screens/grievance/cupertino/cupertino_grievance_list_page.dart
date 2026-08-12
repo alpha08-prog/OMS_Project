@@ -8,8 +8,11 @@ import 'package:open_filex/open_filex.dart';
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
+import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
@@ -32,6 +35,9 @@ class _CupertinoGrievanceListPageState
   String _constituencyQuery = "";
   DateTime? _startDate;
   DateTime? _endDate;
+  // Client-side From/To range applied to createdAt for CSV + list display.
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   bool _loading = true;
   String? _error;
@@ -243,8 +249,7 @@ class _CupertinoGrievanceListPageState
         final result = await OpenFilex.open(file.path);
         if (!mounted) return;
         if (result.type != ResultType.done) {
-          CupertinoToast.show(context,
-              "Could not open PDF: ${result.message}",
+          CupertinoToast.show(context, "Could not open PDF: ${result.message}",
               isError: true);
         } else if (isTempleVisit) {
           CupertinoToast.show(
@@ -253,8 +258,7 @@ class _CupertinoGrievanceListPageState
         if (isTempleVisit) _fetchGrievances();
       } else {
         if (!mounted) return;
-        CupertinoToast.show(context,
-            "PDF download failed (${res.statusCode})",
+        CupertinoToast.show(context, "PDF download failed (${res.statusCode})",
             isError: true);
       }
     } catch (e) {
@@ -292,6 +296,45 @@ class _CupertinoGrievanceListPageState
       ),
     );
     if (result == true) _fetchGrievances();
+  }
+
+  /// Grievances after applying the client-side From/To (createdAt) range.
+  List<Map<String, dynamic>> get _visibleGrievances {
+    if (_dateFrom == null && _dateTo == null) return _allGrievances;
+    return _allGrievances.where((g) {
+      final dt = DateTime.tryParse(g['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'grievances',
+      headers: const [
+        'Petitioner',
+        'Type',
+        'Constituency',
+        'Status',
+        'Stage',
+        'Created'
+      ],
+      rows: _visibleGrievances.map((g) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(g['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          g['petitionerName'] ?? '',
+          (g['grievanceType'] ?? '').toString().replaceAll('_', ' '),
+          g['constituency'] ?? '',
+          g['uiStatus'] ?? '',
+          _formatStage((g['currentStage'] ?? 'RECEIVED').toString()),
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   @override
@@ -381,12 +424,22 @@ class _CupertinoGrievanceListPageState
                               ),
                             ),
                             const SizedBox(width: 12),
+                            CupertinoButton(
+                              padding: EdgeInsets.zero,
+                              onPressed: _visibleGrievances.isEmpty
+                                  ? null
+                                  : _exportCsv,
+                              child: const Icon(CupertinoIcons.arrow_down_doc,
+                                  color: CupertinoColors.white, size: 22),
+                            ),
+                            const SizedBox(width: 12),
                             GestureDetector(
                               onTap: _fetchGrievances,
                               child: const Icon(CupertinoIcons.refresh,
                                   color: CupertinoColors.white, size: 22),
                             ),
-                            if (canCreate && widget.role != Roles.superAdmin) ...[
+                            if (canCreate &&
+                                widget.role != Roles.superAdmin) ...[
                               const SizedBox(width: 12),
                               GestureDetector(
                                 onTap: _openCreate,
@@ -416,11 +469,16 @@ class _CupertinoGrievanceListPageState
                       children: [
                         _statItem(
                             "Total", _totalCount, CupertinoIcons.folder, null),
-                        _statItem("Open", _openCount,
-                            CupertinoIcons.folder_open, const Color(0xFF10B981)),
+                        _statItem(
+                            "Open",
+                            _openCount,
+                            CupertinoIcons.folder_open,
+                            const Color(0xFF10B981)),
                         _statItem("Progress", _inProgressCount,
                             CupertinoIcons.clock, const Color(0xFFF59E0B)),
-                        _statItem("Closed", _closedCount,
+                        _statItem(
+                            "Closed",
+                            _closedCount,
                             CupertinoIcons.checkmark_circle,
                             const Color(0xFF9CA3AF)),
                       ],
@@ -434,304 +492,338 @@ class _CupertinoGrievanceListPageState
           Expanded(
             child: Column(
               children: [
-
-            // ================= SEARCH & FILTERS =================
-            if (_showFilters)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: CupertinoColors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: CupertinoColors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                // ================= SEARCH & FILTERS =================
+                if (_showFilters)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: CupertinoColors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Search by name / phone
-                    CupertinoTextField(
-                      controller: _searchController,
-                      placeholder: "Search by name or phone...",
-                      prefix: const Padding(
-                        padding: EdgeInsets.only(left: 12),
-                        child: Icon(CupertinoIcons.search,
-                            color: CupertinoColors.systemGrey, size: 20),
-                      ),
-                      suffix: _searchQuery.isNotEmpty
-                          ? GestureDetector(
-                              onTap: () {
-                                _searchController.clear();
-                                _onSearch("");
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.only(right: 8),
-                                child: Icon(CupertinoIcons.clear_circled_solid,
-                                    size: 18,
-                                    color: CupertinoColors.systemGrey),
-                              ),
-                            )
-                          : null,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.systemGrey6,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      onSubmitted: _onSearch,
-                      onChanged: (v) {
-                        if (v.isEmpty && _searchQuery.isNotEmpty) {
-                          _onSearch("");
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Constituency
-                    CupertinoTextField(
-                      controller: _constituencyController,
-                      placeholder: "Filter by constituency...",
-                      prefix: const Padding(
-                        padding: EdgeInsets.only(left: 12),
-                        child: Icon(CupertinoIcons.location,
-                            color: CupertinoColors.systemGrey, size: 20),
-                      ),
-                      suffix: _constituencyQuery.isNotEmpty
-                          ? GestureDetector(
-                              onTap: () {
-                                _constituencyController.clear();
-                                setState(() => _constituencyQuery = "");
-                                _fetchGrievances();
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.only(right: 8),
-                                child: Icon(CupertinoIcons.clear_circled_solid,
-                                    size: 18,
-                                    color: CupertinoColors.systemGrey),
-                              ),
-                            )
-                          : null,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.systemGrey6,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      onSubmitted: (v) {
-                        setState(() => _constituencyQuery = v.trim());
-                        _fetchGrievances();
-                      },
-                      onChanged: (v) {
-                        if (v.isEmpty && _constituencyQuery.isNotEmpty) {
-                          setState(() => _constituencyQuery = "");
-                          _fetchGrievances();
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Date Filters
-                    const Text(
-                      "Filter by Date",
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: CupertinoColors.systemGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: _datePickerButton(
-                            label: "Start Date",
-                            date: _startDate,
-                            onTap: () => _selectDate(true),
-                            onClear: () {
-                              setState(() => _startDate = null);
+                        // Search by name / phone
+                        CupertinoTextField(
+                          controller: _searchController,
+                          placeholder: "Search by name or phone...",
+                          prefix: const Padding(
+                            padding: EdgeInsets.only(left: 12),
+                            child: Icon(CupertinoIcons.search,
+                                color: CupertinoColors.systemGrey, size: 20),
+                          ),
+                          suffix: _searchQuery.isNotEmpty
+                              ? GestureDetector(
+                                  onTap: () {
+                                    _searchController.clear();
+                                    _onSearch("");
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.only(right: 8),
+                                    child: Icon(
+                                        CupertinoIcons.clear_circled_solid,
+                                        size: 18,
+                                        color: CupertinoColors.systemGrey),
+                                  ),
+                                )
+                              : null,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: CupertinoColors.systemGrey6,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          onSubmitted: _onSearch,
+                          onChanged: (v) {
+                            if (v.isEmpty && _searchQuery.isNotEmpty) {
+                              _onSearch("");
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Constituency
+                        CupertinoTextField(
+                          controller: _constituencyController,
+                          placeholder: "Filter by constituency...",
+                          prefix: const Padding(
+                            padding: EdgeInsets.only(left: 12),
+                            child: Icon(CupertinoIcons.location,
+                                color: CupertinoColors.systemGrey, size: 20),
+                          ),
+                          suffix: _constituencyQuery.isNotEmpty
+                              ? GestureDetector(
+                                  onTap: () {
+                                    _constituencyController.clear();
+                                    setState(() => _constituencyQuery = "");
+                                    _fetchGrievances();
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.only(right: 8),
+                                    child: Icon(
+                                        CupertinoIcons.clear_circled_solid,
+                                        size: 18,
+                                        color: CupertinoColors.systemGrey),
+                                  ),
+                                )
+                              : null,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: CupertinoColors.systemGrey6,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          onSubmitted: (v) {
+                            setState(() => _constituencyQuery = v.trim());
+                            _fetchGrievances();
+                          },
+                          onChanged: (v) {
+                            if (v.isEmpty && _constituencyQuery.isNotEmpty) {
+                              setState(() => _constituencyQuery = "");
                               _fetchGrievances();
-                            },
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Date Filters
+                        const Text(
+                          "Filter by Date",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: CupertinoColors.systemGrey,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _datePickerButton(
+                                label: "Start Date",
+                                date: _startDate,
+                                onTap: () => _selectDate(true),
+                                onClear: () {
+                                  setState(() => _startDate = null);
+                                  _fetchGrievances();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _datePickerButton(
+                                label: "End Date",
+                                date: _endDate,
+                                onTap: () => _selectDate(false),
+                                onClear: () {
+                                  setState(() => _endDate = null);
+                                  _fetchGrievances();
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Clear all filters
+                        if (hasFilters)
+                          SizedBox(
+                            width: double.infinity,
+                            child: CupertinoButton(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              onPressed: _clearFilters,
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(CupertinoIcons.clear_circled,
+                                      size: 18,
+                                      color: CupertinoColors.destructiveRed),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    "Clear All Filters",
+                                    style: TextStyle(
+                                        color: CupertinoColors.destructiveRed),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                if (_showFilters) const SizedBox(height: 12),
+
+                // ================= STATUS FILTER CHIPS =================
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CupertinoFilterRow(
+                    options: const ["All", "Open", "In Progress", "Closed"],
+                    selected: selectedStatus,
+                    onSelected: (status) async {
+                      setState(() {
+                        selectedStatus = status;
+                      });
+                      await _fetchGrievances();
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ================= DATE RANGE FILTER =================
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: CupertinoColors.black.withOpacity(0.05),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: CupertinoDateRangeFilter(
+                      from: _dateFrom,
+                      to: _dateTo,
+                      tint: AppTheme.primaryIndigo,
+                      onFromChanged: (d) => setState(() => _dateFrom = d),
+                      onToChanged: (d) => setState(() => _dateTo = d),
+                      onClear: () => setState(() {
+                        _dateFrom = null;
+                        _dateTo = null;
+                      }),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Active filters indicator
+                if (hasFilters)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(CupertinoIcons.line_horizontal_3_decrease,
+                            size: 14, color: CupertinoColors.systemGrey),
+                        const SizedBox(width: 4),
                         Expanded(
-                          child: _datePickerButton(
-                            label: "End Date",
-                            date: _endDate,
-                            onTap: () => _selectDate(false),
-                            onClear: () {
-                              setState(() => _endDate = null);
-                              _fetchGrievances();
-                            },
+                          child: Text(
+                            _buildFilterSummary(),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: CupertinoColors.systemGrey,
+                              fontStyle: FontStyle.italic,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                  ),
 
-                    // Clear all filters
-                    if (hasFilters)
-                      SizedBox(
-                        width: double.infinity,
-                        child: CupertinoButton(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          onPressed: _clearFilters,
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(CupertinoIcons.clear_circled,
-                                  size: 18,
-                                  color: CupertinoColors.destructiveRed),
-                              SizedBox(width: 6),
-                              Text(
-                                "Clear All Filters",
-                                style: TextStyle(
-                                    color: CupertinoColors.destructiveRed),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-
-            if (_showFilters) const SizedBox(height: 12),
-
-            // ================= STATUS FILTER CHIPS =================
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: CupertinoFilterRow(
-                options: const ["All", "Open", "In Progress", "Closed"],
-                selected: selectedStatus,
-                onSelected: (status) async {
-                  setState(() {
-                    selectedStatus = status;
-                  });
-                  await _fetchGrievances();
-                },
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Active filters indicator
-            if (hasFilters)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Icon(CupertinoIcons.line_horizontal_3_decrease,
-                        size: 14, color: CupertinoColors.systemGrey),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        _buildFilterSummary(),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: CupertinoColors.systemGrey,
-                          fontStyle: FontStyle.italic,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            // ================= LIST =================
-            Expanded(
-              child: _loading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : _error != null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(CupertinoIcons.exclamationmark_circle,
-                                  size: 48,
-                                  color: CupertinoColors.systemGrey3),
-                              const SizedBox(height: 16),
-                              Text(
-                                _error!,
-                                style: const TextStyle(
-                                    fontSize: 15,
-                                    color: CupertinoColors.systemGrey),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 16),
-                              CupertinoButton.filled(
-                                onPressed: _fetchGrievances,
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(CupertinoIcons.refresh, size: 18),
-                                    SizedBox(width: 6),
-                                    Text("Retry"),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : _allGrievances.isEmpty
+                // ================= LIST =================
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CupertinoActivityIndicator())
+                      : _error != null
                           ? Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(CupertinoIcons.tray,
-                                      size: 64,
-                                      color: CupertinoColors.systemGrey4),
+                                  const Icon(
+                                      CupertinoIcons.exclamationmark_circle,
+                                      size: 48,
+                                      color: CupertinoColors.systemGrey3),
                                   const SizedBox(height: 16),
                                   Text(
-                                    hasFilters
-                                        ? "No grievances match your filters"
-                                        : "No grievances found",
+                                    _error!,
                                     style: const TextStyle(
-                                        fontSize: 16,
+                                        fontSize: 15,
                                         color: CupertinoColors.systemGrey),
+                                    textAlign: TextAlign.center,
                                   ),
-                                  if (hasFilters) ...[
-                                    const SizedBox(height: 8),
-                                    CupertinoButton(
-                                      onPressed: _clearFilters,
-                                      child: const Text("Clear filters"),
+                                  const SizedBox(height: 16),
+                                  CupertinoButton.filled(
+                                    onPressed: _fetchGrievances,
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(CupertinoIcons.refresh, size: 18),
+                                        SizedBox(width: 6),
+                                        Text("Retry"),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ],
                               ),
                             )
-                          : CustomScrollView(
-                              slivers: [
-                                CupertinoSliverRefreshControl(
-                                  onRefresh: _fetchGrievances,
-                                ),
-                                SliverPadding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                                  sliver: SliverList(
-                                    delegate: SliverChildBuilderDelegate(
-                                      (context, index) {
-                                        final grievance =
-                                            _allGrievances[index];
-                                        return _buildGrievanceCard(grievance);
-                                      },
-                                      childCount: _allGrievances.length,
-                                    ),
+                          : _visibleGrievances.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(CupertinoIcons.tray,
+                                          size: 64,
+                                          color: CupertinoColors.systemGrey4),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        hasFilters
+                                            ? "No grievances match your filters"
+                                            : "No grievances found",
+                                        style: const TextStyle(
+                                            fontSize: 16,
+                                            color: CupertinoColors.systemGrey),
+                                      ),
+                                      if (hasFilters) ...[
+                                        const SizedBox(height: 8),
+                                        CupertinoButton(
+                                          onPressed: _clearFilters,
+                                          child: const Text("Clear filters"),
+                                        ),
+                                      ],
+                                    ],
                                   ),
+                                )
+                              : CustomScrollView(
+                                  slivers: [
+                                    CupertinoSliverRefreshControl(
+                                      onRefresh: _fetchGrievances,
+                                    ),
+                                    SliverPadding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 8, 16, 16),
+                                      sliver: SliverList(
+                                        delegate: SliverChildBuilderDelegate(
+                                          (context, index) {
+                                            final grievance =
+                                                _visibleGrievances[index];
+                                            return _buildGrievanceCard(
+                                                grievance);
+                                          },
+                                          childCount: _visibleGrievances.length,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
         ],
       ),
     );
@@ -757,7 +849,8 @@ class _CupertinoGrievanceListPageState
   Widget _statItem(String label, int count, IconData icon, [Color? color]) {
     return Column(
       children: [
-        Icon(icon, color: color ?? CupertinoColors.white.withOpacity(0.7), size: 20),
+        Icon(icon,
+            color: color ?? CupertinoColors.white.withOpacity(0.7), size: 20),
         const SizedBox(height: 4),
         Text(
           count.toString(),
@@ -866,8 +959,7 @@ class _CupertinoGrievanceListPageState
 
     return GestureDetector(
       onTap: () async {
-        if (widget.role == Roles.admin ||
-            widget.role == Roles.superAdmin) {
+        if (widget.role == Roles.admin || widget.role == Roles.superAdmin) {
           _openAdminDetailDialog(grievance);
         } else {
           AppNavigator.toGrievanceView(context,
@@ -880,9 +972,8 @@ class _CupertinoGrievanceListPageState
         decoration: BoxDecoration(
           color: CupertinoColors.white,
           borderRadius: BorderRadius.circular(16),
-          border: isLocked
-              ? Border.all(color: CupertinoColors.systemGrey4)
-              : null,
+          border:
+              isLocked ? Border.all(color: CupertinoColors.systemGrey4) : null,
           boxShadow: [
             BoxShadow(
               color: CupertinoColors.black.withOpacity(0.05),

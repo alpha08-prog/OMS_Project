@@ -8,14 +8,12 @@ import 'package:anki_clone/screens/birthday_page.dart';
 import 'package:anki_clone/screens/history/history_page.dart';
 import 'package:anki_clone/screens/tasks/task_list_page.dart';
 import 'package:anki_clone/screens/tasks/staff_tasks_page.dart';
-import 'package:anki_clone/screens/admin/verification_queue_page.dart';
 import 'package:anki_clone/screens/admin/train_queue_page.dart';
 import 'package:anki_clone/screens/admin/tour_queue_page.dart';
 import 'package:anki_clone/screens/admin/print_center_page.dart';
 import 'package:anki_clone/screens/admin/user_management_page.dart';
 import 'package:anki_clone/screens/staff/staff_history_page.dart';
 
-import 'package:anki_clone/screens/admin/action_center_page.dart';
 import 'package:anki_clone/screens/about/about_page.dart';
 import 'package:anki_clone/screens/calendar/calendar_page.dart';
 import 'package:anki_clone/screens/tour/events_page.dart';
@@ -29,6 +27,7 @@ import '../../widgets/grievance_donut_painter.dart';
 import '../../services/auth_service.dart';
 import '../../services/http_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/attendance_service.dart';
 
 import '../../utils/access_control.dart';
 import '../../utils/app_navigator.dart';
@@ -72,9 +71,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int alerts = 0;
   int totalTourPrograms = 0;
   int totalTrainRequests = 0;
+  int upcomingTours = 0;
+  int trainReadyToPrint = 0;
 
   // Admin pending counts
-  int pendingVerifications = 0;
   int pendingTrainRequests = 0;
   int pendingTourDecisions = 0;
   int todayBirthdays = 0;
@@ -98,6 +98,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _adminPendingExpanded = false;
   List<Map<String, dynamic>> _todayBirthdaysList = [];
 
+  // Admin: Today's Attendance summary card
+  AttendanceStats? _attendanceStats;
+  AttendanceRecord? _myTodayAttendance;
+  bool _markingPresent = false;
+
+  // Timestamp of the last successful dashboard stats fetch
+  DateTime? _lastUpdated;
+
   // Super Admin extra data
   List<Map<String, dynamic>> _newsItems = [];
 
@@ -109,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _fetchDashboardWidgets();
     if (widget.role == Roles.admin) {
       _fetchAdminDashboard();
+      _fetchAttendanceSummary();
     }
     if (widget.role == Roles.superAdmin) {
       _fetchSuperAdminExtras();
@@ -312,13 +321,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _loadingAdminDashboard = true);
     try {
       final futures = await Future.wait([
-        HttpService.get("/api/grievances/queue/verification"),
         HttpService.get("/api/train-requests/queue/pending"),
         HttpService.get("/api/tour-programs/pending"),
         HttpService.get("/api/birthdays/today"),
       ]);
 
-      List<Map<String, dynamic>> grievances = [];
       List<Map<String, dynamic>> trains = [];
       List<Map<String, dynamic>> tours = [];
       List<Map<String, dynamic>> birthdays = [];
@@ -326,44 +333,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (futures[0].statusCode == 200) {
         final d = jsonDecode(futures[0].body);
         final list = d is List ? d : (d["data"] ?? []);
-        grievances = (list as List)
+        trains = (list as List)
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
       }
       if (futures[1].statusCode == 200) {
         final d = jsonDecode(futures[1].body);
         final list = d is List ? d : (d["data"] ?? []);
-        trains = (list as List)
+        tours = (list as List)
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
       }
       if (futures[2].statusCode == 200) {
         final d = jsonDecode(futures[2].body);
         final list = d is List ? d : (d["data"] ?? []);
-        tours = (list as List)
-            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-            .toList();
-      }
-      if (futures[3].statusCode == 200) {
-        final d = jsonDecode(futures[3].body);
-        final list = d is List ? d : (d["data"] ?? []);
         birthdays = (list as List)
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
       }
 
-      // Build combined Pending Approvals list
+      // Build combined Pending Approvals list (Train EQ + Tour decisions)
       final combined = <Map<String, dynamic>>[];
-      for (final g in grievances) {
-        combined.add({
-          "_kind": "grievance",
-          "title": "Grievance — ${(g["grievanceType"] ?? "").toString()}",
-          "subtitle":
-              "${g["petitionerName"] ?? "-"} · ${_shortDate(g["createdAt"]?.toString())}",
-          "createdAt": g["createdAt"],
-          "raw": g,
-        });
-      }
       for (final t in trains) {
         combined.add({
           "_kind": "train",
@@ -398,7 +388,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() {
           _pendingApprovals = combined;
           _todayBirthdaysList = birthdays;
-          pendingVerifications = grievances.length;
           pendingTrainRequests = trains.length;
           pendingTourDecisions = tours.length;
           todayBirthdays = birthdays.length;
@@ -407,6 +396,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     } catch (_) {
       if (mounted) setState(() => _loadingAdminDashboard = false);
+    }
+  }
+
+  /// Admin "Today's Attendance" summary — today's totals + my own status.
+  Future<void> _fetchAttendanceSummary() async {
+    AttendanceStats? stats;
+    AttendanceRecord? my;
+    try {
+      stats = await AttendanceService.getTodayStats();
+    } catch (_) {}
+    try {
+      my = await AttendanceService.getMyToday();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      if (stats != null) _attendanceStats = stats;
+      _myTodayAttendance = my;
+    });
+  }
+
+  Future<void> _markPresent() async {
+    setState(() => _markingPresent = true);
+    try {
+      await AttendanceService.mark(status: AttendanceStatus.present);
+      await _fetchAttendanceSummary();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Marked present for today")),
+        );
+      }
+    } on AttendanceException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Could not mark attendance")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _markingPresent = false);
     }
   }
 
@@ -446,12 +478,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               (data["tourPrograms"]?["pending"] ?? 0) as int;
           totalTourPrograms = (data["tourPrograms"]?["total"] ?? 0) as int;
           totalTrainRequests = (data["trainRequests"]?["total"] ?? 0) as int;
+          upcomingTours =
+              ((data["tourPrograms"]?["upcoming"]) as num?)?.toInt() ??
+                  totalTourPrograms;
+          trainReadyToPrint = ((data["trainRequests"]?["readyToPrint"] ??
+                      data["trainRequests"]?["approved"] ??
+                      data["trainRequests"]?["total"]) as num?)
+                  ?.toInt() ??
+              0;
           todayBirthdays = (data["birthdays"]?["today"] ??
               data["birthdaysToday"] ??
               0) as int;
-          pendingVerifications =
-              (data["grievances"]?["pendingVerification"] ??
-                  openGrievances) as int;
+          _lastUpdated = DateTime.now();
           _loadingStats = false;
         });
       } else if (res.statusCode == 401) {
@@ -589,6 +627,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           await _fetchDashboardWidgets();
           if (widget.role == Roles.admin) {
             await _fetchAdminDashboard();
+            await _fetchAttendanceSummary();
           }
           if (widget.role == Roles.superAdmin) {
             await _fetchSuperAdminExtras();
@@ -620,9 +659,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 24),
               ],
 
-              // ADMIN: New dashboard layout (welcome + 4 cards + pending approvals + birthdays)
+              // ADMIN: web-parity dashboard (stat cards + attendance + quick
+              // entry + action cards + needs attention + birthdays + quick actions)
               if (widget.role == Roles.admin) ...[
                 _buildAdminWelcomeBanner(),
+                const SizedBox(height: 16),
+                _buildAdminStatCards(),
+                const SizedBox(height: 16),
+                _buildAdminAttendanceCard(),
+                const SizedBox(height: 16),
+                _buildAdminQuickEntry(),
                 const SizedBox(height: 16),
                 _buildAdminActionCards(),
                 const SizedBox(height: 20),
@@ -630,6 +676,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 16),
                 _buildAdminBirthdaysCard(),
                 const SizedBox(height: 20),
+                _buildAdminQuickActions(),
+                const SizedBox(height: 8),
               ],
 
               // STAFF: Data Entry Portal layout
@@ -947,9 +995,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               color: const Color(0xFFFCD34D)),
           const SizedBox(width: 8),
           _heroBadge(
-              count: pendingVerifications +
-                  pendingTrainRequests +
-                  pendingTourDecisions,
+              count: pendingTrainRequests + pendingTourDecisions,
               label: "Pending",
               color: const Color(0xFFFB7185)),
         ],
@@ -1003,9 +1049,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         icon: Icons.description_outlined,
         value: "$totalGrievances",
         label: "Total Grievances",
-        sub: pendingVerifications == 0
-            ? "all reviewed"
-            : "$pendingVerifications pending",
+        sub: inProgressGrievances == 0
+            ? "none in progress"
+            : "$inProgressGrievances in progress",
         color: const Color(0xFF6366F1),
         bgColor: const Color(0xFFEEF2FF),
         onTap: () =>
@@ -1967,13 +2013,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       childAspectRatio: 2.2,
       children: [
         _pendingActionCard(
-          icon: Icons.verified_user,
-          label: "Verify Grievances",
-          count: pendingVerifications,
-          color: Colors.orange,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VerificationQueuePage())),
-        ),
-        _pendingActionCard(
           icon: Icons.train,
           label: "Train Approvals",
           count: pendingTrainRequests,
@@ -2139,9 +2178,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       _StaffEntry(
         icon: Icons.people_outline,
-        label: "Visitor Entry",
+        label: "Visitor / Birthday",
         color: const Color(0xFF1E293B),
-        onTap: () => AppNavigator.toVisitorEntry(context, role: widget.role),
+        onTap: () => AppNavigator.toAddPerson(context),
       ),
       _StaffEntry(
         icon: Icons.event_outlined,
@@ -2172,6 +2211,481 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               final cardWidth =
                   (width - spacing * (perRow - 1)) / perRow;
 
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: entries
+                    .map((e) => SizedBox(
+                          width: cardWidth,
+                          height: 88,
+                          child: _staffEntryTile(e),
+                        ))
+                    .toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Admin Quick Entry — same tiles as staff but routed to the create forms,
+  // matching the web admin dashboard.
+  // ================= ADMIN: TOP STAT CARDS =================
+  Widget _buildAdminStatCards() {
+    final cards = <Widget>[
+      _adminStatCard(
+        icon: Icons.description_outlined,
+        value: "$openGrievances",
+        label: "Open Grievances",
+        sub: "$totalGrievances total · $resolvedGrievances resolved",
+        color: const Color(0xFF6366F1),
+        bgColor: const Color(0xFFEEF2FF),
+        onTap: () => AppNavigator.toGrievanceList(context, role: widget.role),
+      ),
+      _adminStatCard(
+        icon: Icons.train_outlined,
+        value: "$trainReadyToPrint",
+        label: "Train EQ Letters",
+        sub: "Auto-approved · ready to print",
+        color: const Color(0xFF7C3AED),
+        bgColor: const Color(0xFFF3E8FF),
+        onTap: () => AppNavigator.toTrainQueue(context),
+      ),
+      _adminStatCard(
+        icon: Icons.event_note_outlined,
+        value: "$upcomingTours",
+        label: "Upcoming Tours",
+        sub: pendingTourDecisions == 0
+            ? "No pending decisions"
+            : pendingTourDecisions == 1
+                ? "1 awaiting decision"
+                : "$pendingTourDecisions awaiting decision",
+        color: const Color(0xFFD97706),
+        bgColor: const Color(0xFFFEF3C7),
+        onTap: () => AppNavigator.toTourQueue(context),
+      ),
+      _adminStatCard(
+        icon: Icons.people_outline,
+        value: "$visitorsToday",
+        label: "Visitors Today",
+        sub: todayBirthdays == 1
+            ? "1 birthday today"
+            : "$todayBirthdays birthdays today",
+        color: const Color(0xFF16A34A),
+        bgColor: const Color(0xFFDCFCE7),
+        onTap: () => AppNavigator.toVisitorList(context, role: widget.role),
+      ),
+    ];
+
+    // Fix the card HEIGHT (not the aspect ratio) so cells never get shorter
+    // than their content on narrow screens — that was causing a bottom
+    // overflow. Aspect ratio is derived from the measured width per device.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 12.0;
+        const cardHeight = 138.0;
+        final cardWidth = (constraints.maxWidth - spacing) / 2;
+        return GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: spacing,
+          crossAxisSpacing: spacing,
+          childAspectRatio: cardWidth / cardHeight,
+          children: cards,
+        );
+      },
+    );
+  }
+
+  Widget _adminStatCard({
+    required IconData icon,
+    required String value,
+    required String label,
+    required String sub,
+    required Color color,
+    required Color bgColor,
+    VoidCallback? onTap,
+  }) {
+    final card = Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const Spacer(),
+              Icon(Icons.arrow_forward, size: 15, color: Colors.grey.shade400),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            sub,
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+
+    if (onTap == null) return card;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: card,
+      ),
+    );
+  }
+
+  // ================= ADMIN: TODAY'S ATTENDANCE =================
+  Widget _buildAdminAttendanceCard() {
+    final stats = _attendanceStats;
+    final my = _myTodayAttendance;
+    final youLabel =
+        my == null ? "Not marked present yet." : "Marked ${my.status.label}.";
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.how_to_reg_outlined,
+                    color: Color(0xFF4338CA), size: 18),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                "Today's Attendance",
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E1B4B),
+                ),
+              ),
+              const Spacer(),
+              InkWell(
+                onTap: () => AppNavigator.toStaffAttendance(context),
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Text(
+                    "View full",
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4338CA),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: RichText(
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    text: TextSpan(
+                      children: [
+                        const TextSpan(
+                          text: "You:  ",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                        TextSpan(
+                          text: youLabel,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                if (my == null)
+                  ElevatedButton.icon(
+                    onPressed: _markingPresent ? null : _markPresent,
+                    icon: _markingPresent
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.check_circle_outline, size: 16),
+                    label: Text(_markingPresent ? "Marking…" : "Mark present"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      textStyle: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.check_circle,
+                            size: 14, color: Color(0xFF16A34A)),
+                        const SizedBox(width: 4),
+                        Text(
+                          my.status.label,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF15803D),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _attnTile("PRESENT", stats?.present ?? 0,
+                  const Color(0xFF16A34A), const Color(0xFFF0FDF4),
+                  const Color(0xFFBBF7D0)),
+              _attnTile("HALF DAY", stats?.halfDay ?? 0,
+                  const Color(0xFFB45309), const Color(0xFFFFFBEB),
+                  const Color(0xFFFDE68A)),
+              _attnTile("LEAVE", stats?.leave ?? 0, const Color(0xFF2563EB),
+                  const Color(0xFFEFF6FF), const Color(0xFFBFDBFE)),
+              _attnTile("ABSENT", stats?.absent ?? 0, const Color(0xFFDC2626),
+                  const Color(0xFFFEF2F2), const Color(0xFFFECACA),
+                  last: true),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _attnTile(
+    String label,
+    int count,
+    Color textColor,
+    Color bgColor,
+    Color borderColor, {
+    bool last = false,
+  }) {
+    return Expanded(
+      child: Container(
+        margin: EdgeInsets.only(right: last ? 0 : 8),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderColor),
+        ),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "$count",
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= ADMIN: QUICK ACTIONS =================
+  Widget _buildAdminQuickActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            "Quick Actions",
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E1B4B),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 92,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _quickActionCard(Icons.receipt_long, "Grievances",
+                  const Color(0xFF6366F1),
+                  () => AppNavigator.toGrievanceList(context, role: widget.role)),
+              _quickActionCard(Icons.print, "Print\nCenter",
+                  const Color(0xFF0EA5E9),
+                  () => AppNavigator.toPrintCenter(context)),
+              _quickActionCard(Icons.train, "Train EQ", const Color(0xFF7C3AED),
+                  () => AppNavigator.toTrainQueue(context)),
+              _quickActionCard(Icons.event_note, "Tour\nDecisions",
+                  const Color(0xFFD97706),
+                  () => AppNavigator.toTourQueue(context)),
+              _quickActionCard(Icons.people, "Visitors", const Color(0xFF0D9488),
+                  () => AppNavigator.toVisitorList(context, role: widget.role)),
+              _quickActionCard(Icons.newspaper, "News", const Color(0xFFDB2777),
+                  () => AppNavigator.toNewsList(context, role: widget.role)),
+              _quickActionCard(Icons.cake, "Birthdays", const Color(0xFFEC4899),
+                  () => AppNavigator.toBirthdayView(context)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAdminQuickEntry() {
+    final entries = <_StaffEntry>[
+      _StaffEntry(
+        icon: Icons.description_outlined,
+        label: "New Grievance",
+        color: const Color(0xFFF59E0B),
+        onTap: () => AppNavigator.toOfficeGrievanceCreate(context),
+      ),
+      _StaffEntry(
+        icon: Icons.train,
+        label: "Train EQ",
+        color: const Color(0xFF6366F1),
+        onTap: () =>
+            AppNavigator.toTrainRequestAdd(context, role: widget.role),
+      ),
+      _StaffEntry(
+        icon: Icons.people_outline,
+        label: "Visitor / Birthday",
+        color: const Color(0xFF1E293B),
+        onTap: () => AppNavigator.toAddPerson(context),
+      ),
+      _StaffEntry(
+        icon: Icons.event_outlined,
+        label: "Tour Program",
+        color: const Color(0xFF0284C7),
+        onTap: () =>
+            AppNavigator.toTourProgramCreate(context, role: widget.role),
+      ),
+      _StaffEntry(
+        icon: Icons.article_outlined,
+        label: "News Entry",
+        color: const Color(0xFF0D9488),
+        onTap: () => AppNavigator.toNewsAdd(context),
+      ),
+    ];
+
+    return _staffSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _staffSectionTitle("Quick Entry"),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 10.0;
+              final width = constraints.maxWidth;
+              final perRow = width >= 720 ? 5 : (width >= 480 ? 3 : 2);
+              final cardWidth = (width - spacing * (perRow - 1)) / perRow;
               return Wrap(
                 spacing: spacing,
                 runSpacing: spacing,
@@ -2569,7 +3083,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         children: [
           _quickActionCard(
               Icons.receipt_long,
-              widget.role == Roles.staff ? "New\nGrievance" : "Verify\nGrievance",
+              widget.role == Roles.staff ? "New\nGrievance" : "Grievances",
               Colors.indigo, () {
             AppNavigator.toGrievanceEntry(context, role: widget.role);
           }),
@@ -2642,6 +3156,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // ================= ADMIN DASHBOARD WIDGETS =================
 
   Widget _buildAdminWelcomeBanner() {
+    final dateStr = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
+    final updatedStr = _lastUpdated == null
+        ? null
+        : DateFormat('hh:mm a').format(_lastUpdated!);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2655,50 +3173,99 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Welcome, ${widget.userName}",
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E1B4B),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Welcome, ${widget.userName}",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E1B4B),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      dateStr,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  "Verification & Letter Management",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE0E7FF),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              "ADMIN ACCESS",
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF4338CA),
-                letterSpacing: 0.5,
               ),
-            ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E7FF),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  "ADMIN ACCESS",
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF4338CA),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(Icons.access_time, size: 13, color: Colors.grey.shade500),
+              const SizedBox(width: 4),
+              Text(
+                updatedStr == null ? "Updating…" : "Updated $updatedStr",
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+              const Spacer(),
+              InkWell(
+                onTap: () {
+                  _fetchDashboardStats();
+                  _fetchDashboardWidgets();
+                  _fetchAdminDashboard();
+                  _fetchAttendanceSummary();
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEEF2FF),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.refresh, size: 14, color: Color(0xFF4338CA)),
+                      SizedBox(width: 4),
+                      Text(
+                        "Refresh",
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF4338CA),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2708,14 +3275,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildAdminActionCards() {
     final cards = [
       _AdminCardData(
-        icon: Icons.verified_user_outlined,
-        title: "Verify Grievances",
-        subtitle: pendingVerifications == 1
-            ? "1 pending verification"
-            : "$pendingVerifications pending verification",
-        buttonLabel: "Open Queue",
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const VerificationQueuePage())),
+        icon: Icons.description_outlined,
+        title: "Grievances",
+        subtitle: "View and manage grievances",
+        buttonLabel: "Open List",
+        onTap: () =>
+            AppNavigator.toGrievanceList(context, role: widget.role),
       ),
       _AdminCardData(
         icon: Icons.print_outlined,
@@ -3004,11 +3569,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _onApprovalRowTap(Map<String, dynamic> item) {
     final kind = item["_kind"];
-    if (kind == "grievance") {
-      Navigator.push(context, MaterialPageRoute(
-        builder: (_) => const VerificationQueuePage(),
-      ));
-    } else if (kind == "train") {
+    if (kind == "train") {
       Navigator.push(context, MaterialPageRoute(
         builder: (_) => const TrainQueuePage(),
       ));
@@ -3108,27 +3669,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
+          // Staff bottom-nav opens LIST/view screens (creation lives in the
+          // Quick Entry cards up top); admin routing is left unchanged.
           _bottomButton(
               Icons.receipt_long,
-              widget.role == Roles.staff ? "Grievance" : "Verify", () {
-            AppNavigator.toGrievanceEntry(context, role: widget.role);
+              widget.role == Roles.staff ? "Grievance" : "Grievances", () {
+            if (widget.role == Roles.staff) {
+              AppNavigator.toGrievanceList(context, role: widget.role);
+            } else {
+              AppNavigator.toGrievanceEntry(context, role: widget.role);
+            }
           }),
 
           _bottomButton(Icons.people_alt, "Visitors", () {
-            AppNavigator.toVisitorEntry(context, role: widget.role);
+            if (widget.role == Roles.staff) {
+              AppNavigator.toVisitorList(context, role: widget.role);
+            } else {
+              AppNavigator.toVisitorEntry(context, role: widget.role);
+            }
           }),
 
           _bottomButton(Icons.cake, "Birthdays", () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BirthdayPage(role: widget.role),
-              ),
-            );
+            if (widget.role == Roles.staff) {
+              AppNavigator.toBirthdayView(context);
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BirthdayPage(role: widget.role),
+                ),
+              );
+            }
           }),
 
           _bottomButton(Icons.train, "Train\nRequests", () {
-            AppNavigator.toTrainRequestEntry(context, role: widget.role);
+            if (widget.role == Roles.staff) {
+              AppNavigator.toTrainRequestList(context, role: widget.role);
+            } else {
+              AppNavigator.toTrainRequestEntry(context, role: widget.role);
+            }
           }),
 
           if (widget.role == Roles.admin)
@@ -3136,12 +3715,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               AppNavigator.toEvents(context, role: widget.role);
             })
           else
-            _bottomButton(
-                Icons.event,
-                widget.role == Roles.staff
-                    ? "Add\nInvitation"
-                    : "Tour\nPrograms", () {
-              AppNavigator.toTourProgramEntry(context, role: widget.role);
+            _bottomButton(Icons.event, "Tour\nPrograms", () {
+              if (widget.role == Roles.staff) {
+                AppNavigator.toTourProgramList(context, role: widget.role);
+              } else {
+                AppNavigator.toTourProgramEntry(context, role: widget.role);
+              }
             }),
         ],
       ),
@@ -3257,6 +3836,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           builder: (_) => const StaffTasksPage(),
         ));
       }),
+      _drawerItem(Icons.list_alt, "All Tasks", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toAllTasks(context, role: widget.role);
+      }),
+      _drawerItem(Icons.move_to_inbox_outlined, "Forwarded to Me", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toForwardedTasks(context);
+      }),
       _drawerItem(Icons.event_available, "My Attendance", onTap: () {
         Navigator.pop(context);
         AppNavigator.toMyAttendance(context);
@@ -3276,15 +3863,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           AppNavigator.toGrievanceEntry(context, role: widget.role);
         },
       ),
-      _drawerItem(Icons.people_alt_outlined, "Log Visitor", onTap: () {
+      _drawerItem(Icons.people_alt_outlined, "Add Visitor/Birthday", onTap: () {
         Navigator.pop(context);
-        AppNavigator.toVisitorLog(context);
+        AppNavigator.toAddPerson(context);
       }),
-      _drawerItem(Icons.cake_outlined, "Add Birthday", onTap: () {
+      _drawerItem(Icons.cake, "View Birthdays", onTap: () {
         Navigator.pop(context);
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => BirthdayPage(role: widget.role),
-        ));
+        AppNavigator.toBirthdayView(context);
       }),
       _drawerItem(Icons.train, "Train EQ Request", onTap: () {
         Navigator.pop(context);
@@ -3329,23 +3914,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _drawerItem(Icons.dashboard, "Dashboard", onTap: () {
         Navigator.pop(context);
       }),
-      _drawerItem(Icons.flash_on, "Action Center", onTap: () {
-        Navigator.pop(context);
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => ActionCenterPage(role: widget.role),
-        ));
-      }),
       _drawerItem(Icons.trending_up, "Task Tracker", onTap: () {
         Navigator.pop(context);
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => TaskListPage(role: widget.role),
         ));
       }),
-      _drawerItem(Icons.verified_user, "Verify Grievances", onTap: () {
+      _drawerItem(Icons.list_alt, "All Tasks", onTap: () {
         Navigator.pop(context);
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const VerificationQueuePage(),
-        ));
+        AppNavigator.toAllTasks(context, role: widget.role);
+      }),
+      _drawerItem(Icons.work_outline, "Office Tasks", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toOfficeTasks(context, role: widget.role);
+      }),
+      _drawerItem(Icons.move_to_inbox_outlined, "Forwarded to Me", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toForwardedTasks(context);
+      }),
+      // --- Entry / create actions ---
+      _drawerItem(Icons.note_add_outlined, "New Grievance", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toOfficeGrievanceCreate(context);
+      }),
+      _drawerItem(Icons.person_add_alt, "Add Visitor/Birthday", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toAddPerson(context);
+      }),
+      _drawerItem(Icons.train_outlined, "Train EQ Request", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toTrainRequestAdd(context, role: widget.role);
+      }),
+      _drawerItem(Icons.map_outlined, "Tour Program", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toTourProgramCreate(context, role: widget.role);
+      }),
+      _drawerItem(Icons.post_add_outlined, "News Entry", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toNewsAdd(context);
       }),
       _drawerItem(Icons.train, "Train EQ Queue", onTap: () {
         Navigator.pop(context);
@@ -3371,6 +3977,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           builder: (_) => CalendarPage(role: widget.role),
         ));
       }),
+      _drawerItem(Icons.groups_2_outlined, "Meetings", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toMeetings(context);
+      }),
       _drawerItem(Icons.people_alt_outlined, "View Visitors", onTap: () {
         Navigator.pop(context);
         AppNavigator.toVisitorList(context, role: widget.role);
@@ -3392,6 +4002,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _drawerItem(Icons.history_toggle_off, "Action History", onTap: () {
         Navigator.pop(context);
         AppNavigator.toActionHistory(context);
+      }),
+      _drawerItem(Icons.timeline, "Activity Log", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toActivityLog(context);
+      }),
+      _drawerItem(Icons.cake_outlined, "View Birthdays", onTap: () {
+        Navigator.pop(context);
+        AppNavigator.toBirthdayView(context);
       }),
       _drawerItem(Icons.people_outline, "User Management", onTap: () {
         Navigator.pop(context);
@@ -3417,7 +4035,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return [
       _drawerItem(
           Icons.receipt_long,
-          widget.role == Roles.staff ? "Grievance" : "Verify Grievance",
+          widget.role == Roles.staff ? "Grievance" : "Grievances",
           onTap: () {
         Navigator.pop(context);
         AppNavigator.toGrievanceEntry(context, role: widget.role);
@@ -3479,18 +4097,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   letterSpacing: 1)),
         ),
         const SizedBox(height: 4),
-        _drawerItem(Icons.dashboard_customize, "Action Center", onTap: () {
-          Navigator.pop(context);
-          Navigator.push(context, MaterialPageRoute(
-            builder: (_) => ActionCenterPage(role: widget.role),
-          ));
-        }),
-        _drawerItem(Icons.verified_user, "Verify Grievance", onTap: () {
-          Navigator.pop(context);
-          Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const VerificationQueuePage(),
-          ));
-        }),
         _drawerItem(Icons.train, "Train EQ Queue", onTap: () {
           Navigator.pop(context);
           Navigator.push(context, MaterialPageRoute(

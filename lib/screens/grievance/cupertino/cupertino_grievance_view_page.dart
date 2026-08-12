@@ -4,12 +4,13 @@ import 'package:flutter/material.dart' show Colors;
 
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
+import '../../../widgets/cupertino/cupertino_attachments_section.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 
 /// Grievance details — single-pane view. Timeline + Tracking-history
 /// segments were removed 2026-05-22 (only the Details pane is shown). Admin
-/// can still Verify and Complete & Lock from the bottom action bar.
+/// can Complete & Lock from the bottom action bar.
 class CupertinoGrievanceViewPage extends StatefulWidget {
   final String grievanceId;
   final String role;
@@ -71,44 +72,6 @@ class _CupertinoGrievanceViewPageState
   void _deny() {
     CupertinoToast.show(context, "Access denied for role: ${widget.role}",
         isError: true);
-  }
-
-  Future<void> _approveGrievance() async {
-    final canApprove = AccessControl.can(widget.role, ActionPermission.approve);
-    if (!canApprove) return _deny();
-
-    if (grievanceData["isLocked"] == true) {
-      CupertinoToast.show(context, "Grievance is locked.", isError: true);
-      return;
-    }
-
-    setState(() => _updating = true);
-
-    try {
-      final res = await HttpService.patch(
-          "/api/grievances/${widget.grievanceId}/verify", {});
-
-      if (res.statusCode == 200) {
-        if (!mounted) return;
-        setState(() {
-          grievanceData["status"] = "VERIFIED";
-        });
-        CupertinoToast.show(context, "Approved / Verified");
-      } else {
-        String msg = "Approval failed (${res.statusCode})";
-        try {
-          final data = jsonDecode(res.body);
-          msg = data["message"] ?? msg;
-        } catch (_) {}
-        if (!mounted) return;
-        CupertinoToast.show(context, msg, isError: true);
-      }
-    } catch (_) {
-      if (!mounted) return;
-      CupertinoToast.show(context, "Server error / No internet", isError: true);
-    } finally {
-      if (mounted) setState(() => _updating = false);
-    }
   }
 
   Future<void> _completeGrievance() async {
@@ -211,8 +174,8 @@ class _CupertinoGrievanceViewPageState
             trailing: _updating
                 ? const Padding(
                     padding: EdgeInsets.only(right: 8),
-                    child:
-                        CupertinoActivityIndicator(color: CupertinoColors.white),
+                    child: CupertinoActivityIndicator(
+                        color: CupertinoColors.white),
                   )
                 : null,
           ),
@@ -220,65 +183,45 @@ class _CupertinoGrievanceViewPageState
             child: Column(
               children: [
                 Expanded(child: _buildDetailsBody(canEdit, canApprove)),
-            if (isLocked)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  color: CupertinoColors.systemGrey6,
-                  border: Border(
-                      top: BorderSide(color: CupertinoColors.systemGrey4)),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(CupertinoIcons.lock_fill,
-                        color: CupertinoColors.systemGrey),
-                    SizedBox(width: 8),
-                    Text(
-                      "This grievance is locked",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: CupertinoColors.systemGrey,
-                      ),
+                if (isLocked)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: const BoxDecoration(
+                      color: CupertinoColors.systemGrey6,
+                      border: Border(
+                          top: BorderSide(color: CupertinoColors.systemGrey4)),
                     ),
-                  ],
-                ),
-              )
-            else if (canApprove)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: CupertinoColors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: CupertinoColors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: CupertinoButton(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        color: CupertinoColors.activeBlue,
-                        borderRadius: BorderRadius.circular(12),
-                        onPressed: _updating ? null : _approveGrievance,
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(CupertinoIcons.checkmark_seal,
-                                size: 18, color: CupertinoColors.white),
-                            SizedBox(width: 6),
-                            Text("Verify",
-                                style: TextStyle(color: CupertinoColors.white)),
-                          ],
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(CupertinoIcons.lock_fill,
+                            color: CupertinoColors.systemGrey),
+                        SizedBox(width: 8),
+                        Text(
+                          "This grievance is locked",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: CupertinoColors.systemGrey,
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
+                  )
+                else if (canApprove)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: CupertinoColors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, -2),
+                        ),
+                      ],
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
                       child: CupertinoButton(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         color: successGreen,
@@ -298,12 +241,10 @@ class _CupertinoGrievanceViewPageState
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -318,6 +259,10 @@ class _CupertinoGrievanceViewPageState
           const SizedBox(height: 16),
           _statusCard(),
           const SizedBox(height: 16),
+          if (widget.grievanceId.isNotEmpty) ...[
+            _attachmentsCard(widget.grievanceId),
+            const SizedBox(height: 16),
+          ],
           if (!canEdit && !canApprove)
             Container(
               padding: const EdgeInsets.all(14),
@@ -371,6 +316,35 @@ class _CupertinoGrievanceViewPageState
           _row("Action Required", grievanceData["actionRequired"]),
           _row("Letter Template", grievanceData["letterTemplate"]),
           _row("Referenced By", grievanceData["referencedBy"]),
+        ],
+      ),
+    );
+  }
+
+  Widget _attachmentsCard(String id) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(CupertinoIcons.paperclip, size: 18, color: primaryBlue),
+              SizedBox(width: 6),
+              Text(
+                "ATTACHMENTS",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: primaryBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          CupertinoAttachmentsSection(contextId: id),
         ],
       ),
     );

@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_staff_history_detail_dialog.dart';
+import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoStaffHistoryPage extends StatefulWidget {
@@ -432,15 +433,31 @@ class _CupertinoStaffHistoryPageState
               ),
             ),
             const SizedBox(width: 8),
-            CupertinoButton(
-              padding: const EdgeInsets.all(6),
-              minSize: 0,
-              onPressed: () => _openDetail(item, raw),
-              child: const Icon(
-                CupertinoIcons.eye,
-                size: 20,
-                color: CupertinoColors.systemGrey,
-              ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: const EdgeInsets.all(6),
+                  minSize: 0,
+                  onPressed: () => _openDetail(item, raw),
+                  child: const Icon(
+                    CupertinoIcons.eye,
+                    size: 20,
+                    color: CupertinoColors.systemGrey,
+                  ),
+                ),
+                if (_isEditable(item))
+                  CupertinoButton(
+                    padding: const EdgeInsets.all(6),
+                    minSize: 0,
+                    onPressed: () => _editItem(item, raw),
+                    child: const Icon(
+                      CupertinoIcons.pencil,
+                      size: 20,
+                      color: AppTheme.primaryIndigo,
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
@@ -458,4 +475,463 @@ class _CupertinoStaffHistoryPageState
       raw: raw,
     );
   }
+
+  // ===================== EDIT =====================
+  // Staff can correct their own submissions while they are still editable
+  // (i.e. before an admin has acted on them). Edits the core fields per type
+  // and PATCHes /api/<entity>/:id. Backend is unchanged — if an endpoint is
+  // restricted/absent the backend message is surfaced.
+
+  bool _isEditable(Map<String, dynamic> item) {
+    final type = item['type']?.toString() ?? '';
+    final status = (item['status']?.toString() ?? '').toUpperCase();
+    switch (type) {
+      case 'GRIEVANCE':
+        return status == 'OPEN';
+      case 'TRAIN_REQUEST':
+        return status == 'PENDING';
+      case 'TOUR_PROGRAM':
+        return status == 'PENDING';
+      case 'VISITOR':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  String? _endpointFor(String type, Map<String, dynamic> raw) {
+    final id = raw['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    switch (type) {
+      case 'GRIEVANCE':
+        return '/api/grievances/$id';
+      case 'TRAIN_REQUEST':
+        return '/api/train-requests/$id';
+      case 'TOUR_PROGRAM':
+        return '/api/tour-programs/$id';
+      case 'VISITOR':
+        return '/api/visitors/$id';
+      default:
+        return null;
+    }
+  }
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'GRIEVANCE':
+        return 'Grievance';
+      case 'TRAIN_REQUEST':
+        return 'Train Request';
+      case 'TOUR_PROGRAM':
+        return 'Tour Program';
+      case 'VISITOR':
+        return 'Visitor';
+      default:
+        return 'Item';
+    }
+  }
+
+  List<_EditField> _editFieldsFor(String type) {
+    switch (type) {
+      case 'GRIEVANCE':
+        return const [
+          _EditField('petitionerName', 'Petitioner Name'),
+          _EditField('mobileNumber', 'Mobile Number'),
+          _EditField('grievanceType', 'Grievance Type',
+              kind: 'dropdown', options: _grievanceTypes),
+          _EditField('description', 'Description', kind: 'multiline'),
+        ];
+      case 'TRAIN_REQUEST':
+        return const [
+          _EditField('passengerName', 'Passenger Name'),
+          _EditField('pnrNumber', 'PNR Number'),
+          _EditField('contactNumber', 'Contact Number'),
+          _EditField('trainName', 'Train Name'),
+          _EditField('trainNumber', 'Train Number'),
+          _EditField('journeyClass', 'Class'),
+          _EditField('fromStation', 'From Station'),
+          _EditField('toStation', 'To Station'),
+          _EditField('dateOfJourney', 'Date of Journey', kind: 'date'),
+        ];
+      case 'TOUR_PROGRAM':
+        return const [
+          _EditField('eventName', 'Event Name'),
+          _EditField('organizer', 'Organizer'),
+          _EditField('venue', 'Venue'),
+          _EditField('dateTime', 'Date & Time', kind: 'date'),
+        ];
+      case 'VISITOR':
+        return const [
+          _EditField('name', 'Name'),
+          _EditField('designation', 'Designation'),
+          _EditField('purpose', 'Purpose'),
+        ];
+      default:
+        return const [];
+    }
+  }
+
+  BoxDecoration get _fieldBoxDeco => BoxDecoration(
+        color: AppTheme.backgroundAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: AppTheme.border),
+      );
+
+  Future<void> _editItem(
+      Map<String, dynamic> item, Map<String, dynamic> raw) async {
+    final type = item['type']?.toString() ?? '';
+    final fields = _editFieldsFor(type);
+    final endpoint = _endpointFor(type, raw);
+    if (fields.isEmpty || endpoint == null) return;
+
+    final controllers = <String, TextEditingController>{};
+    final dropdowns = <String, String?>{};
+    final dates = <String, DateTime?>{};
+    for (final f in fields) {
+      switch (f.kind) {
+        case 'date':
+          dates[f.key] = DateTime.tryParse(raw[f.key]?.toString() ?? '');
+          break;
+        case 'dropdown':
+          final cur = raw[f.key]?.toString();
+          dropdowns[f.key] = f.options.contains(cur) ? cur : null;
+          break;
+        default:
+          controllers[f.key] =
+              TextEditingController(text: raw[f.key]?.toString() ?? '');
+      }
+    }
+    bool saving = false;
+
+    final saved = await showCupertinoModalPopup<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Container(
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemBackground.resolveFrom(ctx),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 12,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Edit ${_typeLabel(type)}',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        minSize: 0,
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Icon(CupertinoIcons.xmark_circle_fill,
+                            color: CupertinoColors.systemGrey3, size: 26),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  ...fields.map((f) {
+                    Widget input;
+                    if (f.kind == 'date') {
+                      final d = dates[f.key];
+                      input = GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          DateTime temp = d ??
+                              DateTime.now();
+                          showCupertinoModalPopup(
+                            context: ctx,
+                            builder: (pctx) => Container(
+                              height: 300,
+                              color: CupertinoColors.systemBackground
+                                  .resolveFrom(pctx),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        CupertinoButton(
+                                          padding: EdgeInsets.zero,
+                                          child: const Text('Cancel'),
+                                          onPressed: () =>
+                                              Navigator.pop(pctx),
+                                        ),
+                                        CupertinoButton(
+                                          padding: EdgeInsets.zero,
+                                          child: const Text('Done'),
+                                          onPressed: () {
+                                            setSheet(
+                                                () => dates[f.key] = temp);
+                                            Navigator.pop(pctx);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: CupertinoDatePicker(
+                                      initialDateTime: d ?? DateTime.now(),
+                                      minimumDate: DateTime(2020),
+                                      maximumDate: DateTime.now().add(
+                                          const Duration(days: 365 * 3)),
+                                      mode: CupertinoDatePickerMode.date,
+                                      onDateTimeChanged: (v) => temp = v,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          decoration: _fieldBoxDeco,
+                          child: Text(
+                            d == null
+                                ? 'Not set'
+                                : DateFormat('dd MMM yyyy').format(d),
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: d == null
+                                  ? CupertinoColors.systemGrey
+                                  : CupertinoColors.label,
+                            ),
+                          ),
+                        ),
+                      );
+                    } else if (f.kind == 'dropdown') {
+                      final cur = dropdowns[f.key];
+                      input = GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          int index = cur == null
+                              ? 0
+                              : f.options.indexOf(cur);
+                          if (index < 0) index = 0;
+                          String temp = f.options[index];
+                          showCupertinoModalPopup(
+                            context: ctx,
+                            builder: (pctx) => Container(
+                              height: 300,
+                              color: CupertinoColors.systemBackground
+                                  .resolveFrom(pctx),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        CupertinoButton(
+                                          padding: EdgeInsets.zero,
+                                          child: const Text('Cancel'),
+                                          onPressed: () =>
+                                              Navigator.pop(pctx),
+                                        ),
+                                        CupertinoButton(
+                                          padding: EdgeInsets.zero,
+                                          child: const Text('Done'),
+                                          onPressed: () {
+                                            setSheet(() =>
+                                                dropdowns[f.key] = temp);
+                                            Navigator.pop(pctx);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: CupertinoPicker(
+                                      scrollController:
+                                          FixedExtentScrollController(
+                                              initialItem: index),
+                                      itemExtent: 36,
+                                      onSelectedItemChanged: (i) =>
+                                          temp = f.options[i],
+                                      children: f.options
+                                          .map((o) => Center(
+                                                child: Text(
+                                                    o.replaceAll('_', ' '),
+                                                    style: const TextStyle(
+                                                        fontSize: 16)),
+                                              ))
+                                          .toList(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          decoration: _fieldBoxDeco,
+                          child: Row(
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                cur == null
+                                    ? 'Select'
+                                    : cur.replaceAll('_', ' '),
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: cur == null
+                                      ? CupertinoColors.systemGrey
+                                      : CupertinoColors.label,
+                                ),
+                              ),
+                              const Icon(CupertinoIcons.chevron_down,
+                                  size: 16,
+                                  color: CupertinoColors.systemGrey),
+                            ],
+                          ),
+                        ),
+                      );
+                    } else {
+                      input = CupertinoTextField(
+                        controller: controllers[f.key],
+                        minLines: f.kind == 'multiline' ? 3 : 1,
+                        maxLines: f.kind == 'multiline' ? 4 : 1,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        decoration: _fieldBoxDeco,
+                        style: const TextStyle(fontSize: 15),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(f.label,
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: CupertinoColors.systemGrey)),
+                          const SizedBox(height: 6),
+                          input,
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: CupertinoButton.filled(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              final nav = Navigator.of(ctx);
+                              setSheet(() => saving = true);
+                              final body = <String, dynamic>{};
+                              for (final f in fields) {
+                                if (f.kind == 'date') {
+                                  body[f.key] =
+                                      dates[f.key]?.toIso8601String();
+                                } else if (f.kind == 'dropdown') {
+                                  if (dropdowns[f.key] != null) {
+                                    body[f.key] = dropdowns[f.key];
+                                  }
+                                } else {
+                                  body[f.key] =
+                                      controllers[f.key]!.text.trim();
+                                }
+                              }
+                              try {
+                                final res =
+                                    await HttpService.patch(endpoint, body);
+                                if (res.statusCode >= 200 &&
+                                    res.statusCode < 300) {
+                                  nav.pop(true);
+                                } else {
+                                  String msg =
+                                      'Update failed (${res.statusCode})';
+                                  try {
+                                    msg = jsonDecode(res.body)['message'] ??
+                                        msg;
+                                  } catch (_) {}
+                                  setSheet(() => saving = false);
+                                  if (mounted) {
+                                    CupertinoToast.show(context, msg,
+                                        isError: true);
+                                  }
+                                }
+                              } catch (e) {
+                                setSheet(() => saving = false);
+                                if (mounted) {
+                                  CupertinoToast.show(context, 'Error: $e',
+                                      isError: true);
+                                }
+                              }
+                            },
+                      child: saving
+                          ? const CupertinoActivityIndicator(
+                              color: CupertinoColors.white)
+                          : const Text('Save Changes',
+                              style:
+                                  TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    for (final c in controllers.values) {
+      c.dispose();
+    }
+    if (saved == true && mounted) {
+      _fetchAll();
+      CupertinoToast.show(context, 'Updated');
+    }
+  }
+}
+
+const List<String> _grievanceTypes = [
+  'WATER',
+  'ROAD',
+  'POLICE',
+  'HEALTH',
+  'TRANSFER',
+  'FINANCIAL_AID',
+  'ELECTRICITY',
+  'EDUCATION',
+  'HOUSING',
+  'TEMPLE_VISIT',
+  'OTHER',
+];
+
+/// Declarative descriptor for one editable field in the staff-history edit
+/// sheet. `kind` is 'text' | 'multiline' | 'dropdown' | 'date'.
+class _EditField {
+  final String key;
+  final String label;
+  final String kind;
+  final List<String> options;
+  const _EditField(this.key, this.label,
+      {this.kind = 'text', this.options = const []});
 }

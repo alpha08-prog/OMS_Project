@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 
 class ActionHistoryPage extends StatefulWidget {
   const ActionHistoryPage({super.key});
@@ -48,6 +49,29 @@ class _ActionHistoryPageState extends State<ActionHistoryPage> {
   void initState() {
     super.initState();
     _loadAll();
+  }
+
+  void _exportCsv() {
+    String nameOf(dynamic v) {
+      if (v is Map) return (v['name'] ?? '').toString();
+      return (v ?? '').toString();
+    }
+
+    CsvExport.export(
+      context,
+      fileName: 'action_history',
+      headers: ['Type', 'Title', 'Description', 'Action', 'Action By', 'Date/Time'],
+      rows: _items.map((item) {
+        return [
+          item['type'] ?? '',
+          item['title'] ?? '',
+          item['description'] ?? '',
+          item['action'] ?? '',
+          nameOf(item['actionBy']),
+          item['createdAt'] ?? item['dateTime'] ?? item['date'] ?? '',
+        ];
+      }).toList(),
+    );
   }
 
   Future<void> _loadAll() async {
@@ -239,6 +263,11 @@ class _ActionHistoryPageState extends State<ActionHistoryPage> {
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.download, color: Colors.white),
+          tooltip: 'Export CSV',
+          onPressed: _items.isEmpty ? null : _exportCsv,
+        ),
         IconButton(
           icon: const Icon(Icons.refresh, color: Colors.white),
           tooltip: 'Refresh',

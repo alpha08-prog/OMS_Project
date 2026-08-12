@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
@@ -72,12 +73,10 @@ class _CupertinoSuperAdminTourListPageState
       final res = await HttpService.get(_endpoint);
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         setState(() {
           _items = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
           _loading = false;
         });
@@ -138,6 +137,41 @@ class _CupertinoSuperAdminTourListPageState
     return u;
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'tour_programs',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date & Time',
+        'Status',
+        'Created'
+      ],
+      rows: _visible.map((r) {
+        String dateTime = '';
+        try {
+          dateTime = DateFormat('dd MMM yyyy, h:mm a')
+              .format(DateTime.parse(r['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          r['eventName'] ?? '',
+          r['organizer'] ?? '',
+          r['venue'] ?? '',
+          dateTime,
+          _statusLabel((r['decision'] ?? 'PENDING').toString()),
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = _visible;
@@ -148,82 +182,93 @@ class _CupertinoSuperAdminTourListPageState
           OmsPageHeader(
             title: _title,
             showBack: false,
-            trailing: CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _load,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: list.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      size: 22, color: CupertinoColors.white),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _load,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+              ],
             ),
           ),
           Expanded(
             child: Column(
               children: [
-            // Status chips
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: CupertinoFilterRow(
-                options: _statuses,
-                selected: _statusFilter,
-                selectedColor: primaryBlue,
-                onSelected: (v) => setState(() => _statusFilter = v),
-              ),
-            ),
-
-            // Date range
-            CupertinoDateRangeFilter(
-              from: _dateFrom,
-              to: _dateTo,
-              tint: primaryBlue,
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              onFromChanged: (d) => setState(() => _dateFrom = d),
-              onToChanged: (d) => setState(() => _dateTo = d),
-              onClear: () => setState(() {
-                _dateFrom = null;
-                _dateTo = null;
-              }),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              child: Row(
-                children: [
-                  Text(
-                    "${list.length} program${list.length == 1 ? '' : 's'}",
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: CupertinoColors.systemGrey,
-                      fontWeight: FontWeight.w600,
-                    ),
+                // Status chips
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: CupertinoFilterRow(
+                    options: _statuses,
+                    selected: _statusFilter,
+                    selectedColor: primaryBlue,
+                    onSelected: (v) => setState(() => _statusFilter = v),
                   ),
-                ],
-              ),
-            ),
+                ),
 
-            Expanded(
-              child: _loading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : list.isEmpty
-                      ? _emptyView()
-                      : CustomScrollView(
-                          slivers: [
-                            CupertinoSliverRefreshControl(
-                              onRefresh: _load,
-                            ),
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(
-                                  16, 4, 16, 16),
-                              sliver: SliverList(
-                                delegate: SliverChildBuilderDelegate(
-                                  (_, i) => _programCard(list[i]),
-                                  childCount: list.length,
-                                ),
-                              ),
-                            ),
-                          ],
+                // Date range
+                CupertinoDateRangeFilter(
+                  from: _dateFrom,
+                  to: _dateTo,
+                  tint: primaryBlue,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  onFromChanged: (d) => setState(() => _dateFrom = d),
+                  onToChanged: (d) => setState(() => _dateTo = d),
+                  onClear: () => setState(() {
+                    _dateFrom = null;
+                    _dateTo = null;
+                  }),
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  child: Row(
+                    children: [
+                      Text(
+                        "${list.length} program${list.length == 1 ? '' : 's'}",
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: CupertinoColors.systemGrey,
+                          fontWeight: FontWeight.w600,
                         ),
-              ),
-            ],
-          ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CupertinoActivityIndicator())
+                      : list.isEmpty
+                          ? _emptyView()
+                          : CustomScrollView(
+                              slivers: [
+                                CupertinoSliverRefreshControl(
+                                  onRefresh: _load,
+                                ),
+                                SliverPadding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                                  sliver: SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (_, i) => _programCard(list[i]),
+                                      childCount: list.length,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -239,8 +284,8 @@ class _CupertinoSuperAdminTourListPageState
               size: 64, color: CupertinoColors.systemGrey3),
           const SizedBox(height: 16),
           const Text("No programs found",
-              style: TextStyle(
-                  fontSize: 16, color: CupertinoColors.systemGrey)),
+              style:
+                  TextStyle(fontSize: 16, color: CupertinoColors.systemGrey)),
         ],
       ),
     );
@@ -291,8 +336,7 @@ class _CupertinoSuperAdminTourListPageState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: _statusColor(status).withOpacity(0.08),
                 borderRadius:
@@ -322,8 +366,8 @@ class _CupertinoSuperAdminTourListPageState
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: _statusColor(status),
                       borderRadius: BorderRadius.circular(20),
@@ -352,8 +396,7 @@ class _CupertinoSuperAdminTourListPageState
                       child: Row(
                         children: [
                           const Icon(CupertinoIcons.person,
-                              size: 14,
-                              color: CupertinoColors.systemGrey),
+                              size: 14, color: CupertinoColors.systemGrey),
                           const SizedBox(width: 6),
                           Text(
                             organizer,
@@ -375,8 +418,7 @@ class _CupertinoSuperAdminTourListPageState
                         child: Text(
                           venue,
                           style: const TextStyle(
-                              fontSize: 12,
-                              color: CupertinoColors.systemGrey),
+                              fontSize: 12, color: CupertinoColors.systemGrey),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -388,14 +430,12 @@ class _CupertinoSuperAdminTourListPageState
                     Row(
                       children: [
                         const Icon(CupertinoIcons.calendar_today,
-                            size: 13,
-                            color: CupertinoColors.systemGrey),
+                            size: 13, color: CupertinoColors.systemGrey),
                         const SizedBox(width: 6),
                         Text(
                           "$formattedDate${formattedTime.isNotEmpty ? ' · $formattedTime' : ''}",
                           style: const TextStyle(
-                              fontSize: 12,
-                              color: CupertinoColors.systemGrey),
+                              fontSize: 12, color: CupertinoColors.systemGrey),
                         ),
                       ],
                     ),
@@ -440,8 +480,7 @@ class _CupertinoTourDetailSheet extends StatelessWidget {
     final constituency = (item["constituency"] ?? "").toString();
     final desc = (item["description"] ?? "").toString();
     final remarks = (item["remarks"] ?? "").toString();
-    final decision =
-        (item["decision"] ?? "PENDING").toString().toUpperCase();
+    final decision = (item["decision"] ?? "PENDING").toString().toUpperCase();
     final dateStr = _fmt(item["dateTime"]);
 
     final fields = <MapEntry<String, String>>[];
@@ -518,8 +557,8 @@ class _CupertinoTourDetailSheet extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: statusColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(20),

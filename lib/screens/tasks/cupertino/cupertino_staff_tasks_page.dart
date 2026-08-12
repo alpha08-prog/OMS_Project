@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
@@ -48,17 +49,45 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
       final res = await HttpService.get(url);
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         setState(() {
           _tasks = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
         });
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'my_tasks',
+      headers: [
+        'Title',
+        'Type',
+        'Status',
+        'Assigned To',
+        'Reference No',
+        'Created'
+      ],
+      rows: _visibleTasks.map((t) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(t['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          t['title'] ?? '',
+          (t['taskType'] ?? '').toString().replaceAll('_', ' '),
+          (t['status'] ?? '').toString().replaceAll('_', ' '),
+          (t['assignedTo'] is Map ? t['assignedTo']['name'] : '') ?? '',
+          t['referenceNo'] ?? '',
+          created,
+        ];
+      }).toList(),
+    );
   }
 
   Future<void> _showUpdateProgressDialog(Map<String, dynamic> task) async {
@@ -175,15 +204,14 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
     if (res.statusCode != 200) return;
 
     final decoded = jsonDecode(res.body);
-    final List history =
-        decoded is List ? decoded : (decoded["data"] ?? []);
+    final List history = decoded is List ? decoded : (decoded["data"] ?? []);
 
     if (!mounted) return;
     showCupertinoModalPopup(
       context: context,
       builder: (ctx) => Container(
-        constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.6),
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
         padding: const EdgeInsets.all(16),
         decoration: const BoxDecoration(
           color: CupertinoColors.systemBackground,
@@ -205,8 +233,7 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
             ),
             const SizedBox(height: 16),
             const Text("Progress History",
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold)),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             if (history.isEmpty)
               const Center(
@@ -243,10 +270,9 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: AppTheme.primaryIndigo
-                                        .withOpacity(0.1),
-                                    borderRadius:
-                                        BorderRadius.circular(10),
+                                    color:
+                                        AppTheme.primaryIndigo.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
                                     entry["status"]
@@ -263,12 +289,10 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
                               Text(dateStr,
                                   style: TextStyle(
                                       fontSize: 11,
-                                      color: CupertinoColors
-                                          .systemGrey)),
+                                      color: CupertinoColors.systemGrey)),
                             ],
                           ),
-                          if (entry["note"]?.toString().isNotEmpty ==
-                              true) ...[
+                          if (entry["note"]?.toString().isNotEmpty == true) ...[
                             const SizedBox(height: 6),
                             Text(entry["note"],
                                 style: const TextStyle(fontSize: 13)),
@@ -309,122 +333,126 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
           OmsPageHeader(
             title: "My Tasks",
             showBack: false,
-            trailing: CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _fetchTasks,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _visibleTasks.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      color: CupertinoColors.white, size: 22),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _fetchTasks,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+              ],
             ),
           ),
-            // Filter chips
-            Container(
-              height: 56,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  'All',
-                  'ASSIGNED',
-                  'IN_PROGRESS',
-                  'COMPLETED',
-                  'ON_HOLD'
-                ].map((s) {
-                  final selected = _statusFilter == s;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() => _statusFilter = s);
-                        _fetchTasks();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
+          // Filter chips
+          Container(
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                'All',
+                'ASSIGNED',
+                'IN_PROGRESS',
+                'COMPLETED',
+                'ON_HOLD'
+              ].map((s) {
+                final selected = _statusFilter == s;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() => _statusFilter = s);
+                      _fetchTasks();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppTheme.primaryIndigo
+                            : AppTheme.backgroundAlt,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        s == 'All' ? 'All' : s.replaceAll('_', ' '),
+                        style: TextStyle(
                           color: selected
-                              ? AppTheme.primaryIndigo
-                              : AppTheme.backgroundAlt,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          s == 'All' ? 'All' : s.replaceAll('_', ' '),
-                          style: TextStyle(
-                            color: selected
-                                ? CupertinoColors.white
-                                : CupertinoColors.label,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
+                              ? CupertinoColors.white
+                              : CupertinoColors.label,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
                         ),
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                );
+              }).toList(),
             ),
-            CupertinoDateRangeFilter(
-              from: _dateFrom,
-              to: _dateTo,
-              tint: AppTheme.primaryIndigo,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              onFromChanged: (d) => setState(() => _dateFrom = d),
-              onToChanged: (d) => setState(() => _dateTo = d),
-              onClear: () => setState(() {
-                _dateFrom = null;
-                _dateTo = null;
-              }),
-            ),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : _visibleTasks.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(CupertinoIcons.checkmark_seal,
-                                  size: 64,
-                                  color: CupertinoColors.systemGrey4),
-                              const SizedBox(height: 16),
-                              Text("No tasks assigned",
-                                  style: TextStyle(
-                                      color:
-                                          CupertinoColors.systemGrey)),
-                            ],
-                          ),
-                        )
-                      : CustomScrollView(
-                          slivers: [
-                            CupertinoSliverRefreshControl(
-                                onRefresh: _fetchTasks),
-                            SliverPadding(
-                              padding: const EdgeInsets.all(16),
-                              sliver: SliverList(
-                                delegate: SliverChildBuilderDelegate(
-                                  (_, i) =>
-                                      _buildTaskCard(_visibleTasks[i]),
-                                  childCount: _visibleTasks.length,
-                                ),
-                              ),
-                            ),
+          ),
+          CupertinoDateRangeFilter(
+            from: _dateFrom,
+            to: _dateTo,
+            tint: AppTheme.primaryIndigo,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            onFromChanged: (d) => setState(() => _dateFrom = d),
+            onToChanged: (d) => setState(() => _dateTo = d),
+            onClear: () => setState(() {
+              _dateFrom = null;
+              _dateTo = null;
+            }),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CupertinoActivityIndicator())
+                : _visibleTasks.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.checkmark_seal,
+                                size: 64, color: CupertinoColors.systemGrey4),
+                            const SizedBox(height: 16),
+                            Text("No tasks assigned",
+                                style: TextStyle(
+                                    color: CupertinoColors.systemGrey)),
                           ],
                         ),
-            ),
-          ],
-        ),
+                      )
+                    : CustomScrollView(
+                        slivers: [
+                          CupertinoSliverRefreshControl(onRefresh: _fetchTasks),
+                          SliverPadding(
+                            padding: const EdgeInsets.all(16),
+                            sliver: SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (_, i) => _buildTaskCard(_visibleTasks[i]),
+                                childCount: _visibleTasks.length,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildTaskCard(Map<String, dynamic> task) {
     final status = task["status"] ?? "ASSIGNED";
-    final progress = task["progressPercent"] ?? 0;
     final dueDate = task["dueDate"];
     String dueDateStr = "";
     if (dueDate != null) {
       try {
-        dueDateStr =
-            DateFormat('dd MMM yyyy').format(DateTime.parse(dueDate));
+        dueDateStr = DateFormat('dd MMM yyyy').format(DateTime.parse(dueDate));
       } catch (_) {}
     }
 
@@ -447,8 +475,8 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
                         fontSize: 15, fontWeight: FontWeight.bold)),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: _statusColor(status).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -467,109 +495,50 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
           if (task["description"]?.toString().isNotEmpty == true) ...[
             const SizedBox(height: 6),
             Text(task["description"],
-                style: TextStyle(
-                    fontSize: 13,
-                    color: CupertinoColors.systemGrey)),
+                style:
+                    TextStyle(fontSize: 13, color: CupertinoColors.systemGrey)),
           ],
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: SizedBox(
-              height: 6,
-              child: _ProgressBar(
-                value: (progress as num).toDouble() / 100,
-                color: _statusColor(status),
-              ),
-            ),
-          ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Text("$progress%",
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: CupertinoColors.systemGrey,
-                      fontWeight: FontWeight.w600)),
               if (dueDateStr.isNotEmpty) ...[
-                const SizedBox(width: 16),
                 Icon(CupertinoIcons.calendar,
                     size: 12, color: CupertinoColors.systemGrey),
                 const SizedBox(width: 4),
                 Text(dueDateStr,
                     style: TextStyle(
-                        fontSize: 12,
-                        color: CupertinoColors.systemGrey)),
+                        fontSize: 12, color: CupertinoColors.systemGrey)),
               ],
               const Spacer(),
               CupertinoButton(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 minSize: 0,
-                onPressed: () =>
-                    _showHistoryDialog(task["id"].toString()),
+                onPressed: () => _showHistoryDialog(task["id"].toString()),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(CupertinoIcons.clock,
-                        size: 16,
-                        color: AppTheme.primaryIndigo),
+                        size: 16, color: AppTheme.primaryIndigo),
                     const SizedBox(width: 4),
                     Text("History",
                         style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.primaryIndigo)),
+                            fontSize: 12, color: AppTheme.primaryIndigo)),
                   ],
                 ),
               ),
               const SizedBox(width: 4),
               if (status != 'COMPLETED')
                 CupertinoButton.filled(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   minSize: 0,
-                  onPressed: () =>
-                      _showUpdateProgressDialog(task),
-                  child: const Text("Update",
-                      style: TextStyle(fontSize: 12)),
+                  onPressed: () => _showUpdateProgressDialog(task),
+                  child: const Text("Update", style: TextStyle(fontSize: 12)),
                 ),
             ],
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ProgressBar extends StatelessWidget {
-  final double value;
-  final Color color;
-
-  const _ProgressBar({required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          children: [
-            Container(
-              height: 6,
-              decoration: BoxDecoration(
-                color: CupertinoColors.systemGrey5,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-            Container(
-              height: 6,
-              width: constraints.maxWidth * value.clamp(0.0, 1.0),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
@@ -305,6 +306,12 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
                   ),
                 ),
                 const SizedBox(width: 12),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _visibleRequests.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      color: CupertinoColors.white, size: 22),
+                ),
                 GestureDetector(
                   onTap: _loadAll,
                   child: const Icon(CupertinoIcons.refresh,
@@ -390,6 +397,50 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
         fontWeight: FontWeight.bold,
         color: AppTheme.foreground,
       ),
+    );
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'train_eq_requests',
+      headers: [
+        'Passenger',
+        'PNR',
+        'From',
+        'To',
+        'Journey Date',
+        'Class',
+        'Train',
+        'Created By',
+        'Created'
+      ],
+      rows: _visibleRequests.map((r) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        String journey = '';
+        try {
+          journey = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['dateOfJourney'].toString()));
+        } catch (_) {}
+        final trainNo = r['trainNumber']?.toString() ?? '';
+        final trainName = r['trainName']?.toString() ?? '';
+        final train = '$trainNo${trainName.isNotEmpty ? ' - $trainName' : ''}';
+        return [
+          r['passengerName'] ?? '',
+          r['pnrNumber'] ?? '',
+          r['fromStation'] ?? '',
+          r['toStation'] ?? '',
+          journey,
+          r['journeyClass'] ?? '',
+          train,
+          r['createdBy']?['name'] ?? '',
+          created,
+        ];
+      }).toList(),
     );
   }
 

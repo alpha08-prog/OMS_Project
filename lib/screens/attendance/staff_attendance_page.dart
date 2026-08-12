@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/attendance_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/csv_export.dart';
 
 /// Admin "Staff Attendance" — Day / Month / Year toggle.
 ///
@@ -134,6 +135,67 @@ class _StaffAttendancePageState extends State<StaffAttendancePage> {
     return (_isoFmt.format(start), _isoFmt.format(end));
   }
 
+  bool get _hasExportRows => _mode == _RangeMode.day
+      ? _dayRows.isNotEmpty
+      : (_aggregate?.staff.isNotEmpty ?? false);
+
+  void _exportCsv() {
+    if (_mode == _RangeMode.day) {
+      final filtered = _filter == _StatusFilter.all
+          ? _dayRows
+          : _dayRows
+              .where((r) => r.status == _filterToStatus(_filter))
+              .toList();
+      final dateLabel = _isoFmt.format(_selectedDate);
+      CsvExport.export(
+        context,
+        fileName: 'staff_attendance_$dateLabel',
+        headers: const [
+          'Name',
+          'Role',
+          'Status',
+          'Date',
+          'Reason',
+          'Marked At'
+        ],
+        rows: filtered
+            .map((r) => [
+                  r.userName,
+                  r.userRole,
+                  r.status.label,
+                  r.date.isEmpty ? dateLabel : r.date,
+                  r.reason ?? '',
+                  r.markedAt == null ? '' : _formatMarkedAt(r.markedAt!),
+                ])
+            .toList(),
+      );
+    } else {
+      final agg = _aggregate;
+      final rows = agg?.staff ?? const <AttendanceAggregateRow>[];
+      CsvExport.export(
+        context,
+        fileName:
+            'staff_attendance_${agg?.startDate ?? ''}_${agg?.endDate ?? ''}',
+        headers: const [
+          'Name',
+          'Present',
+          'Half Day',
+          'Leave',
+          'Total Marked'
+        ],
+        rows: rows
+            .map((s) => [
+                  s.userName,
+                  s.present,
+                  s.halfDay,
+                  s.leave,
+                  s.totalMarked,
+                ])
+            .toList(),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -142,6 +204,13 @@ class _StaffAttendancePageState extends State<StaffAttendancePage> {
         title: const Text('Staff Attendance'),
         backgroundColor: AppTheme.primaryIndigo,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Export CSV',
+            icon: const Icon(Icons.download),
+            onPressed: (_loading || !_hasExportRows) ? null : _exportCsv,
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,

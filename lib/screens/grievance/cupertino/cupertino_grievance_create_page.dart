@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 
@@ -9,6 +8,7 @@ import '../../../services/image_upload_service.dart';
 import '../../../services/temple_registry_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/access_control.dart';
+import '../../../utils/attachment_picker.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
@@ -151,21 +151,17 @@ class _CupertinoGrievanceCreatePageState
   }
 
   Future<void> _pickAttachment() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final picked = await AttachmentPicker.pick(
+      context,
       allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
     );
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.first.path;
-    if (path == null) return;
-    final f = File(path);
-    final size = await f.length();
-    if (size > 10 * 1024 * 1024) {
+    if (picked == null) return;
+    if (picked.size > 10 * 1024 * 1024) {
       if (!mounted) return;
       CupertinoToast.show(context, 'File is larger than 10 MB.', isError: true);
       return;
     }
-    setState(() => _attachment = f);
+    setState(() => _attachment = picked.file);
   }
 
   String _getLabelForValue(List<Map<String, String>> items, String value) {
@@ -515,144 +511,146 @@ class _CupertinoGrievanceCreatePageState
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-            _buildCard(
-              title: 'PETITIONER DETAILS',
-              children: [
-                _buildTextField(
-                  controller: petitionerNameController,
-                  placeholder: 'Petitioner Name *',
-                  prefixIcon: CupertinoIcons.person,
-                  error: _nameError,
+                _buildCard(
+                  title: 'PETITIONER DETAILS',
+                  children: [
+                    _buildTextField(
+                      controller: petitionerNameController,
+                      placeholder: 'Petitioner Name *',
+                      prefixIcon: CupertinoIcons.person,
+                      error: _nameError,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: mobileNumberController,
+                      placeholder: 'Mobile Number *',
+                      prefixIcon: CupertinoIcons.phone,
+                      keyboardType: TextInputType.phone,
+                      maxLength: 10,
+                      error: _mobileError,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _buildTextField(
-                  controller: mobileNumberController,
-                  placeholder: 'Mobile Number *',
-                  prefixIcon: CupertinoIcons.phone,
-                  keyboardType: TextInputType.phone,
-                  maxLength: 10,
-                  error: _mobileError,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildCard(
-              title: 'GRIEVANCE INFORMATION',
-              children: [
-                _buildPickerField(
-                  label: 'Constituency *',
-                  currentValue: selectedConstituency ?? 'Select constituency',
-                  icon: CupertinoIcons.location,
-                  error: _constituencyError,
-                  onTap: () {
-                    CupertinoFormHelpers.showPicker(
-                      context: context,
-                      items: constituencies,
+                const SizedBox(height: 16),
+                _buildCard(
+                  title: 'GRIEVANCE INFORMATION',
+                  children: [
+                    _buildPickerField(
+                      label: 'Constituency *',
                       currentValue:
-                          selectedConstituency ?? constituencies.first,
-                      title: 'Constituency',
-                      onSelected: (label) => setState(() {
-                        selectedConstituency = label;
-                        _constituencyError = null;
-                      }),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildTextField(
-                  controller: wardVillageController,
-                  placeholder: 'Ward / Village',
-                  prefixIcon: CupertinoIcons.house,
-                ),
-                const SizedBox(height: 12),
-                if (_typeLocked)
-                  _buildLockedTypeChip()
-                else
-                  _buildPickerField(
-                    label: 'Grievance Type *',
-                    currentValue: _getLabelForValue(
-                        grievanceTypes, selectedGrievanceType),
-                    icon: CupertinoIcons.tag,
-                    onTap: () {
-                      CupertinoFormHelpers.showPicker(
-                        context: context,
-                        items: grievanceTypes.map((e) => e['label']!).toList(),
+                          selectedConstituency ?? 'Select constituency',
+                      icon: CupertinoIcons.location,
+                      error: _constituencyError,
+                      onTap: () {
+                        CupertinoFormHelpers.showPicker(
+                          context: context,
+                          items: constituencies,
+                          currentValue:
+                              selectedConstituency ?? constituencies.first,
+                          title: 'Constituency',
+                          onSelected: (label) => setState(() {
+                            selectedConstituency = label;
+                            _constituencyError = null;
+                          }),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: wardVillageController,
+                      placeholder: 'Ward / Village',
+                      prefixIcon: CupertinoIcons.house,
+                    ),
+                    const SizedBox(height: 12),
+                    if (_typeLocked)
+                      _buildLockedTypeChip()
+                    else
+                      _buildPickerField(
+                        label: 'Grievance Type *',
                         currentValue: _getLabelForValue(
                             grievanceTypes, selectedGrievanceType),
-                        title: 'Grievance Type',
-                        onSelected: (label) {
-                          for (final e in grievanceTypes) {
-                            if (e['label'] == label) {
-                              setState(() {
-                                selectedGrievanceType = e['value']!;
-                              });
-                              if (e['value'] == 'TEMPLE_VISIT') {
-                                _ensureTemplesLoaded();
+                        icon: CupertinoIcons.tag,
+                        onTap: () {
+                          CupertinoFormHelpers.showPicker(
+                            context: context,
+                            items:
+                                grievanceTypes.map((e) => e['label']!).toList(),
+                            currentValue: _getLabelForValue(
+                                grievanceTypes, selectedGrievanceType),
+                            title: 'Grievance Type',
+                            onSelected: (label) {
+                              for (final e in grievanceTypes) {
+                                if (e['label'] == label) {
+                                  setState(() {
+                                    selectedGrievanceType = e['value']!;
+                                  });
+                                  if (e['value'] == 'TEMPLE_VISIT') {
+                                    _ensureTemplesLoaded();
+                                  }
+                                  return;
+                                }
                               }
-                              return;
-                            }
-                          }
+                            },
+                          );
                         },
-                      );
-                    },
-                  ),
-                if (!isTempleVisit) ...[
-                  const SizedBox(height: 12),
-                  _buildTextField(
-                    controller: descriptionController,
-                    placeholder: 'Description *',
-                    maxLines: 4,
-                    error: _descriptionError,
-                  ),
-                ],
-                if (!isTempleVisit) ...[
-                  const SizedBox(height: 12),
-                  _buildTextField(
-                    controller: monetaryValueController,
-                    placeholder: 'Monetary Value (₹)',
-                    prefixIcon: CupertinoIcons.money_dollar,
-                    keyboardType: TextInputType.number,
-                  ),
-                ],
-              ],
-            ),
-            if (isTempleVisit) ...[
-              const SizedBox(height: 16),
-              _buildTempleSection(),
-            ],
-            const SizedBox(height: 16),
-            _buildSupportingDocsSection(),
-            const SizedBox(height: 16),
-            _buildCard(
-              title: 'REFERENCE',
-              children: [
-                _buildTextField(
-                  controller: referencedByController,
-                  placeholder: 'Referenced By *',
-                  prefixIcon: CupertinoIcons.person_2,
-                  error: _referencedByError,
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: CupertinoButton.filled(
-                onPressed: submitting ? null : _submit,
-                borderRadius: BorderRadius.circular(12),
-                child: submitting
-                    ? const CupertinoActivityIndicator(
-                        color: CupertinoColors.white)
-                    : Text(
-                        isTempleVisit
-                            ? 'Register Temple Visit'
-                            : 'Register Grievance',
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-              ),
-            ),
-            const SizedBox(height: 24),
+                    if (!isTempleVisit) ...[
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        controller: descriptionController,
+                        placeholder: 'Description *',
+                        maxLines: 4,
+                        error: _descriptionError,
+                      ),
+                    ],
+                    if (!isTempleVisit) ...[
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        controller: monetaryValueController,
+                        placeholder: 'Monetary Value (₹)',
+                        prefixIcon: CupertinoIcons.money_dollar,
+                        keyboardType: TextInputType.number,
+                      ),
+                    ],
+                  ],
+                ),
+                if (isTempleVisit) ...[
+                  const SizedBox(height: 16),
+                  _buildTempleSection(),
+                ],
+                const SizedBox(height: 16),
+                _buildSupportingDocsSection(),
+                const SizedBox(height: 16),
+                _buildCard(
+                  title: 'REFERENCE',
+                  children: [
+                    _buildTextField(
+                      controller: referencedByController,
+                      placeholder: 'Referenced By *',
+                      prefixIcon: CupertinoIcons.person_2,
+                      error: _referencedByError,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: CupertinoButton.filled(
+                    onPressed: submitting ? null : _submit,
+                    borderRadius: BorderRadius.circular(12),
+                    child: submitting
+                        ? const CupertinoActivityIndicator(
+                            color: CupertinoColors.white)
+                        : Text(
+                            isTempleVisit
+                                ? 'Register Temple Visit'
+                                : 'Register Grievance',
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 24),
               ],
             ),
           ),

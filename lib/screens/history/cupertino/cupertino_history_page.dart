@@ -4,9 +4,12 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
+import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/date_range_filter.dart' show dateInRange;
 
 class CupertinoHistoryPage extends StatefulWidget {
   final String role;
@@ -29,6 +32,10 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
   String? selectedAction;
   DateTime? startDate;
   DateTime? endDate;
+
+  // Client-side visible date range for the export / filter row.
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   final List<String> entityTypes = [
     'All',
@@ -82,13 +89,11 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
 
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
 
         setState(() {
           historyList = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
           loading = false;
         });
@@ -106,6 +111,40 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
     }
   }
 
+  List<Map<String, dynamic>> get _visibleHistory {
+    if (_dateFrom == null && _dateTo == null) return historyList;
+    return historyList.where((h) {
+      final dt = DateTime.tryParse(h['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'activity_history',
+      headers: const ['Action', 'Module', 'User', 'Role', 'Date'],
+      rows: _visibleHistory.map((item) {
+        final user = item['user'];
+        String date = '';
+        try {
+          date = DateFormat(
+            'dd MMM yyyy, hh:mm a',
+          ).format(DateTime.parse(item['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          _formatAction((item['action'] ?? '').toString()),
+          _formatEntityType(
+            (item['type'] ?? item['entityType'] ?? '').toString(),
+          ),
+          user?['name'] ?? '',
+          user?['role'] ?? '',
+          date,
+        ];
+      }).toList(),
+    );
+  }
+
   void _showFilterSheet() {
     showCupertinoModalPopup(
       context: context,
@@ -120,8 +159,7 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
             ),
             decoration: const BoxDecoration(
               color: CupertinoColors.systemBackground,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(18)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
             ),
             child: SingleChildScrollView(
               child: Column(
@@ -141,31 +179,34 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                   const SizedBox(height: 16),
                   const Text(
                     "Filter History",
-                    style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 20),
 
                   // Entity Type
-                  const Text("Module",
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text(
+                    "Module",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: entityTypes.map((type) {
-                      final isSelected = selectedEntityType == type ||
+                      final isSelected =
+                          selectedEntityType == type ||
                           (selectedEntityType == null && type == 'All');
                       return GestureDetector(
                         onTap: () {
                           setSheetState(() {
-                            selectedEntityType =
-                                type == 'All' ? null : type;
+                            selectedEntityType = type == 'All' ? null : type;
                           });
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? primaryBlue.withOpacity(0.2)
@@ -173,7 +214,8 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                             borderRadius: BorderRadius.circular(20),
                             border: isSelected
                                 ? Border.all(
-                                    color: primaryBlue.withOpacity(0.5))
+                                    color: primaryBlue.withOpacity(0.5),
+                                  )
                                 : null,
                           ),
                           child: Text(
@@ -195,25 +237,29 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                   const SizedBox(height: 16),
 
                   // Action
-                  const Text("Action",
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text(
+                    "Action",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: actions.map((action) {
-                      final isSelected = selectedAction == action ||
+                      final isSelected =
+                          selectedAction == action ||
                           (selectedAction == null && action == 'All');
                       return GestureDetector(
                         onTap: () {
                           setSheetState(() {
-                            selectedAction =
-                                action == 'All' ? null : action;
+                            selectedAction = action == 'All' ? null : action;
                           });
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? primaryBlue.withOpacity(0.2)
@@ -221,7 +267,8 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                             borderRadius: BorderRadius.circular(20),
                             border: isSelected
                                 ? Border.all(
-                                    color: primaryBlue.withOpacity(0.5))
+                                    color: primaryBlue.withOpacity(0.5),
+                                  )
                                 : null,
                           ),
                           child: Text(
@@ -243,39 +290,35 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                   const SizedBox(height: 16),
 
                   // Date Range
-                  const Text("Date Range",
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text(
+                    "Date Range",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
                       Expanded(
                         child: CupertinoButton(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                           color: CupertinoColors.systemGrey6,
                           onPressed: () {
                             CupertinoFormHelpers.showDatePicker(
                               context: ctx,
-                              initialDate:
-                                  startDate ?? DateTime.now(),
+                              initialDate: startDate ?? DateTime.now(),
                               minimumDate: DateTime(2020),
                               maximumDate: DateTime.now(),
                               onDateSelected: (date) =>
-                                  setSheetState(
-                                      () => startDate = date),
+                                  setSheetState(() => startDate = date),
                             );
                           },
                           child: Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(CupertinoIcons.calendar,
-                                  size: 16),
+                              const Icon(CupertinoIcons.calendar, size: 16),
                               const SizedBox(width: 4),
                               Text(
                                 startDate != null
-                                    ? DateFormat('dd/MM/yy')
-                                        .format(startDate!)
+                                    ? DateFormat('dd/MM/yy').format(startDate!)
                                     : "Start",
                                 style: const TextStyle(fontSize: 14),
                               ),
@@ -286,32 +329,26 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: CupertinoButton(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                           color: CupertinoColors.systemGrey6,
                           onPressed: () {
                             CupertinoFormHelpers.showDatePicker(
                               context: ctx,
-                              initialDate:
-                                  endDate ?? DateTime.now(),
+                              initialDate: endDate ?? DateTime.now(),
                               minimumDate: DateTime(2020),
                               maximumDate: DateTime.now(),
                               onDateSelected: (date) =>
-                                  setSheetState(
-                                      () => endDate = date),
+                                  setSheetState(() => endDate = date),
                             );
                           },
                           child: Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(CupertinoIcons.calendar,
-                                  size: 16),
+                              const Icon(CupertinoIcons.calendar, size: 16),
                               const SizedBox(width: 4),
                               Text(
                                 endDate != null
-                                    ? DateFormat('dd/MM/yy')
-                                        .format(endDate!)
+                                    ? DateFormat('dd/MM/yy').format(endDate!)
                                     : "End",
                                 style: const TextStyle(fontSize: 14),
                               ),
@@ -328,8 +365,7 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                     children: [
                       Expanded(
                         child: CupertinoButton(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                           color: CupertinoColors.systemGrey5,
                           onPressed: () {
                             setSheetState(() {
@@ -345,16 +381,16 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                               endDate = null;
                             });
                           },
-                          child: const Text("Clear",
-                              style: TextStyle(
-                                  color: CupertinoColors.label)),
+                          child: const Text(
+                            "Clear",
+                            style: TextStyle(color: CupertinoColors.label),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: CupertinoButton.filled(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                           onPressed: () {
                             setState(() {});
                             Navigator.pop(ctx);
@@ -397,9 +433,11 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
     return action
         .replaceAll('_', ' ')
         .split(' ')
-        .map((w) => w.isNotEmpty
-            ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}'
-            : '')
+        .map(
+          (w) => w.isNotEmpty
+              ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}'
+              : '',
+        )
         .join(' ');
   }
 
@@ -431,7 +469,8 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final hasFilters = selectedEntityType != null ||
+    final hasFilters =
+        selectedEntityType != null ||
         selectedAction != null ||
         startDate != null ||
         endDate != null;
@@ -450,8 +489,10 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                   onPressed: _showFilterSheet,
                   child: Stack(
                     children: [
-                      const Icon(CupertinoIcons.line_horizontal_3_decrease,
-                          color: CupertinoColors.white),
+                      const Icon(
+                        CupertinoIcons.line_horizontal_3_decrease,
+                        color: CupertinoColors.white,
+                      ),
                       if (hasFilters)
                         Positioned(
                           right: 0,
@@ -470,45 +511,70 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                 ),
                 CupertinoButton(
                   padding: EdgeInsets.zero,
+                  onPressed: _visibleHistory.isEmpty ? null : _exportCsv,
+                  child: const Icon(
+                    CupertinoIcons.arrow_down_doc,
+                    size: 22,
+                    color: CupertinoColors.white,
+                  ),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
                   onPressed: _fetchHistory,
-                  child: const Icon(CupertinoIcons.refresh,
-                      color: CupertinoColors.white),
+                  child: const Icon(
+                    CupertinoIcons.refresh,
+                    color: CupertinoColors.white,
+                  ),
                 ),
               ],
+            ),
+          ),
+          Container(
+            color: CupertinoColors.white,
+            child: CupertinoDateRangeFilter(
+              from: _dateFrom,
+              to: _dateTo,
+              tint: primaryBlue,
+              onFromChanged: (d) => setState(() => _dateFrom = d),
+              onToChanged: (d) => setState(() => _dateTo = d),
+              onClear: () => setState(() {
+                _dateFrom = null;
+                _dateTo = null;
+              }),
             ),
           ),
           Expanded(
             child: loading
                 ? const Center(child: CupertinoActivityIndicator())
                 : error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(error!,
-                                style: const TextStyle(
-                                    color:
-                                        CupertinoColors.destructiveRed)),
-                            const SizedBox(height: 16),
-                            CupertinoButton.filled(
-                              onPressed: _fetchHistory,
-                              child: const Text("Retry"),
-                            ),
-                          ],
-                        ),
-                      )
-                    : historyList.isEmpty
-                        ? const Center(
-                            child: Text("No activity found"),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: historyList.length,
-                            itemBuilder: (context, index) {
-                              final item = historyList[index];
-                              return _buildHistoryCard(item);
-                            },
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          error!,
+                          style: const TextStyle(
+                            color: CupertinoColors.destructiveRed,
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                        CupertinoButton.filled(
+                          onPressed: _fetchHistory,
+                          child: const Text("Retry"),
+                        ),
+                      ],
+                    ),
+                  )
+                : _visibleHistory.isEmpty
+                ? const Center(child: Text("No activity found"))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _visibleHistory.length,
+                    itemBuilder: (context, index) {
+                      final item = _visibleHistory[index];
+                      return _buildHistoryCard(item);
+                    },
+                  ),
           ),
         ],
       ),
@@ -517,8 +583,7 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
 
   Widget _buildHistoryCard(Map<String, dynamic> item) {
     final action = item["action"] ?? "UNKNOWN";
-    final entityType =
-        item["type"] ?? item["entityType"] ?? "UNKNOWN";
+    final entityType = item["type"] ?? item["entityType"] ?? "UNKNOWN";
     final user = item["user"];
     final userName = user?["name"] ?? "Unknown User";
     final userRole = user?["role"] ?? "";
@@ -528,8 +593,7 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
     if (createdAt != null) {
       try {
         final date = DateTime.parse(createdAt);
-        formattedDate =
-            DateFormat('dd MMM yyyy, hh:mm a').format(date);
+        formattedDate = DateFormat('dd MMM yyyy, hh:mm a').format(date);
       } catch (_) {}
     }
 
@@ -564,8 +628,7 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                   color: actionColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(actionIcon,
-                    color: actionColor, size: 22),
+                child: Icon(actionIcon, color: actionColor, size: 22),
               ),
               const SizedBox(width: 14),
 
@@ -587,7 +650,9 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: primaryBlue.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
@@ -608,9 +673,11 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                     // User info
                     Row(
                       children: [
-                        Icon(CupertinoIcons.person,
-                            size: 14,
-                            color: CupertinoColors.systemGrey),
+                        Icon(
+                          CupertinoIcons.person,
+                          size: 14,
+                          color: CupertinoColors.systemGrey,
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
@@ -628,9 +695,11 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
                     // Date
                     Row(
                       children: [
-                        Icon(CupertinoIcons.time,
-                            size: 14,
-                            color: CupertinoColors.systemGrey),
+                        Icon(
+                          CupertinoIcons.time,
+                          size: 14,
+                          color: CupertinoColors.systemGrey,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           formattedDate,
@@ -646,8 +715,10 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
               ),
 
               // Arrow
-              Icon(CupertinoIcons.chevron_right,
-                  color: CupertinoColors.systemGrey4),
+              Icon(
+                CupertinoIcons.chevron_right,
+                color: CupertinoColors.systemGrey4,
+              ),
             ],
           ),
         ),
@@ -657,8 +728,7 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
 
   void _showDetailDialog(Map<String, dynamic> item) {
     final action = item["action"] ?? "UNKNOWN";
-    final entityType =
-        item["type"] ?? item["entityType"] ?? "UNKNOWN";
+    final entityType = item["type"] ?? item["entityType"] ?? "UNKNOWN";
     final user = item["user"];
     final userName = user?["name"] ?? "Unknown";
     final userEmail = user?["email"] ?? "-";
@@ -673,8 +743,7 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
     if (createdAt != null) {
       try {
         final date = DateTime.parse(createdAt);
-        formattedDate =
-            DateFormat('dd MMM yyyy, hh:mm:ss a').format(date);
+        formattedDate = DateFormat('dd MMM yyyy, hh:mm:ss a').format(date);
       } catch (_) {}
     }
 
@@ -689,87 +758,90 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
               leading: CupertinoButton(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 onPressed: () => Navigator.pop(ctx),
-                child: const Icon(CupertinoIcons.xmark,
-                    color: CupertinoColors.white),
+                child: const Icon(
+                  CupertinoIcons.xmark,
+                  color: CupertinoColors.white,
+                ),
               ),
               showBack: false,
             ),
-            Expanded(child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _detailRow("Module", _formatEntityType(entityType)),
-                _detailRow("Entity ID", entityId.toString()),
-                Container(
-                  height: 1,
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  color: AppTheme.border,
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _detailRow("Module", _formatEntityType(entityType)),
+                    _detailRow("Entity ID", entityId.toString()),
+                    Container(
+                      height: 1,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      color: AppTheme.border,
+                    ),
+                    _detailRow("User", userName),
+                    _detailRow("Email", userEmail),
+                    _detailRow("Role", userRole),
+                    Container(
+                      height: 1,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      color: AppTheme.border,
+                    ),
+                    _detailRow("Date/Time", formattedDate),
+                    _detailRow("IP Address", ipAddress),
+                    if (oldData != null) ...[
+                      Container(
+                        height: 1,
+                        margin: const EdgeInsets.symmetric(vertical: 12),
+                        color: AppTheme.border,
+                      ),
+                      const Text(
+                        "Previous Data",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _formatJson(oldData),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                    if (newData != null) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        "New Data",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _formatJson(newData),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                _detailRow("User", userName),
-                _detailRow("Email", userEmail),
-                _detailRow("Role", userRole),
-                Container(
-                  height: 1,
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  color: AppTheme.border,
-                ),
-                _detailRow("Date/Time", formattedDate),
-                _detailRow("IP Address", ipAddress),
-                if (oldData != null) ...[
-                  Container(
-                    height: 1,
-                    margin:
-                        const EdgeInsets.symmetric(vertical: 12),
-                    color: AppTheme.border,
-                  ),
-                  const Text(
-                    "Previous Data",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _formatJson(oldData),
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-                if (newData != null) ...[
-                  const SizedBox(height: 16),
-                  const Text(
-                    "New Data",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFECFDF5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _formatJson(newData),
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
-          )),
           ],
         ),
       ),
@@ -786,19 +858,13 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
             width: 100,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 13,
-                color: CupertinoColors.systemGrey,
-              ),
+              style: TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
         ],

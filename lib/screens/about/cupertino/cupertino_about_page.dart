@@ -13,7 +13,7 @@ class CupertinoAboutPage extends StatelessWidget {
       'role': 'Mentor & Guide',
       'description':
           'Providing guidance and mentorship for the project development and implementation.',
-      'linkedin': 'https://www.linkedin.com/in/manjunath-vanhalli',
+      'linkedin': 'https://www.linkedin.com/in/manjunath-vanahalli-4b24ab69/',
       'image': 'assets/images/manjunathsir.jpeg',
     },
     {
@@ -21,7 +21,7 @@ class CupertinoAboutPage extends StatelessWidget {
       'role': 'Team Leader, Backend Developer',
       'description':
           'Leading the team and developing the backend infrastructure with Node.js and PostgreSQL.',
-      'linkedin': 'https://www.linkedin.com/in/shreevats',
+      'linkedin': 'https://www.linkedin.com/in/shree-vats/',
       'image': 'assets/images/shreevats.jpeg',
     },
     {
@@ -29,7 +29,7 @@ class CupertinoAboutPage extends StatelessWidget {
       'role': 'Frontend Developer',
       'description':
           'Building the web frontend with React, Tailwind CSS, and modern UI/UX patterns.',
-      'linkedin': 'https://www.linkedin.com/in/atharvaagrawal',
+      'linkedin': 'https://www.linkedin.com/in/atharva-agrawal-172421330/',
       'image': 'assets/images/atharv.jpeg',
     },
     {
@@ -37,7 +37,7 @@ class CupertinoAboutPage extends StatelessWidget {
       'role': 'Mobile/App Developer',
       'description':
           'Developing the Flutter mobile application for Android and iOS platforms.',
-      'linkedin': 'https://www.linkedin.com/in/ompandey',
+      'linkedin': 'https://www.linkedin.com/in/om-pandey-025223279/',
       'image': 'assets/images/om.jpeg',
     },
   ];

@@ -8,7 +8,7 @@ class HttpService {
   // Default points at the development backend.
   static const String baseUrl = String.fromEnvironment(
     'OMS_API_URL',
-    defaultValue: 'https://omsvackend-50040756292.development.catalystappsail.in',
+    defaultValue: 'https://omsvackend-50040756292.catalystappsail.in',
   );
 
   /// Set by `main.dart` to clear the session and route back to login when

@@ -56,7 +56,6 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
 
   // State
   bool submitting = false;
-  bool fetchingPNR = false;
 
   final List<String> journeyClasses = const [
     'SL',
@@ -90,76 +89,6 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
     fromStationController.dispose();
     toStationController.dispose();
     super.dispose();
-  }
-
-  Future<void> _fetchPNRStatus() async {
-    final pnr = pnrController.text.trim();
-    if (pnr.length != 10) {
-      _snack("PNR must be 10 digits");
-      return;
-    }
-
-    setState(() => fetchingPNR = true);
-
-    try {
-      final res = await HttpService.get("/api/train-requests/pnr/$pnr");
-
-      if (res.statusCode == 200) {
-        final decoded = jsonDecode(res.body);
-        final data = decoded["data"] ?? decoded;
-
-        setState(() {
-          // Train + journey
-          trainNameController.text = data["trainName"] ?? '';
-          trainNumberController.text = data["trainNumber"] ?? '';
-          fromStationController.text = data["from"] ?? '';
-          toStationController.text = data["to"] ?? '';
-
-          final doj = data["dateOfJourney"];
-          if (doj != null && doj != 'N/A') {
-            try {
-              dateOfJourney = DateTime.parse(doj);
-            } catch (_) {}
-          }
-
-          final cls = data["class"];
-          if (cls != null && journeyClasses.contains(cls)) {
-            selectedClass = cls;
-          }
-
-          // Auto-fill the primary passenger from the first row the PNR
-          // returns; the remaining rows just bump the additional-travellers
-          // count so staff doesn't have to re-type each name.
-          final passengerList = data["passengers"] as List? ?? [];
-          if (passengerList.isNotEmpty) {
-            final p0 = passengerList.first as Map;
-            primaryNameController.text = (p0["name"] ?? '').toString();
-            primaryAgeController.text = (p0["age"] ?? '').toString();
-            final g = (p0["gender"] ?? '').toString().toUpperCase();
-            if (g == 'MALE' || g == 'FEMALE' || g == 'OTHER') {
-              _primaryGender = g;
-            }
-            final cs = (p0["currentStatus"] ?? '').toString();
-            final bs = (p0["bookingStatus"] ?? '').toString();
-            primaryWaitlistController.text = cs.isNotEmpty ? cs : bs;
-          }
-          final extra =
-              (passengerList.length > 1 ? passengerList.length - 1 : 0)
-                  .clamp(0, _maxAdditional);
-          additionalTravellersController.text = '$extra';
-        });
-
-        _snack(data["isMock"] == true
-            ? "PNR fetched (mock data)"
-            : "PNR fetched successfully");
-      } else {
-        _snack("PNR fetch failed (${res.statusCode})");
-      }
-    } catch (_) {
-      _snack("Server error");
-    } finally {
-      if (mounted) setState(() => fetchingPNR = false);
-    }
   }
 
   Future<void> _pickDate() async {
@@ -489,47 +418,20 @@ class _TrainRequestAddPageState extends State<TrainRequestAddPage> {
           },
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: pnrController,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                maxLength: 10,
-                decoration: const InputDecoration(
-                  labelText: "PNR Number *",
-                  hintText: "10-digit PNR",
-                  helperText: "Click Fetch to auto-fill train details",
-                  border: OutlineInputBorder(),
-                  counterText: "",
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().length != 10) ? "Enter 10-digit PNR" : null,
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: fetchingPNR ? null : _fetchPNRStatus,
-              icon: fetchingPNR
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.search, size: 18),
-              label: const Text("Fetch"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryBlue,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-            ),
-          ],
+        TextFormField(
+          controller: pnrController,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          maxLength: 10,
+          decoration: const InputDecoration(
+            labelText: "PNR Number *",
+            hintText: "10-digit PNR",
+            border: OutlineInputBorder(),
+            counterText: "",
+          ),
+          validator: (v) => (v == null || v.trim().length != 10)
+              ? "Enter 10-digit PNR"
+              : null,
         ),
         const SizedBox(height: 12),
         TextFormField(

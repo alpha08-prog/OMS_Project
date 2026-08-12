@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
+import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
 
 enum TourCategory { today, upcoming, all }
@@ -135,6 +136,41 @@ class _SuperAdminTourListPageState extends State<SuperAdminTourListPage> {
     return u;
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'tour_programs',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date & Time',
+        'Status',
+        'Created'
+      ],
+      rows: _visible.map((r) {
+        String dateTime = '';
+        try {
+          dateTime = DateFormat('dd MMM yyyy, h:mm a')
+              .format(DateTime.parse(r['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(r['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          r['eventName'] ?? '',
+          r['organizer'] ?? '',
+          r['venue'] ?? '',
+          dateTime,
+          _statusLabel((r['decision'] ?? 'PENDING').toString()),
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = _visible;
@@ -151,6 +187,11 @@ class _SuperAdminTourListPageState extends State<SuperAdminTourListPage> {
           fontWeight: FontWeight.bold,
         ),
         actions: [
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: list.isEmpty ? null : _exportCsv,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _load,

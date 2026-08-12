@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/http_service.dart';
 import '../utils/access_control.dart';
+import '../utils/csv_export.dart';
 
 class BirthdayPage extends StatefulWidget {
   final String role;
@@ -299,6 +300,62 @@ Warm wishes! 🌟''';
     setState(() => sendingAll = false);
   }
 
+  void _exportCsv() {
+    final isToday = _tabController.index == 0;
+    if (isToday) {
+      CsvExport.export(
+        context,
+        fileName: 'birthdays_today',
+        headers: const [
+          'Name',
+          'Phone',
+          'Age',
+          'Relation',
+          'Designation',
+          'Wish Sent'
+        ],
+        rows: todayList
+            .map((b) => [
+                  b['name'] ?? '',
+                  b['phone'] ?? '',
+                  b['age'] ?? '',
+                  b['relation'] ?? '',
+                  b['designation'] ?? '',
+                  b['wishSent'] == true ? 'Yes' : 'No',
+                ])
+            .toList(),
+      );
+    } else {
+      CsvExport.export(
+        context,
+        fileName: 'birthdays_upcoming',
+        headers: const [
+          'Name',
+          'Phone',
+          'Date of Birth',
+          'Days Until',
+          'Relation'
+        ],
+        rows: upcomingList.map((b) {
+          String dob = '';
+          if (b['dob'] != null) {
+            try {
+              dob = DateFormat('dd MMM')
+                  .format(DateTime.parse(b['dob'].toString()));
+            } catch (_) {}
+          }
+          return [
+            b['name'] ?? '',
+            b['phone'] ?? '',
+            dob,
+            b['days_until'] ?? '',
+            b['relation'] ?? '',
+          ];
+        }).toList(),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final canCreate = widget.role == Roles.staff;
@@ -355,6 +412,12 @@ Warm wishes! 🌟''';
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Export CSV',
+            icon: const Icon(Icons.download),
+            onPressed:
+                (todayList.isEmpty && upcomingList.isEmpty) ? null : _exportCsv,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadAll,

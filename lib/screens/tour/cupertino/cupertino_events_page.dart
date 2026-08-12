@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 
@@ -77,8 +78,7 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
         if (mounted) {
           setState(() {
             _all = list
-                .map<Map<String, dynamic>>(
-                    (e) => Map<String, dynamic>.from(e))
+                .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
                 .toList();
             _loading = false;
           });
@@ -141,8 +141,7 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
   void _pickDate(bool isStart) {
     CupertinoFormHelpers.showDatePicker(
       context: context,
-      initialDate:
-          (isStart ? _startDate : _endDate) ?? DateTime.now(),
+      initialDate: (isStart ? _startDate : _endDate) ?? DateTime.now(),
       minimumDate: DateTime(2020),
       maximumDate: DateTime.now().add(const Duration(days: 365)),
       onDateSelected: (d) {
@@ -162,6 +161,41 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
     showCupertinoModalPopup(
       context: context,
       builder: (_) => _CupertinoEventDetailsSheet(event: e),
+    );
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'events',
+      headers: const [
+        'Event',
+        'Organizer',
+        'Venue',
+        'Date',
+        'Report',
+        'Created'
+      ],
+      rows: _filtered.map((e) {
+        String eventDate = '';
+        try {
+          eventDate = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(e['dateTime'].toString()));
+        } catch (_) {}
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(e['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          e['eventName'] ?? '',
+          e['organizer'] ?? '',
+          e['venue'] ?? '',
+          eventDate,
+          (e['isCompleted'] == true) ? 'Reported' : 'Pending',
+          created,
+        ];
+      }).toList(),
     );
   }
 
@@ -189,8 +223,10 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                       children: [
                         Icon(
                           _showFilters
-                              ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
-                              : CupertinoIcons.line_horizontal_3_decrease_circle,
+                              ? CupertinoIcons
+                                  .line_horizontal_3_decrease_circle_fill
+                              : CupertinoIcons
+                                  .line_horizontal_3_decrease_circle,
                           color: CupertinoColors.white,
                           size: 24,
                         ),
@@ -212,6 +248,13 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                   ),
                   const SizedBox(width: 12),
                 ],
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _filtered.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      color: CupertinoColors.white, size: 22),
+                ),
+                const SizedBox(width: 8),
                 GestureDetector(
                   onTap: _fetch,
                   child: const Icon(CupertinoIcons.refresh,
@@ -347,8 +390,7 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                     ),
                   )
                 : null,
-            padding: const EdgeInsets.symmetric(
-                horizontal: 12, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
               color: CupertinoColors.systemGrey6,
               borderRadius: BorderRadius.circular(10),
@@ -414,8 +456,7 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
               );
             },
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: CupertinoColors.systemGrey6,
                 borderRadius: BorderRadius.circular(10),
@@ -461,8 +502,7 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                       size: 16, color: CupertinoColors.destructiveRed),
                   SizedBox(width: 6),
                   Text("Clear filters",
-                      style: TextStyle(
-                          color: CupertinoColors.destructiveRed)),
+                      style: TextStyle(color: CupertinoColors.destructiveRed)),
                 ],
               ),
             ),
@@ -505,8 +545,7 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                 children: [
                   Text(label,
                       style: const TextStyle(
-                          fontSize: 10,
-                          color: CupertinoColors.systemGrey)),
+                          fontSize: 10, color: CupertinoColors.systemGrey)),
                   Text(
                     date != null
                         ? DateFormat('dd MMM yyyy').format(date)
@@ -569,8 +608,8 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                 color: const Color(0xFFF5F3FF),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(CupertinoIcons.calendar,
-                  color: Color(0xFF7C3AED)),
+              child:
+                  const Icon(CupertinoIcons.calendar, color: Color(0xFF7C3AED)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -597,13 +636,11 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                   const SizedBox(height: 4),
                   Text(organizer,
                       style: const TextStyle(
-                          fontSize: 12,
-                          color: CupertinoColors.systemGrey)),
+                          fontSize: 12, color: CupertinoColors.systemGrey)),
                   const SizedBox(height: 2),
                   Text("$dateStr · $venue",
                       style: const TextStyle(
-                          fontSize: 12,
-                          color: CupertinoColors.systemGrey),
+                          fontSize: 12, color: CupertinoColors.systemGrey),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
@@ -625,22 +662,16 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: reported
-            ? const Color(0xFFECFDF5)
-            : const Color(0xFFFFFBEB),
+        color: reported ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            reported
-                ? CupertinoIcons.checkmark_circle
-                : CupertinoIcons.clock,
+            reported ? CupertinoIcons.checkmark_circle : CupertinoIcons.clock,
             size: 11,
-            color: reported
-                ? const Color(0xFF065F46)
-                : const Color(0xFFB45309),
+            color: reported ? const Color(0xFF065F46) : const Color(0xFFB45309),
           ),
           const SizedBox(width: 4),
           Text(
@@ -648,9 +679,8 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
-              color: reported
-                  ? const Color(0xFF065F46)
-                  : const Color(0xFFB45309),
+              color:
+                  reported ? const Color(0xFF065F46) : const Color(0xFFB45309),
             ),
           ),
         ],
@@ -668,8 +698,7 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                 size: 48, color: CupertinoColors.systemGrey3),
             const SizedBox(height: 12),
             Text(_error!,
-                style:
-                    const TextStyle(color: CupertinoColors.systemGrey)),
+                style: const TextStyle(color: CupertinoColors.systemGrey)),
             const SizedBox(height: 12),
             CupertinoButton.filled(
               onPressed: _fetch,
@@ -779,8 +808,7 @@ class _CupertinoEventDetailsSheet extends StatelessWidget {
                       _pill("REPORT SUBMITTED", const Color(0xFFE0F2FE),
                           const Color(0xFF0369A1))
                     else
-                      _pill("PENDING REPORT",
-                          const Color(0xFFFFFBEB),
+                      _pill("PENDING REPORT", const Color(0xFFFFFBEB),
                           const Color(0xFFB45309)),
                   ],
                 ),
@@ -797,21 +825,18 @@ class _CupertinoEventDetailsSheet extends StatelessWidget {
                 if ((e["chiefGuest"] ?? "").toString().isNotEmpty)
                   _kv("Chief Guest", e["chiefGuest"].toString()),
                 if (e["expectedFootfall"] != null)
-                  _kv("Expected Footfall",
-                      e["expectedFootfall"].toString()),
+                  _kv("Expected Footfall", e["expectedFootfall"].toString()),
                 if ((e["contactPhone"] ?? "").toString().isNotEmpty)
                   _kv("Contact Phone", e["contactPhone"].toString()),
                 if ((e["organizerPhone"] ?? "").toString().isNotEmpty)
-                  _kv("Organizer Phone",
-                      e["organizerPhone"].toString()),
+                  _kv("Organizer Phone", e["organizerPhone"].toString()),
                 if ((e["organizerEmail"] ?? "").toString().isNotEmpty)
-                  _kv("Organizer Email",
-                      e["organizerEmail"].toString()),
+                  _kv("Organizer Email", e["organizerEmail"].toString()),
                 if ((e["description"] ?? "").toString().isNotEmpty) ...[
                   const SizedBox(height: 8),
                   const Text("Description",
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.bold)),
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text(e["description"].toString(),
                       style: const TextStyle(fontSize: 13)),
@@ -820,8 +845,8 @@ class _CupertinoEventDetailsSheet extends StatelessWidget {
                 Container(height: 0.5, color: CupertinoColors.systemGrey4),
                 const SizedBox(height: 14),
                 const Text("Post-Event Report",
-                    style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.bold)),
+                    style:
+                        TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 if (!isReported)
                   Container(
@@ -840,8 +865,7 @@ class _CupertinoEventDetailsSheet extends StatelessWidget {
                           child: Text(
                             "Report not submitted yet by the assigned staff.",
                             style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFFB45309)),
+                                fontSize: 12, color: Color(0xFFB45309)),
                           ),
                         ),
                       ],
@@ -850,30 +874,23 @@ class _CupertinoEventDetailsSheet extends StatelessWidget {
                 else ...[
                   if (e["completedAt"] != null)
                     _kv("Submitted At", _fmt(e["completedAt"])),
-                  _kv("Drive Link",
-                      e["driveLink"]?.toString() ?? "—"),
-                  _kv("Media / Photos",
-                      e["mediaLink"]?.toString() ?? "—"),
-                  _kv("Attendees",
-                      e["attendeesCount"]?.toString() ?? "—"),
+                  _kv("Drive Link", e["driveLink"]?.toString() ?? "—"),
+                  _kv("Media / Photos", e["mediaLink"]?.toString() ?? "—"),
+                  _kv("Attendees", e["attendeesCount"]?.toString() ?? "—"),
                   if ((e["keynotes"] ?? "").toString().isNotEmpty) ...[
                     const SizedBox(height: 6),
                     const Text("Keynotes / Highlights",
                         style: TextStyle(
-                            fontSize: 12,
-                            color: CupertinoColors.systemGrey)),
+                            fontSize: 12, color: CupertinoColors.systemGrey)),
                     const SizedBox(height: 2),
                     Text(e["keynotes"].toString(),
                         style: const TextStyle(fontSize: 13)),
                   ],
-                  if ((e["outcomeSummary"] ?? "")
-                      .toString()
-                      .isNotEmpty) ...[
+                  if ((e["outcomeSummary"] ?? "").toString().isNotEmpty) ...[
                     const SizedBox(height: 6),
                     const Text("Outcome Summary",
                         style: TextStyle(
-                            fontSize: 12,
-                            color: CupertinoColors.systemGrey)),
+                            fontSize: 12, color: CupertinoColors.systemGrey)),
                     const SizedBox(height: 2),
                     Text(e["outcomeSummary"].toString(),
                         style: const TextStyle(fontSize: 13)),
@@ -920,8 +937,8 @@ class _CupertinoEventDetailsSheet extends StatelessWidget {
           ),
           Expanded(
             child: Text(value,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w500)),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
           ),
         ],
       ),
@@ -934,8 +951,8 @@ class _CupertinoEventDetailsSheet extends StatelessWidget {
       decoration:
           BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
       child: Text(text,
-          style: TextStyle(
-              fontSize: 10, fontWeight: FontWeight.bold, color: fg)),
+          style:
+              TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: fg)),
     );
   }
 }

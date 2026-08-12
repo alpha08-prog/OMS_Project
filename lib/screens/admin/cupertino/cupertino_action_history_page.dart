@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 
@@ -147,6 +148,46 @@ class _CupertinoActionHistoryPageState
         });
       }
     }
+  }
+
+  void _exportCsv() {
+    String nameOf(dynamic v) {
+      if (v is Map) return (v['name'] ?? '').toString();
+      return (v ?? '').toString();
+    }
+
+    String dateOf(dynamic v) {
+      if (v == null) return '';
+      try {
+        return DateFormat('dd MMM yyyy, hh:mm a')
+            .format(DateTime.parse(v.toString()).toLocal());
+      } catch (_) {
+        return v.toString();
+      }
+    }
+
+    CsvExport.export(
+      context,
+      fileName: 'action_history',
+      headers: [
+        'Type',
+        'Title',
+        'Description',
+        'Action',
+        'Action By',
+        'Date/Time'
+      ],
+      rows: _items.map((item) {
+        return [
+          item['type'] ?? '',
+          item['title'] ?? '',
+          item['description'] ?? '',
+          item['action'] ?? '',
+          nameOf(item['actionBy']),
+          dateOf(item['actionAt']),
+        ];
+      }).toList(),
+    );
   }
 
   void _showOptionPicker(
@@ -354,13 +395,24 @@ class _CupertinoActionHistoryPageState
         children: [
           OmsPageHeader(
             title: 'Action History',
-            trailing: GestureDetector(
-              onTap: _loadAll,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child:
-                    Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
-              ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _items.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      size: 22, color: CupertinoColors.white),
+                ),
+                GestureDetector(
+                  onTap: _loadAll,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(CupertinoIcons.refresh,
+                        color: CupertinoColors.white),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(

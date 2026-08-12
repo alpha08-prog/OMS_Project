@@ -1,17 +1,16 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../theme/app_theme.dart';
+import 'cupertino_attachments_section.dart';
 
 class CupertinoAdminGrievanceDetailDialog extends StatelessWidget {
   final Map<String, dynamic> grievance;
-  final VoidCallback? onVerifyAssign;
   final VoidCallback? onDownloadPdf;
   final bool downloading;
 
   const CupertinoAdminGrievanceDetailDialog({
     super.key,
     required this.grievance,
-    this.onVerifyAssign,
     this.onDownloadPdf,
     this.downloading = false,
   });
@@ -19,7 +18,6 @@ class CupertinoAdminGrievanceDetailDialog extends StatelessWidget {
   static Future<void> show({
     required BuildContext context,
     required Map<String, dynamic> grievance,
-    VoidCallback? onVerifyAssign,
     VoidCallback? onDownloadPdf,
     bool downloading = false,
   }) {
@@ -28,7 +26,6 @@ class CupertinoAdminGrievanceDetailDialog extends StatelessWidget {
       barrierDismissible: true,
       builder: (_) => CupertinoAdminGrievanceDetailDialog(
         grievance: grievance,
-        onVerifyAssign: onVerifyAssign,
         onDownloadPdf: onDownloadPdf,
         downloading: downloading,
       ),
@@ -37,13 +34,6 @@ class CupertinoAdminGrievanceDetailDialog extends StatelessWidget {
 
   String _statusOf(Map<String, dynamic> g) =>
       (g["status"] ?? "OPEN").toString().toUpperCase();
-
-  bool get _canVerify {
-    final s = _statusOf(grievance);
-    return grievance["isVerified"] != true &&
-        s != "REJECTED" &&
-        s != "VERIFIED";
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +54,7 @@ class CupertinoAdminGrievanceDetailDialog extends StatelessWidget {
     final description = (grievance["description"] ?? "-").toString();
     final action = (grievance["actionRequired"] ?? "-").toString();
     final referencedBy = (grievance["referencedBy"] ?? "-").toString();
+    final grievanceId = (grievance["id"] ?? "").toString();
 
     final media = MediaQuery.of(context);
     final maxW = media.size.width > 700 ? 640.0 : media.size.width - 32.0;
@@ -224,11 +215,14 @@ class CupertinoAdminGrievanceDetailDialog extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      "No supporting files were uploaded with this grievance.",
-                      style: TextStyle(
-                          fontSize: 12, color: CupertinoColors.systemGrey),
-                    ),
+                    if (grievanceId.isEmpty)
+                      const Text(
+                        "No supporting files were uploaded with this grievance.",
+                        style: TextStyle(
+                            fontSize: 12, color: CupertinoColors.systemGrey),
+                      )
+                    else
+                      CupertinoAttachmentsSection(contextId: grievanceId),
                   ],
                 ),
               ),
@@ -259,34 +253,6 @@ class CupertinoAdminGrievanceDetailDialog extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (onVerifyAssign != null && _canVerify) ...[
-                    const SizedBox(width: 10),
-                    CupertinoButton(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      color: const Color(0xFF10B981),
-                      borderRadius: BorderRadius.circular(8),
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        onVerifyAssign!();
-                      },
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(CupertinoIcons.checkmark_circle,
-                              size: 16, color: CupertinoColors.white),
-                          SizedBox(width: 6),
-                          Text(
-                            "Verify & Assign",
-                            style: TextStyle(
-                              color: CupertinoColors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                   if (onDownloadPdf != null) ...[
                     const SizedBox(width: 10),
                     CupertinoButton(

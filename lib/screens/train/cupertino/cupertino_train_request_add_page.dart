@@ -60,7 +60,6 @@ class _CupertinoTrainRequestAddPageState
   String selectedClass = 'SL';
 
   bool submitting = false;
-  bool fetchingPNR = false;
 
   // Validation errors
   String? _primaryNameError;
@@ -104,76 +103,6 @@ class _CupertinoTrainRequestAddPageState
     fromStationController.dispose();
     toStationController.dispose();
     super.dispose();
-  }
-
-  Future<void> _fetchPNRStatus() async {
-    final pnr = pnrController.text.trim();
-    if (pnr.length != 10) {
-      CupertinoToast.show(context, "PNR must be 10 digits", isError: true);
-      return;
-    }
-
-    setState(() => fetchingPNR = true);
-
-    try {
-      final res = await HttpService.get("/api/train-requests/pnr/$pnr");
-
-      if (res.statusCode == 200) {
-        final decoded = jsonDecode(res.body);
-        final data = decoded["data"] ?? decoded;
-
-        setState(() {
-          trainNameController.text = data["trainName"] ?? '';
-          trainNumberController.text = data["trainNumber"] ?? '';
-          fromStationController.text = data["from"] ?? '';
-          toStationController.text = data["to"] ?? '';
-
-          final doj = data["dateOfJourney"];
-          if (doj != null && doj != 'N/A') {
-            try {
-              dateOfJourney = DateTime.parse(doj);
-            } catch (_) {}
-          }
-
-          final cls = data["class"];
-          if (cls != null && journeyClasses.contains(cls)) {
-            selectedClass = cls;
-          }
-
-          final passengerList = data["passengers"] as List? ?? [];
-          if (passengerList.isNotEmpty) {
-            final p0 = passengerList.first as Map;
-            primaryNameController.text = (p0["name"] ?? '').toString();
-            primaryAgeController.text = (p0["age"] ?? '').toString();
-            final g = (p0["gender"] ?? '').toString().toUpperCase();
-            if (g == 'MALE' || g == 'FEMALE' || g == 'OTHER') {
-              _primaryGender = g;
-            }
-            final cs = (p0["currentStatus"] ?? '').toString();
-            final bs = (p0["bookingStatus"] ?? '').toString();
-            primaryWaitlistController.text = cs.isNotEmpty ? cs : bs;
-          }
-          final extra =
-              (passengerList.length > 1 ? passengerList.length - 1 : 0)
-                  .clamp(0, _maxAdditional);
-          additionalTravellersController.text = '$extra';
-        });
-
-        CupertinoToast.show(
-          context,
-          data["isMock"] == true
-              ? "PNR fetched (mock data)"
-              : "PNR fetched successfully",
-        );
-      } else {
-        CupertinoToast.show(context, "PNR fetch failed (${res.statusCode})",
-            isError: true);
-      }
-    } catch (_) {
-      CupertinoToast.show(context, "Server error", isError: true);
-    } finally {
-      if (mounted) setState(() => fetchingPNR = false);
-    }
   }
 
   Future<void> _pickDate() async {
@@ -552,42 +481,14 @@ class _CupertinoTrainRequestAddPageState
         if (_phoneError != null) _errorText(_phoneError!),
         const SizedBox(height: 12),
         _label("PNR Number *"),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _textField(
-                controller: pnrController,
-                placeholder: "10-digit PNR",
-                keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(10),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: primaryBlue,
-              borderRadius: BorderRadius.circular(8),
-              onPressed: fetchingPNR ? null : _fetchPNRStatus,
-              child: fetchingPNR
-                  ? const CupertinoActivityIndicator(
-                      color: CupertinoColors.white)
-                  : const Text(
-                      "Fetch",
-                      style: TextStyle(color: CupertinoColors.white),
-                    ),
-            ),
+        _textField(
+          controller: pnrController,
+          placeholder: "10-digit PNR",
+          keyboardType: TextInputType.number,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
           ],
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            "Click Fetch to auto-fill train details",
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-          ),
         ),
         if (_pnrError != null) _errorText(_pnrError!),
         const SizedBox(height: 12),

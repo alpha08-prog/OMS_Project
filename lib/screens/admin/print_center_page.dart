@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -31,10 +32,15 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
   DateTime? _tourStartDate;
   DateTime? _tourEndDate;
 
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_handleTabChange);
     _fetchGrievances();
     _fetchTrainRequests();
     _fetchTempleVisits();
@@ -42,19 +48,63 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
+    _searchController.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  // Query fragment appended to each tab's endpoint. Empty when no search term.
+  String get _searchParam => _searchQuery.trim().isEmpty
+      ? ''
+      : '&search=${Uri.encodeQueryComponent(_searchQuery.trim())}';
+
+  void _handleTabChange() {
+    // Rebuild so the search bar hides on the Tour tab (index 3).
+    if (mounted) setState(() {});
+    // Re-run the active tab's search once the swipe/animation settles.
+    if (!_tabController.indexIsChanging && _searchQuery.trim().isNotEmpty) {
+      _runActiveSearch();
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() => _searchQuery = value);
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), _runActiveSearch);
+  }
+
+  void _runActiveSearch() {
+    switch (_tabController.index) {
+      case 0:
+        _fetchGrievances();
+        break;
+      case 1:
+        _fetchTempleVisits();
+        break;
+      case 2:
+        _fetchTrainRequests();
+        break;
+    }
+  }
+
+  void _clearSearch() {
+    _debounce?.cancel();
+    _searchController.clear();
+    setState(() => _searchQuery = '');
+    _runActiveSearch();
   }
 
   Future<void> _fetchGrievances() async {
     setState(() => _loadingGrievances = true);
     try {
-      final res = await HttpService.get("/api/grievances?isVerified=true&limit=100");
+      final res = await HttpService.get("/api/grievances?limit=100$_searchParam");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         // Temple-visit grievances live in their own tab — keep this one for
-        // regular verified letters only.
+        // regular grievance letters only.
         _verifiedGrievances = list
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .where((g) => g['grievanceType'] != 'TEMPLE_VISIT')
@@ -68,7 +118,7 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
     setState(() => _loadingTempleVisits = true);
     try {
       final res = await HttpService.get(
-          "/api/grievances?grievanceType=TEMPLE_VISIT&limit=100");
+          "/api/grievances?grievanceType=TEMPLE_VISIT&limit=100$_searchParam");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
@@ -83,7 +133,7 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
   Future<void> _fetchTrainRequests() async {
     setState(() => _loadingTrainRequests = true);
     try {
-      final res = await HttpService.get("/api/train-requests?limit=100");
+      final res = await HttpService.get("/api/train-requests?limit=100$_searchParam");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List ? decoded : (decoded["data"] ?? []);
@@ -236,14 +286,61 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _buildGrievanceTab(),
-          _buildTempleVisitTab(),
-          _buildTrainTab(),
-          _buildTourTab(),
+          // Search bar — hidden on the Tour tab (index 3), which has no list.
+          if (_tabController.index != 3) _buildSearchBar(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildGrievanceTab(),
+                _buildTempleVisitTab(),
+                _buildTrainTab(),
+                _buildTourTab(),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: "Search name, PNR, reference…",
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: _clearSearch,
+                  tooltip: "Clear",
+                )
+              : null,
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppTheme.primaryIndigo),
+          ),
+        ),
       ),
     );
   }
@@ -261,7 +358,9 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
                 size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
             Text(
-              "No temple-visit grievances",
+              _searchQuery.trim().isNotEmpty
+                  ? "No temple visits match \"${_searchQuery.trim()}\""
+                  : "No temple-visit grievances",
               style: TextStyle(color: Colors.grey.shade500),
             ),
           ],
@@ -343,7 +442,12 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
           children: [
             Icon(Icons.print_disabled, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
-            Text("No verified grievances to print", style: TextStyle(color: Colors.grey.shade500)),
+            Text(
+              _searchQuery.trim().isNotEmpty
+                  ? "No grievances match \"${_searchQuery.trim()}\""
+                  : "No verified grievances to print",
+              style: TextStyle(color: Colors.grey.shade500),
+            ),
           ],
         ),
       );
@@ -375,7 +479,12 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
           children: [
             Icon(Icons.print_disabled, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
-            Text("No train requests to print", style: TextStyle(color: Colors.grey.shade500)),
+            Text(
+              _searchQuery.trim().isNotEmpty
+                  ? "No train requests match \"${_searchQuery.trim()}\""
+                  : "No train requests to print",
+              style: TextStyle(color: Colors.grey.shade500),
+            ),
           ],
         ),
       );
@@ -509,51 +618,69 @@ class _PrintCenterPageState extends State<PrintCenterPage> with SingleTickerProv
         borderRadius: BorderRadius.circular(12),
         boxShadow: AppTheme.shadowSm,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: iconColor.withOpacity(0.1),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: iconColor.withOpacity(0.1),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (badge != null && badge.isNotEmpty)
+                          _statusPill(badge),
+                      ],
                     ),
-                    if (badge != null && badge.isNotEmpty)
-                      _statusPill(badge),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey.shade600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Actions on their own right-aligned row so the title/subtitle get
+          // the full card width (no mid-word wrapping).
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  onPressed: onPreview,
+                  icon: Icon(Icons.visibility, color: Colors.grey.shade600),
+                  tooltip: "Preview",
+                ),
+                IconButton(
+                  onPressed: onDownload,
+                  icon: const Icon(Icons.download,
+                      color: AppTheme.primaryIndigo),
+                  tooltip: "Download PDF",
                 ),
               ],
             ),
-          ),
-          IconButton(
-            onPressed: onPreview,
-            icon: Icon(Icons.visibility, color: Colors.grey.shade600),
-            tooltip: "Preview",
-          ),
-          IconButton(
-            onPressed: onDownload,
-            icon: const Icon(Icons.download, color: AppTheme.primaryIndigo),
-            tooltip: "Download PDF",
           ),
         ],
       ),

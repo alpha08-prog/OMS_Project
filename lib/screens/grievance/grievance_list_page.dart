@@ -7,8 +7,10 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../services/http_service.dart';
 import '../../utils/access_control.dart';
+import '../../utils/csv_export.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/widgets.dart';
+import '../../widgets/date_range_filter.dart';
 import '../../widgets/admin_grievance_detail_dialog.dart';
 import 'grievance_view_page.dart';
 import 'grievance_type_picker_page.dart';
@@ -27,6 +29,9 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
   String _constituencyQuery = "";
   DateTime? _startDate;
   DateTime? _endDate;
+  // Client-side From/To range applied to createdAt for CSV + list display.
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
 
   bool _loading = true;
   String? _error;
@@ -319,6 +324,45 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
     if (result == true) _fetchGrievances();
   }
 
+  /// Grievances after applying the client-side From/To (createdAt) range.
+  List<Map<String, dynamic>> get _visibleGrievances {
+    if (_dateFrom == null && _dateTo == null) return _allGrievances;
+    return _allGrievances.where((g) {
+      final dt = DateTime.tryParse(g['createdAt']?.toString() ?? '');
+      return dateInRange(dt, from: _dateFrom, to: _dateTo);
+    }).toList();
+  }
+
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'grievances',
+      headers: const [
+        'Petitioner',
+        'Type',
+        'Constituency',
+        'Status',
+        'Stage',
+        'Created'
+      ],
+      rows: _visibleGrievances.map((g) {
+        String created = '';
+        try {
+          created = DateFormat('dd MMM yyyy')
+              .format(DateTime.parse(g['createdAt'].toString()));
+        } catch (_) {}
+        return [
+          g['petitionerName'] ?? '',
+          (g['grievanceType'] ?? '').toString().replaceAll('_', ' '),
+          g['constituency'] ?? '',
+          g['uiStatus'] ?? '',
+          _formatStage((g['currentStage'] ?? 'RECEIVED').toString()),
+          created,
+        ];
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canCreate = AccessControl.can(widget.role, ActionPermission.create) &&
@@ -376,6 +420,11 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
                   ),
                 ),
             ],
+          ),
+          IconButton(
+            tooltip: "Export CSV",
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _visibleGrievances.isEmpty ? null : _exportCsv,
           ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
@@ -597,6 +646,35 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
 
           const SizedBox(height: 12),
 
+          // ================= DATE RANGE FILTER =================
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: DateRangeFilter(
+              from: _dateFrom,
+              to: _dateTo,
+              tint: AppTheme.primaryIndigo,
+              onFromChanged: (d) => setState(() => _dateFrom = d),
+              onToChanged: (d) => setState(() => _dateTo = d),
+              onClear: () => setState(() {
+                _dateFrom = null;
+                _dateTo = null;
+              }),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
           // Active filters indicator
           if (hasFilters)
             Padding(
@@ -650,7 +728,7 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
                           ],
                         ),
                       )
-                    : _allGrievances.isEmpty
+                    : _visibleGrievances.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -675,9 +753,9 @@ class _GrievanceListPageState extends State<GrievanceListPage> {
                             onRefresh: _fetchGrievances,
                             child: ListView.builder(
                               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                              itemCount: _allGrievances.length,
+                              itemCount: _visibleGrievances.length,
                               itemBuilder: (context, index) {
-                                final grievance = _allGrievances[index];
+                                final grievance = _visibleGrievances[index];
                                 return _buildGrievanceCard(grievance);
                               },
                             ),

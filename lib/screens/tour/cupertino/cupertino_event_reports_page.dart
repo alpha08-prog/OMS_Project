@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
@@ -30,6 +31,7 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
       return dateInRange(dt, from: _dateFrom, to: _dateTo);
     }).toList();
   }
+
   String? _error;
   List<Map<String, dynamic>> _pending = [];
 
@@ -52,8 +54,7 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
 
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         setState(() {
           _pending = list
               .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
@@ -84,6 +85,23 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
     }
   }
 
+  void _exportCsv() {
+    CsvExport.export(
+      context,
+      fileName: 'event_reports',
+      headers: const ['Event', 'Organizer', 'Venue', 'Date', 'Report Status'],
+      rows: _visiblePending.map((r) {
+        return [
+          r['eventName'] ?? '',
+          r['organizer'] ?? '',
+          r['venue'] ?? '',
+          _formatEventDateTime(r['dateTime']?.toString()),
+          'Pending',
+        ];
+      }).toList(),
+    );
+  }
+
   Future<void> _openReportSheet(Map<String, dynamic> event) async {
     final submitted = await showCupertinoModalPopup<bool>(
       context: context,
@@ -102,10 +120,21 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
         children: [
           OmsPageHeader(
             title: "Event Reports",
-            trailing: GestureDetector(
-              onTap: _fetch,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white, size: 22),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _visiblePending.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      size: 22, color: CupertinoColors.white),
+                ),
+                GestureDetector(
+                  onTap: _fetch,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white, size: 22),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -196,8 +225,7 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
                   size: 48, color: CupertinoColors.systemGrey3),
               const SizedBox(height: 12),
               Text(_error!,
-                  style:
-                      const TextStyle(color: CupertinoColors.systemGrey)),
+                  style: const TextStyle(color: CupertinoColors.systemGrey)),
               const SizedBox(height: 12),
               CupertinoButton.filled(
                 onPressed: _fetch,
@@ -260,8 +288,7 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
           const SizedBox(height: 4),
           const Text(
             "No pending event reports right now.",
-            style: TextStyle(
-                color: CupertinoColors.systemGrey, fontSize: 13),
+            style: TextStyle(color: CupertinoColors.systemGrey, fontSize: 13),
           ),
         ],
       ),
@@ -294,8 +321,7 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
                 decoration: BoxDecoration(
                   color: CupertinoColors.white,
                   borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: AppTheme.saffron.withOpacity(0.4)),
+                  border: Border.all(color: AppTheme.saffron.withOpacity(0.4)),
                 ),
                 child: const Icon(CupertinoIcons.calendar,
                     color: AppTheme.saffronDark, size: 20),
@@ -441,7 +467,8 @@ class _CupertinoPostEventReportSheetState
 
       bool isValidUrl(String s) {
         final uri = Uri.tryParse(s);
-        return uri != null && uri.isAbsolute &&
+        return uri != null &&
+            uri.isAbsolute &&
             (uri.scheme == 'http' || uri.scheme == 'https');
       }
 
@@ -497,8 +524,7 @@ class _CupertinoPostEventReportSheetState
       }
     } catch (_) {
       if (!mounted) return;
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -556,9 +582,8 @@ class _CupertinoPostEventReportSheetState
                       CupertinoButton(
                         padding: EdgeInsets.zero,
                         minSize: 0,
-                        onPressed: _submitting
-                            ? null
-                            : () => Navigator.pop(context),
+                        onPressed:
+                            _submitting ? null : () => Navigator.pop(context),
                         child: const Icon(CupertinoIcons.xmark,
                             size: 20, color: CupertinoColors.systemGrey),
                       ),
@@ -588,8 +613,7 @@ class _CupertinoPostEventReportSheetState
                   const SizedBox(height: 6),
                   _input(
                     controller: mediaLinkController,
-                    placeholder:
-                        "https://photos.google.com/... or Drive link",
+                    placeholder: "https://photos.google.com/... or Drive link",
                     keyboardType: TextInputType.url,
                   ),
                   const SizedBox(height: 14),
@@ -615,8 +639,7 @@ class _CupertinoPostEventReportSheetState
                   const SizedBox(height: 6),
                   _input(
                     controller: outcomeController,
-                    placeholder:
-                        "Overall outcome and result of the event...",
+                    placeholder: "Overall outcome and result of the event...",
                     maxLines: 3,
                   ),
                   const SizedBox(height: 20),
@@ -627,9 +650,8 @@ class _CupertinoPostEventReportSheetState
                           color: CupertinoColors.systemGrey6,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           borderRadius: BorderRadius.circular(10),
-                          onPressed: _submitting
-                              ? null
-                              : () => Navigator.pop(context),
+                          onPressed:
+                              _submitting ? null : () => Navigator.pop(context),
                           child: const Text(
                             "Cancel",
                             style: TextStyle(
@@ -650,13 +672,11 @@ class _CupertinoPostEventReportSheetState
                               ? const CupertinoActivityIndicator(
                                   color: CupertinoColors.white)
                               : const Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(CupertinoIcons.checkmark_circle,
-                                        size: 18,
-                                        color: CupertinoColors.white),
+                                        size: 18, color: CupertinoColors.white),
                                     SizedBox(width: 6),
                                     Text(
                                       "Submit Report",
@@ -717,8 +737,8 @@ class _CupertinoPostEventReportSheetState
                   : CupertinoColors.systemGrey4,
             ),
           ),
-          placeholderStyle: const TextStyle(
-              color: CupertinoColors.systemGrey, fontSize: 13),
+          placeholderStyle:
+              const TextStyle(color: CupertinoColors.systemGrey, fontSize: 13),
         ),
         if (error != null)
           Padding(

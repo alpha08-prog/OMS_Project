@@ -9,6 +9,7 @@ import '../../../theme/app_theme.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/http_service.dart';
 import '../../../services/notification_service.dart';
+import '../../../services/attendance_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
 import '../../../widgets/cupertino/cupertino_nav_menu.dart';
@@ -52,9 +53,10 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   int alerts = 0;
   int totalTourPrograms = 0;
   int totalTrainRequests = 0;
+  int upcomingTours = 0;
+  int trainReadyToPrint = 0;
 
   // Admin pending counts
-  int pendingVerifications = 0;
   int pendingTrainRequests = 0;
   int pendingTourDecisions = 0;
   int todayBirthdays = 0;
@@ -63,6 +65,14 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   bool _loadingAdminDashboard = false;
   List<Map<String, dynamic>> _pendingApprovals = [];
   List<Map<String, dynamic>> _todayBirthdaysList = [];
+
+  // Admin: Today's Attendance summary card
+  AttendanceStats? _attendanceStats;
+  AttendanceRecord? _myTodayAttendance;
+  bool _markingPresent = false;
+
+  // Timestamp of the last successful dashboard stats fetch
+  DateTime? _lastUpdated;
 
   // Staff: rejected grievances created by this staff member
   List<Map<String, dynamic>> _staffRejectedGrievances = [];
@@ -86,6 +96,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     _fetchDashboardStats();
     if (widget.role == Roles.admin) {
       _fetchAdminDashboard();
+      _fetchAttendanceSummary();
     }
     if (widget.role == Roles.superAdmin) {
       _fetchSuperAdminExtras();
@@ -271,13 +282,11 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     setState(() => _loadingAdminDashboard = true);
     try {
       final futures = await Future.wait([
-        HttpService.get("/api/grievances/queue/verification"),
         HttpService.get("/api/train-requests/queue/pending"),
         HttpService.get("/api/tour-programs/pending"),
         HttpService.get("/api/birthdays/today"),
       ]);
 
-      List<Map<String, dynamic>> grievances = [];
       List<Map<String, dynamic>> trains = [];
       List<Map<String, dynamic>> tours = [];
       List<Map<String, dynamic>> birthdays = [];
@@ -285,26 +294,19 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
       if (futures[0].statusCode == 200) {
         final d = jsonDecode(futures[0].body);
         final list = d is List ? d : (d["data"] ?? []);
-        grievances = (list as List)
+        trains = (list as List)
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
       }
       if (futures[1].statusCode == 200) {
         final d = jsonDecode(futures[1].body);
         final list = d is List ? d : (d["data"] ?? []);
-        trains = (list as List)
+        tours = (list as List)
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
       }
       if (futures[2].statusCode == 200) {
         final d = jsonDecode(futures[2].body);
-        final list = d is List ? d : (d["data"] ?? []);
-        tours = (list as List)
-            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-            .toList();
-      }
-      if (futures[3].statusCode == 200) {
-        final d = jsonDecode(futures[3].body);
         final list = d is List ? d : (d["data"] ?? []);
         birthdays = (list as List)
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
@@ -312,19 +314,6 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
       }
 
       final combined = <Map<String, dynamic>>[];
-      for (final g in grievances) {
-        final isOffice =
-            (g["source"] ?? "PUBLIC").toString().toUpperCase() == "OFFICE";
-        combined.add({
-          "_kind": "grievance",
-          "title": "Grievance — ${(g["grievanceType"] ?? "").toString()}",
-          "subtitle":
-              "${g["petitionerName"] ?? "-"} · ${_shortDate(g["createdAt"]?.toString())}",
-          "createdAt": g["createdAt"],
-          "isOffice": isOffice,
-          "raw": g,
-        });
-      }
       for (final t in trains) {
         combined.add({
           "_kind": "train",
@@ -358,7 +347,6 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
         setState(() {
           _pendingApprovals = combined;
           _todayBirthdaysList = birthdays;
-          pendingVerifications = grievances.length;
           pendingTrainRequests = trains.length;
           pendingTourDecisions = tours.length;
           todayBirthdays = birthdays.length;
@@ -411,12 +399,18 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
               (data["tourPrograms"]?["total"] ?? 0) as int;
           totalTrainRequests =
               (data["trainRequests"]?["total"] ?? 0) as int;
+          upcomingTours =
+              ((data["tourPrograms"]?["upcoming"]) as num?)?.toInt() ??
+                  totalTourPrograms;
+          trainReadyToPrint = ((data["trainRequests"]?["readyToPrint"] ??
+                      data["trainRequests"]?["approved"] ??
+                      data["trainRequests"]?["total"]) as num?)
+                  ?.toInt() ??
+              0;
           todayBirthdays = (data["birthdays"]?["today"] ??
               data["birthdaysToday"] ??
               0) as int;
-          pendingVerifications =
-              (data["grievances"]?["pendingVerification"] ??
-                  openGrievances) as int;
+          _lastUpdated = DateTime.now();
           _loadingStats = false;
         });
       } else if (res.statusCode == 401) {
@@ -433,6 +427,38 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
       }
     } catch (_) {
       setState(() => _loadingStats = false);
+    }
+  }
+
+  /// Admin "Today's Attendance" summary — today's totals + my own status.
+  Future<void> _fetchAttendanceSummary() async {
+    AttendanceStats? stats;
+    AttendanceRecord? my;
+    try {
+      stats = await AttendanceService.getTodayStats();
+    } catch (_) {}
+    try {
+      my = await AttendanceService.getMyToday();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      if (stats != null) _attendanceStats = stats;
+      _myTodayAttendance = my;
+    });
+  }
+
+  Future<void> _markPresent() async {
+    setState(() => _markingPresent = true);
+    try {
+      await AttendanceService.mark(status: AttendanceStatus.present);
+      await _fetchAttendanceSummary();
+      if (mounted) CupertinoToast.show(context, "Marked present for today");
+    } on AttendanceException catch (e) {
+      if (mounted) CupertinoToast.show(context, e.message);
+    } catch (_) {
+      if (mounted) CupertinoToast.show(context, "Could not mark attendance");
+    } finally {
+      if (mounted) setState(() => _markingPresent = false);
     }
   }
 
@@ -561,7 +587,10 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
               builder: (_) => _buildPlaceholderTab(
                 'Grievances',
                 CupertinoIcons.doc_text,
-                () => AppNavigator.toGrievanceEntry(context, role: widget.role),
+                // Staff bottom-nav opens the list (creation is in Quick Entry).
+                () => widget.role == Roles.staff
+                    ? AppNavigator.toGrievanceList(context, role: widget.role)
+                    : AppNavigator.toGrievanceEntry(context, role: widget.role),
               ),
             );
           case 2:
@@ -569,7 +598,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
               builder: (_) => _buildPlaceholderTab(
                 'Visitors',
                 CupertinoIcons.person_2,
-                () => AppNavigator.toVisitorEntry(context, role: widget.role),
+                () => widget.role == Roles.staff
+                    ? AppNavigator.toVisitorList(context, role: widget.role)
+                    : AppNavigator.toVisitorEntry(context, role: widget.role),
               ),
             );
           case 3:
@@ -577,7 +608,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
               builder: (_) => _buildPlaceholderTab(
                 'Birthdays',
                 CupertinoIcons.gift,
-                () => AppNavigator.toBirthday(context, role: widget.role),
+                () => widget.role == Roles.staff
+                    ? AppNavigator.toBirthdayView(context)
+                    : AppNavigator.toBirthday(context, role: widget.role),
               ),
             );
           case 4:
@@ -689,6 +722,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
                 await _fetchDashboardStats();
                 if (widget.role == Roles.admin) {
                   await _fetchAdminDashboard();
+                  await _fetchAttendanceSummary();
                 }
                 if (widget.role == Roles.superAdmin) {
                   await _fetchSuperAdminExtras();
@@ -725,9 +759,17 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
                       _buildSaNewsIntelligenceCard(),
                       const SizedBox(height: 24),
                     ]
-                    // ADMIN: dashboard-only (welcome banner + 4 cards + pending approvals + birthdays)
+                    // ADMIN: web-parity dashboard (stat cards + attendance +
+                    // quick entry + action cards + needs attention +
+                    // birthdays + quick actions)
                     else if (widget.role == Roles.admin) ...[
                       _buildAdminWelcomeBanner(),
+                      const SizedBox(height: 16),
+                      _buildAdminStatCards(),
+                      const SizedBox(height: 16),
+                      _buildAdminAttendanceCard(),
+                      const SizedBox(height: 16),
+                      _buildAdminQuickEntry(),
                       const SizedBox(height: 16),
                       _buildAdminActionCards(),
                       const SizedBox(height: 20),
@@ -735,6 +777,8 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
                       const SizedBox(height: 16),
                       _buildAdminBirthdaysCard(),
                       const SizedBox(height: 20),
+                      _buildAdminQuickActions(),
+                      const SizedBox(height: 8),
                     ]
                     // STAFF: Data Entry Portal layout
                     else if (widget.role == Roles.staff) ...[
@@ -1607,9 +1651,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
               color: const Color(0xFFFCD34D)),
           const SizedBox(width: 8),
           _heroBadge(
-              count: pendingVerifications +
-                  pendingTrainRequests +
-                  pendingTourDecisions,
+              count: pendingTrainRequests + pendingTourDecisions,
               label: "Pending",
               color: const Color(0xFFFB7185)),
         ],
@@ -1663,9 +1705,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
         icon: CupertinoIcons.doc_text,
         value: "$totalGrievances",
         label: "Total Grievances",
-        sub: pendingVerifications == 0
-            ? "all reviewed"
-            : "$pendingVerifications pending",
+        sub: inProgressGrievances == 0
+            ? "none in progress"
+            : "$inProgressGrievances in progress",
         color: const Color(0xFF6366F1),
         bgColor: const Color(0xFFEEF2FF),
         onTap: () =>
@@ -2434,6 +2476,10 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   // ================= ADMIN DASHBOARD WIDGETS =================
 
   Widget _buildAdminWelcomeBanner() {
+    final dateStr = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
+    final updatedStr = _lastUpdated == null
+        ? null
+        : DateFormat('hh:mm a').format(_lastUpdated!);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2441,51 +2487,619 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
         borderRadius: BorderRadius.circular(14),
         boxShadow: AppTheme.shadowSm,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Welcome, ${widget.userName}",
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E1B4B),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Welcome, ${widget.userName}",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E1B4B),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      dateStr,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: CupertinoColors.systemGrey,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  "Verification & Letter Management",
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E7FF),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  "ADMIN ACCESS",
                   style: TextStyle(
-                    fontSize: 12,
-                    color: CupertinoColors.systemGrey,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF4338CA),
+                    letterSpacing: 0.5,
                   ),
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(CupertinoIcons.clock,
+                  size: 13, color: CupertinoColors.systemGrey),
+              const SizedBox(width: 4),
+              Text(
+                updatedStr == null ? "Updating…" : "Updated $updatedStr",
+                style: const TextStyle(
+                    fontSize: 11, color: CupertinoColors.systemGrey),
+              ),
+              const Spacer(),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  _fetchDashboardStats();
+                  _fetchAdminDashboard();
+                  _fetchAttendanceSummary();
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEEF2FF),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(CupertinoIcons.refresh,
+                          size: 14, color: Color(0xFF4338CA)),
+                      SizedBox(width: 4),
+                      Text(
+                        "Refresh",
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF4338CA),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= ADMIN: TOP STAT CARDS =================
+  Widget _buildAdminStatCards() {
+    final cards = <Widget>[
+      _adminStatCard(
+        icon: CupertinoIcons.doc_text,
+        value: "$openGrievances",
+        label: "Open Grievances",
+        sub: "$totalGrievances total · $resolvedGrievances resolved",
+        color: const Color(0xFF6366F1),
+        bgColor: const Color(0xFFEEF2FF),
+        onTap: () => AppNavigator.toGrievanceList(context, role: widget.role),
+      ),
+      _adminStatCard(
+        icon: CupertinoIcons.tram_fill,
+        value: "$trainReadyToPrint",
+        label: "Train EQ Letters",
+        sub: "Auto-approved · ready to print",
+        color: const Color(0xFF7C3AED),
+        bgColor: const Color(0xFFF3E8FF),
+        onTap: () => AppNavigator.toTrainQueue(context),
+      ),
+      _adminStatCard(
+        icon: CupertinoIcons.calendar,
+        value: "$upcomingTours",
+        label: "Upcoming Tours",
+        sub: pendingTourDecisions == 0
+            ? "No pending decisions"
+            : pendingTourDecisions == 1
+                ? "1 awaiting decision"
+                : "$pendingTourDecisions awaiting decision",
+        color: const Color(0xFFD97706),
+        bgColor: const Color(0xFFFEF3C7),
+        onTap: () => AppNavigator.toTourQueue(context),
+      ),
+      _adminStatCard(
+        icon: CupertinoIcons.person_2,
+        value: "$visitorsToday",
+        label: "Visitors Today",
+        sub: todayBirthdays == 1
+            ? "1 birthday today"
+            : "$todayBirthdays birthdays today",
+        color: const Color(0xFF16A34A),
+        bgColor: const Color(0xFFDCFCE7),
+        onTap: () => AppNavigator.toVisitorList(context, role: widget.role),
+      ),
+    ];
+
+    // Fixed card HEIGHT (not aspect ratio) so cells never get shorter than
+    // their content on narrow screens — prevents a bottom overflow.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 12.0;
+        const cardHeight = 138.0;
+        final cardWidth = (constraints.maxWidth - spacing) / 2;
+        return GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: spacing,
+          crossAxisSpacing: spacing,
+          childAspectRatio: cardWidth / cardHeight,
+          children: cards,
+        );
+      },
+    );
+  }
+
+  Widget _adminStatCard({
+    required IconData icon,
+    required String value,
+    required String label,
+    required String sub,
+    required Color color,
+    required Color bgColor,
+    VoidCallback? onTap,
+  }) {
+    final card = Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: CupertinoColors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0x0A000000),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const Spacer(),
+              const Icon(CupertinoIcons.arrow_right,
+                  size: 15, color: Color(0xFF94A3B8)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            sub,
+            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+
+    if (onTap == null) return card;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: card,
+    );
+  }
+
+  // ================= ADMIN: TODAY'S ATTENDANCE =================
+  Widget _buildAdminAttendanceCard() {
+    final stats = _attendanceStats;
+    final my = _myTodayAttendance;
+    final youLabel =
+        my == null ? "Not marked present yet." : "Marked ${my.status.label}.";
+
+    return _staffSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(CupertinoIcons.checkmark_seal,
+                    color: Color(0xFF4338CA), size: 18),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                "Today's Attendance",
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E1B4B),
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => AppNavigator.toStaffAttendance(context),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Text(
+                    "View full",
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4338CA),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: RichText(
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    text: TextSpan(
+                      children: [
+                        const TextSpan(
+                          text: "You:  ",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                        TextSpan(
+                          text: youLabel,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                if (my == null)
+                  CupertinoButton(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    color: const Color(0xFF16A34A),
+                    borderRadius: BorderRadius.circular(8),
+                    onPressed: _markingPresent ? null : _markPresent,
+                    child: _markingPresent
+                        ? const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CupertinoActivityIndicator(
+                                  radius: 8, color: CupertinoColors.white),
+                              SizedBox(width: 6),
+                              Text(
+                                "Marking…",
+                                style: TextStyle(
+                                    color: CupertinoColors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          )
+                        : const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(CupertinoIcons.checkmark_circle,
+                                  size: 16, color: CupertinoColors.white),
+                              SizedBox(width: 6),
+                              Text(
+                                "Mark present",
+                                style: TextStyle(
+                                    color: CupertinoColors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(CupertinoIcons.checkmark_circle_fill,
+                            size: 14, color: Color(0xFF16A34A)),
+                        const SizedBox(width: 4),
+                        Text(
+                          my.status.label,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF15803D),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE0E7FF),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              "ADMIN ACCESS",
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF4338CA),
-                letterSpacing: 0.5,
-              ),
-            ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _attnTile("PRESENT", stats?.present ?? 0,
+                  const Color(0xFF16A34A), const Color(0xFFF0FDF4),
+                  const Color(0xFFBBF7D0)),
+              _attnTile("HALF DAY", stats?.halfDay ?? 0,
+                  const Color(0xFFB45309), const Color(0xFFFFFBEB),
+                  const Color(0xFFFDE68A)),
+              _attnTile("LEAVE", stats?.leave ?? 0, const Color(0xFF2563EB),
+                  const Color(0xFFEFF6FF), const Color(0xFFBFDBFE)),
+              _attnTile("ABSENT", stats?.absent ?? 0, const Color(0xFFDC2626),
+                  const Color(0xFFFEF2F2), const Color(0xFFFECACA),
+                  last: true),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _attnTile(
+    String label,
+    int count,
+    Color textColor,
+    Color bgColor,
+    Color borderColor, {
+    bool last = false,
+  }) {
+    return Expanded(
+      child: Container(
+        margin: EdgeInsets.only(right: last ? 0 : 8),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderColor),
+        ),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "$count",
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= ADMIN: QUICK ENTRY =================
+  Widget _buildAdminQuickEntry() {
+    final entries = <_StaffEntry>[
+      _StaffEntry(
+        icon: CupertinoIcons.doc_text,
+        label: "New Grievance",
+        color: const Color(0xFFF59E0B),
+        onTap: () => AppNavigator.toOfficeGrievanceCreate(context),
+      ),
+      _StaffEntry(
+        icon: CupertinoIcons.train_style_one,
+        label: "Train EQ",
+        color: const Color(0xFF6366F1),
+        onTap: () =>
+            AppNavigator.toTrainRequestAdd(context, role: widget.role),
+      ),
+      _StaffEntry(
+        icon: CupertinoIcons.person_2,
+        label: "Visitor / Birthday",
+        color: const Color(0xFF1E293B),
+        onTap: () => AppNavigator.toAddPerson(context),
+      ),
+      _StaffEntry(
+        icon: CupertinoIcons.calendar,
+        label: "Tour Program",
+        color: const Color(0xFF0284C7),
+        onTap: () =>
+            AppNavigator.toTourProgramCreate(context, role: widget.role),
+      ),
+      _StaffEntry(
+        icon: CupertinoIcons.news,
+        label: "News Entry",
+        color: const Color(0xFF0D9488),
+        onTap: () => AppNavigator.toNewsAdd(context),
+      ),
+    ];
+
+    return _staffSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _staffSectionTitle("Quick Entry"),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 10.0;
+              final width = constraints.maxWidth;
+              final perRow = width >= 720 ? 5 : (width >= 480 ? 3 : 2);
+              final cardWidth = (width - spacing * (perRow - 1)) / perRow;
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: entries
+                    .map((e) => SizedBox(
+                          width: cardWidth,
+                          height: 88,
+                          child: _staffEntryTile(e),
+                        ))
+                    .toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= ADMIN: QUICK ACTIONS =================
+  Widget _buildAdminQuickActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            "Quick Actions",
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E1B4B),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 92,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _quickActionCard(CupertinoIcons.doc_text, "Grievances",
+                  const Color(0xFF6366F1),
+                  () => AppNavigator.toGrievanceList(context, role: widget.role)),
+              _quickActionCard(CupertinoIcons.printer, "Print\nCenter",
+                  const Color(0xFF0EA5E9),
+                  () => AppNavigator.toPrintCenter(context)),
+              _quickActionCard(CupertinoIcons.tram_fill, "Train EQ",
+                  const Color(0xFF7C3AED),
+                  () => AppNavigator.toTrainQueue(context)),
+              _quickActionCard(CupertinoIcons.calendar, "Tour\nDecisions",
+                  const Color(0xFFD97706),
+                  () => AppNavigator.toTourQueue(context)),
+              _quickActionCard(CupertinoIcons.person_2, "Visitors",
+                  const Color(0xFF0D9488),
+                  () => AppNavigator.toVisitorList(context, role: widget.role)),
+              _quickActionCard(CupertinoIcons.news, "News",
+                  const Color(0xFFDB2777),
+                  () => AppNavigator.toNewsList(context, role: widget.role)),
+              _quickActionCard(CupertinoIcons.gift, "Birthdays",
+                  const Color(0xFFEC4899),
+                  () => AppNavigator.toBirthdayView(context)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _quickActionCard(
+      IconData icon, String label, Color color, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 80,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: CupertinoColors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0x0D000000),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 10, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2493,13 +3107,11 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   Widget _buildAdminActionCards() {
     final cards = <Map<String, dynamic>>[
       {
-        'icon': CupertinoIcons.checkmark_seal,
-        'title': 'Verify Grievances',
-        'subtitle': pendingVerifications == 1
-            ? '1 pending verification'
-            : '$pendingVerifications pending verification',
-        'btn': 'Open Queue',
-        'tap': () => AppNavigator.toVerificationQueue(context),
+        'icon': CupertinoIcons.doc_text,
+        'title': 'Grievances',
+        'subtitle': 'View and manage grievances',
+        'btn': 'Open List',
+        'tap': () => AppNavigator.toGrievanceList(context, role: widget.role),
       },
       {
         'icon': CupertinoIcons.printer,
@@ -2799,9 +3411,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
 
   void _onApprovalRowTap(Map<String, dynamic> item) {
     final kind = item["_kind"];
-    if (kind == "grievance") {
-      AppNavigator.toVerificationQueue(context);
-    } else if (kind == "train") {
+    if (kind == "train") {
       AppNavigator.toTrainQueue(context);
     } else if (kind == "tour") {
       AppNavigator.toTourQueue(context);

@@ -800,9 +800,14 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              _cardActions(task, isCompleted),
             ],
+          ),
+          const SizedBox(height: 10),
+          // Actions on their own full-width row so the title / chips / assigned
+          // text above get the full card width (no mid-word wrapping).
+          Align(
+            alignment: Alignment.centerRight,
+            child: _cardActions(task, isCompleted),
           ),
           if (isExpanded) ...[
             const SizedBox(height: 10),
