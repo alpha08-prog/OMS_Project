@@ -43,6 +43,49 @@ void main() async {
   runApp(const MyApp());
 }
 
+/// Global SafeArea wrapper: applied at the app root via `builder` so EVERY
+/// navigated route gets bottom inset for the Android system nav bar
+/// automatically — bottoms of scrollables, custom bottom navs, fixed Submit
+/// buttons, etc. all sit ABOVE the 3-button / gesture pill area.
+/// `top: false` because AppBars / status bar handle the top themselves.
+Widget materialShellBuilder(BuildContext context, Widget? child) {
+  return SafeArea(
+    top: false,
+    bottom: true,
+    child: child ?? const SizedBox.shrink(),
+  );
+}
+
+/// A handful of screens (All Tasks, Forwarded to Me, Meetings, Activity Log,
+/// Add Person) are Material-only but are reachable from the iOS menu too.
+/// A bare [CupertinoApp] supplies no MaterialLocalizations, so those screens
+/// threw "No MaterialLocalizations found" the moment they were opened on iOS.
+const List<LocalizationsDelegate<dynamic>> kCupertinoShellLocalizations =
+    <LocalizationsDelegate<dynamic>>[
+  DefaultMaterialLocalizations.delegate,
+  DefaultWidgetsLocalizations.delegate,
+  DefaultCupertinoLocalizations.delegate,
+];
+
+/// iOS root wrapper. `builder` receives the app's Navigator as `child`, so
+/// wrapping here puts the Material [Theme] and the root [ScaffoldMessenger]
+/// (which `SnackBar` needs, and which only MaterialApp normally installs)
+/// ABOVE every route — exactly where MaterialApp puts them.
+///
+/// Deliberately NOT wrapped in a bottom [SafeArea]. That wrapper exists for
+/// Android's system navigation bar; on iOS it inset the whole app above the
+/// home indicator and left an unpainted black band across the bottom of every
+/// screen (under the tab bar, clipping the last row of every list).
+/// CupertinoPageScaffold / CupertinoTabScaffold already handle iOS insets.
+Widget cupertinoShellBuilder(BuildContext context, Widget? child) {
+  return Theme(
+    data: themeService.isDark ? AppTheme.darkTheme : AppTheme.lightTheme,
+    child: ScaffoldMessenger(
+      child: child ?? const SizedBox.shrink(),
+    ),
+  );
+}
+
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -77,27 +120,15 @@ class _MyAppState extends State<MyApp> {
       systemNavigationBarDividerColor: Colors.transparent,
     );
 
-    // Global SafeArea wrapper: applied at the app root via `builder` so EVERY
-    // navigated route gets bottom inset for the Android system nav bar
-    // automatically — bottoms of scrollables, custom bottom navs, fixed
-    // Submit buttons, etc. all sit ABOVE the 3-button / gesture pill area.
-    // `top: false` because AppBars / status bar handle the top themselves.
-    Widget wrapInSafeArea(BuildContext _, Widget? child) {
-      return SafeArea(
-        top: false,
-        bottom: true,
-        child: child ?? const SizedBox.shrink(),
-      );
-    }
-
     final app = PlatformUtils.isCupertino
         ? CupertinoApp(
             title: 'OMS - Office Management',
             debugShowCheckedModeBanner: false,
             navigatorKey: rootNavigatorKey,
             theme: CupertinoAppTheme.themeFor(themeService.isDark),
+            localizationsDelegates: kCupertinoShellLocalizations,
             home: const AuthCheck(),
-            builder: wrapInSafeArea,
+            builder: cupertinoShellBuilder,
           )
         : MaterialApp(
             title: 'OMS - Office Management',
@@ -107,7 +138,7 @@ class _MyAppState extends State<MyApp> {
             darkTheme: AppTheme.darkTheme,
             themeMode: themeService.themeMode,
             home: const AuthCheck(),
-            builder: wrapInSafeArea,
+            builder: materialShellBuilder,
           );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
