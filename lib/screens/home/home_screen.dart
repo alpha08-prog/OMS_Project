@@ -18,10 +18,6 @@ import 'package:anki_clone/screens/about/about_page.dart';
 import 'package:anki_clone/screens/calendar/calendar_page.dart';
 import 'package:anki_clone/screens/tour/events_page.dart';
 
-import '../../data/top_stories.dart';
-import '../../data/news_data.dart';
-import '../../widgets/story_card.dart';
-import '../../widgets/news_card.dart';
 import '../../widgets/grievance_donut_painter.dart';
 
 import '../../services/auth_service.dart';
@@ -718,37 +714,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 20),
               ],
 
-              // Popular Stories (hidden for admin, super admin & staff)
-              if (!isSuperAdmin && widget.role != Roles.admin && widget.role != Roles.staff) ...[
-                _sectionTitle("Popular Stories"),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 185,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: topStories.length,
-                    itemBuilder: (context, index) =>
-                        StoryCard(story: topStories[index]),
-                  ),
-                ),
-                const SizedBox(height: 22),
-                Divider(color: Colors.grey.shade300),
-                const SizedBox(height: 18),
-              ],
-
-              // News Updates (hidden for admin, super admin & staff)
-              if (!isSuperAdmin && widget.role != Roles.admin && widget.role != Roles.staff) ...[
-                _sectionTitle("News Updates"),
-                const SizedBox(height: 12),
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: newsList.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) =>
-                      NewsCard(news: newsList[index]),
-                ),
-              ],
+              // A hardcoded "Popular Stories" / "News Updates" feed used to be
+              // rendered here for unrecognised roles. It shipped fixed
+              // headlines and dates in the app bundle; real news is fetched
+              // from the backend by the News module.
             ],
           ),
         ),

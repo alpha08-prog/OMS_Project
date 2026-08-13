@@ -17,11 +17,14 @@ import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../main.dart' show themeService;
 
-import '../../../data/top_stories.dart';
-import '../../../data/news_data.dart';
-import '../../../widgets/story_card.dart';
-import '../../../widgets/news_card.dart';
 import '../../../widgets/grievance_donut_painter.dart';
+
+// Screens hosted directly as bottom-tab roots.
+import '../../grievance/cupertino/cupertino_grievance_list_page.dart';
+import '../../visitors/cupertino/cupertino_visitor_list_page.dart';
+import '../../cupertino/cupertino_birthday_page.dart';
+import '../../admin/cupertino/cupertino_birthday_view_page.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoHomeScreen extends StatefulWidget {
   final String userName;
@@ -795,40 +798,15 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
                       _buildStaffRecentlyEntered(),
                       const SizedBox(height: 20),
                     ]
-                    // Default (unknown role): generic welcome + stats + stories + news
+                    // Default (unrecognised role): welcome + live stats only.
+                    // This branch used to render a hardcoded "Popular Stories"
+                    // / "News Updates" feed shipped in the bundle; real news
+                    // lives in the News module and is fetched from the backend.
                     else ...[
                       _buildWelcomeHeader(),
                       const SizedBox(height: 16),
                       _loadingStats ? _statsLoadingRow() : _statsRow(),
                       const SizedBox(height: 20),
-                      _sectionTitle("Popular Stories"),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 185,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: topStories.length,
-                          itemBuilder: (context, index) =>
-                              StoryCard(story: topStories[index]),
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      Container(
-                        height: 1,
-                        color: CupertinoColors.separator,
-                      ),
-                      const SizedBox(height: 18),
-                      _sectionTitle("News Updates"),
-                      const SizedBox(height: 12),
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: newsList.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 12),
-                        itemBuilder: (context, index) =>
-                            NewsCard(news: newsList[index]),
-                      ),
                     ],
                   ],
                 ),
