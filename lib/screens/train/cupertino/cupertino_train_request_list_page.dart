@@ -599,7 +599,6 @@ class _CupertinoTrainRequestListPageState
         children: [
           OmsPageHeader(
             title: "Train EQ Requests",
-            showBack: false,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

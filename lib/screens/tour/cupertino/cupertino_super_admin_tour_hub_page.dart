@@ -16,7 +16,7 @@ class CupertinoSuperAdminTourHubPage extends StatelessWidget {
       backgroundColor: bgLight,
       child: Column(
         children: [
-          OmsPageHeader(title: "Tour Programs", showBack: false),
+          OmsPageHeader(title: "Tour Programs",),
           Expanded(
             child: ListView(
           padding: const EdgeInsets.all(16),

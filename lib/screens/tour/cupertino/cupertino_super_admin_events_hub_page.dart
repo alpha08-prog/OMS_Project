@@ -16,7 +16,7 @@ class CupertinoSuperAdminEventsHubPage extends StatelessWidget {
       backgroundColor: bgLight,
       child: Column(
         children: [
-          OmsPageHeader(title: "Events", showBack: false),
+          OmsPageHeader(title: "Events",),
           Expanded(
             child: ListView(
           padding: const EdgeInsets.all(16),

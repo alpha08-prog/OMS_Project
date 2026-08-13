@@ -174,7 +174,6 @@ class _CupertinoVisitorListPageState extends State<CupertinoVisitorListPage> {
         children: [
           OmsPageHeader(
             title: "Visitors",
-            showBack: false,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

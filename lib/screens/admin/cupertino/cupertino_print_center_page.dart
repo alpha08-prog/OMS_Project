@@ -231,7 +231,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
       backgroundColor: AppTheme.background,
       child: Column(
         children: [
-          const OmsPageHeader(title: "Print Center", showBack: false),
+          const OmsPageHeader(title: "Print Center",),
           Expanded(child: Column(
           children: [
             const SizedBox(height: 16),

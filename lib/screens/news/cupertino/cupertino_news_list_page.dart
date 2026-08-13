@@ -259,7 +259,6 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
         children: [
           OmsPageHeader(
             title: "News & Intelligence",
-            showBack: false,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

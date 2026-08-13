@@ -181,7 +181,6 @@ class _CupertinoSuperAdminTourListPageState
         children: [
           OmsPageHeader(
             title: _title,
-            showBack: false,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

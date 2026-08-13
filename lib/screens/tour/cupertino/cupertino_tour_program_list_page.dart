@@ -622,7 +622,6 @@ class _CupertinoTourProgramListPageState
         children: [
           OmsPageHeader(
             title: "Tour Programs",
-            showBack: false,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

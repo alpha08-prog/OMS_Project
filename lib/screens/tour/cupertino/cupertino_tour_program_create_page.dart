@@ -220,7 +220,7 @@ class _CupertinoTourProgramCreatePageState
       backgroundColor: AppTheme.background,
       child: Column(
         children: [
-          OmsPageHeader(title: "New Tour Program", showBack: false),
+          OmsPageHeader(title: "New Tour Program",),
           Expanded(
             child: ListView(
           padding: const EdgeInsets.all(16),

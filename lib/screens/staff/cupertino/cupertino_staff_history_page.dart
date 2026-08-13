@@ -208,7 +208,6 @@ class _CupertinoStaffHistoryPageState
         children: [
           OmsPageHeader(
             title: "My Submissions",
-            showBack: false,
             trailing: CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: _fetchAll,
