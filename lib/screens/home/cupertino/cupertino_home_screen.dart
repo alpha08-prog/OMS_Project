@@ -46,6 +46,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   int _unreadNotifications = 0;
   Timer? _notificationPollTimer;
 
+  // Owned so the "More" tab's Close button can return to the Dashboard tab.
+  final CupertinoTabController _tabController = CupertinoTabController();
+
   bool _loadingStats = true;
 
   int totalGrievances = 0;
@@ -119,6 +122,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   @override
   void dispose() {
     _notificationPollTimer?.cancel();
+    _tabController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -555,9 +559,21 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     }
 
     return CupertinoTabScaffold(
+      controller: _tabController,
       tabBar: CupertinoTabBar(
         activeColor: AppTheme.primaryIndigo,
         inactiveColor: CupertinoColors.systemGrey,
+        // An OPAQUE background is load-bearing, not cosmetic. The theme's
+        // barBackgroundColor is 0xF0-alpha (translucent), which makes
+        // CupertinoTabScaffold leave tab content running underneath the bar and
+        // merely report the inset via MediaQuery.padding — which these pages
+        // don't consume, so the last rows (the menu's Logout button, the end of
+        // every list) sat behind the tab bar. With an opaque bar the scaffold
+        // insets the content above it instead, on every tab and on everything
+        // pushed inside a tab.
+        backgroundColor: themeService.isDark
+            ? const Color(0xFF1E1E2E)
+            : const Color(0xFFF8FAFC),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(CupertinoIcons.house_fill),
@@ -585,36 +601,25 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
         switch (index) {
           case 0:
             return CupertinoTabView(builder: (_) => _buildDashboardTab());
+          // Each tab hosts its real screen directly. Previously these showed a
+          // fake "Loading…" placeholder that pushed the real page from a
+          // post-frame callback — popping that page stranded the user on the
+          // permanent fake spinner.
+          // Staff and admin both land on the list here; creation lives in the
+          // dashboard's Quick Entry section.
           case 1:
             return CupertinoTabView(
-              builder: (_) => _buildPlaceholderTab(
-                'Grievances',
-                CupertinoIcons.doc_text,
-                // Staff bottom-nav opens the list (creation is in Quick Entry).
-                () => widget.role == Roles.staff
-                    ? AppNavigator.toGrievanceList(context, role: widget.role)
-                    : AppNavigator.toGrievanceEntry(context, role: widget.role),
-              ),
+              builder: (_) => CupertinoGrievanceListPage(role: widget.role),
             );
           case 2:
             return CupertinoTabView(
-              builder: (_) => _buildPlaceholderTab(
-                'Visitors',
-                CupertinoIcons.person_2,
-                () => widget.role == Roles.staff
-                    ? AppNavigator.toVisitorList(context, role: widget.role)
-                    : AppNavigator.toVisitorEntry(context, role: widget.role),
-              ),
+              builder: (_) => CupertinoVisitorListPage(role: widget.role),
             );
           case 3:
             return CupertinoTabView(
-              builder: (_) => _buildPlaceholderTab(
-                'Birthdays',
-                CupertinoIcons.gift,
-                () => widget.role == Roles.staff
-                    ? AppNavigator.toBirthdayView(context)
-                    : AppNavigator.toBirthday(context, role: widget.role),
-              ),
+              builder: (_) => widget.role == Roles.staff
+                  ? const CupertinoBirthdayViewPage()
+                  : CupertinoBirthdayPage(role: widget.role),
             );
           case 4:
             return CupertinoTabView(
@@ -624,50 +629,15 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
                 onLogout: () => _logout(),
                 onToggleTheme: () => themeService.toggleTheme(),
                 isDark: themeService.isDark,
+                // Tab root: "Close" returns to the Dashboard tab rather than
+                // popping (which would blank out this tab).
+                onClose: () => _tabController.index = 0,
               ),
             );
           default:
             return CupertinoTabView(builder: (_) => _buildDashboardTab());
         }
       },
-    );
-  }
-
-  // ================= PLACEHOLDER TAB =================
-  Widget _buildPlaceholderTab(
-      String title, IconData icon, VoidCallback onNavigate) {
-    // Trigger navigation on next frame so it runs after build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      onNavigate();
-    });
-
-    return CupertinoPageScaffold(
-      backgroundColor: AppTheme.background,
-      child: Column(
-        children: [
-          OmsPageHeader(title: title, showBack: false),
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 48, color: AppTheme.primaryIndigo),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Loading $title...',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: CupertinoColors.systemGrey,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const CupertinoActivityIndicator(),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
