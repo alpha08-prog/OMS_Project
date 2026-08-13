@@ -226,23 +226,12 @@ class _CupertinoUserCreatePageState extends State<CupertinoUserCreatePage> {
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Create User",
-            style: AppTheme.headingLg.copyWith(
-              color: AppTheme.primaryIndigo,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            "Provision a new account. The user will be told their password "
-            "and can rotate it from their profile after first login.",
-            style: AppTheme.bodySm.copyWith(color: AppTheme.muted),
-          ),
-        ],
+      // The page header already reads "Create User"; repeating it as a body
+      // heading just duplicated the title. Only the explanatory line remains.
+      child: Text(
+        "Provision a new account. The user will be told their password "
+        "and can rotate it from their profile after first login.",
+        style: AppTheme.bodySm.copyWith(color: AppTheme.muted),
       ),
     );
   }
