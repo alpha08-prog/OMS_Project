@@ -2403,17 +2403,6 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   }
 
   // ================= SECTION TITLE =================
-  Widget _sectionTitle(String title) {
-    return Text(
-      title.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 0.8,
-        color: AppTheme.foreground,
-      ),
-    );
-  }
 
   // ================= ADMIN DASHBOARD WIDGETS =================
 

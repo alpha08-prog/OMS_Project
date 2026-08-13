@@ -126,61 +126,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
     return null;
   }
 
-  Future<void> _delete(String id) async {
-    final isAdmin = widget.role == Roles.admin || widget.role == Roles.superAdmin;
-    if (!isAdmin) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Only Admin can delete.")),
-      );
-      return;
-    }
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber, color: Colors.red),
-            SizedBox(width: 8),
-            Text("Delete Request"),
-          ],
-        ),
-        content: const Text("Are you sure you want to delete this request?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Delete", style: TextStyle(color: Colors.white)),
-          )
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      final res = await HttpService.delete("/api/train-requests/$id");
-      if (res.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Deleted")),
-        );
-        fetchRequests();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Delete failed (${res.statusCode})")),
-        );
-      }
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Server error")),
-      );
-    }
-  }
 
   Future<void> _downloadPdf(String id, String pnr) async {
     // Show loading indicator
@@ -878,7 +823,6 @@ class _TrainRequestListPageState extends State<TrainRequestListPage> {
   }
 
   Widget _buildRequestCard(Map<String, dynamic> r, bool isAdmin) {
-    final String? id = _getId(r);
     final pnr = r["pnrNumber"] ?? r["pnr"] ?? "-";
     final trainName = r["trainName"] ?? "";
     final trainNumber = r["trainNumber"] ?? "";

@@ -132,49 +132,6 @@ class _CupertinoTrainRequestListPageState
     return null;
   }
 
-  Future<void> _delete(String id) async {
-    final isAdmin =
-        widget.role == Roles.admin || widget.role == Roles.superAdmin;
-    if (!isAdmin) {
-      CupertinoToast.show(context, "Only Admin can delete.", isError: true);
-      return;
-    }
-
-    final confirm = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (_) => CupertinoAlertDialog(
-        title: const Text("Delete Request"),
-        content: const Text("Are you sure you want to delete this request?"),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Delete"),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      final res = await HttpService.delete("/api/train-requests/$id");
-      if (res.statusCode == 200) {
-        CupertinoToast.show(context, "Deleted");
-        fetchRequests();
-      } else {
-        CupertinoToast.show(context, "Delete failed (${res.statusCode})",
-            isError: true);
-      }
-    } catch (_) {
-      CupertinoToast.show(context, "Server error", isError: true);
-    }
-  }
 
   Future<void> _downloadPdf(String id, String pnr) async {
     // Show loading overlay
@@ -857,7 +814,6 @@ class _CupertinoTrainRequestListPageState
   }
 
   Widget _buildRequestCard(Map<String, dynamic> r, bool isAdmin) {
-    final String? id = _getId(r);
     final pnr = r["pnrNumber"] ?? r["pnr"] ?? "-";
     final trainName = r["trainName"] ?? "";
     final trainNumber = r["trainNumber"] ?? "";
