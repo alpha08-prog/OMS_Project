@@ -1696,6 +1696,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     ];
 
     return GridView.count(
+      // Zero padding: a shrink-wrapped list otherwise re-applies the
+      // screen's safe-area insets, opening blank gaps above and below.
+      padding: EdgeInsets.zero,
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -2591,6 +2594,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
         const cardHeight = 138.0;
         final cardWidth = (constraints.maxWidth - spacing) / 2;
         return GridView.count(
+          // Zero padding: a shrink-wrapped list otherwise re-applies the
+          // screen's safe-area insets, opening blank gaps above and below.
+          padding: EdgeInsets.zero,
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -3089,6 +3095,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     ];
 
     return GridView.count(
+      // Zero padding: a shrink-wrapped list otherwise re-applies the
+      // screen's safe-area insets, opening blank gaps above and below.
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,

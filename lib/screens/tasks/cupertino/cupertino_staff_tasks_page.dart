@@ -243,6 +243,9 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
             else
               Flexible(
                 child: ListView.builder(
+                  // Zero padding: a shrink-wrapped list otherwise re-applies the
+                  // screen's safe-area insets, opening blank gaps above and below.
+                  padding: EdgeInsets.zero,
                   shrinkWrap: true,
                   itemCount: history.length,
                   itemBuilder: (_, i) {
@@ -332,7 +335,6 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
         children: [
           OmsPageHeader(
             title: "My Tasks",
-            showBack: false,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

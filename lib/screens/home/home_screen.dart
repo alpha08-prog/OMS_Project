@@ -1061,6 +1061,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ];
 
     return GridView.count(
+      // Nested list: never re-apply the screen's safe-area insets.
+      padding: EdgeInsets.zero,
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -1974,6 +1976,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // ================= PENDING ACTIONS (Admin) =================
   Widget _buildPendingActionsGrid() {
     return GridView.count(
+      // Nested list: never re-apply the screen's safe-area insets.
+      padding: EdgeInsets.zero,
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -2256,6 +2260,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         const cardHeight = 138.0;
         final cardWidth = (constraints.maxWidth - spacing) / 2;
         return GridView.count(
+          // Nested list: never re-apply the screen's safe-area insets.
+          padding: EdgeInsets.zero,
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -3282,6 +3288,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ];
 
     return GridView.count(
+      // Nested list: never re-apply the screen's safe-area insets.
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,

@@ -350,6 +350,8 @@ class _ActionHistoryPageState extends State<ActionHistoryPage> {
     final total = _stats['totalActions'] ?? 0;
 
     return GridView.count(
+      // Nested list: never re-apply the screen's safe-area insets.
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,

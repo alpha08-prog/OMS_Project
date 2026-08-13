@@ -540,6 +540,9 @@ class _CupertinoActionHistoryPageState
     final total = _stats['totalActions'] ?? 0;
 
     return GridView.count(
+      // Zero padding: a shrink-wrapped list otherwise re-applies the
+      // screen's safe-area insets, opening blank gaps above and below.
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,
