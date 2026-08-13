@@ -27,13 +27,25 @@ class OmsLoader extends StatefulWidget {
 
 class _OmsLoaderState extends State<OmsLoader>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..repeat(reverse: true);
+  // Created in initState, NOT as a `late final` field initializer. In a box too
+  // short for the logo, build() returns the bare spinner without ever touching
+  // the animation — so a lazy field stays uninitialised until dispose() reads
+  // it, and initialising it there calls createTicker() on an already
+  // deactivated element. That throws before dispose() can run, stranding a
+  // repeating controller that then pins the whole app at 60fps forever.
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
 
-  late final Animation<double> _fade = Tween<double>(begin: 0.55, end: 1.0)
-      .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+    _fade = Tween<double>(begin: 0.55, end: 1.0)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
 
   @override
   void dispose() {
