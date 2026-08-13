@@ -656,25 +656,16 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
               child: const Icon(CupertinoIcons.bars,
                   color: CupertinoColors.white, size: 24),
             ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  onPressed: () {},
-                  child: const Icon(CupertinoIcons.search,
-                      color: CupertinoColors.white, size: 22),
-                ),
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  onPressed: () async {
-                    await AppNavigator.toNotifications(context,
-                        role: widget.role);
-                    _refreshUnreadCount();
-                  },
-                  child: _buildBellWithBadge(),
-                ),
-              ],
+            // A magnifying-glass button used to sit to the left of the bell
+            // with an empty onPressed. Search lives on the individual list
+            // screens, so an inert icon here was only a dead control.
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () async {
+                await AppNavigator.toNotifications(context, role: widget.role);
+                _refreshUnreadCount();
+              },
+              child: _buildBellWithBadge(),
             ),
           );
 
