@@ -74,7 +74,18 @@ class CupertinoNavMenu extends StatelessWidget {
             showBack: false,
           ),
           Expanded(
+            // Explicit padding: with none, ListView re-applies the status-bar
+            // inset that OmsPageHeader has already consumed, opening an ~80pt
+            // blank gap between the header and the first item. The bottom
+            // inset keeps the last row clear of the home indicator.
             child: ListView(
+              // `padding` (not `viewPadding`): CupertinoTabScaffold reports the
+              // tab-bar inset through MediaQuery.padding, and zeroes it once it
+              // has inset the content itself. viewPadding only ever covers the
+              // home indicator, so the Logout button ended up behind the bar.
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.paddingOf(context).bottom,
+              ),
               children: [
                 // User profile header
                 Container(
