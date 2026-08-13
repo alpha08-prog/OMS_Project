@@ -286,16 +286,10 @@ class _CupertinoStaffAttendancePageState
       children: [
         Row(
           children: [
-            const Expanded(
-              child: Text(
-                'Staff Attendance',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryIndigo,
-                ),
-              ),
-            ),
+            // The page header already reads "Staff Attendance"; repeating it
+            // here just duplicated the title. The spacer keeps the range
+            // selector where it was, on the trailing edge.
+            const Spacer(),
             SizedBox(
               width: 220,
               child: CupertinoSlidingSegmentedControl<_RangeMode>(

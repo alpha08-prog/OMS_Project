@@ -290,15 +290,8 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
                   padding: const EdgeInsets.all(16),
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
-                      const Text(
-                        'My Attendance',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primaryIndigo,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
+                      // The page header already reads "My Attendance";
+                      // repeating it here just duplicated the title.
                       Text(
                         "Mark today's attendance or plan a half day / leave for any upcoming date.",
                         style: TextStyle(

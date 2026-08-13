@@ -93,15 +93,8 @@ class _CupertinoGrievanceTypePickerPageState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Register New Grievance',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryIndigo,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
+                  // The page header already reads "Register New Grievance";
+                  // repeating it here just duplicated the title.
                   const Text(
                     'Public Grievance & Letter Tracking',
                     style: TextStyle(

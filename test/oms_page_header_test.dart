@@ -152,4 +152,46 @@ void main() {
     expect(tester.getSize(gradientBox).height, greaterThan(20));
     expect(tester.getSize(gradientBox).width, greaterThan(200));
   });
+
+  // Several screens printed their own title a second time as a large body
+  // heading directly under the page header, so the name appeared twice on
+  // screen. Submit buttons legitimately reuse the title ("Create User"), so
+  // only styled heading text counts as an offender.
+  test('no screen repeats its OmsPageHeader title as a body heading', () {
+    final offenders = <String>[];
+    final headerTitle =
+        RegExp(r'''OmsPageHeader\(\s*title:\s*(?:const\s*)?['"]([^'"]+)['"]''');
+
+    for (final file in Directory('lib')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.dart'))) {
+      final src = file.readAsStringSync();
+      final match = headerTitle.firstMatch(src);
+      if (match == null) continue;
+      final title = match.group(1)!;
+
+      // A repeat only matters when it is rendered as a heading. Submit buttons
+      // reuse the title too ("Log Visitor", "Change Password") but at body
+      // size, so the discriminator is a heading style or 20pt+ type — not
+      // boldness, which the buttons also use.
+      final repeat = RegExp(
+          'Text\\(\\s*[\'"]${RegExp.escape(title)}[\'"]\\s*,\\s*style:');
+      for (final m in repeat.allMatches(src)) {
+        final style = src.substring(
+            m.end, (m.end + 200).clamp(0, src.length));
+        final fontSize = RegExp(r'fontSize:\s*(\d+)').firstMatch(style);
+        final isHeading = style.contains('AppTheme.heading') ||
+            (fontSize != null && int.parse(fontSize.group(1)!) >= 20);
+        if (isHeading) {
+          offenders.add('${file.path}: "$title"');
+          break;
+        }
+      }
+    }
+
+    expect(offenders, isEmpty,
+        reason: 'These screens show their title twice — once in the page '
+            'header and again as a body heading:\n${offenders.join('\n')}');
+  });
 }

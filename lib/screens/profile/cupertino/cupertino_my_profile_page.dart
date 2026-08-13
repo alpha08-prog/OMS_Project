@@ -216,11 +216,8 @@ class _CupertinoMyProfilePageState extends State<CupertinoMyProfilePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'My Profile',
-          style: AppTheme.headingXl.copyWith(color: AppTheme.primaryIndigoDark),
-        ),
-        const SizedBox(height: 4),
+        // The page header already reads "My Profile"; repeating it as a body
+        // heading just duplicated the title. Only the explanatory line remains.
         Text(
           'View your account information and change your password.',
           style: AppTheme.bodyMd.copyWith(color: AppTheme.muted),

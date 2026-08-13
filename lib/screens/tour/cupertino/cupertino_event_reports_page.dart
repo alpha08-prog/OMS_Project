@@ -190,15 +190,8 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            "Event Reports",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.primaryIndigoDark,
-            ),
-          ),
-          SizedBox(height: 4),
+          // The page header already reads "Event Reports"; repeating it here
+          // just duplicated the title.
           Text(
             "Submit post-event reports for completed tour programs",
             style: TextStyle(fontSize: 13, color: AppTheme.muted),
