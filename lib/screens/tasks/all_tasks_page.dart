@@ -7,6 +7,7 @@ import '../../utils/access_control.dart';
 import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
 import '../../widgets/task_forward_sheet.dart';
+import '../../widgets/oms_app_bar.dart';
 
 /// Office-wide master task list — mirrors the web "All Tasks" screen.
 /// Filter by status / type / staff + free-text search, inline status change
@@ -510,9 +511,9 @@ class _AllTasksPageState extends State<AllTasksPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Text(widget.title),
-        backgroundColor: AppTheme.primaryIndigo,
+      appBar: omsAppBar(
+        context,
+        title: widget.title,
         actions: [
           IconButton(
             tooltip: 'Export CSV',

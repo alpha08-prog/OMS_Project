@@ -5,6 +5,7 @@ import '../../services/meeting_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
+import '../../widgets/oms_app_bar.dart';
 
 /// Admin "Meetings" module — mirrors the web screen. Upcoming / Past / All
 /// tabs, schedule a meeting, record a post-meeting summary, mark
@@ -108,9 +109,9 @@ class _MeetingsPageState extends State<MeetingsPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: const Text('Meetings'),
-        backgroundColor: AppTheme.primaryIndigo,
+      appBar: omsAppBar(
+        context,
+        title: 'Meetings',
         actions: [
           IconButton(
             tooltip: 'Export CSV',

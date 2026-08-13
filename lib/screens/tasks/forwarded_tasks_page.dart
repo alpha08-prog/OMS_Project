@@ -5,6 +5,7 @@ import '../../services/task_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
+import '../../widgets/oms_app_bar.dart';
 
 /// "Forwarded to Me" inbox — tasks + grievances another user forwarded to the
 /// current user (GET /api/tasks/forwarded). Mirrors the web screen. Read-only
@@ -88,9 +89,10 @@ class _ForwardedTasksPageState extends State<ForwardedTasksPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Text('Forwarded to Me${_items.isNotEmpty ? ' (${_items.length})' : ''}'),
-        backgroundColor: AppTheme.primaryIndigo,
+      appBar: omsAppBar(
+        context,
+        title:
+            'Forwarded to Me${_items.isNotEmpty ? ' (${_items.length})' : ''}',
         actions: [
           IconButton(
             tooltip: 'Export CSV',
