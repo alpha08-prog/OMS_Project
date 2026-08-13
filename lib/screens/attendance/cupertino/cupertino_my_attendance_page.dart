@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoMyAttendancePage extends StatefulWidget {
   const CupertinoMyAttendancePage({super.key});
@@ -357,7 +358,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
           if (_loadingToday)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Center(child: CupertinoActivityIndicator()),
+              child: OmsLoader(size: 56),
             )
           else
             Row(
@@ -635,7 +636,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
           if (_loadingHistory)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CupertinoActivityIndicator()),
+              child: OmsLoader(size: 56),
             )
           else if (_history.isEmpty)
             Padding(

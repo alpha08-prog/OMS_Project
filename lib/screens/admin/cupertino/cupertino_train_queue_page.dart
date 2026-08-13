@@ -13,6 +13,7 @@ import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoTrainQueuePage extends StatefulWidget {
   const CupertinoTrainQueuePage({super.key});
@@ -331,7 +332,7 @@ class _CupertinoTrainQueuePageState extends State<CupertinoTrainQueuePage> {
                     if (_loading)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 60),
-                        child: Center(child: CupertinoActivityIndicator()),
+                        child: OmsLoader(size: 56),
                       )
                     else ...[
                       Container(

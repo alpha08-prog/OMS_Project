@@ -8,6 +8,7 @@ import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../super_admin_events_list_page.dart' show EventsCategory;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoSuperAdminEventsListPage extends StatefulWidget {
   final EventsCategory category;
@@ -224,7 +225,7 @@ class _CupertinoSuperAdminEventsListPageState
                 ),
                 Expanded(
                   child: _loading
-                      ? const Center(child: CupertinoActivityIndicator())
+                      ? OmsLoader(size: 56)
                       : list.isEmpty
                           ? _emptyView()
                           : ListView.builder(

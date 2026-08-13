@@ -9,6 +9,7 @@ import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_grievance_view_page.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoRejectedGrievancesPage extends StatefulWidget {
   final String role;
@@ -165,7 +166,7 @@ class _CupertinoRejectedGrievancesPageState
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: _loading
-                    ? const Center(child: CupertinoActivityIndicator())
+                    ? OmsLoader(size: 56)
                     : _error != null
                         ? _buildError()
                         : _visibleItems.isEmpty

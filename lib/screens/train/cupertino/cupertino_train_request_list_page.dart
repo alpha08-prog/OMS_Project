@@ -8,13 +8,13 @@ import 'package:open_filex/open_filex.dart';
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/csv_export.dart';
-import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_train_request_add_page.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoTrainRequestListPage extends StatefulWidget {
   final String role;
@@ -714,7 +714,7 @@ class _CupertinoTrainRequestListPageState
                 // List
                 Expanded(
                   child: loading
-                      ? const Center(child: CupertinoActivityIndicator())
+                      ? OmsLoader(size: 56)
                       : error != null
                           ? Center(
                               child: Column(

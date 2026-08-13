@@ -11,6 +11,7 @@ import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoVisitorListPage extends StatefulWidget {
   final String role;
@@ -216,7 +217,7 @@ class _CupertinoVisitorListPageState extends State<CupertinoVisitorListPage> {
                 ),
                 Expanded(
                   child: loading
-                      ? const Center(child: CupertinoActivityIndicator())
+                      ? OmsLoader(size: 56)
                       : error != null
                           ? Center(
                               child: Column(

@@ -9,6 +9,7 @@ import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoTaskListPage extends StatefulWidget {
   final String role;
@@ -266,7 +267,7 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
                   if (_loading)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Center(child: CupertinoActivityIndicator()),
+                      child: OmsLoader(size: 56),
                     )
                   else ...[
                     _buildStatsRow(),

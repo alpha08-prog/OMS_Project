@@ -9,6 +9,7 @@ import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../super_admin_tour_list_page.dart' show TourCategory;
+import '../../../widgets/oms_loader.dart';
 
 /// Super Admin Tour Programs list (Cupertino) — view-only.
 /// No add / edit / delete / accept / regret actions. Status (All / Pending /
@@ -245,7 +246,7 @@ class _CupertinoSuperAdminTourListPageState
 
                 Expanded(
                   child: _loading
-                      ? const Center(child: CupertinoActivityIndicator())
+                      ? OmsLoader(size: 56)
                       : list.isEmpty
                           ? _emptyView()
                           : CustomScrollView(

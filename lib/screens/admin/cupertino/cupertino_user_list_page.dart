@@ -9,6 +9,7 @@ import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoUserListPage extends StatefulWidget {
   const CupertinoUserListPage({super.key});
@@ -328,7 +329,7 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CupertinoActivityIndicator(radius: 14))
+                ? OmsLoader(size: 56)
                 : _error != null
                     ? _buildErrorView()
                     : CustomScrollView(

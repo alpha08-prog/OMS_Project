@@ -8,6 +8,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoActionHistoryPage extends StatefulWidget {
   const CupertinoActionHistoryPage({super.key});
@@ -437,8 +438,7 @@ class _CupertinoActionHistoryPageState
                       if (_loadingList)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 60),
-                          child: Center(
-                              child: CupertinoActivityIndicator(radius: 14)),
+                          child: OmsLoader(size: 56),
                         )
                       else if (_error != null)
                         _buildError()
@@ -654,7 +654,7 @@ class _CupertinoActionHistoryPageState
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: _loadingStats
-                    ? const Center(child: CupertinoActivityIndicator(radius: 7))
+                    ? OmsLoader(size: 56)
                     : Icon(icon, color: accent, size: 16),
               ),
             ],

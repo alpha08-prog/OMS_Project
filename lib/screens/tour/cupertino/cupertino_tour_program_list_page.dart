@@ -7,11 +7,11 @@ import '../../../utils/access_control.dart';
 import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
-import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_tour_program_create_page.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoTourProgramListPage extends StatefulWidget {
   final String role;
@@ -768,7 +768,7 @@ class _CupertinoTourProgramListPageState
 
   Widget _categoriesView() {
     if (loadingToday && loadingUpcoming) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
 
     final today = _applyDate(todayList);
@@ -900,7 +900,7 @@ class _CupertinoTourProgramListPageState
 
   Widget _listView(bool loading, List<Map<String, dynamic>> list) {
     if (loading) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
 
     if (list.isEmpty) {

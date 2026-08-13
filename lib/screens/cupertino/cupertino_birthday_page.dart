@@ -10,6 +10,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/cupertino/cupertino_toast.dart';
 import '../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../widgets/cupertino/cupertino_page_header.dart';
+import '../../widgets/oms_loader.dart';
 
 class CupertinoBirthdayPage extends StatefulWidget {
   final String role;
@@ -589,7 +590,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
 
   Widget _todayListView() {
     if (loadingToday) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
 
     if (todayList.isEmpty) {
@@ -633,7 +634,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
 
   Widget _upcomingListView() {
     if (loadingUpcoming) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
 
     if (upcomingList.isEmpty) {

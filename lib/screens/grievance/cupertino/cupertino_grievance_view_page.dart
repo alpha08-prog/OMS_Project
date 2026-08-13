@@ -7,6 +7,7 @@ import '../../../utils/access_control.dart';
 import '../../../widgets/cupertino/cupertino_attachments_section.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/oms_loader.dart';
 
 /// Grievance details — single-pane view. Timeline + Tracking-history
 /// segments were removed 2026-05-22 (only the Details pane is shown). Admin
@@ -155,7 +156,7 @@ class _CupertinoGrievanceViewPageState
         child: Column(
           children: const [
             OmsPageHeader(title: "Grievance Details"),
-            Expanded(child: Center(child: CupertinoActivityIndicator())),
+            Expanded(child: OmsLoader(size: 56)),
           ],
         ),
       );

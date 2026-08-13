@@ -10,6 +10,7 @@ import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoStaffTasksPage extends StatefulWidget {
   const CupertinoStaffTasksPage({super.key});
@@ -413,7 +414,7 @@ class _CupertinoStaffTasksPageState extends State<CupertinoStaffTasksPage> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CupertinoActivityIndicator())
+                ? OmsLoader(size: 56)
                 : _visibleTasks.isEmpty
                     ? Center(
                         child: Column(

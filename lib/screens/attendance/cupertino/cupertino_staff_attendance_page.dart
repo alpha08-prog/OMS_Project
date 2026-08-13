@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoStaffAttendancePage extends StatefulWidget {
   const CupertinoStaffAttendancePage({super.key});
@@ -262,7 +263,7 @@ class _CupertinoStaffAttendancePageState
                       if (_loading)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 32),
-                          child: Center(child: CupertinoActivityIndicator()),
+                          child: OmsLoader(size: 56),
                         )
                       else if (_mode == _RangeMode.day)
                         _buildDayTable()

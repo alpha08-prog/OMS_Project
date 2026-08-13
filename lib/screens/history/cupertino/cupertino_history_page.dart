@@ -5,11 +5,11 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
-import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoHistoryPage extends StatefulWidget {
   final String role;
@@ -545,7 +545,7 @@ class _CupertinoHistoryPageState extends State<CupertinoHistoryPage> {
           ),
           Expanded(
             child: loading
-                ? const Center(child: CupertinoActivityIndicator())
+                ? OmsLoader(size: 56)
                 : error != null
                 ? Center(
                     child: Column(

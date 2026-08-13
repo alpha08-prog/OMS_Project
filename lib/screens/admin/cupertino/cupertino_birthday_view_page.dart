@@ -8,6 +8,7 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoBirthdayViewPage extends StatefulWidget {
   const CupertinoBirthdayViewPage({super.key});
@@ -374,9 +375,7 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                       if (_loading)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 60),
-                          child: Center(
-                            child: CupertinoActivityIndicator(radius: 14),
-                          ),
+                          child: OmsLoader(size: 56),
                         )
                       else if (_error != null)
                         _buildError()

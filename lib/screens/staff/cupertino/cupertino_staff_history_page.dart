@@ -9,6 +9,7 @@ import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_staff_history_detail_dialog.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoStaffHistoryPage extends StatefulWidget {
   const CupertinoStaffHistoryPage({super.key});
@@ -296,7 +297,7 @@ class _CupertinoStaffHistoryPageState
             // List
             Expanded(
               child: _loading
-                  ? const Center(child: CupertinoActivityIndicator())
+                  ? OmsLoader(size: 56)
                   : items.isEmpty
                       ? Center(
                           child: Column(

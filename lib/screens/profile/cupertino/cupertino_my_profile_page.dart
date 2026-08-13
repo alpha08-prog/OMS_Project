@@ -6,6 +6,7 @@ import '../../../services/profile_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoMyProfilePage extends StatefulWidget {
   const CupertinoMyProfilePage({super.key});
@@ -156,7 +157,7 @@ class _CupertinoMyProfilePageState extends State<CupertinoMyProfilePage> {
           OmsPageHeader(title: 'My Profile'),
           Expanded(
             child: _loading
-                ? const Center(child: CupertinoActivityIndicator(radius: 14))
+                ? OmsLoader(size: 56)
                 : _loadError != null
                     ? _buildErrorState()
                     : _buildContent(),

@@ -897,7 +897,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
           borderRadius: BorderRadius.circular(16),
           boxShadow: AppTheme.shadowSm,
         ),
-        child: const Center(child: CupertinoActivityIndicator()),
+        child: OmsLoader(size: 56),
       ),
     );
   }
@@ -3209,7 +3209,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
           if (_loadingAdminDashboard)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 30),
-              child: Center(child: CupertinoActivityIndicator()),
+              child: OmsLoader(size: 56),
             )
           else if (_pendingApprovals.isEmpty)
             Padding(

@@ -12,6 +12,7 @@ import '../../../utils/app_navigator.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_admin_grievance_detail_dialog.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoNotificationsPage extends StatefulWidget {
   final String role;
@@ -209,7 +210,7 @@ class _CupertinoNotificationsPageState
               if (_loading)
                 const SliverFillRemaining(
                   hasScrollBody: false,
-                  child: Center(child: CupertinoActivityIndicator()),
+                  child: OmsLoader(size: 56),
                 )
               else if (_items.isEmpty)
                 const SliverFillRemaining(

@@ -10,6 +10,7 @@ import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../../../utils/csv_export.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoTourQueuePage extends StatefulWidget {
   const CupertinoTourQueuePage({super.key});
@@ -240,7 +241,7 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
                     if (_loading)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 60),
-                        child: Center(child: CupertinoActivityIndicator()),
+                        child: OmsLoader(size: 56),
                       )
                     else ...[
                       Text(

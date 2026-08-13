@@ -8,10 +8,10 @@ import '../../../utils/access_control.dart';
 import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
-import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 const Color _kNewsPrimaryBlue = Color(0xFF0A2E5C);
 const Color _kNewsBgLight = Color(0xFFF4F6FB);
@@ -293,7 +293,7 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
           ),
           Expanded(
             child: loading
-                ? const Center(child: CupertinoActivityIndicator())
+                ? OmsLoader(size: 56)
                 : error != null
                 ? Center(child: Text(error!))
                 : ListView(

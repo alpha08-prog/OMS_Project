@@ -9,6 +9,7 @@ import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoEventReportsPage extends StatefulWidget {
   const CupertinoEventReportsPage({super.key});
@@ -211,7 +212,7 @@ class _CupertinoEventReportsPageState extends State<CupertinoEventReportsPage> {
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 60),
-        child: Center(child: CupertinoActivityIndicator()),
+        child: OmsLoader(size: 56),
       );
     }
 

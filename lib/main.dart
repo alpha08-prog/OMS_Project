@@ -11,6 +11,7 @@ import 'services/theme_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/cupertino_theme.dart';
 import 'utils/platform_utils.dart';
+import 'widgets/oms_loader.dart';
 
 // Global theme service instance
 final ThemeService themeService = ThemeService();
@@ -202,39 +203,10 @@ class _AuthCheckState extends State<AuthCheck> {
   }
 
   Widget _buildLoadingWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              gradient: AppTheme.primaryGradient,
-              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              boxShadow: AppTheme.shadowColored(AppTheme.primaryIndigo),
-            ),
-            child: Center(
-              child: Icon(
-                PlatformUtils.isCupertino
-                    ? CupertinoIcons.building_2_fill
-                    : Icons.business,
-                size: 40,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          PlatformUtils.isCupertino
-              ? const CupertinoActivityIndicator(radius: 16)
-              : const CircularProgressIndicator(color: AppTheme.primaryIndigo),
-          const SizedBox(height: 16),
-          Text(
-            "Loading...",
-            style: AppTheme.bodyMd.copyWith(color: AppTheme.muted),
-          ),
-        ],
-      ),
+    // The launch screen used a generic "office building" glyph in a gradient
+    // box, which is not the app's identity. It now shows the real app icon.
+    return const Center(
+      child: OmsLoader(size: 84, message: "Loading…"),
     );
   }
 

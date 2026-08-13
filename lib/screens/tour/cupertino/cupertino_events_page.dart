@@ -7,6 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_page_header.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoEventsPage extends StatefulWidget {
   final String role;
@@ -291,7 +292,7 @@ class _CupertinoEventsPageState extends State<CupertinoEventsPage> {
                       if (_loading)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 60),
-                          child: Center(child: CupertinoActivityIndicator()),
+                          child: OmsLoader(size: 56),
                         )
                       else if (_error != null)
                         _buildError()
