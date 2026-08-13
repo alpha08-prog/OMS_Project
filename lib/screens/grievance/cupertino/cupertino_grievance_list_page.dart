@@ -9,15 +9,16 @@ import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
 import '../../../utils/csv_export.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../../../widgets/cupertino/cupertino_filter_row.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
-import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_admin_grievance_detail_dialog.dart';
 import 'cupertino_grievance_type_picker_page.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoGrievanceListPage extends StatefulWidget {
   final String role;
@@ -364,35 +365,22 @@ class _CupertinoGrievanceListPageState
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Nav row
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
-                    child: Row(
+                  // Nav row. Uses the shared OmsPageHeader so this screen gets
+                  // the same centred title and canPop-guarded back button as
+                  // every other page — it is reached both as a pushed route and
+                  // as the root of the "Grievances" bottom tab, where popping
+                  // would blank the tab. Titled "Grievances" (not "Old
+                  // Grievances"): it lists everything from /api/grievances and
+                  // is what the "Grievances" tab opens.
+                  OmsPageHeader(
+                    title: "Grievances",
+                    gradientColors: const [
+                      AppTheme.primaryIndigo,
+                      Color(0xFF4F46E5),
+                    ],
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        CupertinoButton(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 6),
-                          onPressed: () => Navigator.pop(context),
-                          child: const Icon(CupertinoIcons.chevron_left,
-                              color: CupertinoColors.white, size: 22),
-                        ),
-                        const Expanded(
-                          child: Text(
-                            "Old Grievances",
-                            style: TextStyle(
-                              inherit: false,
-                              color: CupertinoColors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              decoration: TextDecoration.none,
-                              letterSpacing: -0.4,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
                             GestureDetector(
                               onTap: () =>
                                   setState(() => _showFilters = !_showFilters),
@@ -449,8 +437,6 @@ class _CupertinoGrievanceListPageState
                                     size: 24),
                               ),
                             ],
-                          ],
-                        ),
                       ],
                     ),
                   ),
@@ -738,7 +724,7 @@ class _CupertinoGrievanceListPageState
                 // ================= LIST =================
                 Expanded(
                   child: _loading
-                      ? const Center(child: CupertinoActivityIndicator())
+                      ? OmsLoader(size: 56)
                       : _error != null
                           ? Center(
                               child: Column(
@@ -955,7 +941,6 @@ class _CupertinoGrievanceListPageState
     }
 
     final id = grievance["id"];
-    final grievanceId = id is int ? id.toString() : (id?.toString() ?? "");
 
     return GestureDetector(
       onTap: () async {
