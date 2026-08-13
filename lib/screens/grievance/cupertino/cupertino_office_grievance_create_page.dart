@@ -10,6 +10,7 @@ import '../../../theme/app_theme.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/attachment_picker.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
@@ -201,17 +202,18 @@ class _CupertinoOfficeGrievanceCreatePageState
     final deity = entry?.deity ?? selectedTempleKey ?? 'temple';
     final name = petitionerNameController.text.trim();
     final n = memberCountController.text.trim();
-    final from = visitDateFrom == null ? '' : ' from ${_formatDate(visitDateFrom)}';
+    final from =
+        visitDateFrom == null ? '' : ' from ${_formatDate(visitDateFrom)}';
     final to = visitDateTo == null ? '' : ' to ${_formatDate(visitDateTo)}';
-    return 'Temple visit letter for $name and $n members to $deity$from$to'.trim();
+    return 'Temple visit letter for $name and $n members to $deity$from$to'
+        .trim();
   }
 
   bool _validate() {
     bool valid = true;
 
-    _nameError = petitionerNameController.text.trim().isEmpty
-        ? 'Required'
-        : null;
+    _nameError =
+        petitionerNameController.text.trim().isEmpty ? 'Required' : null;
     if (_nameError != null) valid = false;
 
     _mobileError = mobileNumberController.text.trim().length != 10
@@ -219,37 +221,35 @@ class _CupertinoOfficeGrievanceCreatePageState
         : null;
     if (_mobileError != null) valid = false;
 
-    _constituencyError = (selectedConstituency == null ||
-            selectedConstituency!.isEmpty)
-        ? 'Required'
-        : null;
+    _constituencyError =
+        (selectedConstituency == null || selectedConstituency!.isEmpty)
+            ? 'Required'
+            : null;
     if (_constituencyError != null) valid = false;
 
-    _referencedByError = referencedByController.text.trim().isEmpty
-        ? 'Required'
-        : null;
+    _referencedByError =
+        referencedByController.text.trim().isEmpty ? 'Required' : null;
     if (_referencedByError != null) valid = false;
 
     if (isTempleVisit) {
       _descriptionError = null;
 
-      _templeKeyError = (selectedTempleKey == null || selectedTempleKey!.isEmpty)
-          ? 'Select a temple'
-          : null;
+      _templeKeyError =
+          (selectedTempleKey == null || selectedTempleKey!.isEmpty)
+              ? 'Select a temple'
+              : null;
       if (_templeKeyError != null) valid = false;
 
       final n = int.tryParse(memberCountController.text.trim());
-      _memberCountError = (n == null || n < 1)
-          ? 'Must be a positive number'
-          : null;
+      _memberCountError =
+          (n == null || n < 1) ? 'Must be a positive number' : null;
       if (_memberCountError != null) valid = false;
 
       _visitFromError = visitDateFrom == null ? 'Required' : null;
       if (_visitFromError != null) valid = false;
     } else {
-      _descriptionError = descriptionController.text.trim().isEmpty
-          ? 'Required'
-          : null;
+      _descriptionError =
+          descriptionController.text.trim().isEmpty ? 'Required' : null;
       if (_descriptionError != null) valid = false;
 
       _templeKeyError = null;
@@ -319,7 +319,8 @@ class _CupertinoOfficeGrievanceCreatePageState
       final monetaryVal = monetaryValueController.text.trim();
       if (monetaryVal.isNotEmpty) body['monetaryValue'] = monetaryVal;
 
-      if (selectedLetterTemplate != null && selectedLetterTemplate!.isNotEmpty) {
+      if (selectedLetterTemplate != null &&
+          selectedLetterTemplate!.isNotEmpty) {
         body['letterTemplate'] = selectedLetterTemplate;
       }
 
@@ -443,201 +444,196 @@ class _CupertinoOfficeGrievanceCreatePageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.saffronDark,
-        brightness: Brightness.dark,
-        middle: const Text(
-          'Office Grievance',
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: AppTheme.saffronSoft,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.saffron.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  Icon(CupertinoIcons.building_2_fill,
-                      color: AppTheme.saffronDark),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Internal Office Grievance - for office-level routing',
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w500),
-                    ),
+      child: Column(
+        children: [
+          const OmsPageHeader(
+            title: 'Office Grievance',
+            gradientColors: [AppTheme.saffronDark, AppTheme.saffron],
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.saffronSoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: AppTheme.saffron.withOpacity(0.3)),
                   ),
-                ],
-              ),
-            ),
-            _buildCard(title: 'PETITIONER DETAILS', children: [
-              _buildTextField(
-                controller: petitionerNameController,
-                placeholder: 'Petitioner Name *',
-                prefixIcon: CupertinoIcons.person,
-                error: _nameError,
-              ),
-              const SizedBox(height: 12),
-              _buildTextField(
-                controller: mobileNumberController,
-                placeholder: 'Mobile Number *',
-                prefixIcon: CupertinoIcons.phone,
-                keyboardType: TextInputType.phone,
-                maxLength: 10,
-                error: _mobileError,
-              ),
-            ]),
-            const SizedBox(height: 16),
-            _buildCard(title: 'GRIEVANCE INFORMATION', children: [
-              _buildPickerField(
-                label: 'Constituency / Ward *',
-                currentValue:
-                    selectedConstituency ?? 'Select constituency',
-                icon: CupertinoIcons.location,
-                error: _constituencyError,
-                onTap: () {
-                  CupertinoFormHelpers.showPicker(
-                    context: context,
-                    items: officeZones,
-                    currentValue: selectedConstituency ?? officeZones.first,
-                    title: 'Constituency / Ward',
-                    onSelected: (label) => setState(() {
-                      selectedConstituency = label;
-                      _constituencyError = null;
-                    }),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              _buildTextField(
-                controller: wardVillageController,
-                placeholder: 'Ward / Village',
-                prefixIcon: CupertinoIcons.house,
-              ),
-              const SizedBox(height: 12),
-              _buildPickerField(
-                label: 'Grievance Type *',
-                currentValue:
-                    _getLabelForValue(grievanceTypes, selectedGrievanceType),
-                icon: CupertinoIcons.tag,
-                onTap: () {
-                  CupertinoFormHelpers.showPicker(
-                    context: context,
-                    items: grievanceTypes.map((e) => e['label']!).toList(),
+                  child: Row(
+                    children: [
+                      Icon(CupertinoIcons.building_2_fill,
+                          color: AppTheme.saffronDark),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Internal Office Grievance - for office-level routing',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _buildCard(title: 'PETITIONER DETAILS', children: [
+                  _buildTextField(
+                    controller: petitionerNameController,
+                    placeholder: 'Petitioner Name *',
+                    prefixIcon: CupertinoIcons.person,
+                    error: _nameError,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    controller: mobileNumberController,
+                    placeholder: 'Mobile Number *',
+                    prefixIcon: CupertinoIcons.phone,
+                    keyboardType: TextInputType.phone,
+                    maxLength: 10,
+                    error: _mobileError,
+                  ),
+                ]),
+                const SizedBox(height: 16),
+                _buildCard(title: 'GRIEVANCE INFORMATION', children: [
+                  _buildPickerField(
+                    label: 'Constituency / Ward *',
+                    currentValue: selectedConstituency ?? 'Select constituency',
+                    icon: CupertinoIcons.location,
+                    error: _constituencyError,
+                    onTap: () {
+                      CupertinoFormHelpers.showPicker(
+                        context: context,
+                        items: officeZones,
+                        currentValue: selectedConstituency ?? officeZones.first,
+                        title: 'Constituency / Ward',
+                        onSelected: (label) => setState(() {
+                          selectedConstituency = label;
+                          _constituencyError = null;
+                        }),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    controller: wardVillageController,
+                    placeholder: 'Ward / Village',
+                    prefixIcon: CupertinoIcons.house,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildPickerField(
+                    label: 'Grievance Type *',
                     currentValue: _getLabelForValue(
                         grievanceTypes, selectedGrievanceType),
-                    title: 'Grievance Type',
-                    onSelected: (label) {
-                      for (final e in grievanceTypes) {
-                        if (e['label'] == label) {
-                          setState(() {
-                            selectedGrievanceType = e['value']!;
-                          });
-                          if (e['value'] == 'TEMPLE_VISIT') {
-                            _ensureTemplesLoaded();
+                    icon: CupertinoIcons.tag,
+                    onTap: () {
+                      CupertinoFormHelpers.showPicker(
+                        context: context,
+                        items: grievanceTypes.map((e) => e['label']!).toList(),
+                        currentValue: _getLabelForValue(
+                            grievanceTypes, selectedGrievanceType),
+                        title: 'Grievance Type',
+                        onSelected: (label) {
+                          for (final e in grievanceTypes) {
+                            if (e['label'] == label) {
+                              setState(() {
+                                selectedGrievanceType = e['value']!;
+                              });
+                              if (e['value'] == 'TEMPLE_VISIT') {
+                                _ensureTemplesLoaded();
+                              }
+                              return;
+                            }
                           }
-                          return;
-                        }
-                      }
+                        },
+                      );
                     },
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              _buildPickerField(
-                label: 'Priority *',
-                currentValue:
-                    _getLabelForValue(priorityOptions, selectedPriority),
-                icon: CupertinoIcons.flag,
-                onTap: () {
-                  CupertinoFormHelpers.showPicker(
-                    context: context,
-                    items: priorityOptions.map((e) => e['label']!).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildPickerField(
+                    label: 'Priority *',
                     currentValue:
                         _getLabelForValue(priorityOptions, selectedPriority),
-                    title: 'Priority',
-                    onSelected: (label) {
-                      for (final e in priorityOptions) {
-                        if (e['label'] == label) {
-                          setState(() => selectedPriority = e['value']!);
-                          return;
-                        }
-                      }
+                    icon: CupertinoIcons.flag,
+                    onTap: () {
+                      CupertinoFormHelpers.showPicker(
+                        context: context,
+                        items: priorityOptions.map((e) => e['label']!).toList(),
+                        currentValue: _getLabelForValue(
+                            priorityOptions, selectedPriority),
+                        title: 'Priority',
+                        onSelected: (label) {
+                          for (final e in priorityOptions) {
+                            if (e['label'] == label) {
+                              setState(() => selectedPriority = e['value']!);
+                              return;
+                            }
+                          }
+                        },
+                      );
                     },
-                  );
-                },
-              ),
-              if (!isTempleVisit) ...[
-                const SizedBox(height: 12),
-                _buildTextField(
-                  controller: descriptionController,
-                  placeholder: 'Description *',
-                  maxLines: 4,
-                  error: _descriptionError,
+                  ),
+                  if (!isTempleVisit) ...[
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: descriptionController,
+                      placeholder: 'Description *',
+                      maxLines: 4,
+                      error: _descriptionError,
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    controller: monetaryValueController,
+                    placeholder: 'Monetary Value (₹)',
+                    prefixIcon: CupertinoIcons.money_dollar,
+                    keyboardType: TextInputType.number,
+                  ),
+                ]),
+                if (isTempleVisit) ...[
+                  const SizedBox(height: 16),
+                  _buildTempleSection(),
+                ],
+                const SizedBox(height: 16),
+                _buildSupportingDocsSection(),
+                const SizedBox(height: 16),
+                _buildActionAndLetterSection(),
+                const SizedBox(height: 16),
+                _buildCard(title: 'REFERENCE', children: [
+                  _buildTextField(
+                    controller: referencedByController,
+                    placeholder: 'Referenced By *',
+                    prefixIcon: CupertinoIcons.person_2,
+                    error: _referencedByError,
+                  ),
+                ]),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: CupertinoButton(
+                    color: AppTheme.saffronDark,
+                    borderRadius: BorderRadius.circular(12),
+                    onPressed: submitting ? null : _submit,
+                    child: submitting
+                        ? const CupertinoActivityIndicator(
+                            color: CupertinoColors.white)
+                        : Text(
+                            isTempleVisit
+                                ? 'Generate Darshan Letter'
+                                : 'Submit Office Grievance',
+                            style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: CupertinoColors.white),
+                          ),
+                  ),
                 ),
+                const SizedBox(height: 24),
               ],
-              const SizedBox(height: 12),
-              _buildTextField(
-                controller: monetaryValueController,
-                placeholder: 'Monetary Value (₹)',
-                prefixIcon: CupertinoIcons.money_dollar,
-                keyboardType: TextInputType.number,
-              ),
-            ]),
-            if (isTempleVisit) ...[
-              const SizedBox(height: 16),
-              _buildTempleSection(),
-            ],
-            const SizedBox(height: 16),
-            _buildSupportingDocsSection(),
-            const SizedBox(height: 16),
-            _buildActionAndLetterSection(),
-            const SizedBox(height: 16),
-            _buildCard(title: 'REFERENCE', children: [
-              _buildTextField(
-                controller: referencedByController,
-                placeholder: 'Referenced By *',
-                prefixIcon: CupertinoIcons.person_2,
-                error: _referencedByError,
-              ),
-            ]),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: CupertinoButton(
-                color: AppTheme.saffronDark,
-                borderRadius: BorderRadius.circular(12),
-                onPressed: submitting ? null : _submit,
-                child: submitting
-                    ? const CupertinoActivityIndicator(
-                        color: CupertinoColors.white)
-                    : Text(
-                        isTempleVisit
-                            ? 'Generate Darshan Letter'
-                            : 'Submit Office Grievance',
-                        style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: CupertinoColors.white),
-                      ),
-              ),
             ),
-            const SizedBox(height: 24),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -701,8 +697,8 @@ class _CupertinoOfficeGrievanceCreatePageState
                   ? null
                   : () {
                       final labels = temples.map((t) => t.deity).toList();
-                      final current =
-                          _templeByKey(selectedTempleKey)?.deity ?? labels.first;
+                      final current = _templeByKey(selectedTempleKey)?.deity ??
+                          labels.first;
                       CupertinoFormHelpers.showPicker(
                         context: context,
                         items: labels,
@@ -796,12 +792,11 @@ class _CupertinoOfficeGrievanceCreatePageState
                   }
                 }),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: selected
-                        ? AppTheme.saffronSoft
-                        : CupertinoColors.white,
+                    color:
+                        selected ? AppTheme.saffronSoft : CupertinoColors.white,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: selected
@@ -813,9 +808,8 @@ class _CupertinoOfficeGrievanceCreatePageState
                     e.value,
                     style: TextStyle(
                       fontSize: 13,
-                      color: selected
-                          ? AppTheme.saffronDark
-                          : AppTheme.foreground,
+                      color:
+                          selected ? AppTheme.saffronDark : AppTheme.foreground,
                       fontWeight:
                           selected ? FontWeight.w600 : FontWeight.normal,
                     ),
@@ -1068,9 +1062,7 @@ class _CupertinoOfficeGrievanceCreatePageState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _attachment!.path
-                            .split(Platform.pathSeparator)
-                            .last,
+                        _attachment!.path.split(Platform.pathSeparator).last,
                         style: const TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 13),
                         overflow: TextOverflow.ellipsis,
@@ -1106,8 +1098,7 @@ class _CupertinoOfficeGrievanceCreatePageState
           GestureDetector(
             onTap: _pickAttachment,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  vertical: 24, horizontal: 16),
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
               decoration: BoxDecoration(
                 color: CupertinoColors.systemGrey6,
                 borderRadius: BorderRadius.circular(12),
@@ -1189,8 +1180,7 @@ class _CupertinoOfficeGrievanceCreatePageState
     );
   }
 
-  Widget _buildCard(
-      {required String title, required List<Widget> children}) {
+  Widget _buildCard({required String title, required List<Widget> children}) {
     return Container(
       decoration: BoxDecoration(
         color: CupertinoColors.white,

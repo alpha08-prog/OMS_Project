@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 import '../../../services/attendance_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoStaffAttendancePage extends StatefulWidget {
   const CupertinoStaffAttendancePage({super.key});
@@ -67,7 +69,9 @@ class _CupertinoStaffAttendancePageState
       } else {
         final (start, end) = _rangeForMode();
         final agg = await AttendanceService.getAggregate(
-            startDate: start, endDate: end);
+          startDate: start,
+          endDate: end,
+        );
         if (!mounted) return;
         setState(() {
           _aggregate = agg;
@@ -107,12 +111,13 @@ class _CupertinoStaffAttendancePageState
       }
     }
     return AttendanceStats(
-        date: date,
-        totalStaff: rows.length,
-        present: p,
-        halfDay: h,
-        leave: l,
-        absent: a);
+      date: date,
+      totalStaff: rows.length,
+      present: p,
+      halfDay: h,
+      leave: l,
+      absent: a,
+    );
   }
 
   (String, String) _rangeForMode() {
@@ -140,8 +145,9 @@ class _CupertinoStaffAttendancePageState
               child: Row(
                 children: [
                   CupertinoButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel')),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel'),
+                  ),
                   const Spacer(),
                   CupertinoButton(
                     onPressed: () {
@@ -178,8 +184,8 @@ class _CupertinoStaffAttendancePageState
       final filtered = _filter == _StatusFilter.all
           ? _dayRows
           : _dayRows
-              .where((r) => r.status == _filterToStatus(_filter))
-              .toList();
+                .where((r) => r.status == _filterToStatus(_filter))
+                .toList();
       final dateLabel = _isoFmt.format(_selectedDate);
       CsvExport.export(
         context,
@@ -190,17 +196,19 @@ class _CupertinoStaffAttendancePageState
           'Status',
           'Date',
           'Reason',
-          'Marked At'
+          'Marked At',
         ],
         rows: filtered
-            .map((r) => [
-                  r.userName,
-                  r.userRole,
-                  r.status.label,
-                  r.date.isEmpty ? dateLabel : r.date,
-                  r.reason ?? '',
-                  r.markedAt == null ? '' : _formatMarkedAt(r.markedAt!),
-                ])
+            .map(
+              (r) => [
+                r.userName,
+                r.userRole,
+                r.status.label,
+                r.date.isEmpty ? dateLabel : r.date,
+                r.reason ?? '',
+                r.markedAt == null ? '' : _formatMarkedAt(r.markedAt!),
+              ],
+            )
             .toList(),
       );
     } else {
@@ -210,21 +218,11 @@ class _CupertinoStaffAttendancePageState
         context,
         fileName:
             'staff_attendance_${agg?.startDate ?? ''}_${agg?.endDate ?? ''}',
-        headers: const [
-          'Name',
-          'Present',
-          'Half Day',
-          'Leave',
-          'Total Marked'
-        ],
+        headers: const ['Name', 'Present', 'Half Day', 'Leave', 'Total Marked'],
         rows: rows
-            .map((s) => [
-                  s.userName,
-                  s.present,
-                  s.halfDay,
-                  s.leave,
-                  s.totalMarked,
-                ])
+            .map(
+              (s) => [s.userName, s.present, s.halfDay, s.leave, s.totalMarked],
+            )
             .toList(),
       );
     }
@@ -234,42 +232,50 @@ class _CupertinoStaffAttendancePageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('Staff Attendance'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: (_loading || !_hasExportRows) ? null : _exportCsv,
-          child: const Icon(CupertinoIcons.arrow_down_doc, size: 22),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _refresh),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildHeader(),
-                  const SizedBox(height: 16),
-                  _buildDatePickerCard(),
-                  const SizedBox(height: 16),
-                  if (_mode == _RangeMode.day) _buildStatsRow(),
-                  if (_mode == _RangeMode.day) const SizedBox(height: 16),
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 32),
-                      child: Center(child: CupertinoActivityIndicator()),
-                    )
-                  else if (_mode == _RangeMode.day)
-                    _buildDayTable()
-                  else
-                    _buildAggregateTable(),
-                ]),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'Staff Attendance',
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: (_loading || !_hasExportRows) ? null : _exportCsv,
+              child: const Icon(
+                CupertinoIcons.arrow_down_doc,
+                size: 22,
+                color: CupertinoColors.white,
               ),
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _refresh),
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildHeader(),
+                      const SizedBox(height: 16),
+                      _buildDatePickerCard(),
+                      const SizedBox(height: 16),
+                      if (_mode == _RangeMode.day) _buildStatsRow(),
+                      if (_mode == _RangeMode.day) const SizedBox(height: 16),
+                      if (_loading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 32),
+                          child: OmsLoader(size: 56),
+                        )
+                      else if (_mode == _RangeMode.day)
+                        _buildDayTable()
+                      else
+                        _buildAggregateTable(),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -296,17 +302,17 @@ class _CupertinoStaffAttendancePageState
                 groupValue: _mode,
                 children: const {
                   _RangeMode.day: Padding(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      child: Text('Day', style: TextStyle(fontSize: 12))),
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    child: Text('Day', style: TextStyle(fontSize: 12)),
+                  ),
                   _RangeMode.month: Padding(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      child: Text('Month', style: TextStyle(fontSize: 12))),
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    child: Text('Month', style: TextStyle(fontSize: 12)),
+                  ),
                   _RangeMode.year: Padding(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      child: Text('Year', style: TextStyle(fontSize: 12))),
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    child: Text('Year', style: TextStyle(fontSize: 12)),
+                  ),
                 },
                 onValueChanged: (v) {
                   if (v == null) return;
@@ -349,11 +355,14 @@ class _CupertinoStaffAttendancePageState
       decoration: _cardDecoration(),
       child: Row(
         children: [
-          const Text('Date',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.muted)),
+          const Text(
+            'Date',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.muted,
+            ),
+          ),
           const SizedBox(width: 10),
           GestureDetector(
             onTap: _pickDate,
@@ -368,13 +377,17 @@ class _CupertinoStaffAttendancePageState
                   Text(
                     pickerLabel,
                     style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.foreground),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.foreground,
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  const Icon(CupertinoIcons.calendar,
-                      size: 14, color: AppTheme.muted),
+                  const Icon(
+                    CupertinoIcons.calendar,
+                    size: 14,
+                    color: AppTheme.muted,
+                  ),
                 ],
               ),
             ),
@@ -416,17 +429,23 @@ class _CupertinoStaffAttendancePageState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: color)),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('$value',
-                style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.foreground)),
+            Text(
+              '$value',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.foreground,
+              ),
+            ),
           ],
         ),
       ),
@@ -449,9 +468,10 @@ class _CupertinoStaffAttendancePageState
                 child: Text(
                   'Staff Records — ${_isoFmt.format(_selectedDate)}',
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: AppTheme.foreground),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppTheme.foreground,
+                  ),
                 ),
               ),
             ],
@@ -538,9 +558,10 @@ class _CupertinoStaffAttendancePageState
             child: Text(
               r.userName.isEmpty ? '—' : r.userName,
               style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.foreground),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.foreground,
+              ),
             ),
           ),
           SizedBox(width: 90, child: _statusPill(r.status, compact: true)),
@@ -587,52 +608,77 @@ class _CupertinoStaffAttendancePageState
           Text(
             'Staff Totals — ${agg.startDate} → ${agg.endDate}',
             style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: AppTheme.foreground),
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: AppTheme.foreground,
+            ),
           ),
           const SizedBox(height: 12),
           Row(
             children: const [
               Expanded(
-                  flex: 3,
-                  child: Text('Staff',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.muted))),
+                flex: 3,
+                child: Text(
+                  'Staff',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.muted,
+                  ),
+                ),
+              ),
               SizedBox(
-                  width: 50,
-                  child: Center(
-                      child: Text('P',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.successGreen)))),
+                width: 50,
+                child: Center(
+                  child: Text(
+                    'P',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.successGreen,
+                    ),
+                  ),
+                ),
+              ),
               SizedBox(
-                  width: 50,
-                  child: Center(
-                      child: Text('HD',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.saffronDark)))),
+                width: 50,
+                child: Center(
+                  child: Text(
+                    'HD',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.saffronDark,
+                    ),
+                  ),
+                ),
+              ),
               SizedBox(
-                  width: 50,
-                  child: Center(
-                      child: Text('L',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.primaryIndigo)))),
+                width: 50,
+                child: Center(
+                  child: Text(
+                    'L',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.primaryIndigo,
+                    ),
+                  ),
+                ),
+              ),
               SizedBox(
-                  width: 60,
-                  child: Center(
-                      child: Text('Total',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.muted)))),
+                width: 60,
+                child: Center(
+                  child: Text(
+                    'Total',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.muted,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
           Container(height: 1, color: AppTheme.border),
@@ -646,33 +692,51 @@ class _CupertinoStaffAttendancePageState
                     child: Text(
                       s.userName.isEmpty ? '—' : s.userName,
                       style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.foreground),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.foreground,
+                      ),
                     ),
                   ),
                   SizedBox(
-                      width: 50,
-                      child: Center(
-                          child: Text('${s.present}',
-                              style: const TextStyle(fontSize: 13)))),
+                    width: 50,
+                    child: Center(
+                      child: Text(
+                        '${s.present}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
                   SizedBox(
-                      width: 50,
-                      child: Center(
-                          child: Text('${s.halfDay}',
-                              style: const TextStyle(fontSize: 13)))),
+                    width: 50,
+                    child: Center(
+                      child: Text(
+                        '${s.halfDay}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
                   SizedBox(
-                      width: 50,
-                      child: Center(
-                          child: Text('${s.leave}',
-                              style: const TextStyle(fontSize: 13)))),
+                    width: 50,
+                    child: Center(
+                      child: Text(
+                        '${s.leave}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
                   SizedBox(
-                      width: 60,
-                      child: Center(
-                          child: Text('${s.totalMarked}',
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700)))),
+                    width: 60,
+                    child: Center(
+                      child: Text(
+                        '${s.totalMarked}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -685,15 +749,20 @@ class _CupertinoStaffAttendancePageState
     final (bg, fg, label) = _statusStyle(status);
     return Container(
       padding: EdgeInsets.symmetric(
-          horizontal: compact ? 8 : 10, vertical: compact ? 3 : 5),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 3 : 5,
+      ),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Text(
         label,
         style: TextStyle(
-            fontSize: compact ? 10 : 11,
-            fontWeight: FontWeight.w700,
-            color: fg),
+          fontSize: compact ? 10 : 11,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
       ),
     );
   }
@@ -714,10 +783,10 @@ class _CupertinoStaffAttendancePageState
   }
 
   BoxDecoration _cardDecoration() => BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
-      );
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(14),
+    border: Border.all(color: AppTheme.border),
+  );
 
   String _formatMarkedAt(String iso) {
     try {

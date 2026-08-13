@@ -5,6 +5,7 @@ import '../../services/activity_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/csv_export.dart';
 import '../../widgets/date_range_filter.dart';
+import '../../widgets/oms_app_bar.dart';
 
 /// Admin "Activity Log" — the global who-did-what feed (GET /api/activity).
 /// Mirrors the web screen: When / Module(entity) / Action / Record(label) / By,
@@ -142,9 +143,9 @@ class _ActivityLogPageState extends State<ActivityLogPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: const Text('Activity Log'),
-        backgroundColor: AppTheme.primaryIndigo,
+      appBar: omsAppBar(
+        context,
+        title: 'Activity Log',
         actions: [
           IconButton(
             tooltip: 'Export CSV',

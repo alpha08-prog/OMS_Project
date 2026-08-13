@@ -9,8 +9,10 @@ import '../../../services/http_service.dart';
 import '../../../services/notification_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_admin_grievance_detail_dialog.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoNotificationsPage extends StatefulWidget {
   final String role;
@@ -122,8 +124,7 @@ class _CupertinoNotificationsPageState
     } catch (_) {}
     if (!mounted) return;
     if (grievance == null) {
-      CupertinoToast.show(
-          context, 'That grievance is no longer available',
+      CupertinoToast.show(context, 'That grievance is no longer available',
           isError: true);
       return;
     }
@@ -184,48 +185,54 @@ class _CupertinoNotificationsPageState
   Widget build(BuildContext context) {
     final unread = _items.where((n) => !n.isRead).length;
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('Notifications'),
-        trailing: unread > 0
-            ? CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _busyMarkingAll ? null : _markAllRead,
-                child: Text(_busyMarkingAll ? 'Marking…' : 'Mark all read'),
-              )
-            : null,
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _load),
-            if (_loading)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: CupertinoActivityIndicator()),
-              )
-            else if (_items.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: _EmptyState(),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (_, i) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _tile(_items[i]),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'Notifications',
+            trailing: unread > 0
+                ? CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _busyMarkingAll ? null : _markAllRead,
+                    child: Text(
+                      _busyMarkingAll ? 'Marking…' : 'Mark all read',
+                      style: const TextStyle(color: CupertinoColors.white),
                     ),
-                    childCount: _items.length,
+                  )
+                : null,
+          ),
+          Expanded(
+              child: CustomScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            slivers: [
+              CupertinoSliverRefreshControl(onRefresh: _load),
+              if (_loading)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: OmsLoader(size: 56),
+                )
+              else if (_items.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _EmptyState(),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (_, i) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _tile(_items[i]),
+                      ),
+                      childCount: _items.length,
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
+            ],
+          )),
+        ],
       ),
     );
   }

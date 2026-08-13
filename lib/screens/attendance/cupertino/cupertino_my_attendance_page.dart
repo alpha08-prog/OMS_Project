@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 import '../../../services/attendance_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoMyAttendancePage extends StatefulWidget {
   const CupertinoMyAttendancePage({super.key});
@@ -106,7 +108,8 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
   Future<void> _markPresent() async {
     setState(() => _markingPresent = true);
     try {
-      final rec = await AttendanceService.mark(status: AttendanceStatus.present);
+      final rec =
+          await AttendanceService.mark(status: AttendanceStatus.present);
       if (!mounted) return;
       setState(() {
         _today = rec;
@@ -194,8 +197,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
 
   Future<void> _pickDate(bool isFrom) async {
     final now = DateTime.now();
-    final minDate =
-        isFrom ? now : (_fromDate ?? now);
+    final minDate = isFrom ? now : (_fromDate ?? now);
     final maxDate = now.add(const Duration(days: 365));
     final initial = (isFrom ? _fromDate : _toDate) ?? minDate;
 
@@ -221,8 +223,8 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
                       setState(() {
                         if (isFrom) {
                           _fromDate = tempPicked;
-                          if (_toDate != null &&
-                              _toDate!.isBefore(tempPicked)) _toDate = null;
+                          if (_toDate != null && _toDate!.isBefore(tempPicked))
+                            _toDate = null;
                         } else {
                           _toDate = tempPicked;
                         }
@@ -269,47 +271,52 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('My Attendance'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _history.isEmpty ? null : _exportCsv,
-          child: const Icon(CupertinoIcons.arrow_down_doc, size: 22),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _refreshAll),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  const Text(
-                    'My Attendance',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryIndigo,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "Mark today's attendance or plan a half day / leave for any upcoming date.",
-                    style: TextStyle(
-                        fontSize: 13, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTodayCard(),
-                  const SizedBox(height: 16),
-                  _buildApplyCard(),
-                  const SizedBox(height: 16),
-                  _buildHistoryCard(),
-                ]),
-              ),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'My Attendance',
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _history.isEmpty ? null : _exportCsv,
+              child: const Icon(CupertinoIcons.arrow_down_doc,
+                  size: 22, color: CupertinoColors.white),
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _refreshAll),
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      const Text(
+                        'My Attendance',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryIndigo,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Mark today's attendance or plan a half day / leave for any upcoming date.",
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTodayCard(),
+                      const SizedBox(height: 16),
+                      _buildApplyCard(),
+                      const SizedBox(height: 16),
+                      _buildHistoryCard(),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -351,7 +358,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
           if (_loadingToday)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Center(child: CupertinoActivityIndicator()),
+              child: OmsLoader(size: 56),
             )
           else
             Row(
@@ -361,8 +368,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
                 if (today?.markedAt != null)
                   Text(
                     'Marked at ${_formatMarkedAt(today!.markedAt!)}',
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   ),
               ],
             ),
@@ -406,8 +412,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
               const SizedBox(width: 12),
               Expanded(
                 child: CupertinoButton(
-                  onPressed:
-                      (_checkingOut || !canCheckOut) ? null : _checkOut,
+                  onPressed: (_checkingOut || !canCheckOut) ? null : _checkOut,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   borderRadius: BorderRadius.circular(10),
                   color: AppTheme.destructiveRed100,
@@ -581,8 +586,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
         GestureDetector(
           onTap: onTap,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: AppTheme.border),
@@ -592,7 +596,9 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
               children: [
                 Expanded(
                   child: Text(
-                    value == null ? 'dd-mm-yyyy' : _displayDateFmt.format(value),
+                    value == null
+                        ? 'dd-mm-yyyy'
+                        : _displayDateFmt.format(value),
                     style: TextStyle(
                       color: value == null
                           ? Colors.grey.shade500
@@ -630,7 +636,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
           if (_loadingHistory)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CupertinoActivityIndicator()),
+              child: OmsLoader(size: 56),
             )
           else if (_history.isEmpty)
             Padding(
@@ -638,8 +644,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
               child: Center(
                 child: Text(
                   'No attendance records yet',
-                  style:
-                      TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
                 ),
               ),
             )
@@ -664,8 +669,7 @@ class _CupertinoMyAttendancePageState extends State<CupertinoMyAttendancePage> {
 
   Widget _historyRow(AttendanceRecord r) {
     final reason = (r.reason ?? '').isEmpty ? '—' : r.reason!;
-    final markedAt =
-        r.markedAt == null ? '—' : _formatMarkedAt(r.markedAt!);
+    final markedAt = r.markedAt == null ? '—' : _formatMarkedAt(r.markedAt!);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/access_control.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
@@ -105,7 +106,8 @@ class _CupertinoTrainRequestAddPageState
   }
 
   Future<void> _pickDate() async {
-    DateTime temp = dateOfJourney ?? DateTime.now().add(const Duration(days: 1));
+    DateTime temp =
+        dateOfJourney ?? DateTime.now().add(const Duration(days: 1));
     await showCupertinoModalPopup<void>(
       context: context,
       builder: (ctx) => Container(
@@ -164,10 +166,9 @@ class _CupertinoTrainRequestAddPageState
 
     final addStr = additionalTravellersController.text.trim();
     final addN = int.tryParse(addStr.isEmpty ? '0' : addStr);
-    _additionalError =
-        (addN == null || addN < 0 || addN > _maxAdditional)
-            ? '0–$_maxAdditional'
-            : null;
+    _additionalError = (addN == null || addN < 0 || addN > _maxAdditional)
+        ? '0–$_maxAdditional'
+        : null;
     if (_additionalError != null) ok = false;
 
     final phone = contactNumberController.text.trim();
@@ -329,31 +330,28 @@ class _CupertinoTrainRequestAddPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: const CupertinoNavigationBar(
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        middle: Text(
-          "Train EQ Entry",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(
-              "Generate Railway Emergency Quota letter instantly",
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+      child: Column(
+        children: [
+          const OmsPageHeader(title: "Train EQ Entry"),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(
+                  "Generate Railway Emergency Quota letter instantly",
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 16),
+                _buildPassengerCard(),
+                const SizedBox(height: 16),
+                _buildTrainCard(),
+                const SizedBox(height: 20),
+                _buildSubmitButton(),
+                const SizedBox(height: 16),
+              ],
             ),
-            const SizedBox(height: 16),
-            _buildPassengerCard(),
-            const SizedBox(height: 16),
-            _buildTrainCard(),
-            const SizedBox(height: 20),
-            _buildSubmitButton(),
-            const SizedBox(height: 16),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -764,13 +762,13 @@ class _CupertinoTrainRequestAddPageState
     required List<Map<String, String>> options,
     required ValueChanged<String> onSelected,
   }) {
-    final label =
-        options.firstWhere((o) => o['value'] == value, orElse: () => options.first)['label']!;
+    final label = options.firstWhere((o) => o['value'] == value,
+        orElse: () => options.first)['label']!;
     return GestureDetector(
       onTap: () {
         final items = options.map((o) => o['label']!).toList();
-        final initial = options
-            .firstWhere((o) => o['value'] == value, orElse: () => options.first);
+        final initial = options.firstWhere((o) => o['value'] == value,
+            orElse: () => options.first);
         CupertinoFormHelpers.showPicker(
           context: context,
           items: items,

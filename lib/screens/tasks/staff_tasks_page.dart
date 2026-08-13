@@ -190,6 +190,8 @@ class _StaffTasksPageState extends State<StaffTasksPage> {
             else
               Flexible(
                 child: ListView.builder(
+                  // Nested list: never re-apply the screen's safe-area insets.
+                  padding: EdgeInsets.zero,
                   shrinkWrap: true,
                   itemCount: history.length,
                   itemBuilder: (_, i) {

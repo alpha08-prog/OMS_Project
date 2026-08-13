@@ -237,23 +237,6 @@ class _TourProgramListPageState extends State<TourProgramListPage>
       ),
     );
     if (result == true) _fetchAll();
-    return;
-
-    // Legacy bottom sheet (kept for reference but no longer reached)
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) => _CreateTourProgramSheet(
-        onCreated: () async {
-          Navigator.pop(context);
-          await _loadAll();
-        },
-      ),
-    );
   }
 
   String? _getId(Map<String, dynamic> item) {

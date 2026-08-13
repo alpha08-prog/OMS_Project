@@ -13,14 +13,18 @@ import '../../../services/attendance_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../utils/app_navigator.dart';
 import '../../../widgets/cupertino/cupertino_nav_menu.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../main.dart' show themeService;
 
-import '../../../data/top_stories.dart';
-import '../../../data/news_data.dart';
-import '../../../widgets/story_card.dart';
-import '../../../widgets/news_card.dart';
 import '../../../widgets/grievance_donut_painter.dart';
+
+// Screens hosted directly as bottom-tab roots.
+import '../../grievance/cupertino/cupertino_grievance_list_page.dart';
+import '../../visitors/cupertino/cupertino_visitor_list_page.dart';
+import '../../cupertino/cupertino_birthday_page.dart';
+import '../../admin/cupertino/cupertino_birthday_view_page.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoHomeScreen extends StatefulWidget {
   final String userName;
@@ -41,6 +45,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   // Polled in-app notification badge — same cadence as the Material home.
   int _unreadNotifications = 0;
   Timer? _notificationPollTimer;
+
+  // Owned so the "More" tab's Close button can return to the Dashboard tab.
+  final CupertinoTabController _tabController = CupertinoTabController();
 
   bool _loadingStats = true;
 
@@ -115,6 +122,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   @override
   void dispose() {
     _notificationPollTimer?.cancel();
+    _tabController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -146,6 +154,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
           Icon(
             hasUnread ? CupertinoIcons.bell_fill : CupertinoIcons.bell,
             size: 22,
+            color: CupertinoColors.white,
           ),
           if (hasUnread)
             Positioned(
@@ -550,9 +559,21 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     }
 
     return CupertinoTabScaffold(
+      controller: _tabController,
       tabBar: CupertinoTabBar(
         activeColor: AppTheme.primaryIndigo,
         inactiveColor: CupertinoColors.systemGrey,
+        // An OPAQUE background is load-bearing, not cosmetic. The theme's
+        // barBackgroundColor is 0xF0-alpha (translucent), which makes
+        // CupertinoTabScaffold leave tab content running underneath the bar and
+        // merely report the inset via MediaQuery.padding — which these pages
+        // don't consume, so the last rows (the menu's Logout button, the end of
+        // every list) sat behind the tab bar. With an opaque bar the scaffold
+        // insets the content above it instead, on every tab and on everything
+        // pushed inside a tab.
+        backgroundColor: themeService.isDark
+            ? const Color(0xFF1E1E2E)
+            : const Color(0xFFF8FAFC),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(CupertinoIcons.house_fill),
@@ -580,36 +601,25 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
         switch (index) {
           case 0:
             return CupertinoTabView(builder: (_) => _buildDashboardTab());
+          // Each tab hosts its real screen directly. Previously these showed a
+          // fake "Loading…" placeholder that pushed the real page from a
+          // post-frame callback — popping that page stranded the user on the
+          // permanent fake spinner.
+          // Staff and admin both land on the list here; creation lives in the
+          // dashboard's Quick Entry section.
           case 1:
             return CupertinoTabView(
-              builder: (_) => _buildPlaceholderTab(
-                'Grievances',
-                CupertinoIcons.doc_text,
-                // Staff bottom-nav opens the list (creation is in Quick Entry).
-                () => widget.role == Roles.staff
-                    ? AppNavigator.toGrievanceList(context, role: widget.role)
-                    : AppNavigator.toGrievanceEntry(context, role: widget.role),
-              ),
+              builder: (_) => CupertinoGrievanceListPage(role: widget.role),
             );
           case 2:
             return CupertinoTabView(
-              builder: (_) => _buildPlaceholderTab(
-                'Visitors',
-                CupertinoIcons.person_2,
-                () => widget.role == Roles.staff
-                    ? AppNavigator.toVisitorList(context, role: widget.role)
-                    : AppNavigator.toVisitorEntry(context, role: widget.role),
-              ),
+              builder: (_) => CupertinoVisitorListPage(role: widget.role),
             );
           case 3:
             return CupertinoTabView(
-              builder: (_) => _buildPlaceholderTab(
-                'Birthdays',
-                CupertinoIcons.gift,
-                () => widget.role == Roles.staff
-                    ? AppNavigator.toBirthdayView(context)
-                    : AppNavigator.toBirthday(context, role: widget.role),
-              ),
+              builder: (_) => widget.role == Roles.staff
+                  ? const CupertinoBirthdayViewPage()
+                  : CupertinoBirthdayPage(role: widget.role),
             );
           case 4:
             return CupertinoTabView(
@@ -619,6 +629,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
                 onLogout: () => _logout(),
                 onToggleTheme: () => themeService.toggleTheme(),
                 isDark: themeService.isDark,
+                // Tab root: "Close" returns to the Dashboard tab rather than
+                // popping (which would blank out this tab).
+                onClose: () => _tabController.index = 0,
               ),
             );
           default:
@@ -628,76 +641,42 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     );
   }
 
-  // ================= PLACEHOLDER TAB =================
-  Widget _buildPlaceholderTab(
-      String title, IconData icon, VoidCallback onNavigate) {
-    // Trigger navigation on next frame so it runs after build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      onNavigate();
-    });
-
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(title),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 48, color: AppTheme.primaryIndigo),
-            const SizedBox(height: 16),
-            Text(
-              'Loading $title...',
-              style: const TextStyle(
-                fontSize: 16,
-                color: CupertinoColors.systemGrey,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const CupertinoActivityIndicator(),
-          ],
-        ),
-      ),
-    );
-  }
-
   // ================= DASHBOARD TAB =================
   Widget _buildDashboardTab() {
     final isSuperAdmin = widget.role == Roles.superAdmin;
+
+    final Widget header = isSuperAdmin
+        ? _buildSuperAdminHeader()
+        : OmsPageHeader(
+            title: 'OMS Dashboard',
+            showBack: false,
+            leading: CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              onPressed: _openNavMenu,
+              child: const Icon(CupertinoIcons.bars,
+                  color: CupertinoColors.white, size: 24),
+            ),
+            // A magnifying-glass button used to sit to the left of the bell
+            // with an empty onPressed. Search lives on the individual list
+            // screens, so an inert icon here was only a dead control.
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () async {
+                await AppNavigator.toNotifications(context, role: widget.role);
+                _refreshUnreadCount();
+              },
+              child: _buildBellWithBadge(),
+            ),
+          );
+
     return CupertinoPageScaffold(
       backgroundColor:
           isSuperAdmin ? const Color(0xFFF6F7FB) : null,
-      navigationBar: isSuperAdmin
-          ? _buildSuperAdminNavBar()
-          : CupertinoNavigationBar(
-              leading: CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openNavMenu,
-                child: const Icon(CupertinoIcons.bars, size: 26),
-              ),
-              middle: const Text('OMS Dashboard'),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () {},
-                    child: const Icon(CupertinoIcons.search, size: 22),
-                  ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () async {
-                      await AppNavigator.toNotifications(context,
-                          role: widget.role);
-                      _refreshUnreadCount();
-                    },
-                    child: _buildBellWithBadge(),
-                  ),
-                ],
-              ),
-            ),
-      child: SafeArea(
-        child: CustomScrollView(
+      child: Column(
+        children: [
+          header,
+          Expanded(
+            child: CustomScrollView(
           physics: const BouncingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
@@ -780,40 +759,15 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
                       _buildStaffRecentlyEntered(),
                       const SizedBox(height: 20),
                     ]
-                    // Default (unknown role): generic welcome + stats + stories + news
+                    // Default (unrecognised role): welcome + live stats only.
+                    // This branch used to render a hardcoded "Popular Stories"
+                    // / "News Updates" feed shipped in the bundle; real news
+                    // lives in the News module and is fetched from the backend.
                     else ...[
                       _buildWelcomeHeader(),
                       const SizedBox(height: 16),
                       _loadingStats ? _statsLoadingRow() : _statsRow(),
                       const SizedBox(height: 20),
-                      _sectionTitle("Popular Stories"),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 185,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: topStories.length,
-                          itemBuilder: (context, index) =>
-                              StoryCard(story: topStories[index]),
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      Container(
-                        height: 1,
-                        color: CupertinoColors.separator,
-                      ),
-                      const SizedBox(height: 18),
-                      _sectionTitle("News Updates"),
-                      const SizedBox(height: 12),
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: newsList.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 12),
-                        itemBuilder: (context, index) =>
-                            NewsCard(news: newsList[index]),
-                      ),
                     ],
                   ],
                 ),
@@ -821,12 +775,14 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }
 
-  // ================= SUPER ADMIN NAV BAR =================
-  ObstructingPreferredSizeWidget _buildSuperAdminNavBar() {
+  // ================= SUPER ADMIN HEADER =================
+  Widget _buildSuperAdminHeader() {
     final hour = DateTime.now().hour;
     final greeting = hour < 12
         ? "Good Morning"
@@ -835,50 +791,29 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
             : "Good Evening";
     final dateStr = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
 
-    return CupertinoNavigationBar(
-      backgroundColor: CupertinoColors.white,
-      border: const Border(
-        bottom: BorderSide(
-          color: Color(0xFFE5E7EB),
-          width: 0.5,
+    return OmsPageHeader(
+      title: "$greeting, Super Admin",
+      subtitle: Text(
+        dateStr,
+        style: const TextStyle(
+          inherit: false,
+          color: CupertinoColors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w400,
+          decoration: TextDecoration.none,
         ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
+      showBack: false,
       leading: CupertinoButton(
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         onPressed: _openNavMenu,
-        child: const Icon(
-          CupertinoIcons.bars,
-          color: Color(0xFF4338CA),
-          size: 26,
-        ),
-      ),
-      middle: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            "$greeting, Super Administrator",
-            style: const TextStyle(
-              color: Color(0xFF4338CA),
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text(
-            dateStr,
-            style: const TextStyle(
-              fontSize: 10,
-              color: Color(0xFF6B7280),
-              fontWeight: FontWeight.w500,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+        child: const Icon(CupertinoIcons.bars,
+            color: CupertinoColors.white, size: 24),
       ),
       trailing: CupertinoButton(
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.only(right: 4),
         onPressed: () async {
           await AppNavigator.toNotifications(context, role: widget.role);
           _refreshUnreadCount();
@@ -962,7 +897,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
           borderRadius: BorderRadius.circular(16),
           boxShadow: AppTheme.shadowSm,
         ),
-        child: const Center(child: CupertinoActivityIndicator()),
+        child: OmsLoader(size: 56),
       ),
     );
   }
@@ -1752,6 +1687,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     ];
 
     return GridView.count(
+      // Zero padding: a shrink-wrapped list otherwise re-applies the
+      // screen's safe-area insets, opening blank gaps above and below.
+      padding: EdgeInsets.zero,
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -2465,17 +2403,6 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
   }
 
   // ================= SECTION TITLE =================
-  Widget _sectionTitle(String title) {
-    return Text(
-      title.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 0.8,
-        color: AppTheme.foreground,
-      ),
-    );
-  }
 
   // ================= ADMIN DASHBOARD WIDGETS =================
 
@@ -2647,6 +2574,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
         const cardHeight = 138.0;
         final cardWidth = (constraints.maxWidth - spacing) / 2;
         return GridView.count(
+          // Zero padding: a shrink-wrapped list otherwise re-applies the
+          // screen's safe-area insets, opening blank gaps above and below.
+          padding: EdgeInsets.zero,
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -3145,6 +3075,9 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
     ];
 
     return GridView.count(
+      // Zero padding: a shrink-wrapped list otherwise re-applies the
+      // screen's safe-area insets, opening blank gaps above and below.
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,
@@ -3265,7 +3198,7 @@ class _CupertinoHomeScreenState extends State<CupertinoHomeScreen>
           if (_loadingAdminDashboard)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 30),
-              child: Center(child: CupertinoActivityIndicator()),
+              child: OmsLoader(size: 56),
             )
           else if (_pendingApprovals.isEmpty)
             Padding(

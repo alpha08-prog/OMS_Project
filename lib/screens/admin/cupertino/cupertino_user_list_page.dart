@@ -6,15 +6,16 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoUserListPage extends StatefulWidget {
   const CupertinoUserListPage({super.key});
 
   @override
-  State<CupertinoUserListPage> createState() =>
-      _CupertinoUserListPageState();
+  State<CupertinoUserListPage> createState() => _CupertinoUserListPageState();
 }
 
 class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
@@ -123,8 +124,7 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
   int get _adminCount => _users.where((u) => u['role'] == 'ADMIN').length;
   int get _superAdminCount =>
       _users.where((u) => u['role'] == 'SUPER_ADMIN').length;
-  int get _activeCount =>
-      _users.where((u) => u['isActive'] != false).length;
+  int get _activeCount => _users.where((u) => u['isActive'] != false).length;
   int get _inactiveCount => _totalCount - _activeCount;
 
   Future<void> _changeRole(String userId, String currentRole) async {
@@ -305,76 +305,75 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text(
-          "All Users",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        previousPageTitle: "Users",
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _visibleUsers.isEmpty ? null : _exportCsv,
-              child: const Icon(CupertinoIcons.arrow_down_doc,
-                  color: CupertinoColors.white, size: 22),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "All Users",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _visibleUsers.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      color: CupertinoColors.white, size: 22),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _fetchUsers,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+              ],
             ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _fetchUsers,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
-            ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: _loading
-            ? const Center(child: CupertinoActivityIndicator(radius: 14))
-            : _error != null
-                ? _buildErrorView()
-                : CustomScrollView(
-                    physics: const BouncingScrollPhysics(
-                        parent: AlwaysScrollableScrollPhysics()),
-                    slivers: [
-                      CupertinoSliverRefreshControl(onRefresh: _fetchUsers),
-                      SliverPadding(
-                        padding: const EdgeInsets.all(16),
-                        sliver: SliverList(
-                          delegate: SliverChildListDelegate([
-                            _buildStatsRow(),
-                            const SizedBox(height: 16),
-                            _buildSearchBar(),
-                            const SizedBox(height: 12),
-                            _buildRoleFilterChips(),
-                            const SizedBox(height: 12),
-                            CupertinoDateRangeFilter(
-                              from: _dateFrom,
-                              to: _dateTo,
-                              tint: AppTheme.primaryIndigo,
-                              onFromChanged: (d) =>
-                                  setState(() => _dateFrom = d),
-                              onToChanged: (d) => setState(() => _dateTo = d),
-                              onClear: () => setState(() {
-                                _dateFrom = null;
-                                _dateTo = null;
-                              }),
+          ),
+          Expanded(
+            child: _loading
+                ? OmsLoader(size: 56)
+                : _error != null
+                    ? _buildErrorView()
+                    : CustomScrollView(
+                        physics: const BouncingScrollPhysics(
+                            parent: AlwaysScrollableScrollPhysics()),
+                        slivers: [
+                          CupertinoSliverRefreshControl(onRefresh: _fetchUsers),
+                          SliverPadding(
+                            padding: const EdgeInsets.all(16),
+                            sliver: SliverList(
+                              delegate: SliverChildListDelegate([
+                                _buildStatsRow(),
+                                const SizedBox(height: 16),
+                                _buildSearchBar(),
+                                const SizedBox(height: 12),
+                                _buildRoleFilterChips(),
+                                const SizedBox(height: 12),
+                                CupertinoDateRangeFilter(
+                                  from: _dateFrom,
+                                  to: _dateTo,
+                                  tint: AppTheme.primaryIndigo,
+                                  onFromChanged: (d) =>
+                                      setState(() => _dateFrom = d),
+                                  onToChanged: (d) =>
+                                      setState(() => _dateTo = d),
+                                  onClear: () => setState(() {
+                                    _dateFrom = null;
+                                    _dateTo = null;
+                                  }),
+                                ),
+                                const SizedBox(height: 8),
+                                _buildResultCount(),
+                                const SizedBox(height: 8),
+                                if (_visibleUsers.isEmpty)
+                                  _buildEmptyState()
+                                else
+                                  ..._visibleUsers.map(_buildUserCard),
+                              ]),
                             ),
-                            const SizedBox(height: 8),
-                            _buildResultCount(),
-                            const SizedBox(height: 8),
-                            if (_visibleUsers.isEmpty)
-                              _buildEmptyState()
-                            else
-                              ..._visibleUsers.map(_buildUserCard),
-                          ]),
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+          ),
+        ],
       ),
     );
   }
@@ -446,9 +445,8 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
               AppTheme.successGreen,
               AppTheme.successGradient),
           const SizedBox(width: 10),
-          _buildStatCard("Inactive", _inactiveCount,
-              CupertinoIcons.nosign, AppTheme.destructiveRed,
-              AppTheme.destructiveGradient),
+          _buildStatCard("Inactive", _inactiveCount, CupertinoIcons.nosign,
+              AppTheme.destructiveRed, AppTheme.destructiveGradient),
         ],
       ),
     );
@@ -527,17 +525,16 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
                 _applyFilters();
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppTheme.primaryIndigo
                       : AppTheme.backgroundAlt,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSelected
-                        ? AppTheme.primaryIndigo
-                        : AppTheme.border,
+                    color:
+                        isSelected ? AppTheme.primaryIndigo : AppTheme.border,
                   ),
                 ),
                 child: Row(
@@ -647,9 +644,8 @@ class _CupertinoUserListPageState extends State<CupertinoUserListPage> {
                 ),
                 child: Icon(
                   _roleIcon(role),
-                  color: isActive
-                      ? _roleColor(role)
-                      : CupertinoColors.systemGrey,
+                  color:
+                      isActive ? _roleColor(role) : CupertinoColors.systemGrey,
                   size: 24,
                 ),
               ),

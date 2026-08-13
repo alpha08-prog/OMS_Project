@@ -472,7 +472,6 @@ class _HistoryPageState extends State<HistoryPage> {
     final userName = user?["name"] ?? "Unknown User";
     final userRole = user?["role"] ?? "";
     final createdAt = item["createdAt"];
-    final entityId = item["entityId"] ?? "";
 
     String formattedDate = "-";
     if (createdAt != null) {

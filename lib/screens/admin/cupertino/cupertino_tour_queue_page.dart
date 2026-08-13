@@ -6,16 +6,17 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import '../../../utils/csv_export.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoTourQueuePage extends StatefulWidget {
   const CupertinoTourQueuePage({super.key});
 
   @override
-  State<CupertinoTourQueuePage> createState() =>
-      _CupertinoTourQueuePageState();
+  State<CupertinoTourQueuePage> createState() => _CupertinoTourQueuePageState();
 }
 
 class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
@@ -67,8 +68,7 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
       final res = await HttpService.get("/api/tasks/staff");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         _staffList = list
             .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
             .toList();
@@ -119,8 +119,7 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
       }
     } catch (_) {
       if (!mounted) return;
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     } finally {
       if (mounted) setState(() => _busyIds.remove(id));
     }
@@ -209,92 +208,84 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Tour Invitations",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Icon(CupertinoIcons.back,
-              color: CupertinoColors.white),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _visiblePending.isEmpty ? null : _exportCsv,
-              child: const Icon(CupertinoIcons.arrow_down_doc,
-                  color: CupertinoColors.white, size: 22),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Tour Invitations",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _visiblePending.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      color: CupertinoColors.white, size: 22),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _loadAll,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white, size: 22),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: _loadAll,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white, size: 22),
-            ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _fetchPending),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Center(child: CupertinoActivityIndicator()),
-                    )
-                  else ...[
-                    Text(
-                      "Pending Invitations (${_visiblePending.length})",
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.foreground,
+          ),
+          Expanded(
+              child: CustomScrollView(
+            slivers: [
+              CupertinoSliverRefreshControl(onRefresh: _fetchPending),
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    if (_loading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 60),
+                        child: OmsLoader(size: 56),
+                      )
+                    else ...[
+                      Text(
+                        "Pending Invitations (${_visiblePending.length})",
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.foreground,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: AppTheme.shadowSm,
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: AppTheme.shadowSm,
+                        ),
+                        child: CupertinoDateRangeFilter(
+                          from: _dateFrom,
+                          to: _dateTo,
+                          tint: AppTheme.primaryIndigo,
+                          onFromChanged: (d) => setState(() => _dateFrom = d),
+                          onToChanged: (d) => setState(() => _dateTo = d),
+                          onClear: () => setState(() {
+                            _dateFrom = null;
+                            _dateTo = null;
+                          }),
+                        ),
                       ),
-                      child: CupertinoDateRangeFilter(
-                        from: _dateFrom,
-                        to: _dateTo,
-                        tint: AppTheme.primaryIndigo,
-                        onFromChanged: (d) => setState(() => _dateFrom = d),
-                        onToChanged: (d) => setState(() => _dateTo = d),
-                        onClear: () => setState(() {
-                          _dateFrom = null;
-                          _dateTo = null;
-                        }),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (_error != null)
-                      _buildError()
-                    else if (_visiblePending.isEmpty)
-                      _buildEmpty()
-                    else
-                      ..._visiblePending.map(_buildCard),
-                    const SizedBox(height: 24),
-                  ],
-                ]),
+                      const SizedBox(height: 12),
+                      if (_error != null)
+                        _buildError()
+                      else if (_visiblePending.isEmpty)
+                        _buildEmpty()
+                      else
+                        ..._visiblePending.map(_buildCard),
+                      const SizedBox(height: 24),
+                    ],
+                  ]),
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          )),
+        ],
       ),
     );
   }
@@ -405,8 +396,7 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 2),
-          child:
-              Icon(icon, size: 12, color: CupertinoColors.systemGrey),
+          child: Icon(icon, size: 12, color: CupertinoColors.systemGrey),
         ),
         const SizedBox(width: 6),
         Expanded(
@@ -444,9 +434,7 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
                 const SizedBox(width: 4),
                 Text(label,
                     style: TextStyle(
-                        color: fg,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600)),
+                        color: fg, fontSize: 11, fontWeight: FontWeight.w600)),
               ],
             ),
     );
@@ -477,8 +465,7 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
                 size: 48, color: CupertinoColors.systemGrey3),
             const SizedBox(height: 12),
             Text(_error!,
-                style:
-                    const TextStyle(color: CupertinoColors.systemGrey)),
+                style: const TextStyle(color: CupertinoColors.systemGrey)),
             const SizedBox(height: 12),
             CupertinoButton.filled(
               onPressed: _fetchPending,
@@ -497,16 +484,14 @@ class _CupertinoTourQueuePageState extends State<CupertinoTourQueuePage> {
         child: Column(
           children: [
             Icon(CupertinoIcons.checkmark_seal_fill,
-                size: 56,
-                color: AppTheme.successGreen.withOpacity(0.7)),
+                size: 56, color: AppTheme.successGreen.withOpacity(0.7)),
             const SizedBox(height: 12),
             const Text("All caught up!",
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w600)),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             const Text("No pending invitations right now.",
-                style: TextStyle(
-                    color: CupertinoColors.systemGrey, fontSize: 13)),
+                style:
+                    TextStyle(color: CupertinoColors.systemGrey, fontSize: 13)),
           ],
         ),
       ),
@@ -550,8 +535,7 @@ class _CupertinoVerifyAssignTourSheetState
     final venue = p["venue"] ?? "—";
     final dt = p["dateTime"]?.toString() ?? "";
 
-    titleController =
-        TextEditingController(text: "Prepare for $eventName");
+    titleController = TextEditingController(text: "Prepare for $eventName");
     descriptionController = TextEditingController(
       text: "Event: $eventName\n"
           "Organizer: $organizer\n"
@@ -582,8 +566,7 @@ class _CupertinoVerifyAssignTourSheetState
     _staffError =
         _selectedStaffId == null ? "Please select a staff member" : null;
     if (_staffError != null) ok = false;
-    _titleError =
-        titleController.text.trim().isEmpty ? "Required" : null;
+    _titleError = titleController.text.trim().isEmpty ? "Required" : null;
     if (_titleError != null) ok = false;
     setState(() {});
     return ok;
@@ -631,12 +614,10 @@ class _CupertinoVerifyAssignTourSheetState
           (s) => s["id"]?.toString() == _selectedStaffId,
           orElse: () => {"name": "staff"},
         );
-        CupertinoToast.show(
-            context, "Accepted & assigned to ${staff["name"]}");
+        CupertinoToast.show(context, "Accepted & assigned to ${staff["name"]}");
         Navigator.pop(context, true);
       } else {
-        String msg =
-            "Accepted, but assignment failed (${taskRes.statusCode})";
+        String msg = "Accepted, but assignment failed (${taskRes.statusCode})";
         try {
           final m = jsonDecode(taskRes.body)["message"];
           if (m != null) msg = "Accepted, but $m";
@@ -646,8 +627,7 @@ class _CupertinoVerifyAssignTourSheetState
       }
     } catch (_) {
       if (!mounted) return;
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -660,8 +640,8 @@ class _CupertinoVerifyAssignTourSheetState
     final venue = p["venue"] ?? "—";
     final dt = p["dateTime"]?.toString();
     final dateStr = dt != null
-        ? DateFormat('d MMM yyyy, h:mm a').format(
-            DateTime.tryParse(dt) ?? DateTime.now())
+        ? DateFormat('d MMM yyyy, h:mm a')
+            .format(DateTime.tryParse(dt) ?? DateTime.now())
         : "—";
     final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
 
@@ -710,9 +690,8 @@ class _CupertinoVerifyAssignTourSheetState
                       CupertinoButton(
                         padding: EdgeInsets.zero,
                         minSize: 0,
-                        onPressed: _submitting
-                            ? null
-                            : () => Navigator.pop(context),
+                        onPressed:
+                            _submitting ? null : () => Navigator.pop(context),
                         child: const Icon(CupertinoIcons.xmark,
                             size: 20, color: CupertinoColors.systemGrey),
                       ),
@@ -737,8 +716,7 @@ class _CupertinoVerifyAssignTourSheetState
                         const SizedBox(height: 2),
                         Text("$eventName • $dateStr • $venue",
                             style: const TextStyle(
-                                fontSize: 13,
-                                color: AppTheme.primaryIndigo)),
+                                fontSize: 13, color: AppTheme.primaryIndigo)),
                       ],
                     ),
                   ),
@@ -821,9 +799,8 @@ class _CupertinoVerifyAssignTourSheetState
                           color: CupertinoColors.systemGrey6,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           borderRadius: BorderRadius.circular(10),
-                          onPressed: _submitting
-                              ? null
-                              : () => Navigator.pop(context),
+                          onPressed:
+                              _submitting ? null : () => Navigator.pop(context),
                           child: const Text("Cancel",
                               style: TextStyle(
                                   fontWeight: FontWeight.w600,
@@ -841,13 +818,11 @@ class _CupertinoVerifyAssignTourSheetState
                               ? const CupertinoActivityIndicator(
                                   color: CupertinoColors.white)
                               : const Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(CupertinoIcons.person_add,
-                                        size: 18,
-                                        color: CupertinoColors.white),
+                                        size: 18, color: CupertinoColors.white),
                                     SizedBox(width: 6),
                                     Text("Accept & Assign",
                                         style: TextStyle(
@@ -889,18 +864,19 @@ class _CupertinoVerifyAssignTourSheetState
     return GestureDetector(
       onTap: () {
         if (widget.staffList.isEmpty) return;
-        final names = widget.staffList
-            .map((s) => s["name"]?.toString() ?? "-")
-            .toList();
+        final names =
+            widget.staffList.map((s) => s["name"]?.toString() ?? "-").toList();
         CupertinoFormHelpers.showPicker(
           context: context,
           items: names,
           currentValue: _selectedStaffId == null
               ? names.first
-              : (widget.staffList.firstWhere(
-                  (s) => s["id"]?.toString() == _selectedStaffId,
-                  orElse: () => widget.staffList.first,
-                )["name"]?.toString() ??
+              : (widget.staffList
+                      .firstWhere(
+                        (s) => s["id"]?.toString() == _selectedStaffId,
+                        orElse: () => widget.staffList.first,
+                      )["name"]
+                      ?.toString() ??
                   names.first),
           title: "Assign To Staff",
           onSelected: (name) {
@@ -1009,8 +985,7 @@ class _CupertinoVerifyAssignTourSheetState
             padding: const EdgeInsets.only(top: 4, left: 4),
             child: Text(error,
                 style: const TextStyle(
-                    fontSize: 12,
-                    color: CupertinoColors.destructiveRed)),
+                    fontSize: 12, color: CupertinoColors.destructiveRed)),
           ),
       ],
     );
@@ -1083,8 +1058,8 @@ class _CupertinoTourInvitationDetailsSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFFBEB),
                     borderRadius: BorderRadius.circular(8),
@@ -1110,8 +1085,7 @@ class _CupertinoTourInvitationDetailsSheet extends StatelessWidget {
                 if ((p["chiefGuest"] ?? "").toString().isNotEmpty)
                   _kv("Chief Guest", p["chiefGuest"].toString()),
                 if (p["expectedFootfall"] != null)
-                  _kv("Expected Footfall",
-                      p["expectedFootfall"].toString()),
+                  _kv("Expected Footfall", p["expectedFootfall"].toString()),
                 if ((p["contactPhone"] ?? "").toString().isNotEmpty)
                   _kv("Contact Phone", p["contactPhone"].toString()),
                 if ((p["organizerPhone"] ?? "").toString().isNotEmpty)
@@ -1123,15 +1097,14 @@ class _CupertinoTourInvitationDetailsSheet extends StatelessWidget {
                 if ((p["description"] ?? "").toString().isNotEmpty) ...[
                   const SizedBox(height: 8),
                   const Text("Description",
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.bold)),
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text(p["description"].toString(),
                       style: const TextStyle(fontSize: 13)),
                 ],
                 const SizedBox(height: 12),
-                _kv("Created by",
-                    p["createdBy"]?["name"]?.toString() ?? "—"),
+                _kv("Created by", p["createdBy"]?["name"]?.toString() ?? "—"),
                 _kv("Created at", _fmtDateTime(p["createdAt"])),
                 const SizedBox(height: 18),
                 Container(height: 0.5, color: CupertinoColors.systemGrey4),
@@ -1174,8 +1147,8 @@ class _CupertinoTourInvitationDetailsSheet extends StatelessWidget {
           ),
           Expanded(
             child: Text(value,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w500)),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
           ),
         ],
       ),

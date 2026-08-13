@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import 'cupertino_grievance_create_page.dart';
 
 /// iOS counterpart of [GrievanceTypePickerPage]. Same single-step gate:
@@ -83,50 +84,38 @@ class _CupertinoGrievanceTypePickerPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          'Register New Grievance',
-          style: TextStyle(
-            color: CupertinoColors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child:
-              const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Register New Grievance',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryIndigo,
-                ),
+      child: Column(
+        children: [
+          const OmsPageHeader(title: 'Register New Grievance'),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Register New Grievance',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryIndigo,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Public Grievance & Letter Tracking',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: CupertinoColors.systemGrey,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildCard(),
+                ],
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Public Grievance & Letter Tracking',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: CupertinoColors.systemGrey,
-                ),
-              ),
-              const SizedBox(height: 20),
-              _buildCard(),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

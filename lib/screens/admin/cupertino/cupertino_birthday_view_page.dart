@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoBirthdayViewPage extends StatefulWidget {
   const CupertinoBirthdayViewPage({super.key});
@@ -81,7 +83,9 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
         final decoded = jsonDecode(res.body);
         final List list = decoded is List
             ? decoded
-            : (decoded is Map && decoded['data'] is List ? decoded['data'] : []);
+            : (decoded is Map && decoded['data'] is List
+                  ? decoded['data']
+                  : []);
         if (mounted) {
           setState(() {
             _items = list
@@ -112,7 +116,15 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
     CsvExport.export(
       context,
       fileName: 'birthdays',
-      headers: ['Name', 'Phone', 'DOB', 'Constituency', 'Ward', 'Source', 'Added By'],
+      headers: [
+        'Name',
+        'Phone',
+        'DOB',
+        'Constituency',
+        'Ward',
+        'Source',
+        'Added By',
+      ],
       rows: _items.map((b) {
         String dob = '';
         final raw = (b['dob'] ?? b['date'] ?? b['dateOfBirth'])?.toString();
@@ -127,7 +139,9 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
           b['constituency'] ?? '',
           b['wardVillage'] ?? b['ward'] ?? '',
           b['source'] ?? b['type'] ?? 'Birthday',
-          b['addedBy'] is Map ? (b['addedBy']['name'] ?? '') : (b['addedBy'] ?? ''),
+          b['addedBy'] is Map
+              ? (b['addedBy']['name'] ?? '')
+              : (b['addedBy'] ?? ''),
         ];
       }).toList(),
     );
@@ -196,12 +210,15 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 14),
+                            horizontal: 20,
+                            vertical: 14,
+                          ),
                           decoration: BoxDecoration(
                             border: Border(
                               bottom: BorderSide(
-                                color: CupertinoColors.systemGrey5
-                                    .withValues(alpha: 0.5),
+                                color: CupertinoColors.systemGrey5.withValues(
+                                  alpha: 0.5,
+                                ),
                                 width: 0.5,
                               ),
                             ),
@@ -213,8 +230,9 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                                     ? CupertinoIcons.infinite
                                     : CupertinoIcons.calendar,
                                 size: 16,
-                                color:
-                                    selected ? _pink : CupertinoColors.systemGrey,
+                                color: selected
+                                    ? _pink
+                                    : CupertinoColors.systemGrey,
                               ),
                               const SizedBox(width: 10),
                               Expanded(
@@ -232,8 +250,11 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                                 ),
                               ),
                               if (selected)
-                                const Icon(CupertinoIcons.check_mark,
-                                    color: _pink, size: 20),
+                                const Icon(
+                                  CupertinoIcons.check_mark,
+                                  color: _pink,
+                                  size: 20,
+                                ),
                             ],
                           ),
                         ),
@@ -267,8 +288,7 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
       final d = DateTime.parse(dob.toString());
       final now = DateTime.now();
       var age = now.year - d.year;
-      if (now.month < d.month ||
-          (now.month == d.month && now.day < d.day)) {
+      if (now.month < d.month || (now.month == d.month && now.day < d.day)) {
         age--;
       }
       return age >= 0 ? age : null;
@@ -306,71 +326,70 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: _pinkDark,
-        border: null,
-        middle: const Text(
-          'View Birthdays',
-          style:
-              TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.bold),
-        ),
-        leading: CupertinoNavigationBarBackButton(
-          color: CupertinoColors.white,
-          onPressed: () => Navigator.pop(context),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _items.isEmpty ? null : _exportCsv,
-              child: const Icon(CupertinoIcons.arrow_down_doc,
-                  size: 22, color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'View Birthdays',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _items.isEmpty ? null : _exportCsv,
+                  child: const Icon(
+                    CupertinoIcons.arrow_down_doc,
+                    size: 22,
+                    color: CupertinoColors.white,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _fetch,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(
+                      CupertinoIcons.refresh,
+                      color: CupertinoColors.white,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            GestureDetector(
-              onTap: _fetch,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4),
-                child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
-              ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _fetch),
+                SliverToBoxAdapter(child: _buildHeroBanner()),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildFilterPanel(),
+                      if (_hasFilters) ...[
+                        const SizedBox(height: 10),
+                        _buildAppliedFilters(),
+                      ],
+                      const SizedBox(height: 16),
+                      _buildListHeader(),
+                      const SizedBox(height: 10),
+                      if (_loading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 60),
+                          child: OmsLoader(size: 56),
+                        )
+                      else if (_error != null)
+                        _buildError()
+                      else if (_items.isEmpty)
+                        _buildEmpty()
+                      else
+                        ..._items.map(_buildBirthdayCard),
+                    ]),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _fetch),
-            SliverToBoxAdapter(child: _buildHeroBanner()),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildFilterPanel(),
-                  if (_hasFilters) ...[
-                    const SizedBox(height: 10),
-                    _buildAppliedFilters(),
-                  ],
-                  const SizedBox(height: 16),
-                  _buildListHeader(),
-                  const SizedBox(height: 10),
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child:
-                          Center(child: CupertinoActivityIndicator(radius: 14)),
-                    )
-                  else if (_error != null)
-                    _buildError()
-                  else if (_items.isEmpty)
-                    _buildEmpty()
-                  else
-                    ..._items.map(_buildBirthdayCard),
-                ]),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -403,7 +422,9 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: CupertinoColors.white.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(6),
@@ -468,8 +489,11 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                   color: _pinkBg,
                   borderRadius: BorderRadius.circular(7),
                 ),
-                child: const Icon(CupertinoIcons.slider_horizontal_3,
-                    size: 14, color: _pink),
+                child: const Icon(
+                  CupertinoIcons.slider_horizontal_3,
+                  size: 14,
+                  color: _pink,
+                ),
               ),
               const SizedBox(width: 8),
               const Text(
@@ -483,21 +507,29 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
               const Spacer(),
               if (_hasFilters)
                 CupertinoButton(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   minimumSize: Size.zero,
                   onPressed: _clearFilters,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(CupertinoIcons.clear_circled_solid,
-                          size: 14, color: Colors.red.shade600),
+                      Icon(
+                        CupertinoIcons.clear_circled_solid,
+                        size: 14,
+                        color: Colors.red.shade600,
+                      ),
                       const SizedBox(width: 4),
-                      Text('Clear',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.red.shade600,
-                              fontWeight: FontWeight.w600)),
+                      Text(
+                        'Clear',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.red.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -523,17 +555,12 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
             onTap: _showMonthPicker,
             behavior: HitTestBehavior.opaque,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               decoration: BoxDecoration(
-                color: _monthFilter > 0
-                    ? _pinkBg
-                    : CupertinoColors.systemGrey6,
+                color: _monthFilter > 0 ? _pinkBg : CupertinoColors.systemGrey6,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: _monthFilter > 0
-                      ? _pink
-                      : CupertinoColors.systemGrey5,
+                  color: _monthFilter > 0 ? _pink : CupertinoColors.systemGrey5,
                   width: _monthFilter > 0 ? 1.2 : 1,
                 ),
               ),
@@ -572,8 +599,11 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                       ],
                     ),
                   ),
-                  const Icon(CupertinoIcons.chevron_down,
-                      size: 12, color: AppTheme.muted),
+                  const Icon(
+                    CupertinoIcons.chevron_down,
+                    size: 12,
+                    color: AppTheme.muted,
+                  ),
                 ],
               ),
             ),
@@ -586,21 +616,22 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
   Widget _buildAppliedFilters() {
     final chips = <Widget>[];
     if (_monthFilter > 0) {
-      chips.add(_appliedChip(
-        'Month: ${_monthNames[_monthFilter]}',
-        () => setState(() => _monthFilter = 0),
-      ));
+      chips.add(
+        _appliedChip(
+          'Month: ${_monthNames[_monthFilter]}',
+          () => setState(() => _monthFilter = 0),
+        ),
+      );
     }
     if (_nameQuery.isNotEmpty) {
-      chips.add(_appliedChip(
-        'Name: $_nameQuery',
-        () {
+      chips.add(
+        _appliedChip('Name: $_nameQuery', () {
           setState(() {
             _nameQuery = '';
             _searchCtrl.clear();
           });
-        },
-      ));
+        }),
+      );
     }
     return Wrap(spacing: 6, runSpacing: 6, children: chips);
   }
@@ -637,8 +668,11 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                 color: _pink,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(CupertinoIcons.xmark,
-                  size: 10, color: CupertinoColors.white),
+              child: const Icon(
+                CupertinoIcons.xmark,
+                size: 10,
+                color: CupertinoColors.white,
+              ),
             ),
           ),
         ],
@@ -767,8 +801,11 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(CupertinoIcons.gift,
-                        size: 13, color: AppTheme.muted),
+                    const Icon(
+                      CupertinoIcons.gift,
+                      size: 13,
+                      color: AppTheme.muted,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       dobShort,
@@ -804,8 +841,11 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                   const SizedBox(height: 3),
                   Row(
                     children: [
-                      const Icon(CupertinoIcons.phone,
-                          size: 13, color: AppTheme.muted),
+                      const Icon(
+                        CupertinoIcons.phone,
+                        size: 13,
+                        color: AppTheme.muted,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         phone,
@@ -824,10 +864,14 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                     spacing: 4,
                     runSpacing: 4,
                     children: [
-                      if (relation.isNotEmpty) _tag(relation, _pinkBg, _pinkDark),
+                      if (relation.isNotEmpty)
+                        _tag(relation, _pinkBg, _pinkDark),
                       if (designation.isNotEmpty)
-                        _tag(designation, AppTheme.primaryIndigo50,
-                            AppTheme.primaryIndigo),
+                        _tag(
+                          designation,
+                          AppTheme.primaryIndigo50,
+                          AppTheme.primaryIndigo,
+                        ),
                     ],
                   ),
                 ],
@@ -835,8 +879,11 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(CupertinoIcons.time,
-                          size: 12, color: Colors.orange.shade700),
+                      Icon(
+                        CupertinoIcons.time,
+                        size: 12,
+                        color: Colors.orange.shade700,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         daysUntil == 1
@@ -955,19 +1002,27 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
               color: Colors.red.shade50,
               shape: BoxShape.circle,
             ),
-            child: Icon(CupertinoIcons.cloud_bolt,
-                size: 30, color: Colors.red.shade400),
+            child: Icon(
+              CupertinoIcons.cloud_bolt,
+              size: 30,
+              color: Colors.red.shade400,
+            ),
           ),
           const SizedBox(height: 14),
-          const Text('Something went wrong',
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.foreground)),
+          const Text(
+            'Something went wrong',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.foreground,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(_error ?? 'Error',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-              textAlign: TextAlign.center),
+          Text(
+            _error ?? 'Error',
+            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 14),
           CupertinoButton(
             color: _pink,
@@ -977,11 +1032,13 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(CupertinoIcons.refresh,
-                    size: 16, color: CupertinoColors.white),
+                Icon(
+                  CupertinoIcons.refresh,
+                  size: 16,
+                  color: CupertinoColors.white,
+                ),
                 SizedBox(width: 6),
-                Text('Retry',
-                    style: TextStyle(color: CupertinoColors.white)),
+                Text('Retry', style: TextStyle(color: CupertinoColors.white)),
               ],
             ),
           ),
@@ -1011,11 +1068,14 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
             child: const Icon(CupertinoIcons.gift, size: 30, color: _pink),
           ),
           const SizedBox(height: 14),
-          const Text('No birthdays found',
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.foreground)),
+          const Text(
+            'No birthdays found',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.foreground,
+            ),
+          ),
           const SizedBox(height: 4),
           Text(
             _hasFilters
@@ -1034,8 +1094,7 @@ class _CupertinoBirthdayViewPageState extends State<CupertinoBirthdayViewPage> {
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(CupertinoIcons.clear_circled,
-                      size: 14, color: _pink),
+                  Icon(CupertinoIcons.clear_circled, size: 14, color: _pink),
                   SizedBox(width: 4),
                   Text('Clear filters', style: TextStyle(color: _pink)),
                 ],

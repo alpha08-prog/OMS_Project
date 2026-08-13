@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../super_admin_events_list_page.dart' show EventsCategory;
 import 'cupertino_super_admin_events_list_page.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoSuperAdminEventsHubPage extends StatelessWidget {
   const CupertinoSuperAdminEventsHubPage({super.key});
@@ -13,13 +14,11 @@ class CupertinoSuperAdminEventsHubPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text("Events", style: TextStyle(color: CupertinoColors.white)),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "Events",),
+          Expanded(
+            child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _hubTile(
@@ -53,6 +52,8 @@ class CupertinoSuperAdminEventsHubPage extends StatelessWidget {
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

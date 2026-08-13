@@ -6,6 +6,7 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoTourProgramCreatePage extends StatefulWidget {
   final String role;
@@ -217,13 +218,11 @@ class _CupertinoTourProgramCreatePageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("New Tour Program"),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "New Tour Program",),
+          Expanded(
+            child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _buildCard(
@@ -367,6 +366,8 @@ class _CupertinoTourProgramCreatePageState
             const SizedBox(height: 24),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

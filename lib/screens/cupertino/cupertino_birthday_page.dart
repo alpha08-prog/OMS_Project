@@ -9,14 +9,15 @@ import '../../utils/csv_export.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/cupertino/cupertino_toast.dart';
 import '../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../widgets/cupertino/cupertino_page_header.dart';
+import '../../widgets/oms_loader.dart';
 
 class CupertinoBirthdayPage extends StatefulWidget {
   final String role;
   const CupertinoBirthdayPage({super.key, required this.role});
 
   @override
-  State<CupertinoBirthdayPage> createState() =>
-      _CupertinoBirthdayPageState();
+  State<CupertinoBirthdayPage> createState() => _CupertinoBirthdayPageState();
 }
 
 class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
@@ -56,13 +57,11 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
       final res = await HttpService.get("/api/birthdays/today");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
 
         setState(() {
           todayList = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
           loadingToday = false;
         });
@@ -81,13 +80,11 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
       final res = await HttpService.get("/api/birthdays/upcoming");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
 
         setState(() {
           upcomingList = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
           loadingUpcoming = false;
         });
@@ -119,8 +116,8 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
     final canCreate = widget.role == Roles.staff;
 
     if (!canCreate) {
-      CupertinoToast.show(context,
-          "Only staff can add birthdays. You can wish only.",
+      CupertinoToast.show(
+          context, "Only staff can add birthdays. You can wish only.",
           isError: true);
       return;
     }
@@ -143,14 +140,14 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
     final age = item["age"] ?? "";
 
     if (phone.isEmpty || phone.length < 10) {
-      CupertinoToast.show(context, "No valid phone number",
-          isError: true);
+      CupertinoToast.show(context, "No valid phone number", isError: true);
       return;
     }
 
-    final ordinal = _getOrdinal(
-        age is int ? age : int.tryParse(age.toString()) ?? 0);
-    final message = '''Happy Birthday, $name!\n\nWishing you a wonderful $ordinal birthday filled with joy, happiness, and all the blessings life has to offer.\n\nMay this special day bring you closer to your dreams and goals.\n\nWarm wishes!''';
+    final ordinal =
+        _getOrdinal(age is int ? age : int.tryParse(age.toString()) ?? 0);
+    final message =
+        '''Happy Birthday, $name!\n\nWishing you a wonderful $ordinal birthday filled with joy, happiness, and all the blessings life has to offer.\n\nMay this special day bring you closer to your dreams and goals.\n\nWarm wishes!''';
 
     final encodedMessage = Uri.encodeComponent(message);
     final whatsappUrl = "https://wa.me/91$phone?text=$encodedMessage";
@@ -160,8 +157,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        CupertinoToast.show(context, "Could not open WhatsApp",
-            isError: true);
+        CupertinoToast.show(context, "Could not open WhatsApp", isError: true);
       }
     } catch (e) {
       CupertinoToast.show(context, "Could not open WhatsApp", isError: true);
@@ -186,8 +182,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
         await _loadAll();
       } else {
         final decoded = jsonDecode(res.body);
-        CupertinoToast.show(
-            context, decoded["message"] ?? "Failed to mark",
+        CupertinoToast.show(context, decoded["message"] ?? "Failed to mark",
             isError: true);
       }
     } catch (_) {
@@ -203,8 +198,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text("Wish Sent?"),
-        content: const Text(
-            "Did you send the birthday wish via WhatsApp?"),
+        content: const Text("Did you send the birthday wish via WhatsApp?"),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(ctx, false),
@@ -225,8 +219,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
   }
 
   Future<void> _sendAllWishes() async {
-    final pendingList =
-        todayList.where((b) => b["wishSent"] != true).toList();
+    final pendingList = todayList.where((b) => b["wishSent"] != true).toList();
 
     if (pendingList.isEmpty) {
       CupertinoToast.show(context, "All wishes already sent!");
@@ -332,263 +325,248 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Birthday Wishes"),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: exportEnabled ? _exportCsv : null,
-              child: const Icon(CupertinoIcons.arrow_down_doc,
-                  size: 22, color: CupertinoColors.white),
-            ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _loadAll,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
-            ),
-            if (canCreate)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openAddBirthdaySheet,
-                child: const Icon(CupertinoIcons.add,
-                    color: CupertinoColors.white),
-              ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Stats Card
-            if (totalBirthdays > 0)
-              Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: wishesSent >= totalBirthdays
-                        ? [
-                            successGreen,
-                            successGreen.withOpacity(0.8)
-                          ]
-                        : [primaryBlue, primaryBlue.withOpacity(0.8)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Birthday Wishes",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: exportEnabled ? _exportCsv : null,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      size: 22, color: CupertinoColors.white),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _loadAll,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+                if (canCreate)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openAddBirthdaySheet,
+                    child: const Icon(CupertinoIcons.add,
+                        color: CupertinoColors.white),
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (wishesSent >= totalBirthdays
-                              ? successGreen
-                              : primaryBlue)
-                          .withOpacity(0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
+              ],
+            ),
+          ),
+          Expanded(
+              child: Column(
+            children: [
+              // Stats Card
+              if (totalBirthdays > 0)
+                Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: wishesSent >= totalBirthdays
+                          ? [successGreen, successGreen.withOpacity(0.8)]
+                          : [primaryBlue, primaryBlue.withOpacity(0.8)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment:
-                          MainAxisAlignment.spaceAround,
-                      children: [
-                        _statItem("Total", totalBirthdays,
-                            CupertinoIcons.gift),
-                        _statItem(
-                            "Sent",
-                            wishesSent,
-                            CupertinoIcons.checkmark_circle,
-                            const Color(0xFFB9F6CA)),
-                        _statItem(
-                            "Pending",
-                            wishPending,
-                            CupertinoIcons.clock,
-                            const Color(0xFFFFCC80)),
-                      ],
-                    ),
-                    if (wishesSent >= totalBirthdays) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color:
-                              CupertinoColors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(CupertinoIcons.sparkles,
-                                color: CupertinoColors.white,
-                                size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              "All Wishes Sent!",
-                              style: TextStyle(
-                                color: CupertinoColors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (wishesSent >= totalBirthdays
+                                ? successGreen
+                                : primaryBlue)
+                            .withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
                     ],
-                    // Send All button for admin
-                    if (isAdmin && wishPending > 0) ...[
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: CupertinoButton(
-                          color: CupertinoColors.white,
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12),
-                          borderRadius: BorderRadius.circular(12),
-                          onPressed:
-                              sendingAll ? null : _sendAllWishes,
-                          child: sendingAll
-                              ? const CupertinoActivityIndicator()
-                              : Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
-                                  children: [
-                                    Icon(CupertinoIcons.paperplane,
-                                        size: 18,
-                                        color: successGreen),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      "Send All Pending Wishes",
-                                      style: TextStyle(
-                                        color: successGreen,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-            // Segmented control (replaces TabBar)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: CupertinoSlidingSegmentedControl<int>(
-                  groupValue: _selectedSegment,
-                  thumbColor: primaryBlue,
-                  backgroundColor: AppTheme.backgroundAlt,
-                  children: {
-                    0: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          Icon(
-                            CupertinoIcons.gift,
-                            size: 16,
-                            color: _selectedSegment == 0
-                                ? CupertinoColors.white
-                                : CupertinoColors.label,
+                          _statItem(
+                              "Total", totalBirthdays, CupertinoIcons.gift),
+                          _statItem(
+                              "Sent",
+                              wishesSent,
+                              CupertinoIcons.checkmark_circle,
+                              const Color(0xFFB9F6CA)),
+                          _statItem("Pending", wishPending,
+                              CupertinoIcons.clock, const Color(0xFFFFCC80)),
+                        ],
+                      ),
+                      if (wishesSent >= totalBirthdays) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: CupertinoColors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            "Today",
-                            style: TextStyle(
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(CupertinoIcons.sparkles,
+                                  color: CupertinoColors.white, size: 18),
+                              SizedBox(width: 8),
+                              Text(
+                                "All Wishes Sent!",
+                                style: TextStyle(
+                                  color: CupertinoColors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      // Send All button for admin
+                      if (isAdmin && wishPending > 0) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: CupertinoButton(
+                            color: CupertinoColors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            borderRadius: BorderRadius.circular(12),
+                            onPressed: sendingAll ? null : _sendAllWishes,
+                            child: sendingAll
+                                ? const CupertinoActivityIndicator()
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(CupertinoIcons.paperplane,
+                                          size: 18, color: successGreen),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        "Send All Pending Wishes",
+                                        style: TextStyle(
+                                          color: successGreen,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+              // Segmented control (replaces TabBar)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: CupertinoSlidingSegmentedControl<int>(
+                    groupValue: _selectedSegment,
+                    thumbColor: primaryBlue,
+                    backgroundColor: AppTheme.backgroundAlt,
+                    children: {
+                      0: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              CupertinoIcons.gift,
+                              size: 16,
                               color: _selectedSegment == 0
                                   ? CupertinoColors.white
                                   : CupertinoColors.label,
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
-                          if (wishPending > 0) ...[
                             const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: CupertinoColors.activeOrange,
-                                borderRadius:
-                                    BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                "$wishPending",
-                                style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: CupertinoColors.white),
+                            Text(
+                              "Today",
+                              style: TextStyle(
+                                color: _selectedSegment == 0
+                                    ? CupertinoColors.white
+                                    : CupertinoColors.label,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
+                            if (wishPending > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: CupertinoColors.activeOrange,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  "$wishPending",
+                                  style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: CupertinoColors.white),
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                    1: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            CupertinoIcons.calendar,
-                            size: 16,
-                            color: _selectedSegment == 1
-                                ? CupertinoColors.white
-                                : CupertinoColors.label,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            "Upcoming",
-                            style: TextStyle(
+                      1: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              CupertinoIcons.calendar,
+                              size: 16,
                               color: _selectedSegment == 1
                                   ? CupertinoColors.white
                                   : CupertinoColors.label,
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              "Upcoming",
+                              style: TextStyle(
+                                color: _selectedSegment == 1
+                                    ? CupertinoColors.white
+                                    : CupertinoColors.label,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  },
-                  onValueChanged: (value) {
-                    if (value != null) {
-                      setState(() => _selectedSegment = value);
-                    }
-                  },
+                    },
+                    onValueChanged: (value) {
+                      if (value != null) {
+                        setState(() => _selectedSegment = value);
+                      }
+                    },
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
 
-            // Tab content
-            Expanded(
-              child: _selectedSegment == 0
-                  ? _todayListView()
-                  : _upcomingListView(),
-            ),
-          ],
-        ),
+              // Tab content
+              Expanded(
+                child: _selectedSegment == 0
+                    ? _todayListView()
+                    : _upcomingListView(),
+              ),
+            ],
+          )),
+        ],
       ),
     );
   }
 
-  Widget _statItem(String label, int count, IconData icon,
-      [Color? iconColor]) {
+  Widget _statItem(String label, int count, IconData icon, [Color? iconColor]) {
     return Column(
       children: [
         Icon(icon,
-            color: iconColor ??
-                CupertinoColors.white.withOpacity(0.7),
+            color: iconColor ?? CupertinoColors.white.withOpacity(0.7),
             size: 24),
         const SizedBox(height: 4),
         Text(
@@ -612,7 +590,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
 
   Widget _todayListView() {
     if (loadingToday) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
 
     if (todayList.isEmpty) {
@@ -625,9 +603,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
             const SizedBox(height: 16),
             Text(
               "No birthdays today",
-              style: TextStyle(
-                  fontSize: 16,
-                  color: CupertinoColors.systemGrey),
+              style: TextStyle(fontSize: 16, color: CupertinoColors.systemGrey),
             ),
           ],
         ),
@@ -658,7 +634,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
 
   Widget _upcomingListView() {
     if (loadingUpcoming) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
 
     if (upcomingList.isEmpty) {
@@ -671,9 +647,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
             const SizedBox(height: 16),
             Text(
               "No upcoming birthdays",
-              style: TextStyle(
-                  fontSize: 16,
-                  color: CupertinoColors.systemGrey),
+              style: TextStyle(fontSize: 16, color: CupertinoColors.systemGrey),
             ),
           ],
         ),
@@ -713,8 +687,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
       decoration: BoxDecoration(
         color: CupertinoColors.white,
         borderRadius: BorderRadius.circular(16),
-        border:
-            wishSent ? Border.all(color: successGreen, width: 2) : null,
+        border: wishSent ? Border.all(color: successGreen, width: 2) : null,
         boxShadow: [
           BoxShadow(
             color: CupertinoColors.black.withOpacity(0.05),
@@ -737,14 +710,8 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: wishSent
-                          ? [
-                              successGreen,
-                              successGreen.withOpacity(0.7)
-                            ]
-                          : [
-                              const Color(0xFFF472B6),
-                              const Color(0xFFA78BFA)
-                            ],
+                          ? [successGreen, successGreen.withOpacity(0.7)]
+                          : [const Color(0xFFF472B6), const Color(0xFFA78BFA)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -794,19 +761,14 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color:
-                                    successGreen.withOpacity(0.1),
-                                borderRadius:
-                                    BorderRadius.circular(12),
+                                color: successGreen.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                      CupertinoIcons
-                                          .checkmark_circle_fill,
-                                      color: successGreen,
-                                      size: 14),
+                                  Icon(CupertinoIcons.checkmark_circle_fill,
+                                      color: successGreen, size: 14),
                                   const SizedBox(width: 4),
                                   Text(
                                     "Sent",
@@ -825,29 +787,24 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                       Row(
                         children: [
                           Icon(CupertinoIcons.phone,
-                              size: 14,
-                              color: CupertinoColors.systemGrey),
+                              size: 14, color: CupertinoColors.systemGrey),
                           const SizedBox(width: 4),
                           Text(
                             phone.toString(),
                             style: TextStyle(
                                 fontSize: 13,
-                                color:
-                                    CupertinoColors.systemGrey),
+                                color: CupertinoColors.systemGrey),
                           ),
                           if (age != "-") ...[
                             const SizedBox(width: 12),
                             Icon(CupertinoIcons.sparkles,
-                                size: 14,
-                                color:
-                                    CupertinoColors.systemGrey),
+                                size: 14, color: CupertinoColors.systemGrey),
                             const SizedBox(width: 4),
                             Text(
                               "Turning $age",
                               style: TextStyle(
                                   fontSize: 13,
-                                  color: CupertinoColors
-                                      .systemGrey),
+                                  color: CupertinoColors.systemGrey),
                             ),
                           ],
                         ],
@@ -857,8 +814,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                         const SizedBox(height: 4),
                         Text(
                           [relation, designation]
-                              .where(
-                                  (s) => s.toString().isNotEmpty)
+                              .where((s) => s.toString().isNotEmpty)
                               .join(" - "),
                           style: TextStyle(
                             fontSize: 12,
@@ -881,22 +837,19 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                 children: [
                   Expanded(
                     child: CupertinoButton(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                       color: CupertinoColors.white,
                       borderRadius: BorderRadius.circular(10),
                       onPressed: () => _launchWhatsApp(item),
                       child: Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(CupertinoIcons.arrow_up_right,
                               size: 16, color: successGreen),
                           const SizedBox(width: 4),
                           Text("Open WhatsApp",
-                              style: TextStyle(
-                                  color: successGreen,
-                                  fontSize: 13)),
+                              style:
+                                  TextStyle(color: successGreen, fontSize: 13)),
                         ],
                       ),
                     ),
@@ -904,23 +857,19 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: CupertinoButton(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                       color: successGreen,
                       borderRadius: BorderRadius.circular(10),
                       onPressed: () => _sendAndMarkWish(item),
                       child: const Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(CupertinoIcons.paperplane,
-                              size: 16,
-                              color: CupertinoColors.white),
+                              size: 16, color: CupertinoColors.white),
                           SizedBox(width: 4),
                           Text("Send & Mark",
                               style: TextStyle(
-                                  color: CupertinoColors.white,
-                                  fontSize: 13)),
+                                  color: CupertinoColors.white, fontSize: 13)),
                         ],
                       ),
                     ),
@@ -941,14 +890,12 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                         "Mark this wish as sent without opening WhatsApp?"),
                     actions: [
                       CupertinoDialogAction(
-                        onPressed: () =>
-                            Navigator.pop(ctx, false),
+                        onPressed: () => Navigator.pop(ctx, false),
                         child: const Text("Cancel"),
                       ),
                       CupertinoDialogAction(
                         isDefaultAction: true,
-                        onPressed: () =>
-                            Navigator.pop(ctx, true),
+                        onPressed: () => Navigator.pop(ctx, true),
                         child: const Text("Mark Sent"),
                       ),
                     ],
@@ -963,8 +910,8 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: CupertinoColors.systemGrey6,
-                  borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(16)),
+                  borderRadius:
+                      const BorderRadius.vertical(bottom: Radius.circular(16)),
                 ),
                 child: Text(
                   "Mark as Sent (Already sent manually)",
@@ -1064,25 +1011,21 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                 Row(
                   children: [
                     Icon(CupertinoIcons.gift,
-                        size: 14,
-                        color: CupertinoColors.systemGrey),
+                        size: 14, color: CupertinoColors.systemGrey),
                     const SizedBox(width: 4),
                     Text(
                       dobFormatted,
                       style: TextStyle(
-                          fontSize: 13,
-                          color: CupertinoColors.systemGrey),
+                          fontSize: 13, color: CupertinoColors.systemGrey),
                     ),
                     const SizedBox(width: 12),
                     Icon(CupertinoIcons.phone,
-                        size: 14,
-                        color: CupertinoColors.systemGrey),
+                        size: 14, color: CupertinoColors.systemGrey),
                     const SizedBox(width: 4),
                     Text(
                       phone.toString(),
                       style: TextStyle(
-                          fontSize: 13,
-                          color: CupertinoColors.systemGrey),
+                          fontSize: 13, color: CupertinoColors.systemGrey),
                     ),
                   ],
                 ),
@@ -1091,8 +1034,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
                   Text(
                     relation.toString(),
                     style: TextStyle(
-                        fontSize: 12,
-                        color: CupertinoColors.systemGrey),
+                        fontSize: 12, color: CupertinoColors.systemGrey),
                   ),
                 ],
               ],
@@ -1100,8 +1042,7 @@ class _CupertinoBirthdayPageState extends State<CupertinoBirthdayPage> {
           ),
           // Indicator
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: daysUntil == 1
                   ? const Color(0xFFFEF2F2)
@@ -1262,13 +1203,11 @@ class __CupertinoAddBirthdaySheetState
         CupertinoToast.show(context, "Birthday added");
         await widget.onCreated();
       } else {
-        CupertinoToast.show(
-            context, "Failed (${res.statusCode})",
+        CupertinoToast.show(context, "Failed (${res.statusCode})",
             isError: true);
       }
     } catch (_) {
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     } finally {
       if (mounted) setState(() => submitting = false);
     }
@@ -1279,12 +1218,11 @@ class __CupertinoAddBirthdaySheetState
     final bottom = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
-      padding: EdgeInsets.only(
-          left: 16, right: 16, bottom: bottom + 16, top: 16),
+      padding:
+          EdgeInsets.only(left: 16, right: 16, bottom: bottom + 16, top: 16),
       decoration: const BoxDecoration(
         color: CupertinoColors.systemBackground,
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -1302,17 +1240,16 @@ class __CupertinoAddBirthdaySheetState
             const SizedBox(height: 16),
             const Text(
               "Add Birthday",
-              style: TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
 
-            _buildField(nameController, "Name *",
-                CupertinoIcons.person, nameError),
+            _buildField(
+                nameController, "Name *", CupertinoIcons.person, nameError),
             const SizedBox(height: 12),
 
-            _buildField(phoneController, "Phone *",
-                CupertinoIcons.phone, phoneError,
+            _buildField(
+                phoneController, "Phone *", CupertinoIcons.phone, phoneError,
                 keyboardType: TextInputType.phone),
             const SizedBox(height: 12),
 
@@ -1344,8 +1281,7 @@ class __CupertinoAddBirthdaySheetState
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(dobError!,
                             style: const TextStyle(
-                                color: CupertinoColors
-                                    .destructiveRed,
+                                color: CupertinoColors.destructiveRed,
                                 fontSize: 12)),
                       ),
                   ],
@@ -1358,8 +1294,8 @@ class __CupertinoAddBirthdaySheetState
                 CupertinoIcons.person_2, relationError),
             const SizedBox(height: 12),
 
-            _buildField(designationController,
-                "Designation (optional)", CupertinoIcons.briefcase, null),
+            _buildField(designationController, "Designation (optional)",
+                CupertinoIcons.briefcase, null),
             const SizedBox(height: 12),
 
             _constituencyField(),
@@ -1378,8 +1314,7 @@ class __CupertinoAddBirthdaySheetState
                 child: Icon(CupertinoIcons.doc_text,
                     color: AppTheme.muted, size: 20),
               ),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: AppTheme.backgroundAlt,
                 border: Border.all(color: AppTheme.border),
@@ -1396,19 +1331,15 @@ class __CupertinoAddBirthdaySheetState
                     ? const CupertinoActivityIndicator(
                         color: CupertinoColors.white)
                     : Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
                               submitting
                                   ? CupertinoIcons.clock
-                                  : CupertinoIcons
-                                      .floppy_disk,
+                                  : CupertinoIcons.floppy_disk,
                               size: 20),
                           const SizedBox(width: 8),
-                          Text(submitting
-                              ? "Saving..."
-                              : "Save Birthday"),
+                          Text(submitting ? "Saving..." : "Save Birthday"),
                         ],
                       ),
               ),
@@ -1475,8 +1406,8 @@ class __CupertinoAddBirthdaySheetState
     );
   }
 
-  Widget _buildField(TextEditingController controller,
-      String placeholder, IconData icon, String? error,
+  Widget _buildField(TextEditingController controller, String placeholder,
+      IconData icon, String? error,
       {TextInputType? keyboardType}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1489,8 +1420,7 @@ class __CupertinoAddBirthdaySheetState
             padding: const EdgeInsets.only(left: 12),
             child: Icon(icon, color: AppTheme.muted, size: 20),
           ),
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: AppTheme.backgroundAlt,
             border: Border.all(color: AppTheme.border),
@@ -1502,8 +1432,7 @@ class __CupertinoAddBirthdaySheetState
             padding: const EdgeInsets.only(top: 4),
             child: Text(error,
                 style: const TextStyle(
-                    color: CupertinoColors.destructiveRed,
-                    fontSize: 12)),
+                    color: CupertinoColors.destructiveRed, fontSize: 12)),
           ),
       ],
     );

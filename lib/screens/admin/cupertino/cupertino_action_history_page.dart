@@ -6,7 +6,9 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/csv_export.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoActionHistoryPage extends StatefulWidget {
   const CupertinoActionHistoryPage({super.key});
@@ -16,7 +18,8 @@ class CupertinoActionHistoryPage extends StatefulWidget {
       _CupertinoActionHistoryPageState();
 }
 
-class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage> {
+class _CupertinoActionHistoryPageState
+    extends State<CupertinoActionHistoryPage> {
   bool _loadingList = true;
   bool _loadingStats = true;
   String? _error;
@@ -65,7 +68,9 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
         final decoded = jsonDecode(res.body);
         final data = decoded is Map && decoded['data'] is Map
             ? Map<String, dynamic>.from(decoded['data'])
-            : (decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{});
+            : (decoded is Map
+                ? Map<String, dynamic>.from(decoded)
+                : <String, dynamic>{});
         if (mounted) setState(() => _stats = data);
       }
     } catch (_) {}
@@ -95,7 +100,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
         params['startDate'] = _fromDate!.toIso8601String();
       }
       if (_toDate != null) {
-        final endOfDay = DateTime(_toDate!.year, _toDate!.month, _toDate!.day, 23, 59, 59);
+        final endOfDay =
+            DateTime(_toDate!.year, _toDate!.month, _toDate!.day, 23, 59, 59);
         params['endDate'] = endOfDay.toIso8601String();
       }
       final qs = params.entries
@@ -106,7 +112,9 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
         final decoded = jsonDecode(res.body);
         final List list = decoded is List
             ? decoded
-            : (decoded is Map && decoded['data'] is List ? decoded['data'] : []);
+            : (decoded is Map && decoded['data'] is List
+                ? decoded['data']
+                : []);
         if (mounted) {
           var items = list
               .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
@@ -162,7 +170,14 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
     CsvExport.export(
       context,
       fileName: 'action_history',
-      headers: ['Type', 'Title', 'Description', 'Action', 'Action By', 'Date/Time'],
+      headers: [
+        'Type',
+        'Title',
+        'Description',
+        'Action',
+        'Action By',
+        'Date/Time'
+      ],
       rows: _items.map((item) {
         return [
           item['type'] ?? '',
@@ -232,7 +247,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
                     decoration: BoxDecoration(
                       border: Border(
                         bottom: BorderSide(
-                          color: CupertinoColors.systemGrey5.withValues(alpha: 0.5),
+                          color: CupertinoColors.systemGrey5
+                              .withValues(alpha: 0.5),
                           width: 0.5,
                         ),
                       ),
@@ -269,7 +285,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
   }
 
   void _showDatePicker(bool isFrom) {
-    DateTime initial = isFrom ? (_fromDate ?? DateTime.now()) : (_toDate ?? DateTime.now());
+    DateTime initial =
+        isFrom ? (_fromDate ?? DateTime.now()) : (_toDate ?? DateTime.now());
     showCupertinoModalPopup(
       context: context,
       builder: (ctx) => Container(
@@ -350,7 +367,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
   }
 
   String _labelFor(List<List<String>> options, String value) {
-    final m = options.firstWhere((o) => o[0] == value, orElse: () => options[0]);
+    final m =
+        options.firstWhere((o) => o[0] == value, orElse: () => options[0]);
     return m[1];
   }
 
@@ -374,71 +392,67 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        border: null,
-        middle: const Text(
-          'Action History',
-          style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.bold),
-        ),
-        leading: CupertinoNavigationBarBackButton(
-          color: CupertinoColors.white,
-          onPressed: () => Navigator.pop(context),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _items.isEmpty ? null : _exportCsv,
-              child: const Icon(CupertinoIcons.arrow_down_doc,
-                  size: 22, color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: 'Action History',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _items.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      size: 22, color: CupertinoColors.white),
+                ),
+                GestureDetector(
+                  onTap: _loadAll,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(CupertinoIcons.refresh,
+                        color: CupertinoColors.white),
+                  ),
+                ),
+              ],
             ),
-            GestureDetector(
-              onTap: _loadAll,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4),
-                child: Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
-              ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _loadAll),
+                SliverToBoxAdapter(child: _buildHeroBanner()),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildStatsGrid(),
+                      const SizedBox(height: 18),
+                      _buildFilterPanel(),
+                      if (_hasFilters) ...[
+                        const SizedBox(height: 10),
+                        _buildAppliedFilters(),
+                      ],
+                      const SizedBox(height: 18),
+                      _buildLogHeader(),
+                      const SizedBox(height: 10),
+                      if (_loadingList)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 60),
+                          child: OmsLoader(size: 56),
+                        )
+                      else if (_error != null)
+                        _buildError()
+                      else if (_items.isEmpty)
+                        _buildEmpty()
+                      else
+                        ..._items.map(_buildLogCard),
+                    ]),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _loadAll),
-            SliverToBoxAdapter(child: _buildHeroBanner()),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildStatsGrid(),
-                  const SizedBox(height: 18),
-                  _buildFilterPanel(),
-                  if (_hasFilters) ...[
-                    const SizedBox(height: 10),
-                    _buildAppliedFilters(),
-                  ],
-                  const SizedBox(height: 18),
-                  _buildLogHeader(),
-                  const SizedBox(height: 10),
-                  if (_loadingList)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Center(child: CupertinoActivityIndicator(radius: 14)),
-                    )
-                  else if (_error != null)
-                    _buildError()
-                  else if (_items.isEmpty)
-                    _buildEmpty()
-                  else
-                    ..._items.map(_buildLogCard),
-                ]),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -474,7 +488,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: CupertinoColors.white.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(6),
@@ -525,6 +540,9 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
     final total = _stats['totalActions'] ?? 0;
 
     return GridView.count(
+      // Zero padding: a shrink-wrapped list otherwise re-applies the
+      // screen's safe-area insets, opening blank gaps above and below.
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,
@@ -636,7 +654,7 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: _loadingStats
-                    ? const Center(child: CupertinoActivityIndicator(radius: 7))
+                    ? OmsLoader(size: 56)
                     : Icon(icon, color: accent, size: 16),
               ),
             ],
@@ -812,7 +830,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
               const Spacer(),
               if (_hasFilters)
                 CupertinoButton(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   minSize: 0,
                   onPressed: _clearFilters,
                   child: Row(
@@ -937,10 +956,12 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
         decoration: BoxDecoration(
-          color: active ? AppTheme.primaryIndigo50 : CupertinoColors.systemGrey6,
+          color:
+              active ? AppTheme.primaryIndigo50 : CupertinoColors.systemGrey6,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: active ? AppTheme.primaryIndigo : CupertinoColors.systemGrey5,
+            color:
+                active ? AppTheme.primaryIndigo : CupertinoColors.systemGrey5,
             width: active ? 1.2 : 1,
           ),
         ),
@@ -1100,7 +1121,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
     final title = (item['title'] ?? '-').toString();
     final description = (item['description'] ?? '').toString();
     final actionBy = item['actionBy'];
-    final actionByName = actionBy is Map ? (actionBy['name'] ?? '—').toString() : '—';
+    final actionByName =
+        actionBy is Map ? (actionBy['name'] ?? '—').toString() : '—';
     final actionAt = item['actionAt'];
 
     String relative = '-';
@@ -1326,8 +1348,7 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
       }
     } catch (e) {
       if (!mounted) return;
-      CupertinoToast.show(context, 'Server error / No internet',
-          isError: true);
+      CupertinoToast.show(context, 'Server error / No internet', isError: true);
     }
   }
 
@@ -1338,8 +1359,10 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
     final title = (item['title'] ?? '-').toString();
     final description = (item['description'] ?? '').toString();
     final actionBy = item['actionBy'];
-    final actionByName = actionBy is Map ? (actionBy['name'] ?? '—').toString() : '—';
-    final actionByEmail = actionBy is Map ? (actionBy['email'] ?? '').toString() : '';
+    final actionByName =
+        actionBy is Map ? (actionBy['name'] ?? '—').toString() : '—';
+    final actionByEmail =
+        actionBy is Map ? (actionBy['email'] ?? '').toString() : '';
     final actionAt = item['actionAt'];
     final status = (item['status'] ?? '').toString();
     final details = (item['details'] is Map)
@@ -1478,8 +1501,7 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
                         child: CupertinoButton(
                           color: AppTheme.saffron,
                           borderRadius: BorderRadius.circular(10),
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 13),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
                           onPressed: () => _reopenGrievance(
                               ctx, (item['id'] ?? '').toString()),
                           child: const Row(
@@ -1602,8 +1624,8 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
         return const _TypeMeta(
             'GRIEVANCE', AppTheme.primaryIndigo, CupertinoIcons.doc_text);
       case 'TRAIN_REQUEST':
-        return const _TypeMeta('TRAIN REQUEST', Color(0xFF0EA5E9),
-            CupertinoIcons.train_style_one);
+        return const _TypeMeta(
+            'TRAIN REQUEST', Color(0xFF0EA5E9), CupertinoIcons.train_style_one);
       case 'TOUR_PROGRAM':
         return const _TypeMeta(
             'TOUR PROGRAM', AppTheme.saffronDark, CupertinoIcons.calendar);
@@ -1681,8 +1703,7 @@ class _CupertinoActionHistoryPageState extends State<CupertinoActionHistoryPage>
                 Icon(CupertinoIcons.refresh,
                     size: 16, color: CupertinoColors.white),
                 SizedBox(width: 6),
-                Text('Retry',
-                    style: TextStyle(color: CupertinoColors.white)),
+                Text('Retry', style: TextStyle(color: CupertinoColors.white)),
               ],
             ),
           ),

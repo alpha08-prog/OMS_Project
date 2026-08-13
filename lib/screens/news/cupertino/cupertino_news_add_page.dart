@@ -6,6 +6,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/attachment_picker.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoNewsAddPage extends StatefulWidget {
   const CupertinoNewsAddPage({super.key});
@@ -169,22 +170,11 @@ class _CupertinoNewsAddPageState extends State<CupertinoNewsAddPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Add News",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child:
-              const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "Add News"),
+          Expanded(
+            child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _buildCard(
@@ -295,6 +285,8 @@ class _CupertinoNewsAddPageState extends State<CupertinoNewsAddPage> {
             const SizedBox(height: 24),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

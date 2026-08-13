@@ -4,6 +4,12 @@
 <dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>LokMitra needs access to your photo library to let you upload images.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>LokMitra needs access to your camera to let you take photos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>LokMitra needs access to save images to your photo library.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -28,12 +34,6 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>LokMitra needs access to your photo library to let you upload images.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>LokMitra needs access to your camera to let you take photos.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>LokMitra needs access to save images to your photo library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -61,18 +61,17 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- main.dart locks the app to portrait via SystemChrome, so advertising
+	     landscape here just made the plist disagree with the app's behaviour:
+	     the OS would offer a rotation the UI never honours. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>

@@ -7,10 +7,11 @@ import '../../../utils/access_control.dart';
 import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
-import '../../../widgets/cupertino/cupertino_styled_card.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_tour_program_create_page.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoTourProgramListPage extends StatefulWidget {
   final String role;
@@ -137,8 +138,8 @@ class _CupertinoTourProgramListPageState
               (e["decision"] ?? "").toString().toUpperCase() == "ACCEPTED")
           .length;
       rejectedCount = allList
-          .where((e) =>
-              (e["decision"] ?? "").toString().toUpperCase() == "REGRET")
+          .where(
+              (e) => (e["decision"] ?? "").toString().toUpperCase() == "REGRET")
           .length;
     });
   }
@@ -149,12 +150,10 @@ class _CupertinoTourProgramListPageState
       final res = await HttpService.get("/api/tour-programs");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         setState(() {
           allList = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
           loadingAll = false;
         });
@@ -169,16 +168,13 @@ class _CupertinoTourProgramListPageState
   Future<void> _fetchToday() async {
     setState(() => loadingToday = true);
     try {
-      final res =
-          await HttpService.get("/api/tour-programs/schedule/today");
+      final res = await HttpService.get("/api/tour-programs/schedule/today");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         setState(() {
           todayList = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
           loadingToday = false;
         });
@@ -196,12 +192,10 @@ class _CupertinoTourProgramListPageState
       final res = await HttpService.get("/api/tour-programs/upcoming");
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
         setState(() {
           upcomingList = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
           loadingUpcoming = false;
         });
@@ -214,12 +208,10 @@ class _CupertinoTourProgramListPageState
   }
 
   void _openCreateSheet() async {
-    final canCreate =
-        AccessControl.can(widget.role, ActionPermission.create);
+    final canCreate = AccessControl.can(widget.role, ActionPermission.create);
 
     if (!canCreate) {
-      CupertinoToast.show(context, "You have view-only access.",
-          isError: true);
+      CupertinoToast.show(context, "You have view-only access.", isError: true);
       return;
     }
 
@@ -243,10 +235,8 @@ class _CupertinoTourProgramListPageState
   }
 
   Future<void> _updateDecision(String id, String decision) async {
-    if (widget.role != Roles.admin &&
-        widget.role != Roles.superAdmin) {
-      CupertinoToast.show(
-          context, "Only ADMIN can update decision.",
+    if (widget.role != Roles.admin && widget.role != Roles.superAdmin) {
+      CupertinoToast.show(context, "Only ADMIN can update decision.",
           isError: true);
       return;
     }
@@ -262,21 +252,17 @@ class _CupertinoTourProgramListPageState
             context, decision == "ACCEPTED" ? "Accepted" : "Regret");
         _loadAll();
       } else {
-        CupertinoToast.show(
-            context, "Failed (${res.statusCode})",
+        CupertinoToast.show(context, "Failed (${res.statusCode})",
             isError: true);
       }
     } catch (_) {
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     }
   }
 
   Future<void> _deleteProgram(String id) async {
-    if (widget.role != Roles.admin &&
-        widget.role != Roles.superAdmin) {
-      CupertinoToast.show(context, "Only ADMIN can delete.",
-          isError: true);
+    if (widget.role != Roles.admin && widget.role != Roles.superAdmin) {
+      CupertinoToast.show(context, "Only ADMIN can delete.", isError: true);
       return;
     }
 
@@ -284,8 +270,7 @@ class _CupertinoTourProgramListPageState
       context: context,
       builder: (_) => CupertinoAlertDialog(
         title: const Text("Delete Tour Program"),
-        content:
-            const Text("Are you sure you want to delete this program?"),
+        content: const Text("Are you sure you want to delete this program?"),
         actions: [
           CupertinoDialogAction(
             isDefaultAction: true,
@@ -309,13 +294,11 @@ class _CupertinoTourProgramListPageState
         CupertinoToast.show(context, "Deleted");
         _loadAll();
       } else {
-        CupertinoToast.show(
-            context, "Delete failed (${res.statusCode})",
+        CupertinoToast.show(context, "Delete failed (${res.statusCode})",
             isError: true);
       }
     } catch (_) {
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     }
   }
 
@@ -324,8 +307,7 @@ class _CupertinoTourProgramListPageState
     final title = item["eventName"] ?? "Tour Program";
     final location = item["venue"] ?? "-";
     final dateStr = item["dateTime"] ?? "";
-    final status =
-        (item["decision"] ?? "PENDING").toString().toUpperCase();
+    final status = (item["decision"] ?? "PENDING").toString().toUpperCase();
     final chiefGuest = item["chiefGuest"] ?? "";
     final contactPhone = item["contactPhone"] ?? "";
     final expectedFootfall = item["expectedFootfall"];
@@ -349,13 +331,12 @@ class _CupertinoTourProgramListPageState
     try {
       if (createdAt.isNotEmpty) {
         final parsed = DateTime.parse(createdAt);
-        formattedCreatedAt =
-            DateFormat('MMM d, yyyy h:mm a').format(parsed);
+        formattedCreatedAt = DateFormat('MMM d, yyyy h:mm a').format(parsed);
       }
     } catch (_) {}
 
-    final isAdmin = widget.role == Roles.admin ||
-        widget.role == Roles.superAdmin;
+    final isAdmin =
+        widget.role == Roles.admin || widget.role == Roles.superAdmin;
 
     showCupertinoModalPopup(
       context: context,
@@ -363,8 +344,7 @@ class _CupertinoTourProgramListPageState
         height: MediaQuery.of(context).size.height * 0.8,
         decoration: const BoxDecoration(
           color: CupertinoColors.systemBackground,
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -404,8 +384,7 @@ class _CupertinoTourProgramListPageState
                       children: [
                         Text(title.toString(),
                             style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold)),
+                                fontSize: 20, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         _statusChip(status),
                       ],
@@ -421,46 +400,43 @@ class _CupertinoTourProgramListPageState
                 decoration: BoxDecoration(
                   color: CupertinoColors.white,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                      color: CupertinoColors.systemGrey5),
+                  border: Border.all(color: CupertinoColors.systemGrey5),
                 ),
                 child: Column(
                   children: [
-                    _detailRow(CupertinoIcons.calendar,
-                        "Date & Time", formattedDate),
+                    _detailRow(
+                        CupertinoIcons.calendar, "Date & Time", formattedDate),
                     const SizedBox(height: 12),
-                    _detailRow(CupertinoIcons.location,
-                        "Venue", location.toString()),
+                    _detailRow(
+                        CupertinoIcons.location, "Venue", location.toString()),
                     if (venueLink.toString().isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      _detailRow(CupertinoIcons.link,
-                          "Venue Link", venueLink.toString()),
+                      _detailRow(CupertinoIcons.link, "Venue Link",
+                          venueLink.toString()),
                     ],
                     if (organizer.toString().isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      _detailRow(CupertinoIcons.building_2_fill,
-                          "Organizer", organizer.toString()),
+                      _detailRow(CupertinoIcons.building_2_fill, "Organizer",
+                          organizer.toString()),
                     ],
                     if (chiefGuest.toString().isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      _detailRow(CupertinoIcons.person,
-                          "Chief Guest", chiefGuest.toString()),
+                      _detailRow(CupertinoIcons.person, "Chief Guest",
+                          chiefGuest.toString()),
                     ],
                     if (contactPhone.toString().isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      _detailRow(CupertinoIcons.phone,
-                          "Contact", contactPhone.toString()),
+                      _detailRow(CupertinoIcons.phone, "Contact",
+                          contactPhone.toString()),
                     ],
                     if (expectedFootfall != null) ...[
                       const SizedBox(height: 12),
-                      _detailRow(CupertinoIcons.person_3,
-                          "Expected Footfall",
+                      _detailRow(CupertinoIcons.person_3, "Expected Footfall",
                           "$expectedFootfall people"),
                     ],
                     if (referencedBy.toString().isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      _detailRow(CupertinoIcons.person_circle,
-                          "Referenced By",
+                      _detailRow(CupertinoIcons.person_circle, "Referenced By",
                           referencedBy.toString()),
                     ],
                   ],
@@ -515,17 +491,14 @@ class _CupertinoTourProgramListPageState
                 Center(
                   child: Text("Created: $formattedCreatedAt",
                       style: TextStyle(
-                          fontSize: 12,
-                          color: CupertinoColors.systemGrey)),
+                          fontSize: 12, color: CupertinoColors.systemGrey)),
                 ),
               ],
 
               // Admin Actions
               if (isAdmin && id != null) ...[
                 const SizedBox(height: 20),
-                Container(
-                    height: 1,
-                    color: CupertinoColors.systemGrey5),
+                Container(height: 1, color: CupertinoColors.systemGrey5),
                 const SizedBox(height: 12),
                 const Text("Actions",
                     style: TextStyle(
@@ -538,8 +511,7 @@ class _CupertinoTourProgramListPageState
                     children: [
                       Expanded(
                         child: CupertinoButton(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                           color: CupertinoColors.white,
                           borderRadius: BorderRadius.circular(12),
                           onPressed: () {
@@ -547,15 +519,13 @@ class _CupertinoTourProgramListPageState
                             _updateDecision(id, "REGRET");
                           },
                           child: Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(CupertinoIcons.xmark,
                                   color: accentRed, size: 18),
                               const SizedBox(width: 6),
                               Text("Regret",
-                                  style: TextStyle(
-                                      color: accentRed)),
+                                  style: TextStyle(color: accentRed)),
                             ],
                           ),
                         ),
@@ -563,8 +533,7 @@ class _CupertinoTourProgramListPageState
                       const SizedBox(width: 12),
                       Expanded(
                         child: CupertinoButton(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                           color: accentGreen,
                           borderRadius: BorderRadius.circular(12),
                           onPressed: () {
@@ -572,17 +541,14 @@ class _CupertinoTourProgramListPageState
                             _updateDecision(id, "ACCEPTED");
                           },
                           child: const Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(CupertinoIcons.check_mark,
-                                  color: CupertinoColors.white,
-                                  size: 18),
+                                  color: CupertinoColors.white, size: 18),
                               SizedBox(width: 6),
                               Text("Accept",
-                                  style: TextStyle(
-                                      color:
-                                          CupertinoColors.white)),
+                                  style:
+                                      TextStyle(color: CupertinoColors.white)),
                             ],
                           ),
                         ),
@@ -594,8 +560,7 @@ class _CupertinoTourProgramListPageState
                 SizedBox(
                   width: double.infinity,
                   child: CupertinoButton(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     color: CupertinoColors.white,
                     borderRadius: BorderRadius.circular(12),
                     onPressed: () {
@@ -605,8 +570,7 @@ class _CupertinoTourProgramListPageState
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(CupertinoIcons.delete,
-                            color: accentRed, size: 18),
+                        Icon(CupertinoIcons.delete, color: accentRed, size: 18),
                         const SizedBox(width: 6),
                         Text("Delete Program",
                             style: TextStyle(color: accentRed)),
@@ -635,8 +599,7 @@ class _CupertinoTourProgramListPageState
             children: [
               Text(label,
                   style: TextStyle(
-                      fontSize: 12,
-                      color: CupertinoColors.systemGrey)),
+                      fontSize: 12, color: CupertinoColors.systemGrey)),
               const SizedBox(height: 2),
               Text(value,
                   style: const TextStyle(
@@ -650,145 +613,144 @@ class _CupertinoTourProgramListPageState
 
   @override
   Widget build(BuildContext context) {
-    final canCreate =
-        AccessControl.can(widget.role, ActionPermission.create) &&
-            widget.role != Roles.admin;
+    final canCreate = AccessControl.can(widget.role, ActionPermission.create) &&
+        widget.role != Roles.admin;
 
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Tour Programs"),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (canCreate)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openCreateSheet,
-                child: const Icon(CupertinoIcons.add,
-                    color: CupertinoColors.white),
-              ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _exportList().isEmpty ? null : _exportCsv,
-              child: const Icon(CupertinoIcons.arrow_down_doc,
-                  size: 22, color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Tour Programs",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (canCreate)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openCreateSheet,
+                    child: const Icon(CupertinoIcons.add,
+                        color: CupertinoColors.white),
+                  ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _exportList().isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      size: 22, color: CupertinoColors.white),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _loadAll,
+                  child: const Icon(CupertinoIcons.refresh,
+                      color: CupertinoColors.white),
+                ),
+              ],
             ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _loadAll,
-              child: const Icon(CupertinoIcons.refresh,
-                  color: CupertinoColors.white),
-            ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Stats Row
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: primaryBlue,
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                // Stats Row
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: primaryBlue,
+                  ),
+                  child: Column(
                     children: [
-                      _miniStat("Total",
-                          totalPrograms.toString(), CupertinoColors.white),
-                      _miniStat("Pending", pendingCount.toString(),
-                          accentOrange),
-                      _miniStat("Approved",
-                          approvedCount.toString(), accentGreen),
-                      _miniStat("Rejected",
-                          rejectedCount.toString(), accentRed),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _miniStat("Total", totalPrograms.toString(),
+                              CupertinoColors.white),
+                          _miniStat(
+                              "Pending", pendingCount.toString(), accentOrange),
+                          _miniStat("Approved", approvedCount.toString(),
+                              accentGreen),
+                          _miniStat(
+                              "Rejected", rejectedCount.toString(), accentRed),
+                        ],
+                      ),
+                      if (widget.role != Roles.superAdmin) ...[
+                        const SizedBox(height: 12),
+                        // Segmented Control replacing TabBar
+                        SizedBox(
+                          width: double.infinity,
+                          child: CupertinoSlidingSegmentedControl<String>(
+                            groupValue: _selectedTab,
+                            backgroundColor:
+                                CupertinoColors.white.withOpacity(0.2),
+                            thumbColor: CupertinoColors.white,
+                            children: {
+                              "All": Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 6),
+                                child: Text("All (${allList.length})",
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: _selectedTab == "All"
+                                            ? primaryBlue
+                                            : CupertinoColors.white)),
+                              ),
+                              "Today": Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 6),
+                                child: Text("Today (${todayList.length})",
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: _selectedTab == "Today"
+                                            ? primaryBlue
+                                            : CupertinoColors.white)),
+                              ),
+                              "Upcoming": Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 6),
+                                child: Text("Upcoming (${upcomingList.length})",
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: _selectedTab == "Upcoming"
+                                            ? primaryBlue
+                                            : CupertinoColors.white)),
+                              ),
+                            },
+                            onValueChanged: (value) {
+                              if (value != null) {
+                                setState(() => _selectedTab = value);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  if (widget.role != Roles.superAdmin) ...[
-                    const SizedBox(height: 12),
-                    // Segmented Control replacing TabBar
-                    SizedBox(
-                      width: double.infinity,
-                      child: CupertinoSlidingSegmentedControl<String>(
-                        groupValue: _selectedTab,
-                        backgroundColor:
-                            CupertinoColors.white.withOpacity(0.2),
-                        thumbColor: CupertinoColors.white,
-                        children: {
-                          "All": Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 6),
-                            child: Text("All (${allList.length})",
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: _selectedTab == "All"
-                                        ? primaryBlue
-                                        : CupertinoColors.white)),
-                          ),
-                          "Today": Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 6),
-                            child: Text(
-                                "Today (${todayList.length})",
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: _selectedTab == "Today"
-                                        ? primaryBlue
-                                        : CupertinoColors.white)),
-                          ),
-                          "Upcoming": Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 6),
-                            child: Text(
-                                "Upcoming (${upcomingList.length})",
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: _selectedTab == "Upcoming"
-                                        ? primaryBlue
-                                        : CupertinoColors.white)),
-                          ),
-                        },
-                        onValueChanged: (value) {
-                          if (value != null) {
-                            setState(() => _selectedTab = value);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                ),
 
-            CupertinoDateRangeFilter(
-              from: _dateFrom,
-              to: _dateTo,
-              tint: primaryBlue,
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              onFromChanged: (d) => setState(() => _dateFrom = d),
-              onToChanged: (d) => setState(() => _dateTo = d),
-              onClear: () => setState(() {
-                _dateFrom = null;
-                _dateTo = null;
-              }),
-            ),
+                CupertinoDateRangeFilter(
+                  from: _dateFrom,
+                  to: _dateTo,
+                  tint: primaryBlue,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  onFromChanged: (d) => setState(() => _dateFrom = d),
+                  onToChanged: (d) => setState(() => _dateTo = d),
+                  onClear: () => setState(() {
+                    _dateFrom = null;
+                    _dateTo = null;
+                  }),
+                ),
 
-            // List
-            Expanded(
-              child: widget.role == Roles.superAdmin
-                  ? _categoriesView()
-                  : _buildListForTab(),
+                // List
+                Expanded(
+                  child: widget.role == Roles.superAdmin
+                      ? _categoriesView()
+                      : _buildListForTab(),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -806,7 +768,7 @@ class _CupertinoTourProgramListPageState
 
   Widget _categoriesView() {
     if (loadingToday && loadingUpcoming) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
 
     final today = _applyDate(todayList);
@@ -821,8 +783,8 @@ class _CupertinoTourProgramListPageState
                 size: 64, color: CupertinoColors.systemGrey3),
             const SizedBox(height: 16),
             const Text("No today's or upcoming programs",
-                style: TextStyle(
-                    fontSize: 16, color: CupertinoColors.systemGrey)),
+                style:
+                    TextStyle(fontSize: 16, color: CupertinoColors.systemGrey)),
           ],
         ),
       );
@@ -928,21 +890,17 @@ class _CupertinoTourProgramListPageState
       children: [
         Text(value,
             style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: color)),
+                fontSize: 20, fontWeight: FontWeight.bold, color: color)),
         Text(label,
             style: TextStyle(
-                fontSize: 11,
-                color: CupertinoColors.white.withOpacity(0.8))),
+                fontSize: 11, color: CupertinoColors.white.withOpacity(0.8))),
       ],
     );
   }
 
-  Widget _listView(
-      bool loading, List<Map<String, dynamic>> list) {
+  Widget _listView(bool loading, List<Map<String, dynamic>> list) {
     if (loading) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
 
     if (list.isEmpty) {
@@ -954,9 +912,8 @@ class _CupertinoTourProgramListPageState
                 size: 64, color: CupertinoColors.systemGrey3),
             const SizedBox(height: 16),
             Text("No programs found",
-                style: TextStyle(
-                    fontSize: 16,
-                    color: CupertinoColors.systemGrey)),
+                style:
+                    TextStyle(fontSize: 16, color: CupertinoColors.systemGrey)),
           ],
         ),
       );
@@ -977,8 +934,7 @@ class _CupertinoTourProgramListPageState
     final title = item["eventName"] ?? "Tour Program";
     final location = item["venue"] ?? "-";
     final dateStr = item["dateTime"] ?? "";
-    final status =
-        (item["decision"] ?? "PENDING").toString().toUpperCase();
+    final status = (item["decision"] ?? "PENDING").toString().toUpperCase();
     final chiefGuest = item["chiefGuest"] ?? "";
     final expectedFootfall = item["expectedFootfall"];
     final description = item["description"] ?? "";
@@ -1005,8 +961,8 @@ class _CupertinoTourProgramListPageState
       }
     } catch (_) {}
 
-    final isAdmin = widget.role == Roles.admin ||
-        widget.role == Roles.superAdmin;
+    final isAdmin =
+        widget.role == Roles.admin || widget.role == Roles.superAdmin;
 
     return GestureDetector(
       onTap: () => _showDetailSheet(item),
@@ -1015,9 +971,7 @@ class _CupertinoTourProgramListPageState
         decoration: BoxDecoration(
           color: CupertinoColors.white,
           borderRadius: BorderRadius.circular(16),
-          border: isToday
-              ? Border.all(color: accentOrange, width: 2)
-              : null,
+          border: isToday ? Border.all(color: accentOrange, width: 2) : null,
           boxShadow: [
             BoxShadow(
               color: CupertinoColors.black.withOpacity(0.06),
@@ -1031,12 +985,11 @@ class _CupertinoTourProgramListPageState
           children: [
             // Header with status
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: _getStatusColor(status).withOpacity(0.1),
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
               ),
               child: Row(
                 children: [
@@ -1056,17 +1009,14 @@ class _CupertinoTourProgramListPageState
                       children: [
                         Text(title.toString(),
                             style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold),
+                                fontSize: 16, fontWeight: FontWeight.bold),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 4),
                         Row(
                           children: [
                             Icon(CupertinoIcons.calendar,
-                                size: 14,
-                                color:
-                                    CupertinoColors.systemGrey),
+                                size: 14, color: CupertinoColors.systemGrey),
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
@@ -1077,8 +1027,7 @@ class _CupertinoTourProgramListPageState
                                   fontSize: 13,
                                   color: isToday
                                       ? accentOrange
-                                      : CupertinoColors
-                                          .systemGrey,
+                                      : CupertinoColors.systemGrey,
                                   fontWeight: isToday
                                       ? FontWeight.bold
                                       : FontWeight.normal,
@@ -1089,22 +1038,17 @@ class _CupertinoTourProgramListPageState
                             if (isToday) ...[
                               const SizedBox(width: 8),
                               Container(
-                                padding:
-                                    const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: accentOrange,
-                                  borderRadius:
-                                      BorderRadius.circular(4),
+                                  borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: const Text("TODAY",
                                     style: TextStyle(
                                         fontSize: 9,
-                                        fontWeight:
-                                            FontWeight.bold,
-                                        color: CupertinoColors
-                                            .white)),
+                                        fontWeight: FontWeight.bold,
+                                        color: CupertinoColors.white)),
                               ),
                             ],
                           ],
@@ -1126,8 +1070,7 @@ class _CupertinoTourProgramListPageState
                   Row(
                     children: [
                       Icon(CupertinoIcons.location,
-                          size: 18,
-                          color: CupertinoColors.systemGrey),
+                          size: 18, color: CupertinoColors.systemGrey),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(location.toString(),
@@ -1142,15 +1085,11 @@ class _CupertinoTourProgramListPageState
                     Row(
                       children: [
                         Icon(CupertinoIcons.person,
-                            size: 18,
-                            color:
-                                CupertinoColors.systemGrey),
+                            size: 18, color: CupertinoColors.systemGrey),
                         const SizedBox(width: 6),
                         Expanded(
-                          child: Text(
-                              "Chief Guest: $chiefGuest",
-                              style:
-                                  const TextStyle(fontSize: 14),
+                          child: Text("Chief Guest: $chiefGuest",
+                              style: const TextStyle(fontSize: 14),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis),
                         ),
@@ -1162,14 +1101,10 @@ class _CupertinoTourProgramListPageState
                     Row(
                       children: [
                         Icon(CupertinoIcons.person_3,
-                            size: 18,
-                            color:
-                                CupertinoColors.systemGrey),
+                            size: 18, color: CupertinoColors.systemGrey),
                         const SizedBox(width: 6),
-                        Text(
-                            "Expected: $expectedFootfall people",
-                            style:
-                                const TextStyle(fontSize: 14)),
+                        Text("Expected: $expectedFootfall people",
+                            style: const TextStyle(fontSize: 14)),
                       ],
                     ),
                   ],
@@ -1178,14 +1113,11 @@ class _CupertinoTourProgramListPageState
                     Row(
                       children: [
                         Icon(CupertinoIcons.building_2_fill,
-                            size: 18,
-                            color:
-                                CupertinoColors.systemGrey),
+                            size: 18, color: CupertinoColors.systemGrey),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text("By: $organizer",
-                              style:
-                                  const TextStyle(fontSize: 14),
+                              style: const TextStyle(fontSize: 14),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis),
                         ),
@@ -1204,32 +1136,24 @@ class _CupertinoTourProgramListPageState
                   ],
 
                   // Admin Actions
-                  if (isAdmin &&
-                      id != null &&
-                      status == "PENDING") ...[
+                  if (isAdmin && id != null && status == "PENDING") ...[
                     const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
                           child: CupertinoButton(
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 10),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                             color: CupertinoColors.white,
-                            borderRadius:
-                                BorderRadius.circular(10),
-                            onPressed: () =>
-                                _updateDecision(id, "REGRET"),
+                            borderRadius: BorderRadius.circular(10),
+                            onPressed: () => _updateDecision(id, "REGRET"),
                             child: Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.center,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(CupertinoIcons.xmark,
-                                    size: 18,
-                                    color: accentRed),
+                                    size: 18, color: accentRed),
                                 const SizedBox(width: 6),
                                 Text("Regret",
-                                    style: TextStyle(
-                                        color: accentRed)),
+                                    style: TextStyle(color: accentRed)),
                               ],
                             ),
                           ),
@@ -1237,26 +1161,19 @@ class _CupertinoTourProgramListPageState
                         const SizedBox(width: 12),
                         Expanded(
                           child: CupertinoButton(
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 10),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                             color: accentGreen,
-                            borderRadius:
-                                BorderRadius.circular(10),
-                            onPressed: () => _updateDecision(
-                                id, "ACCEPTED"),
+                            borderRadius: BorderRadius.circular(10),
+                            onPressed: () => _updateDecision(id, "ACCEPTED"),
                             child: const Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.center,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(CupertinoIcons.check_mark,
-                                    size: 18,
-                                    color:
-                                        CupertinoColors.white),
+                                    size: 18, color: CupertinoColors.white),
                                 SizedBox(width: 6),
                                 Text("Accept",
                                     style: TextStyle(
-                                        color: CupertinoColors
-                                            .white)),
+                                        color: CupertinoColors.white)),
                               ],
                             ),
                           ),
@@ -1307,8 +1224,7 @@ class _CupertinoTourProgramListPageState
     }
 
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(20),
@@ -1320,9 +1236,7 @@ class _CupertinoTourProgramListPageState
           const SizedBox(width: 4),
           Text(displayText,
               style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: text)),
+                  fontSize: 11, fontWeight: FontWeight.bold, color: text)),
         ],
       ),
     );

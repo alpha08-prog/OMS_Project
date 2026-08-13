@@ -6,8 +6,10 @@ import 'package:intl/intl.dart';
 import '../../../services/http_service.dart';
 import '../../../utils/csv_export.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
 import 'cupertino_grievance_view_page.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoRejectedGrievancesPage extends StatefulWidget {
   final String role;
@@ -107,77 +109,73 @@ class _CupertinoRejectedGrievancesPageState
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoColors.white,
-        middle: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(CupertinoIcons.xmark_circle, color: _accent, size: 20),
-            const SizedBox(width: 6),
-            const Text(
-              "Rejected Grievances",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            if (!_loading) ...[
-              const SizedBox(width: 6),
-              Text(
-                "(${_visibleItems.length})",
-                style: const TextStyle(
-                  color: _muted,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ],
-        ),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _visibleItems.isEmpty ? null : _exportCsv,
-          child: const Icon(CupertinoIcons.arrow_down_doc,
-              color: _accent, size: 22),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            CupertinoSliverRefreshControl(onRefresh: _fetch),
-            if (!_loading && _error == null)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Container(
-                    decoration: BoxDecoration(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Rejected Grievances",
+            subtitle: !_loading
+                ? Text(
+                    "(${_visibleItems.length})",
+                    style: const TextStyle(
                       color: CupertinoColors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _border),
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
                     ),
-                    child: CupertinoDateRangeFilter(
-                      from: _dateFrom,
-                      to: _dateTo,
-                      tint: _accent,
-                      onFromChanged: (d) => setState(() => _dateFrom = d),
-                      onToChanged: (d) => setState(() => _dateTo = d),
-                      onClear: () => setState(() {
-                        _dateFrom = null;
-                        _dateTo = null;
-                      }),
+                  )
+                : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _visibleItems.isEmpty ? null : _exportCsv,
+                  child: const Icon(CupertinoIcons.arrow_down_doc,
+                      color: CupertinoColors.white, size: 22),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+              child: CustomScrollView(
+            slivers: [
+              CupertinoSliverRefreshControl(onRefresh: _fetch),
+              if (!_loading && _error == null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _border),
+                      ),
+                      child: CupertinoDateRangeFilter(
+                        from: _dateFrom,
+                        to: _dateTo,
+                        tint: _accent,
+                        onFromChanged: (d) => setState(() => _dateFrom = d),
+                        onToChanged: (d) => setState(() => _dateTo = d),
+                        onClear: () => setState(() {
+                          _dateFrom = null;
+                          _dateTo = null;
+                        }),
+                      ),
                     ),
                   ),
                 ),
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _loading
+                    ? OmsLoader(size: 56)
+                    : _error != null
+                        ? _buildError()
+                        : _visibleItems.isEmpty
+                            ? _buildEmpty()
+                            : _buildList(),
               ),
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _loading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : _error != null
-                      ? _buildError()
-                      : _visibleItems.isEmpty
-                          ? _buildEmpty()
-                          : _buildList(),
-            ),
-          ],
-        ),
+            ],
+          )),
+        ],
       ),
     );
   }
@@ -212,8 +210,7 @@ class _CupertinoRejectedGrievancesPageState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(CupertinoIcons.check_mark_circled,
-                size: 48, color: _muted),
+            Icon(CupertinoIcons.check_mark_circled, size: 48, color: _muted),
             SizedBox(height: 12),
             Text(
               "No rejected grievances",
@@ -246,12 +243,10 @@ class _CupertinoRejectedGrievancesPageState
               child: Row(
                 children: [
                   Text("Check the bell ",
-                      style: TextStyle(
-                          fontSize: 12, color: Color(0xFF64748B))),
+                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                   Text("🔔", style: TextStyle(fontSize: 12)),
                   Text(" in the top bar for the rejection reason.",
-                      style: TextStyle(
-                          fontSize: 12, color: Color(0xFF64748B))),
+                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                 ],
               ),
             ),
@@ -284,8 +279,7 @@ class _CupertinoRejectedGrievancesPageState
           color: CupertinoColors.white,
           borderRadius: BorderRadius.circular(10),
         ),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
             Expanded(
@@ -337,8 +331,7 @@ class _CupertinoRejectedGrievancesPageState
             ),
             const SizedBox(width: 10),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: _pillBg,
                 borderRadius: BorderRadius.circular(20),

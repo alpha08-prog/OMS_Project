@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'package:anki_clone/services/http_service.dart';
-import 'package:anki_clone/services/auth_service.dart';
 import 'package:anki_clone/theme/app_theme.dart';
 import 'package:anki_clone/utils/access_control.dart';
 
@@ -478,9 +477,6 @@ class _CalendarPageState extends State<CalendarPage> {
     return _eventsByDate[_dateKey(date)] ?? [];
   }
 
-  Color _eventDotColor(Map<String, dynamic> event) {
-    return event['_source'] == 'tour' ? AppTheme.saffron : AppTheme.primaryIndigo;
-  }
 
   // ── Calendar grid helpers ──────────────────────────────────────────────
 

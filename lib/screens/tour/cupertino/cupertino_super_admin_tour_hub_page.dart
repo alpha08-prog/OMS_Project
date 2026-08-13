@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../super_admin_tour_list_page.dart' show TourCategory;
 import 'cupertino_super_admin_tour_list_page.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 
 class CupertinoSuperAdminTourHubPage extends StatelessWidget {
   const CupertinoSuperAdminTourHubPage({super.key});
@@ -13,14 +14,11 @@ class CupertinoSuperAdminTourHubPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: bgLight,
-      navigationBar: const CupertinoNavigationBar(
-        middle:
-            Text("Tour Programs", style: TextStyle(color: CupertinoColors.white)),
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: ListView(
+      child: Column(
+        children: [
+          OmsPageHeader(title: "Tour Programs",),
+          Expanded(
+            child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _hubTile(
@@ -54,6 +52,8 @@ class CupertinoSuperAdminTourHubPage extends StatelessWidget {
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

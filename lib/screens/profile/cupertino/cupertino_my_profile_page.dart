@@ -5,6 +5,8 @@ import '../../../models/user_profile.dart';
 import '../../../services/profile_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoMyProfilePage extends StatefulWidget {
   const CupertinoMyProfilePage({super.key});
@@ -150,15 +152,17 @@ class _CupertinoMyProfilePageState extends State<CupertinoMyProfilePage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('My Profile'),
-      ),
-      child: SafeArea(
-        child: _loading
-            ? const Center(child: CupertinoActivityIndicator(radius: 14))
-            : _loadError != null
-                ? _buildErrorState()
-                : _buildContent(),
+      child: Column(
+        children: [
+          OmsPageHeader(title: 'My Profile'),
+          Expanded(
+            child: _loading
+                ? OmsLoader(size: 56)
+                : _loadError != null
+                    ? _buildErrorState()
+                    : _buildContent(),
+          ),
+        ],
       ),
     );
   }

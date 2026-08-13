@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/http_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/oms_app_bar.dart';
 
 /// Combined "Add Visitor / Birthday" form — mirrors the web `/people/new`
 /// screen. Logs a person via POST /api/visitors; if a date of birth is given
@@ -142,12 +143,7 @@ class _PeopleAddPageState extends State<PeopleAddPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Add Visitor / Birthday',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-      ),
+      appBar: omsAppBar(context, title: 'Add Visitor / Birthday'),
       body: Form(
         key: _formKey,
         child: ListView(

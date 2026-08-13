@@ -7,7 +7,9 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoTaskListPage extends StatefulWidget {
   final String role;
@@ -40,6 +42,8 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
   // Tracks which task cards are expanded to show Recent Activity. Cards are
   // collapsed by default to match the web Task Tracker layout.
   final Set<String> _expandedTaskIds = {};
+
+  bool _workloadExpanded = false;
 
   static const _types = [
     "All",
@@ -243,27 +247,17 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        middle: const Text(
-          "Task Tracker",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child:
-              const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-        trailing: GestureDetector(
-          onTap: _loadAll,
-          child: const Icon(CupertinoIcons.refresh,
-              color: CupertinoColors.white, size: 22),
-        ),
-      ),
-      child: SafeArea(
-        child: CustomScrollView(
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Task Tracker",
+            trailing: GestureDetector(
+              onTap: _loadAll,
+              child: const Icon(CupertinoIcons.refresh,
+                  color: CupertinoColors.white, size: 22),
+            ),
+          ),
+          Expanded(child: CustomScrollView(
           slivers: [
             CupertinoSliverRefreshControl(onRefresh: _loadAll),
             SliverPadding(
@@ -273,7 +267,7 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
                   if (_loading)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Center(child: CupertinoActivityIndicator()),
+                      child: OmsLoader(size: 56),
                     )
                   else ...[
                     _buildStatsRow(),
@@ -315,7 +309,8 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
               ),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }
@@ -382,28 +377,44 @@ class _CupertinoTaskListPageState extends State<CupertinoTaskListPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: const [
-              Icon(CupertinoIcons.person_2_fill,
-                  color: AppTheme.primaryIndigo, size: 20),
-              SizedBox(width: 8),
-              Text("Staff Workload",
-                  style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.foreground)),
-            ],
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () =>
+                setState(() => _workloadExpanded = !_workloadExpanded),
+            child: Row(
+              children: [
+                const Icon(CupertinoIcons.person_2_fill,
+                    color: AppTheme.primaryIndigo, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text("Staff Workload",
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.foreground)),
+                ),
+                Icon(
+                  _workloadExpanded
+                      ? CupertinoIcons.chevron_up
+                      : CupertinoIcons.chevron_down,
+                  size: 16,
+                  color: CupertinoColors.systemGrey,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          if (_staffWorkload.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text("No active workload",
-                  style: TextStyle(
-                      color: CupertinoColors.systemGrey, fontSize: 12)),
-            )
-          else
-            ..._staffWorkload.map(_buildWorkloadRow),
+          if (_workloadExpanded) ...[
+            const SizedBox(height: 12),
+            if (_staffWorkload.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text("No active workload",
+                    style: TextStyle(
+                        color: CupertinoColors.systemGrey, fontSize: 12)),
+              )
+            else
+              ..._staffWorkload.map(_buildWorkloadRow),
+          ],
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
 
@@ -201,27 +202,23 @@ class _CupertinoUserCreatePageState extends State<CupertinoUserCreatePage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text(
-          "Create User",
-          style: TextStyle(color: CupertinoColors.white),
-        ),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-        previousPageTitle: "Users",
-      ),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 16),
-            _buildFormCard(),
-            const SizedBox(height: 16),
-            _buildButtonsRow(),
-            const SizedBox(height: 24),
-          ],
-        ),
+      child: Column(
+        children: [
+          const OmsPageHeader(title: "Create User"),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildHeader(),
+                const SizedBox(height: 16),
+                _buildFormCard(),
+                const SizedBox(height: 16),
+                _buildButtonsRow(),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -229,23 +226,12 @@ class _CupertinoUserCreatePageState extends State<CupertinoUserCreatePage> {
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Create User",
-            style: AppTheme.headingLg.copyWith(
-              color: AppTheme.primaryIndigo,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            "Provision a new account. The user will be told their password "
-            "and can rotate it from their profile after first login.",
-            style: AppTheme.bodySm.copyWith(color: AppTheme.muted),
-          ),
-        ],
+      // The page header already reads "Create User"; repeating it as a body
+      // heading just duplicated the title. Only the explanatory line remains.
+      child: Text(
+        "Provision a new account. The user will be told their password "
+        "and can rotate it from their profile after first login.",
+        style: AppTheme.bodySm.copyWith(color: AppTheme.muted),
       ),
     );
   }

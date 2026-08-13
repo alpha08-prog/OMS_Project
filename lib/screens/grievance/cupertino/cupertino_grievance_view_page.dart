@@ -5,7 +5,9 @@ import 'package:flutter/material.dart' show Colors;
 import '../../../services/http_service.dart';
 import '../../../utils/access_control.dart';
 import '../../../widgets/cupertino/cupertino_attachments_section.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
+import '../../../widgets/oms_loader.dart';
 
 /// Grievance details — single-pane view. Timeline + Tracking-history
 /// segments were removed 2026-05-22 (only the Details pane is shown). Admin
@@ -64,8 +66,7 @@ class _CupertinoGrievanceViewPageState
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
-      CupertinoToast.show(context, "Server error / No internet",
-          isError: true);
+      CupertinoToast.show(context, "Server error / No internet", isError: true);
     }
   }
 
@@ -75,8 +76,7 @@ class _CupertinoGrievanceViewPageState
   }
 
   Future<void> _completeGrievance() async {
-    final canApprove =
-        AccessControl.can(widget.role, ActionPermission.approve);
+    final canApprove = AccessControl.can(widget.role, ActionPermission.approve);
     if (!canApprove) return _deny();
 
     if (grievanceData["isLocked"] == true) {
@@ -153,115 +153,100 @@ class _CupertinoGrievanceViewPageState
     if (_loading) {
       return CupertinoPageScaffold(
         backgroundColor: const Color(0xFFF4F6FB),
-        navigationBar: CupertinoNavigationBar(
-          backgroundColor: primaryBlue,
-          brightness: Brightness.dark,
-          middle: const Text("Grievance Details",
-              style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: CupertinoColors.white)),
-          leading: CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () => Navigator.pop(context),
-            child: const Icon(CupertinoIcons.back,
-                color: CupertinoColors.white),
-          ),
+        child: Column(
+          children: const [
+            OmsPageHeader(title: "Grievance Details"),
+            Expanded(child: OmsLoader(size: 56)),
+          ],
         ),
-        child: const Center(child: CupertinoActivityIndicator()),
       );
     }
 
     final canEdit = AccessControl.can(widget.role, ActionPermission.edit);
-    final canApprove =
-        AccessControl.can(widget.role, ActionPermission.approve);
+    final canApprove = AccessControl.can(widget.role, ActionPermission.approve);
     final isLocked = grievanceData["isLocked"] == true;
 
     return CupertinoPageScaffold(
       backgroundColor: const Color(0xFFF4F6FB),
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: primaryBlue,
-        brightness: Brightness.dark,
-        middle: const Text("Grievance Details",
-            style: TextStyle(
-                fontWeight: FontWeight.w600, color: CupertinoColors.white)),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child:
-              const Icon(CupertinoIcons.back, color: CupertinoColors.white),
-        ),
-        trailing: _updating
-            ? const Padding(
-                padding: EdgeInsets.only(right: 8),
-                child:
-                    CupertinoActivityIndicator(color: CupertinoColors.white),
-              )
-            : null,
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Expanded(child: _buildDetailsBody(canEdit, canApprove)),
-            if (isLocked)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  color: CupertinoColors.systemGrey6,
-                  border: Border(
-                      top: BorderSide(color: CupertinoColors.systemGrey4)),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(CupertinoIcons.lock_fill,
-                        color: CupertinoColors.systemGrey),
-                    SizedBox(width: 8),
-                    Text(
-                      "This grievance is locked",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: CupertinoColors.systemGrey,
-                      ),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "Grievance Details",
+            trailing: _updating
+                ? const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: CupertinoActivityIndicator(
+                        color: CupertinoColors.white),
+                  )
+                : null,
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(child: _buildDetailsBody(canEdit, canApprove)),
+                if (isLocked)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: const BoxDecoration(
+                      color: CupertinoColors.systemGrey6,
+                      border: Border(
+                          top: BorderSide(color: CupertinoColors.systemGrey4)),
                     ),
-                  ],
-                ),
-              )
-            else if (canApprove)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: CupertinoColors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: CupertinoColors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: CupertinoButton(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    color: successGreen,
-                    borderRadius: BorderRadius.circular(12),
-                    onPressed: _updating ? null : _completeGrievance,
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(CupertinoIcons.checkmark_alt_circle,
-                            size: 18, color: CupertinoColors.white),
-                        SizedBox(width: 6),
-                        Text("Complete & Lock",
-                            style: TextStyle(
-                                color: CupertinoColors.white, fontSize: 13)),
+                        Icon(CupertinoIcons.lock_fill,
+                            color: CupertinoColors.systemGrey),
+                        SizedBox(width: 8),
+                        Text(
+                          "This grievance is locked",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: CupertinoColors.systemGrey,
+                          ),
+                        ),
                       ],
                     ),
+                  )
+                else if (canApprove)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: CupertinoColors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, -2),
+                        ),
+                      ],
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        color: successGreen,
+                        borderRadius: BorderRadius.circular(12),
+                        onPressed: _updating ? null : _completeGrievance,
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.checkmark_alt_circle,
+                                size: 18, color: CupertinoColors.white),
+                            SizedBox(width: 6),
+                            Text("Complete & Lock",
+                                style: TextStyle(
+                                    color: CupertinoColors.white,
+                                    fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-          ],
-        ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -288,8 +273,7 @@ class _CupertinoGrievanceViewPageState
               ),
               child: const Row(
                 children: [
-                  Icon(CupertinoIcons.lock,
-                      color: CupertinoColors.systemGrey),
+                  Icon(CupertinoIcons.lock, color: CupertinoColors.systemGrey),
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(

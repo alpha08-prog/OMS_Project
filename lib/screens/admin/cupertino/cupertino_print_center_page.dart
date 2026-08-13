@@ -11,6 +11,8 @@ import '../../../services/http_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
 import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
+import '../../../widgets/oms_loader.dart';
 
 class CupertinoPrintCenterPage extends StatefulWidget {
   const CupertinoPrintCenterPage({super.key});
@@ -181,25 +183,28 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
         context: context,
         builder: (ctx) => CupertinoPageScaffold(
           backgroundColor: AppTheme.background,
-          navigationBar: CupertinoNavigationBar(
-            middle: Text(title),
-            backgroundColor: AppTheme.primaryIndigo,
-            brightness: Brightness.dark,
-            leading: CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Icon(CupertinoIcons.xmark,
-                  color: CupertinoColors.white),
-            ),
-          ),
-          child: SafeArea(
-            child: Container(
-              color: CupertinoColors.white,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Html(data: res.body),
+          child: Column(
+            children: [
+              OmsPageHeader(
+                title: title,
+                showBack: false,
+                leading: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Icon(CupertinoIcons.xmark,
+                      color: CupertinoColors.white),
+                ),
               ),
-            ),
+              Expanded(
+                child: Container(
+                  color: CupertinoColors.white,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Html(data: res.body),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -225,13 +230,10 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppTheme.background,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("Print Center"),
-        backgroundColor: AppTheme.primaryIndigo,
-        brightness: Brightness.dark,
-      ),
-      child: SafeArea(
-        child: Column(
+      child: Column(
+        children: [
+          const OmsPageHeader(title: "Print Center",),
+          Expanded(child: Column(
           children: [
             const SizedBox(height: 16),
             Padding(
@@ -278,7 +280,8 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
                           : _buildTourTab(),
             ),
           ],
-        ),
+        )),
+        ],
       ),
     );
   }
@@ -297,7 +300,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
 
   Widget _buildGrievanceTab() {
     if (_loadingGrievances) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
     if (_verifiedGrievances.isEmpty) {
       return Center(
@@ -340,7 +343,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
 
   Widget _buildTrainTab() {
     if (_loadingTrainRequests) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
     if (_approvedTrainRequests.isEmpty) {
       return Center(
@@ -389,7 +392,7 @@ class _CupertinoPrintCenterPageState extends State<CupertinoPrintCenterPage> {
 
   Widget _buildTempleVisitTab() {
     if (_loadingTempleVisits) {
-      return const Center(child: CupertinoActivityIndicator());
+      return OmsLoader(size: 56);
     }
     if (_templeVisits.isEmpty) {
       return Center(

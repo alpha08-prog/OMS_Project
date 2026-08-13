@@ -8,9 +8,10 @@ import '../../../utils/access_control.dart';
 import '../../../utils/csv_export.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/cupertino/cupertino_toast.dart';
-import '../../../widgets/cupertino/cupertino_form_helpers.dart';
+import '../../../widgets/cupertino/cupertino_page_header.dart';
 import '../../../widgets/cupertino/cupertino_date_range_filter.dart';
 import '../../../widgets/date_range_filter.dart' show dateInRange;
+import '../../../widgets/oms_loader.dart';
 
 const Color _kNewsPrimaryBlue = Color(0xFF0A2E5C);
 const Color _kNewsBgLight = Color(0xFFF4F6FB);
@@ -98,28 +99,26 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
         params['startDate'] = _startDate!.toIso8601String();
       }
       if (_endDate != null) {
-        params['endDate'] =
-            _endDate!.add(const Duration(days: 1)).toIso8601String();
+        params['endDate'] = _endDate!
+            .add(const Duration(days: 1))
+            .toIso8601String();
       }
       final qs = params.isEmpty
           ? ""
           : "?" +
-              params.entries
-                  .map((e) =>
-                      "${e.key}=${Uri.encodeComponent(e.value)}")
-                  .join("&");
+                params.entries
+                    .map((e) => "${e.key}=${Uri.encodeComponent(e.value)}")
+                    .join("&");
       final endpoint = "/api/news$qs";
       final res = await HttpService.get(endpoint);
 
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        final List list =
-            decoded is List ? decoded : (decoded["data"] ?? []);
+        final List list = decoded is List ? decoded : (decoded["data"] ?? []);
 
         setState(() {
           newsList = list
-              .map<Map<String, dynamic>>(
-                  (e) => Map<String, dynamic>.from(e))
+              .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
               .toList();
           loading = false;
         });
@@ -147,7 +146,11 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
 
   void _openCreateSheet() {
     if (!_canCreateNews) {
-      CupertinoToast.show(context, "Only staff can create news.", isError: true);
+      CupertinoToast.show(
+        context,
+        "Only staff can create news.",
+        isError: true,
+      );
       return;
     }
 
@@ -195,7 +198,11 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
         CupertinoToast.show(context, "Deleted");
         _loadAll();
       } else {
-        CupertinoToast.show(context, "Delete failed (${res.statusCode})", isError: true);
+        CupertinoToast.show(
+          context,
+          "Delete failed (${res.statusCode})",
+          isError: true,
+        );
       }
     } catch (_) {
       CupertinoToast.show(context, "Server error / No internet", isError: true);
@@ -223,8 +230,10 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
         _openDetails(match);
       } else {
         CupertinoToast.show(
-            context, 'That news item is no longer available',
-            isError: true);
+          context,
+          'That news item is no longer available',
+          isError: true,
+        );
       }
     });
   }
@@ -246,37 +255,46 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: _kNewsBgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("News & Intelligence"),
-        backgroundColor: _kNewsPrimaryBlue,
-        brightness: Brightness.dark,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _visibleNews.isEmpty ? null : _exportCsv,
-              child: const Icon(CupertinoIcons.arrow_down_doc,
-                  size: 22, color: CupertinoColors.white),
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "News & Intelligence",
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _visibleNews.isEmpty ? null : _exportCsv,
+                  child: const Icon(
+                    CupertinoIcons.arrow_down_doc,
+                    size: 22,
+                    color: CupertinoColors.white,
+                  ),
+                ),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _loadAll,
+                  child: const Icon(
+                    CupertinoIcons.refresh,
+                    color: CupertinoColors.white,
+                  ),
+                ),
+                if (_canCreateNews)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _openCreateSheet,
+                    child: const Icon(
+                      CupertinoIcons.add,
+                      color: CupertinoColors.white,
+                    ),
+                  ),
+              ],
             ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _loadAll,
-              child: const Icon(CupertinoIcons.refresh, color: CupertinoColors.white),
-            ),
-            if (_canCreateNews)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openCreateSheet,
-                child: const Icon(CupertinoIcons.add, color: CupertinoColors.white),
-              ),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: loading
-            ? const Center(child: CupertinoActivityIndicator())
-            : error != null
+          ),
+          Expanded(
+            child: loading
+                ? OmsLoader(size: 56)
+                : error != null
                 ? Center(child: Text(error!))
                 : ListView(
                     padding: const EdgeInsets.all(16),
@@ -314,6 +332,8 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
                         ..._visibleNews.map((n) => _newsCard(n)),
                     ],
                   ),
+          ),
+        ],
       ),
     );
   }
@@ -334,8 +354,9 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
       rows: _visibleNews.map((n) {
         String created = '';
         try {
-          created = DateFormat('dd MMM yyyy')
-              .format(DateTime.parse(n['createdAt'].toString()));
+          created = DateFormat(
+            'dd MMM yyyy',
+          ).format(DateTime.parse(n['createdAt'].toString()));
         } catch (_) {}
         return [
           n['headline'] ?? n['title'] ?? '',
@@ -363,12 +384,17 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
             controller: _searchController,
             placeholder: "Search headline, description, source",
             placeholderStyle: const TextStyle(
-                fontSize: 13, color: CupertinoColors.systemGrey),
+              fontSize: 13,
+              color: CupertinoColors.systemGrey,
+            ),
             style: const TextStyle(fontSize: 13),
             prefix: const Padding(
               padding: EdgeInsets.only(left: 8),
-              child: Icon(CupertinoIcons.search,
-                  size: 18, color: CupertinoColors.systemGrey),
+              child: Icon(
+                CupertinoIcons.search,
+                size: 18,
+                color: CupertinoColors.systemGrey,
+              ),
             ),
             suffix: _searchQuery.isNotEmpty
                 ? CupertinoButton(
@@ -379,12 +405,14 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
                       setState(() => _searchQuery = "");
                       fetchNews();
                     },
-                    child: const Icon(CupertinoIcons.clear_circled_solid,
-                        size: 16, color: CupertinoColors.systemGrey),
+                    child: const Icon(
+                      CupertinoIcons.clear_circled_solid,
+                      size: 16,
+                      color: CupertinoColors.systemGrey,
+                    ),
                   )
                 : null,
-            padding: const EdgeInsets.symmetric(
-                vertical: 10, horizontal: 8),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
             decoration: BoxDecoration(
               color: CupertinoColors.white,
               borderRadius: BorderRadius.circular(10),
@@ -392,8 +420,7 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
             ),
             onChanged: (value) {
               _searchDebounce?.cancel();
-              _searchDebounce = Timer(
-                  const Duration(milliseconds: 400), () {
+              _searchDebounce = Timer(const Duration(milliseconds: 400), () {
                 if (_searchQuery == value) return;
                 setState(() => _searchQuery = value);
                 fetchNews();
@@ -442,8 +469,7 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
     return GestureDetector(
       onTap: () => _pickDate(isStart),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
           color: CupertinoColors.white,
           borderRadius: BorderRadius.circular(10),
@@ -451,14 +477,15 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
         ),
         child: Row(
           children: [
-            const Icon(CupertinoIcons.calendar,
-                size: 16, color: _kNewsPrimaryBlue),
+            const Icon(
+              CupertinoIcons.calendar,
+              size: 16,
+              color: _kNewsPrimaryBlue,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                value != null
-                    ? DateFormat('d MMM yyyy').format(value)
-                    : label,
+                value != null ? DateFormat('d MMM yyyy').format(value) : label,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -504,8 +531,7 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
                 mode: CupertinoDatePickerMode.date,
                 initialDateTime: tempPicked,
                 minimumDate: DateTime(2020),
-                maximumDate:
-                    DateTime.now().add(const Duration(days: 365)),
+                maximumDate: DateTime.now().add(const Duration(days: 365)),
                 onDateTimeChanged: (d) => tempPicked = d,
               ),
             ),
@@ -531,24 +557,17 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         if (_startDate != null)
-          _filterChip(
-            "From: ${DateFormat('d MMM').format(_startDate!)}",
-            () {
-              setState(() => _startDate = null);
-              fetchNews();
-            },
-          ),
+          _filterChip("From: ${DateFormat('d MMM').format(_startDate!)}", () {
+            setState(() => _startDate = null);
+            fetchNews();
+          }),
         if (_endDate != null)
-          _filterChip(
-            "To: ${DateFormat('d MMM').format(_endDate!)}",
-            () {
-              setState(() => _endDate = null);
-              fetchNews();
-            },
-          ),
+          _filterChip("To: ${DateFormat('d MMM').format(_endDate!)}", () {
+            setState(() => _endDate = null);
+            fetchNews();
+          }),
         CupertinoButton(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
           minSize: 0,
           onPressed: () {
             _searchController.clear();
@@ -575,8 +594,7 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
 
   Widget _filterChip(String label, VoidCallback onClear) {
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: const Color(0xFFEFF6FF),
         border: Border.all(color: const Color(0xFFBFDBFE)),
@@ -585,16 +603,22 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label,
-              style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: _kNewsPrimaryBlue)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: _kNewsPrimaryBlue,
+            ),
+          ),
           const SizedBox(width: 4),
           GestureDetector(
             onTap: onClear,
-            child: const Icon(CupertinoIcons.clear_circled_solid,
-                size: 14, color: _kNewsPrimaryBlue),
+            child: const Icon(
+              CupertinoIcons.clear_circled_solid,
+              size: 14,
+              color: _kNewsPrimaryBlue,
+            ),
           ),
         ],
       ),
@@ -669,8 +693,9 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
     // Read both so the card works either way.
     final title = (n["headline"] ?? n["title"] ?? "News").toString();
     final category = (n["category"] ?? "General").toString();
-    final priority =
-        (n["priority"] ?? n["severity"] ?? "NORMAL").toString().toUpperCase();
+    final priority = (n["priority"] ?? n["severity"] ?? "NORMAL")
+        .toString()
+        .toUpperCase();
     final createdAt = (n["createdAt"] ?? "-").toString();
     final isAdmin = widget.role == Roles.admin;
     final priorityColor = _priorityColor(priority);
@@ -697,68 +722,77 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: _kNewsPrimaryBlue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: const Icon(CupertinoIcons.news, color: _kNewsPrimaryBlue),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: _kNewsPrimaryBlue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.news,
+                    color: _kNewsPrimaryBlue,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: priorityColor.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              priority,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: priorityColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Category: $category",
+                        style: const TextStyle(
+                          color: CupertinoColors.systemGrey,
+                          fontSize: 12,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: priorityColor.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          priority,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: priorityColor,
-                          ),
+                      const SizedBox(height: 4),
+                      Text(
+                        createdAt,
+                        style: const TextStyle(
+                          color: CupertinoColors.systemGrey,
+                          fontSize: 12,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "Category: $category",
-                    style: const TextStyle(
-                        color: CupertinoColors.systemGrey, fontSize: 12),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    createdAt,
-                    style: const TextStyle(
-                        color: CupertinoColors.systemGrey, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
+                ),
               ],
             ),
             if (isAdmin && id != null) ...[
@@ -768,8 +802,10 @@ class _CupertinoNewsListPageState extends State<CupertinoNewsListPage> {
                 child: CupertinoButton(
                   padding: EdgeInsets.zero,
                   onPressed: () => _deleteNews(id),
-                  child: const Icon(CupertinoIcons.delete,
-                      color: CupertinoColors.destructiveRed),
+                  child: const Icon(
+                    CupertinoIcons.delete,
+                    color: CupertinoColors.destructiveRed,
+                  ),
                 ),
               ),
             ],
@@ -811,70 +847,76 @@ class _CupertinoNewsDetailPage extends StatelessWidget {
 
     return CupertinoPageScaffold(
       backgroundColor: _kNewsBgLight,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text("News Details"),
-        backgroundColor: _kNewsPrimaryBlue,
-        brightness: Brightness.dark,
-        trailing: (canEdit && id != null)
-            ? CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () {
-                  showCupertinoModalPopup(
-                    context: context,
-                    builder: (_) => _CupertinoEditNewsSheet(
-                      id: id,
-                      oldNews: news,
-                      onSaved: () async {
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                        await onUpdated();
-                      },
+      child: Column(
+        children: [
+          OmsPageHeader(
+            title: "News Details",
+            trailing: (canEdit && id != null)
+                ? CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () {
+                      showCupertinoModalPopup(
+                        context: context,
+                        builder: (_) => _CupertinoEditNewsSheet(
+                          id: id,
+                          oldNews: news,
+                          onSaved: () async {
+                            Navigator.pop(context);
+                            Navigator.pop(context);
+                            await onUpdated();
+                          },
+                        ),
+                      );
+                    },
+                    child: const Icon(
+                      CupertinoIcons.pencil,
+                      color: CupertinoColors.white,
                     ),
-                  );
-                },
-                child: const Icon(CupertinoIcons.pencil,
-                    color: CupertinoColors.white),
-              )
-            : null,
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: CupertinoColors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: CupertinoColors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
+                  )
+                : null,
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: CupertinoColors.black.withOpacity(0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title.toString(),
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title.toString(),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text("Category: $category"),
+                    const SizedBox(height: 6),
+                    Text("Severity: $severity"),
+                    Container(
+                      height: 1,
+                      margin: const EdgeInsets.symmetric(vertical: 15),
+                      color: AppTheme.border,
+                    ),
+                    Text(content.toString()),
+                  ],
                 ),
-                const SizedBox(height: 10),
-                Text("Category: $category"),
-                const SizedBox(height: 6),
-                Text("Severity: $severity"),
-                Container(
-                  height: 1,
-                  margin: const EdgeInsets.symmetric(vertical: 15),
-                  color: AppTheme.border,
-                ),
-                Text(content.toString()),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -891,8 +933,7 @@ class _CupertinoCreateNewsSheet extends StatefulWidget {
       __CupertinoCreateNewsSheetState();
 }
 
-class __CupertinoCreateNewsSheetState
-    extends State<_CupertinoCreateNewsSheet> {
+class __CupertinoCreateNewsSheetState extends State<_CupertinoCreateNewsSheet> {
   final titleController = TextEditingController();
   final categoryController = TextEditingController();
   final severityController = TextEditingController(text: "NORMAL");
@@ -951,7 +992,11 @@ class __CupertinoCreateNewsSheetState
         CupertinoToast.show(context, "News created");
         await widget.onCreated();
       } else {
-        CupertinoToast.show(context, "Failed (${res.statusCode})", isError: true);
+        CupertinoToast.show(
+          context,
+          "Failed (${res.statusCode})",
+          isError: true,
+        );
       }
     } catch (_) {
       CupertinoToast.show(context, "Server error / No internet", isError: true);
@@ -1007,9 +1052,13 @@ class __CupertinoCreateNewsSheetState
                 padding: const EdgeInsets.only(top: 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(titleError!,
-                      style: const TextStyle(
-                          color: CupertinoColors.destructiveRed, fontSize: 12)),
+                  child: Text(
+                    titleError!,
+                    style: const TextStyle(
+                      color: CupertinoColors.destructiveRed,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ),
             const SizedBox(height: 12),
@@ -1027,9 +1076,13 @@ class __CupertinoCreateNewsSheetState
                 padding: const EdgeInsets.only(top: 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(categoryError!,
-                      style: const TextStyle(
-                          color: CupertinoColors.destructiveRed, fontSize: 12)),
+                  child: Text(
+                    categoryError!,
+                    style: const TextStyle(
+                      color: CupertinoColors.destructiveRed,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ),
             const SizedBox(height: 12),
@@ -1058,9 +1111,13 @@ class __CupertinoCreateNewsSheetState
                 padding: const EdgeInsets.only(top: 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(contentError!,
-                      style: const TextStyle(
-                          color: CupertinoColors.destructiveRed, fontSize: 12)),
+                  child: Text(
+                    contentError!,
+                    style: const TextStyle(
+                      color: CupertinoColors.destructiveRed,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ),
             const SizedBox(height: 16),
@@ -1069,7 +1126,9 @@ class __CupertinoCreateNewsSheetState
               child: CupertinoButton.filled(
                 onPressed: submitting ? null : _submit,
                 child: submitting
-                    ? const CupertinoActivityIndicator(color: CupertinoColors.white)
+                    ? const CupertinoActivityIndicator(
+                        color: CupertinoColors.white,
+                      )
                     : const Text("Save"),
               ),
             ),
@@ -1098,8 +1157,7 @@ class _CupertinoEditNewsSheet extends StatefulWidget {
       __CupertinoEditNewsSheetState();
 }
 
-class __CupertinoEditNewsSheetState
-    extends State<_CupertinoEditNewsSheet> {
+class __CupertinoEditNewsSheetState extends State<_CupertinoEditNewsSheet> {
   late TextEditingController titleController;
   late TextEditingController categoryController;
   late TextEditingController severityController;
@@ -1110,14 +1168,18 @@ class __CupertinoEditNewsSheetState
   @override
   void initState() {
     super.initState();
-    titleController =
-        TextEditingController(text: widget.oldNews["title"] ?? "");
-    categoryController =
-        TextEditingController(text: widget.oldNews["category"] ?? "");
-    severityController =
-        TextEditingController(text: widget.oldNews["severity"] ?? "NORMAL");
-    contentController =
-        TextEditingController(text: widget.oldNews["content"] ?? "");
+    titleController = TextEditingController(
+      text: widget.oldNews["title"] ?? "",
+    );
+    categoryController = TextEditingController(
+      text: widget.oldNews["category"] ?? "",
+    );
+    severityController = TextEditingController(
+      text: widget.oldNews["severity"] ?? "NORMAL",
+    );
+    contentController = TextEditingController(
+      text: widget.oldNews["content"] ?? "",
+    );
   }
 
   @override
@@ -1149,7 +1211,11 @@ class __CupertinoEditNewsSheetState
         CupertinoToast.show(context, "Updated");
         await widget.onSaved();
       } else {
-        CupertinoToast.show(context, "Update failed (${res.statusCode})", isError: true);
+        CupertinoToast.show(
+          context,
+          "Update failed (${res.statusCode})",
+          isError: true,
+        );
       }
     } catch (_) {
       CupertinoToast.show(context, "Server error / No internet", isError: true);
@@ -1237,7 +1303,9 @@ class __CupertinoEditNewsSheetState
               child: CupertinoButton.filled(
                 onPressed: submitting ? null : _submit,
                 child: submitting
-                    ? const CupertinoActivityIndicator(color: CupertinoColors.white)
+                    ? const CupertinoActivityIndicator(
+                        color: CupertinoColors.white,
+                      )
                     : const Text("Save Changes"),
               ),
             ),
