@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Printer,
   FileText,
@@ -37,6 +37,63 @@ type PrintableItem = {
   data: Grievance | TrainRequest | TourProgram;
 };
 
+/**
+ * Rows per request. The server clamps keyset pages to MAX_KEYSET_LIMIT (250),
+ * which is what this is sized to: 250 turns the ~2,100-row train table into 9
+ * round-trips instead of 22.
+ */
+const PAGE_SIZE = 250;
+/** Hard stop per source: 40 x 250 = 10,000 rows. Anything beyond is reported by the notice. */
+const MAX_PAGES_PER_SOURCE = 40;
+/**
+ * Offset paging costs more the deeper it goes, so the fallback for sources that
+ * are not keyset-paged yet is kept shallow on purpose.
+ */
+const MAX_LEGACY_PAGES = 4;
+
+// Row -> printable card. Pure, and defined once rather than rebuilt per fetch,
+// because a streaming load re-maps the accumulated rows on every page arrival.
+const toGrievanceItem = (g: Grievance): PrintableItem =>
+  g.grievanceType === 'TEMPLE_VISIT'
+    ? {
+        id: g.id,
+        type: 'temple',
+        title: `Temple Visit Letter - ${g.petitionerName}`,
+        subtitle: `${g.memberCount ?? '?'} member(s) • ${g.constituency}`,
+        date: g.resolvedAt || g.createdAt,
+        status: g.status === 'RESOLVED' ? 'Resolved' : g.status === 'REJECTED' ? 'Rejected' : g.status === 'IN_PROGRESS' ? 'In Progress' : 'Open',
+        data: g,
+      }
+    : {
+        id: g.id,
+        type: 'grievance',
+        title: `Grievance Letter - ${g.grievanceType.replace(/_/g, ' ')}`,
+        subtitle: `${g.petitionerName} • ${g.constituency}`,
+        date: g.verifiedAt || g.createdAt,
+        status: g.status === 'RESOLVED' ? 'Resolved' : g.status === 'IN_PROGRESS' ? 'In Progress' : g.status === 'REJECTED' ? 'Rejected' : g.isVerified ? 'Verified' : 'Open',
+        data: g,
+      };
+
+const toTrainItem = (t: TrainRequest): PrintableItem => ({
+  id: t.id,
+  type: 'train',
+  title: `Train EQ Letter - ${t.trainName || 'N/A'}`,
+  subtitle: `${t.passengerName} • PNR: ${t.pnrNumber}`,
+  date: t.approvedAt || t.createdAt,
+  status: t.status === 'APPROVED' ? 'Approved' : t.status === 'REJECTED' ? 'Rejected' : 'Pending',
+  data: t,
+});
+
+const toTourItem = (t: TourProgram): PrintableItem => ({
+  id: t.id,
+  type: 'tour',
+  title: `Tour Invitation - ${t.eventName}`,
+  subtitle: `${t.organizer} • ${t.venue}`,
+  date: t.dateTime || t.createdAt,
+  status: t.decision === 'ACCEPTED' ? 'Accepted' : t.decision === 'REGRET' ? 'Regret' : 'Pending',
+  data: t,
+});
+
 export default function PrintCenter() {
   const { push } = useToast();
   const [printableItems, setPrintableItems] = useState<PrintableItem[]>([]);
@@ -53,146 +110,136 @@ export default function PrintCenter() {
     loaded: 0,
     totalKnown: false,
   });
+  // True while later pages are still arriving behind an already-rendered list.
+  // Distinct from `loading`, which now only covers the wait for the FIRST rows.
+  const [streaming, setStreaming] = useState(false);
+  // Changing the date range restarts the fetch. Without this, a slow walk from
+  // the previous range would keep publishing its rows over the new results.
+  const fetchRunId = useRef(0);
 
   const fetchPrintableItems = async () => {
     setLoading(true);
+    setStreaming(true);
     setError(null);
-    try {
-      const items: PrintableItem[] = [];
-      let loadedFromServer = 0;
-      let totalFromServer = 0;
-      let totalKnown = true;
+    const runId = ++fetchRunId.current;
 
-      const noteSource = (res: { data?: unknown; meta?: { total?: number; totalKnown?: boolean } }) => {
-        const rows = Array.isArray(res?.data) ? res.data.length : 0;
-        loadedFromServer += rows;
-        const t = res?.meta?.total;
-        if (res?.meta?.totalKnown === false || typeof t !== 'number') totalKnown = false;
-        else totalFromServer += t;
-      };
+    const dateParams: Record<string, string> = {};
+    if (startDate) dateParams.startDate = startDate;
+    if (endDate) dateParams.endDate = endDate;
 
-      // Helper to iteratively fetch all pages for a source using cursor / pagination
-      const fetchSourcePages = async <T,>(
-        fetcher: (params: Record<string, string>) => Promise<{ data?: T[]; meta?: { total?: number; totalKnown?: boolean; hasMore?: boolean; nextCursor?: string | null } }>,
-        baseParams: Record<string, string>
-      ) => {
-        let allData: T[] = [];
-        let cursor: string | undefined = undefined;
-        let pageNum = 1;
-        let hasMore = true;
-        let lastMeta: { total?: number; totalKnown?: boolean } | undefined = undefined;
-        let iter = 0;
+    // Rows per source, kept separate and re-assembled in a FIXED order on every
+    // publish. The three sources are fetched concurrently, so appending to one
+    // shared array would order the list by whichever response happened to land
+    // first — the rendered order would change run to run.
+    const raw = {
+      grievances: [] as Grievance[],
+      trains: [] as TrainRequest[],
+      tours: [] as TourProgram[],
+    };
+    const counts = {
+      grievances: { total: undefined as number | undefined, known: true },
+      trains: { total: undefined as number | undefined, known: true },
+      tours: { total: undefined as number | undefined, known: true },
+    };
 
-        while (hasMore && iter < 100) {
-          iter++;
-          const params: Record<string, string> = { ...baseParams, limit: '100' };
-          if (cursor) {
-            params.cursor = cursor;
-          } else if (pageNum > 1) {
-            params.page = String(pageNum);
-          }
+    // Paint whatever has arrived so far. Because every source is walked
+    // newest-first, the rows that land first are the ones page 1 shows — later
+    // pages append older records underneath and do not disturb what is already
+    // on screen.
+    const publish = () => {
+      if (fetchRunId.current !== runId) return; // a newer fetch owns the screen
+      setPrintableItems([
+        ...raw.grievances.map(toGrievanceItem),
+        ...raw.trains.map(toTrainItem),
+        ...raw.tours.map(toTourItem),
+      ]);
+      let total = 0;
+      let known = true;
+      for (const c of [counts.grievances, counts.trains, counts.tours]) {
+        if (!c.known || typeof c.total !== 'number') known = false;
+        else total += c.total;
+      }
+      setTally({
+        loaded: raw.grievances.length + raw.trains.length + raw.tours.length,
+        total: known ? total : undefined,
+        totalKnown: known,
+      });
+      setLoading(false); // rows are on screen; the skeleton has done its job
+    };
 
-          const res = await fetcher(params);
-          const rows = Array.isArray(res?.data) ? res.data : [];
-          allData = allData.concat(rows);
-          if (res?.meta) lastMeta = res.meta;
+    /**
+     * Walk one source to the end.
+     *
+     * Cursor-first, and that is the entire performance fix. A keyset cursor
+     * costs the same at page 20 as at page 1 (~110ms measured). `page=N` does
+     * not: the server must re-walk from the first row to skip N pages, so the
+     * cost grows with depth (measured 216ms at page 1 -> 1046ms at page 20)
+     * and a 22-page walk becomes quadratic. The previous version never sent
+     * `sort`, so it never entered cursor mode, never received a nextCursor,
+     * and fell back to page=N for all 22 pages -- 63s for the train table.
+     *
+     * Not every list endpoint is keyset-paged yet: tour-programs still answers
+     * without a cursor. For those we fall back to page=N deliberately, but for
+     * only a few pages, and anything we miss is reported by the truncation
+     * notice rather than silently dropped.
+     */
+    const walk = async <T,>(
+      fetcher: (p: Record<string, string>) => Promise<{
+        data?: T[];
+        meta?: { total?: number; totalKnown?: boolean; hasMore?: boolean; nextCursor?: string | null };
+      }>,
+      sink: T[],
+      count: { total?: number; known: boolean }
+    ): Promise<void> => {
+      let cursor: string | null = null;
+      let pageNum = 1;
 
-          if (res?.meta?.hasMore && rows.length > 0) {
-            if (res.meta.nextCursor) {
-              cursor = res.meta.nextCursor;
-            } else {
-              pageNum++;
-            }
-          } else {
-            hasMore = false;
-          }
-        }
-
-        return {
-          data: allData,
-          meta: {
-            total: lastMeta?.total ?? allData.length,
-            totalKnown: lastMeta?.totalKnown ?? true,
-          },
+      for (let i = 0; i < MAX_PAGES_PER_SOURCE; i++) {
+        const params: Record<string, string> = {
+          ...dateParams,
+          limit: String(PAGE_SIZE),
+          sort: 'newest', // opts into cursor mode; ordering is unchanged
         };
-      };
+        if (cursor) params.cursor = cursor;
+        else if (pageNum > 1) params.page = String(pageNum);
 
-      // Fetch all grievances and temple visit letters (ready/available for printing).
-      const grievanceParams: Record<string, string> = {};
-      if (startDate) grievanceParams.startDate = startDate;
-      if (endDate) grievanceParams.endDate = endDate;
-      const grievanceRes = await fetchSourcePages((p) => grievanceApi.getAll(p), grievanceParams);
-      noteSource(grievanceRes);
-      console.log('PrintCenter - Grievances response:', grievanceRes);
-      const grievances = grievanceRes.data;
-      grievances.forEach((g: Grievance) => {
-        if (g.grievanceType === 'TEMPLE_VISIT') {
-          items.push({
-            id: g.id,
-            type: 'temple',
-            title: `Temple Visit Letter - ${g.petitionerName}`,
-            subtitle: `${g.memberCount ?? '?'} member(s) • ${g.constituency}`,
-            date: g.resolvedAt || g.createdAt,
-            status: g.status === 'RESOLVED' ? 'Resolved' : g.status === 'REJECTED' ? 'Rejected' : g.status === 'IN_PROGRESS' ? 'In Progress' : 'Open',
-            data: g,
-          });
-          return;
+        const res = await fetcher(params);
+        if (fetchRunId.current !== runId) return; // abandoned mid-walk
+
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        sink.push(...rows);
+
+        const t = res?.meta?.total;
+        // Keep the SERVER's total even when we stop early, so the notice can
+        // report the shortfall instead of reporting the list as complete.
+        if (res?.meta?.totalKnown === false || typeof t !== 'number') count.known = false;
+        else count.total = t;
+
+        publish();
+
+        if (!res?.meta?.hasMore || rows.length === 0) return; // whole source loaded
+        if (res.meta.nextCursor) {
+          cursor = res.meta.nextCursor;
+        } else if (cursor) {
+          return; // was cursoring and the server stopped offering one
+        } else if (pageNum >= MAX_LEGACY_PAGES) {
+          return; // offset fallback is quadratic; refuse to walk it deep
+        } else {
+          pageNum++;
         }
-        items.push({
-          id: g.id,
-          type: 'grievance',
-          title: `Grievance Letter - ${g.grievanceType.replace(/_/g, ' ')}`,
-          subtitle: `${g.petitionerName} • ${g.constituency}`,
-          date: g.verifiedAt || g.createdAt,
-          status: g.status === 'RESOLVED' ? 'Resolved' : g.status === 'IN_PROGRESS' ? 'In Progress' : g.status === 'REJECTED' ? 'Rejected' : g.isVerified ? 'Verified' : 'Open',
-          data: g,
-        });
-      });
+      }
+    };
 
-      // Fetch all train requests (Train EQ).
-      const trainParams: Record<string, string> = {};
-      if (startDate) trainParams.startDate = startDate;
-      if (endDate) trainParams.endDate = endDate;
-      const trainRes = await fetchSourcePages((p) => trainRequestApi.getAll(p), trainParams);
-      noteSource(trainRes);
-      console.log('PrintCenter - Train requests response:', trainRes);
-      const trainRequests = trainRes.data;
-      trainRequests.forEach((t: TrainRequest) => {
-        items.push({
-          id: t.id,
-          type: 'train',
-          title: `Train EQ Letter - ${t.trainName || 'N/A'}`,
-          subtitle: `${t.passengerName} • PNR: ${t.pnrNumber}`,
-          date: t.approvedAt || t.createdAt,
-          status: t.status === 'APPROVED' ? 'Approved' : t.status === 'REJECTED' ? 'Rejected' : 'Pending',
-          data: t,
-        });
-      });
-
-      // Fetch all tour programs (tour invitations).
-      const tourParams: Record<string, string> = {};
-      if (startDate) tourParams.startDate = startDate;
-      if (endDate) tourParams.endDate = endDate;
-      const tourRes = await fetchSourcePages((p) => tourProgramApi.getAll(p), tourParams);
-      noteSource(tourRes);
-      console.log('PrintCenter - Tour programs response:', tourRes);
-      const tours = tourRes.data;
-      tours.forEach((t: TourProgram) => {
-        items.push({
-          id: t.id,
-          type: 'tour',
-          title: `Tour Invitation - ${t.eventName}`,
-          subtitle: `${t.organizer} • ${t.venue}`,
-          date: t.dateTime || t.createdAt,
-          status: t.decision === 'ACCEPTED' ? 'Accepted' : t.decision === 'REGRET' ? 'Regret' : 'Pending',
-          data: t,
-        });
-      });
-
-      console.log('PrintCenter - Printable items:', items);
-      setPrintableItems(items);
-      setTally({ loaded: loadedFromServer, total: totalKnown ? totalFromServer : undefined, totalKnown });
+    try {
+      // Concurrent, not sequential. Previously each source waited for the one
+      // before it, so the page cost the SUM of all three walks.
+      await Promise.all([
+        walk((p) => grievanceApi.getAll(p), raw.grievances, counts.grievances),
+        walk((p) => trainRequestApi.getAll(p), raw.trains, counts.trains),
+        walk((p) => tourProgramApi.getAll(p), raw.tours, counts.tours),
+      ]);
     } catch (err: unknown) {
+      if (fetchRunId.current !== runId) return;
       console.error('Failed to fetch printable items:', err);
       const e = err as Record<string, unknown> | null;
       const msg =
@@ -202,7 +249,10 @@ export default function PrintCenter() {
       setPrintableItems([]);
       setTally({ loaded: 0, totalKnown: false });
     } finally {
-      setLoading(false);
+      if (fetchRunId.current === runId) {
+        setLoading(false);
+        setStreaming(false);
+      }
     }
   };
 
@@ -453,7 +503,18 @@ export default function PrintCenter() {
                   not exist. There is no pager here, so a capped source is
                   genuinely unreachable rather than merely further down.
                 */}
-                {!loading && !error && (
+                {!loading && !error && streaming && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-2">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    Loaded {tally.loaded.toLocaleString()}
+                    {typeof tally.total === 'number' ? ` of ${tally.total.toLocaleString()}` : ''} — still
+                    loading older letters, so search and the tab counts are incomplete for a moment.
+                  </p>
+                )}
+                {/* Suppressed while streaming: mid-load every list is legitimately
+                    short, and a notice that says so on every page arrival would
+                    cry truncation at a list that is about to be complete. */}
+                {!loading && !error && !streaming && (
                   <TruncationNotice
                     loaded={tally.loaded}
                     total={tally.total}
