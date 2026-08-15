@@ -17,12 +17,18 @@ export interface KeysetQuery {
 }
 
 /**
- * Page size ceiling is 100, not 299. The ZCQL hard limit is 300 and every
- * query fetches limit+1 to probe for a next page, so capping at 100 keeps a
- * wide margin below the boundary and keeps response bodies small enough that
- * a page render stays a single fast round-trip.
+ * Page size ceiling. The ZCQL hard limit is 300 and every query fetches
+ * limit+1 to probe for a next page, so 250 (-> 251 rows requested) still
+ * leaves a margin below the boundary.
+ *
+ * This was 100, sized for interactive screens that render one page at a time.
+ * That is still the DEFAULT (25) and still what list screens ask for. The
+ * ceiling is higher for BULK consumers — Print Center loads every printable
+ * document so its search can span all of them, and at 100 rows/page that is
+ * 22 round-trips for the train table alone. Raising the ceiling changes no
+ * existing caller: they request <= 100 and are clamped exactly as before.
  */
-export const MAX_KEYSET_LIMIT = 100;
+export const MAX_KEYSET_LIMIT = 250;
 export const DEFAULT_KEYSET_LIMIT = 25;
 
 export function parseKeysetQuery(query: Record<string, any>): KeysetQuery {
